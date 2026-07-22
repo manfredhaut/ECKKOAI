@@ -1,0 +1,72 @@
+:root {
+  /* Brand colors - fixed across light/dark */
+  --color-primary: #9CEE06;
+  --color-primary-text: #0A0D10;
+
+  /* Secondary = "processing/queued" meaning, tertiary = "error" meaning
+     (see .status-pill.status-processing / .status-pill.status-error in
+     global.css) — mode-tuned shade for contrast, chosen by design */
+  --color-secondary: #C98A2E;
+  --color-tertiary: #E2574C;
+  --color-tertiary-text: #ffffff;
+
+  /* Fixed accents for provider-confirmed avatar/voice state (see
+     AvatarSetupStep.tsx) — do not flip between light/dark */
+  --color-accent-avatar: #7B2CFF;
+  --color-accent-voice: #00F0FF;
+
+  /* Chrome - light mode */
+  --color-bg: #F7F9F3;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #EDF1E6;
+  --color-text: #0B0F0A;
+  --color-text-muted: #5C6B57;
+  --color-border: #E1E8D8;
+
+  --radius-card: 12px;
+  --border-width: 1px;
+
+  --shadow-none: none;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-secondary: #E0AE5C;
+    --color-tertiary: #EA7267;
+
+    --color-bg: #0A0D10;
+    --color-surface: #12161B;
+    --color-surface-raised: #171C22;
+    --color-text: #EAF2E2;
+    --color-text-muted: #8FA08A;
+    --color-border: #232A31;
+  }
+}
+
+/* Manual override: wins over prefers-color-scheme in both directions. */
+:root[data-theme="dark"] {
+  --color-secondary: #E0AE5C;
+  --color-tertiary: #EA7267;
+
+  --color-bg: #0A0D10;
+  --color-surface: #12161B;
+  --color-surface-raised: #171C22;
+  --color-text: #EAF2E2;
+  --color-text-muted: #8FA08A;
+  --color-border: #232A31;
+}
+
+:root[data-theme="light"] {
+  --color-secondary: #C98A2E;
+  --color-tertiary: #E2574C;
+
+  --color-bg: #F7F9F3;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #EDF1E6;
+  --color-text: #0B0F0A;
+  --color-text-muted: #5C6B57;
+  --color-border: #E1E8D8;
+}

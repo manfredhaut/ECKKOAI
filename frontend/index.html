@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>eckko.ai</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/brand/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png" />
+    <script>
+      // Runs before any CSS commits, so an OS set to dark mode never causes
+      // a flash of dark theme on first paint — must stay in sync with
+      // ThemeContext.tsx's getStoredMode() (same storage key, same "light"
+      // default when nothing was ever explicitly chosen).
+      (function () {
+        var stored = localStorage.getItem("theme");
+        var mode = stored === "light" || stored === "dark" || stored === "system" ? stored : "light";
+        if (mode !== "system") {
+          document.documentElement.setAttribute("data-theme", mode);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

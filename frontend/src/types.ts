@@ -1,0 +1,161 @@
+export type VideoStatus = "queued" | "processing" | "ready" | "error";
+
+export interface Avatar {
+  id: string;
+  name: string;
+  provider: string | null;
+  photo_urls: string[];
+  reference_video_url: string | null;
+  voice_id: string | null;
+  provider_avatar_id: string | null;
+  audio_treatment_enabled: boolean;
+  // Postgres `numeric` columns serialize as strings over JSON — parse with
+  // Number(...) before using this in arithmetic or a range input's value.
+  audio_treatment_target_lufs: string;
+  created_at: string;
+}
+
+export interface Video {
+  id: string;
+  avatar_id: string | null;
+  script: string;
+  scenario: string | null;
+  outfit: string | null;
+  scenario_prompt: string | null;
+  outfit_prompt: string | null;
+  duration_seconds: number;
+  status: VideoStatus;
+  output_url: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export type CredentialProviderId = "avatar" | "voice" | "script";
+
+export type StorageProviderId = "drive" | "platform_hosted";
+
+export interface Credential {
+  provider: CredentialProviderId;
+  connected: boolean;
+  updated_at: string;
+  masked_key: string | null;
+  vendor: string;
+}
+
+export type DocumentStatus = "processing" | "indexed" | "error";
+
+export interface KnowledgeDocument {
+  id: string;
+  filename: string;
+  file_url: string;
+  mime_type: string;
+  status: DocumentStatus;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface ReferenceImage {
+  id: string;
+  filename: string;
+  file_url: string;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+}
+
+export interface CopilotConversation {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CopilotRole = "user" | "assistant";
+
+export interface CopilotMessage {
+  id: string;
+  conversation_id: string;
+  role: CopilotRole;
+  content: string;
+  created_at: string;
+}
+
+export interface Plan {
+  id: string;
+  name: string;
+  priceCents: number;
+  videoLimitPerMonth: number;
+  scriptLimitPerMonth: number;
+  avatarLimitPerMonth: number;
+  features: string[];
+  stripePriceId: string | null;
+  active: boolean;
+}
+
+// Admin panel — cross-tenant views, only reachable via an admin_users session.
+export interface AdminTenantSummary {
+  id: string;
+  name: string;
+  slug: string;
+  planId: string;
+  status: "active" | "suspended";
+  createdAt: string;
+  connectedProviders: CredentialProviderId[];
+}
+
+export interface AdminTenantDetail {
+  id: string;
+  name: string;
+  slug: string;
+  planId: string;
+  status: "active" | "suspended";
+  storageProvider: StorageProviderId;
+  createdAt: string;
+  credentials: Credential[];
+}
+
+// Cost is always an ESTIMATE from a manually maintained rate card
+// (provider_cost_rates), never a number a vendor actually returned —
+// `verified`/`allRatesVerified` say whether an admin has confirmed the
+// underlying rate against real vendor pricing yet. See CLAUDE.md / billing
+// plan, Fase 1.
+export interface TenantUsageBreakdownRow {
+  provider: CredentialProviderId;
+  vendor: string;
+  unitType: "seconds" | "characters" | "tokens_in" | "tokens_out";
+  totalUnits: number;
+  totalEstimatedCostCents: number;
+  verified: boolean;
+}
+
+export interface TenantUsage {
+  breakdown: TenantUsageBreakdownRow[];
+  totalEstimatedCostCents: number;
+  allRatesVerified: boolean;
+}
+
+export interface CostRate {
+  id: string;
+  provider: CredentialProviderId;
+  vendor: string;
+  unitType: "seconds" | "characters" | "tokens_in" | "tokens_out";
+  costPerUnitCents: number;
+  verified: boolean;
+  updatedAt: string;
+}
+
+export interface Subscription {
+  companyName: string;
+  slug: string;
+  profileComplete: boolean;
+  plan: Plan;
+  availablePlans: Plan[];
+  usage: { videosThisMonth: number; limit: number };
+  paymentMethodMasked: string | null;
+}

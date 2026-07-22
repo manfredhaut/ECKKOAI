@@ -1,0 +1,13 @@
+.env
+node_modules/
+dist/
+uploads/*
+!uploads/.gitkeep
+.DS_Store
+*.log
+
+# Ephemeral/generated artifacts — see CLAUDE.md sections 5 and 7 ("não
+# versionado"): graphify-out is a local knowledge-graph rebuild target,
+# previews/ holds throwaway static mockups from design-preview sessions.
+graphify-out/
+previews/

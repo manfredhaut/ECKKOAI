@@ -1,0 +1,511 @@
+{
+  "common": {
+    "appName": "eckko.ai",
+    "logOut": "Log out",
+    "back": "Back",
+    "next": "Next",
+    "save": "Save",
+    "cancel": "Cancel",
+    "yes": "Yes",
+    "no": "No",
+    "status": {
+      "queued": "queued",
+      "processing": "processing",
+      "ready": "ready",
+      "indexed": "indexed",
+      "error": "error",
+      "connected": "connected",
+      "disconnected": "disconnected"
+    }
+  },
+  "header": {
+    "theme": {
+      "light": "Light theme",
+      "dark": "Dark theme",
+      "system": "Match system"
+    },
+    "notifications": "Notifications",
+    "notificationsTooltip": "Notifications — alerts when videos or documents finish processing",
+    "notificationsEmpty": "No notifications yet.",
+    "jobs": "Processing jobs",
+    "jobsTooltip": "Processing jobs — track videos and documents currently being generated",
+    "jobsEmpty": "Nothing processing right now.",
+    "languagePtBR": "Switch to Portuguese",
+    "languageEn": "Switch to English"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "createVideo": "Create video",
+    "content": "Content",
+    "settings": "Settings",
+    "mySubscription": "My Subscription",
+    "rag": "Knowledge base (RAG)"
+  },
+  "landing": {
+    "nav": {
+      "howItWorks": "How it works",
+      "features": "Features",
+      "pricing": "Pricing",
+      "faq": "FAQ",
+      "login": "Log in",
+      "cta": "Start for free"
+    },
+    "hero": {
+      "headline": "Create videos with your digital avatar in minutes, not days",
+      "subtitle": "Upload a photo and a script — eckko.ai trains your avatar, clones your voice, and renders the final video, no production crew needed.",
+      "cta": "Start for free"
+    },
+    "problemSolution": {
+      "title": "Recording video every week doesn't scale",
+      "body": "Booking a studio, scheduling a shoot, and editing every video eats up time most teams don't have. eckko.ai trains a digital avatar of you once and generates as many videos as you need from a script — no camera, no studio, no manual editing."
+    },
+    "howItWorks": {
+      "title": "How it works",
+      "steps": [
+        { "title": "Set up your avatar", "desc": "Upload photos and a short reference video — eckko.ai clones your look and voice once." },
+        { "title": "Write the script", "desc": "Write it yourself or ask the AI copilot to draft what the avatar will say." },
+        { "title": "Choose scenario and outfit", "desc": "Describe it in text or upload a reference image for the setting and clothing." },
+        { "title": "Generate the video", "desc": "Your final video is ready to download in a few minutes." }
+      ]
+    },
+    "features": {
+      "title": "Everything you need to scale video",
+      "items": [
+        { "title": "Realistic avatar", "desc": "A clone of your look and voice from photos and a reference recording." },
+        { "title": "Knowledge & media", "desc": "Your company's documents and images, indexed to feed scripts with real context about your business." },
+        { "title": "AI copilot", "desc": "An in-app assistant to answer questions and help write scripts." }
+      ]
+    },
+    "pricing": {
+      "title": "Pricing",
+      "subtitle": "Start for free, upgrade whenever you need to.",
+      "free": "Free",
+      "perMonth": "/mo",
+      "videosPerMonth": "{{count}} videos per month",
+      "storageDrive": "Storage: your own Google Drive",
+      "storageHosted": "Storage: hosted by eckko.ai",
+      "cta": "Start for free",
+      "loading": "Loading plans…"
+    },
+    "faq": {
+      "title": "Frequently asked questions",
+      "items": [
+        { "q": "Do I need to know how to shoot or edit video?", "a": "No. You record your avatar's reference footage once; after that, generating a new video is just writing (or AI-generating) a script." },
+        { "q": "Is my data isolated from other customers?", "a": "Yes. Every account is isolated by tenant — one customer's avatars, videos, documents, and credentials are never visible to another." },
+        { "q": "Do I need to connect my own AI key?", "a": "Yes, to generate real videos. eckko.ai uses a BYOK model: you connect your own avatar, voice, and script provider keys in Settings." },
+        { "q": "Where are my uploaded files stored?", "a": "You choose between keeping files in your own Google Drive or hosted by eckko.ai, depending on your plan." },
+        { "q": "Can I try it before paying?", "a": "Yes, the Free plan lets you create an account and explore the product at no cost." }
+      ]
+    },
+    "finalCta": {
+      "title": "Ready to create your first video?",
+      "subtitle": "It takes less than 2 minutes to create your account.",
+      "cta": "Start for free"
+    },
+    "footer": {
+      "rights": "All rights reserved.",
+      "contactWhatsapp": "Contact us on WhatsApp",
+      "whatsappMessage": "Hi! I have a question about eckko.ai."
+    },
+    "copilot": {
+      "openButton": "Open demo copilot",
+      "title": "eckko.ai Copilot (demo)",
+      "emptyState": "Ask anything about how eckko.ai works.",
+      "placeholder": "Type a message…",
+      "send": "Send",
+      "sending": "Sending…",
+      "notConfigured": "The demo copilot isn't configured yet.",
+      "error": "Something went wrong. Please try again.",
+      "rateLimited": "Too many messages in a short time. Try again in a few minutes."
+    }
+  },
+  "login": {
+    "emailLabel": "Email",
+    "emailHelp": "The address you were invited with.",
+    "passwordLabel": "Password",
+    "passwordHelp": "Case-sensitive.",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "error": "Invalid email or password.",
+    "noAccount": "Don't have an account?",
+    "signUp": "Sign up"
+  },
+  "signup": {
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "passwordHelp": "At least 8 characters.",
+    "signUp": "Create account",
+    "signingUp": "Creating account…",
+    "error": "Couldn't create your account. Please try again.",
+    "hasAccount": "Already have an account?",
+    "signIn": "Sign in"
+  },
+  "adminPanel": {
+    "title": "Admin panel",
+    "subtitle": "Signed in as {{name}}",
+    "loading": "Loading…",
+    "backToList": "← Back to list",
+    "colTenant": "Tenant",
+    "colPlan": "Plan",
+    "colStatus": "Status",
+    "colConnected": "Connected providers",
+    "colCreated": "Created",
+    "manage": "Manage",
+    "noneConnected": "None",
+    "suspend": "Suspend",
+    "reactivate": "Reactivate",
+    "tenantStatus": {
+      "active": "Active",
+      "suspended": "Suspended"
+    },
+    "provider": {
+      "avatar": "Avatar",
+      "voice": "Voice",
+      "script": "Script"
+    },
+    "plan": {
+      "free": "Free",
+      "pro": "Pro",
+      "business": "Business"
+    },
+    "navTenants": "Tenants",
+    "navCostRates": "Cost rates",
+    "navPlans": "Plans",
+    "plans": {
+      "title": "Plans",
+      "subtitle": "Editable live — a tenant sees the change as soon as they reload My Subscription, no deploy needed.",
+      "colId": "ID",
+      "colName": "Name",
+      "colPrice": "Price (cents)",
+      "colLimit": "Video limit/month",
+      "colScriptLimit": "Script limit/month",
+      "colAvatarLimit": "Avatar limit/month",
+      "colFeatures": "Features (one per line)",
+      "colActive": "Active",
+      "newPlan": "New plan",
+      "idHelp": "Stable, lowercase identifier, letters/numbers/hyphens only — can't be changed later.",
+      "create": "Create plan",
+      "createError": "Couldn't create the plan. Check whether the ID already exists."
+    },
+    "usage": {
+      "title": "Cost per provider",
+      "estimatedBanner": "Estimate — rates not yet verified against the provider's real pricing. Do not treat as actual cost.",
+      "verifiedBanner": "Verified rates — figures below reflect rates the admin has confirmed.",
+      "empty": "No usage recorded yet.",
+      "colProvider": "Provider",
+      "colVendor": "Vendor",
+      "colUnitType": "Unit",
+      "colUnits": "Total units",
+      "colCost": "Estimated cost",
+      "colVerified": "Verified",
+      "total": "Total"
+    },
+    "unitType": {
+      "seconds": "Seconds",
+      "characters": "Characters",
+      "tokens_in": "Tokens (input)",
+      "tokens_out": "Tokens (output)"
+    },
+    "costRates": {
+      "title": "Provider cost rates",
+      "subtitle": "Values used to estimate real cost per provider call. Only mark \"verified\" after confirming against the vendor's real public pricing.",
+      "colProvider": "Provider",
+      "colVendor": "Vendor",
+      "colUnitType": "Unit",
+      "colCostPerUnit": "Cost per unit (cents)",
+      "colVerified": "Verified",
+      "save": "Save"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Overview of your usage, generation queue, and recent videos.",
+    "createVideo": "Create video",
+    "creditsRemaining": "Credits remaining",
+    "creditsNotConnected": "Not yet connected to a billing provider",
+    "videosThisMonth": "Videos this month",
+    "videosThisMonthSub": "Across all avatars",
+    "estimatedCost": "Estimated cost",
+    "estimatedCostSub": "Cost tracking coming soon",
+    "savedAvatars": "Saved avatars",
+    "savedAvatarsSub": "Ready to reuse",
+    "generationQueue": "Generation queue",
+    "queueEmpty": "Nothing is generating right now.",
+    "recentVideos": "Recent videos",
+    "videosEmptyPrefix": "No videos yet.",
+    "videosEmptyLink": "Create your first one",
+    "avatarsEmptyPrefix": "No avatars saved yet.",
+    "avatarsEmptyLink": "Set one up"
+  },
+  "content": {
+    "title": "Content",
+    "subtitle": "Manage saved avatars and browse your video library.",
+    "tabAvatars": "Avatars",
+    "tabVideos": "Video library",
+    "avatarsEmptyPrefix": "No avatars saved yet.",
+    "avatarsEmptyLink": "Set one up",
+    "videosEmptyPrefix": "No videos yet.",
+    "videosEmptyLink": "Create your first one",
+    "colName": "Name",
+    "colVoice": "Voice",
+    "colCreated": "Created",
+    "colScript": "Script",
+    "colDuration": "Duration",
+    "colStatus": "Status",
+    "retrain": "Re-train",
+    "download": "Download"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Connect the providers that power avatar generation, voice cloning, and script writing.",
+    "avatarProviderTitle": "Avatar / video provider",
+    "avatarProviderDesc": "Generates the final avatar video.",
+    "voiceProviderTitle": "Voice cloning provider",
+    "voiceProviderDesc": "Clones the avatar's voice from your reference recording.",
+    "scriptProviderTitle": "Script-generation AI provider",
+    "scriptProviderDesc": "Generates a script draft from a prompt.",
+    "vendorLabel": "Provider",
+    "vendorHelpPrompt": "Explain what the 'Provider' field on this screen is for, why it appears disabled (read-only), and who manages this setting today.",
+    "vendor": {
+      "anthropic": {
+        "label": "Anthropic",
+        "keyLabel": "Anthropic API key",
+        "keyPlaceholder": "sk-ant-...",
+        "help": "Generated at console.anthropic.com. Pasted once, then stored encrypted — never shown again in full."
+      },
+      "gemini": {
+        "label": "Gemini (Google AI Studio)",
+        "keyLabel": "Gemini API key",
+        "keyPlaceholder": "AIza...",
+        "help": "Generated at Google AI Studio (aistudio.google.com). Pasted once, then stored encrypted — never shown again in full."
+      },
+      "openai": {
+        "label": "OpenAI",
+        "keyLabel": "OpenAI API key",
+        "keyPlaceholder": "sk-...",
+        "help": "Generated at platform.openai.com/api-keys. Pasted once, then stored encrypted — never shown again in full."
+      },
+      "elevenlabs": {
+        "label": "ElevenLabs",
+        "keyLabel": "ElevenLabs API key",
+        "keyPlaceholder": "sk_...",
+        "help": "Generated at elevenlabs.io/app/settings/api-keys. Used to clone the voice from the reference video and synthesize the script's speech."
+      },
+      "heygen": {
+        "label": "HeyGen",
+        "keyLabel": "HeyGen API key",
+        "keyPlaceholder": "Paste API key",
+        "help": "Generated at app.heygen.com/settings/api. Used to train the photo avatar and generate the final video."
+      },
+      "did": {
+        "label": "D-ID",
+        "keyLabel": "D-ID API key",
+        "keyPlaceholder": "Paste API key",
+        "help": "Generated at studio.d-id.com/account-settings. Used to train the photo avatar and generate the final video."
+      }
+    },
+    "apiKeyLabel": "API key",
+    "apiKeyHelp": "Pasted once, then stored encrypted — never shown again in full.",
+    "apiKeyCurrentHint": "(current: ••••{{lastFour}})",
+    "apiKeyPlaceholder": "Paste API key",
+    "saving": "Saving…",
+    "testConnection": "Test connection",
+    "testing": "Testing…",
+    "testOk": "Connection OK",
+    "testFailed": "Connection failed",
+    "managedByPlatform": "Managed by the platform. Contact support to change this.",
+    "storageTitle": "Storage",
+    "storageProviderTitle": "Where your files are saved",
+    "storageProviderDesc": "Choose between keeping uploaded files (photos, videos, documents) in your own Google Drive or hosted by eckko.ai.",
+    "storageProviderOptions": {
+      "drive": "Google Drive",
+      "platform_hosted": "Platform-hosted"
+    }
+  },
+  "createVideo": {
+    "title": "Create video",
+    "subtitle": "Set up an avatar, write a script, and generate a video.",
+    "steps": {
+      "avatarSetup": "Avatar setup",
+      "script": "Script",
+      "assets": "Assets",
+      "duration": "Duration",
+      "generate": "Generate"
+    },
+    "avatarSetup": {
+      "scopeNote": "This screen sets up your reusable avatar (photos, reference video, and voice) — it's not where you customize the scenario, outfit, or script for this specific video. That happens in the next steps. Pick a background and adjust the intensity to make the face stand out better, depending on the room's lighting and the clothes worn.",
+      "yourAvatars": "Your avatars",
+      "noAvatarsYet": "No avatars saved yet. Set one up once, then reuse it for every video.",
+      "photosVoiceStatus": "{{count}}/3 photos · {{voiceStatus}}",
+      "voiceReady": "voice ready",
+      "voiceNotReady": "no voice yet",
+      "avatarTrained": "Avatar trained",
+      "avatarPending": "Training pending",
+      "voiceCloned": "Voice cloned",
+      "voicePending": "Cloning pending",
+      "newAvatarButton": "+ Set up new avatar",
+      "newAvatarTitle": "Set up a new avatar",
+      "nameLabel": "Avatar name",
+      "nameHelp": "A short label to recognize this avatar later, e.g. the presenter's name or role.",
+      "nameHelpPrompt": "Explain what the 'Avatar name' field on this screen is for and how to choose a good name.",
+      "namePlaceholder": "e.g. News Anchor",
+      "startCapture": "Start capture",
+      "cameraPreview": "Camera preview",
+      "facePhotos": "Face photos ({{count}}/3)",
+      "slotFront": "Front",
+      "slotRight": "Right side",
+      "slotLeft": "Left side",
+      "capture": "Capture",
+      "referenceVideoTitle": "Reference video & voice",
+      "referenceSaved": "Reference video saved.",
+      "recordWithCamera": "Record with camera",
+      "stopRecording": "Stop recording",
+      "saveRecording": "Save recording",
+      "orUploadFile": "Or upload a file",
+      "scenarioTitle": "Default scenario",
+      "scenarioHelp": "Where the avatar appears.",
+      "scenarioPromptHelp": "Describe the scenario in text for the AI to use as a reference.",
+      "scenarioHelpPrompt": "Explain what the 'Scenario' field on this screen is for and how to fill it in correctly (both the image upload and the generate-via-AI options).",
+      "scenarioPlaceholder": "e.g. Modern newsroom studio",
+      "outfitTitle": "Default outfit",
+      "outfitHelp": "What the avatar wears.",
+      "outfitPromptHelp": "Describe the outfit in text for the AI to use as a reference.",
+      "outfitHelpPrompt": "Explain what the 'Outfit' field on this screen is for and how to fill it in correctly (both the image upload and the generate-via-AI options).",
+      "outfitPlaceholder": "e.g. Navy business suit",
+      "uploadImageLabel": "Upload reference image",
+      "generateViaAiLabel": "Generate via AI",
+      "imageSaved": "Image saved.",
+      "finishSetup": "Finish setup",
+      "background": {
+        "label": "Virtual background",
+        "help": "Applied live to the photos and the reference video — helps the face stand out from the environment.",
+        "unavailable": "Segmentation unavailable in this browser — only the original camera works.",
+        "none": "None",
+        "white": "White",
+        "lightGray": "Light gray",
+        "darkGray": "Dark gray",
+        "chromaGreen": "Green (chroma)",
+        "intensityLabel": "Intensity",
+        "intensityHelp": "How strongly the background is replaced — useful to soften edges in poorly lit environments."
+      },
+      "imageQuality": {
+        "label": "Image quality",
+        "help": "Applied live to the photos and the reference video — corrects exposure, contrast, sharpness, and noise.",
+        "auto": "Automatic",
+        "manual": "Manual",
+        "brightness": "Brightness",
+        "contrast": "Contrast",
+        "sharpness": "Sharpness",
+        "denoise": "Noise reduction"
+      },
+      "audioTreatment": {
+        "title": "Voice audio treatment",
+        "help": "Cleans up and normalizes this avatar's cloned voice before every future video generation — noise reduction plus loudness normalization to the target below.",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "targetLufsLabel": "Target loudness",
+        "targetLufsHelp": "Louder (closer to -6) reads punchier; quieter (closer to -24) reads more natural. -16 LUFS is a common streaming-friendly default."
+      }
+    },
+    "script": {
+      "title": "Script",
+      "scriptLabel": "Video script",
+      "scriptHelp": "What the avatar will read aloud, word for word.",
+      "scriptHelpPrompt": "Explain what the 'Video script' field on this screen is for and how to write a good script for the avatar to speak (ideal length for the chosen duration, what to avoid, how it sounds read aloud).",
+      "scriptPlaceholder": "Write or paste the script your avatar will read…",
+      "promptLabel": "Generate with AI (optional)",
+      "promptHelp": "Describe the video in a sentence and let AI draft a script.",
+      "promptHelpPrompt": "Explain what the script's 'Generate with AI' field on this screen is for and how to write a good prompt to get a better script.",
+      "promptPlaceholder": "e.g. 30-second news update about a local tech launch",
+      "generate": "Generate with AI",
+      "generating": "Generating…"
+    },
+    "assets": {
+      "title": "Choose assets for this video",
+      "avatarLabel": "Avatar",
+      "avatarHelp": "Defaults to the avatar you set up, editable per video.",
+      "avatarHelpPrompt": "Explain what the 'Avatar' field on this screen is for, where the pre-selected value comes from (the default set in step 1), and what happens if I change the avatar just for this specific video.",
+      "selectAvatar": "Select an avatar",
+      "uploadImageLabel": "Upload reference image",
+      "imageSaved": "Image saved.",
+      "scenarioLabel": "Scenario (generate via AI)",
+      "scenarioHelp": "Defaults to your avatar's saved scenario, editable per video.",
+      "scenarioPlaceholder": "e.g. Modern newsroom studio",
+      "outfitLabel": "Outfit (generate via AI)",
+      "outfitHelp": "Defaults to your avatar's saved outfit, editable per video.",
+      "outfitPlaceholder": "e.g. Navy business suit"
+    },
+    "duration": {
+      "title": "Duration"
+    },
+    "generate": {
+      "title": "Generate & review",
+      "generateButton": "Generate video",
+      "submitting": "Submitting…",
+      "download": "Download",
+      "failed": "Generation failed. Please try again."
+    }
+  },
+  "knowledge": {
+    "delete": "Delete",
+    "confirmDelete": "Delete \"{{name}}\"? This action can't be undone.",
+    "documents": {
+      "title": "Documents",
+      "description": "Upload .docx, .xlsx, or .pdf files. Text is extracted and embedded for semantic search used by the script assistant.",
+      "upload": "Upload document",
+      "uploading": "Uploading…",
+      "empty": "No documents uploaded yet.",
+      "colName": "Name",
+      "colStatus": "Status",
+      "colCreated": "Uploaded"
+    },
+    "referenceImages": {
+      "title": "Reference images",
+      "description": "General client reference material — catalogs, brand photography, style references — for human lookup only. Not indexed for search, and separate from the scenario/outfit images used in Create video.",
+      "upload": "Upload image",
+      "uploading": "Uploading…",
+      "empty": "No reference images uploaded yet."
+    }
+  },
+  "rag": {
+    "title": "Knowledge base (RAG)",
+    "subtitle": "Upload your business documents and reference images to power the script copilot and semantic search."
+  },
+  "subscription": {
+    "title": "My Subscription",
+    "subtitle": "Company profile, plan, usage, and payment.",
+    "checkoutSuccess": "Subscription confirmed! It may take a few seconds for your plan to update here.",
+    "checkoutCancelled": "Checkout cancelled — your plan didn't change.",
+    "completeProfileTitle": "Complete your profile",
+    "completeProfileDesc": "Just add your company name to finish setting up your account.",
+    "companyNameLabel": "Company name",
+    "saving": "Saving…",
+    "currentPlanTitle": "Current plan",
+    "usageLabel": "{{used}}/{{limit}} videos this month",
+    "paymentMethodTitle": "Payment method",
+    "noPaymentMethod": "No card on file yet.",
+    "cardNumberPlaceholder": "Card number",
+    "updateCard": "Update card",
+    "plansTitle": "Plans",
+    "free": "Free",
+    "currentPlanBadge": "Current plan",
+    "selectPlan": "Select",
+    "invoicesTitle": "Invoices",
+    "invoicesEmpty": "No invoices yet."
+  },
+  "copilot": {
+    "title": "Copilot",
+    "openButton": "Open copilot",
+    "newConversation": "New conversation",
+    "history": "History",
+    "historyEmpty": "No conversations yet.",
+    "emptyState": "Ask me anything about how to use the app.",
+    "placeholder": "Type a message…",
+    "send": "Send",
+    "sending": "Sending…",
+    "notConfigured": "Connect the script-generation provider's API key in Settings to use the copilot.",
+    "adminNotConfigured": "The internal copilot isn't configured yet — set PLATFORM_COPILOT_API_KEY in the backend environment.",
+    "error": "Something went wrong. Please try again.",
+    "fieldHelpTooltip": "Ask the copilot about this field"
+  }
+}

@@ -1,0 +1,31 @@
+api:
+  dashboard: true
+  insecure: true
+
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+
+log:
+  level: INFO
+
+# Wildcard TLS (*.BASE_DOMAIN) requires an ACME DNS-01 challenge — HTTP-01
+# only proves control of a single host, not a wildcard. DNS-01 needs the
+# chosen DNS provider's API configured here. Left commented out until
+# DNS_PROVIDER (see backend/src/domainConfig.ts / .env) is decided — the app
+# runs over plain HTTP locally and in this repo without it.
+#
+# certificatesResolvers:
+#   dnsChallenge:
+#     acme:
+#       email: admin@example.com
+#       storage: /etc/traefik/acme.json
+#       dnsChallenge:
+#         # provider: cloudflare | route53 | ...  (matches DNS_PROVIDER)
+#         # provider-specific credentials are passed as env vars to the
+#         # traefik container, e.g. CF_DNS_API_TOKEN for Cloudflare.
+#         provider: ""

@@ -1,0 +1,73 @@
+# Known limitation: the Traefik dashboard's own frontend calls its API at an
+# absolute "/api/*" path (not relative to /traefik), which collides with the
+# "backend" router below. The dashboard shell loads at /traefik/dashboard/,
+# but its live data panels won't populate since those calls are intercepted
+# by our backend instead of api@internal. This is dev-only tooling; fixing it
+# would require moving the dashboard to its own port, which conflicts with
+# the single-port path-based routing this app otherwise uses.
+http:
+  routers:
+    dashboard:
+      rule: "PathPrefix(`/traefik`)"
+      entryPoints:
+        - web
+      service: api@internal
+      middlewares:
+        - dashboard-stripprefix
+      priority: 100
+
+    # Host is matched explicitly (root BASE_DOMAIN or any *.BASE_DOMAIN
+    # subdomain) rather than left unconstrained, so every tenant's subdomain
+    # is served by these same two routers without touching Traefik on every
+    # signup — and so the Host rule is already in place once wildcard TLS
+    # (ACME DNS-01, see traefik.yml) gets configured for the real domain.
+    # BASE_DOMAIN comes from the environment (see backend/src/domainConfig.ts
+    # for the single source of truth) — Traefik's file provider parses this
+    # file as a Go template, so {{env "BASE_DOMAIN"}} is never hardcoded here.
+    backend:
+      rule: "(Host(`{{env "BASE_DOMAIN"}}`) || HostRegexp(`^[a-z0-9-]+\\.{{env "BASE_DOMAIN"}}$`)) && PathPrefix(`/api`)"
+      entryPoints:
+        - web
+      service: backend
+      middlewares:
+        - backend-stripprefix
+      priority: 10
+
+    # Serves uploaded files directly from the backend's @fastify/static mount
+    # (prefix "/uploads/", see backend/src/app.ts) — no stripPrefix here,
+    # unlike the "backend" router above, since the backend's own route
+    # prefix already matches this path as-is.
+    uploads:
+      rule: "(Host(`{{env "BASE_DOMAIN"}}`) || HostRegexp(`^[a-z0-9-]+\\.{{env "BASE_DOMAIN"}}$`)) && PathPrefix(`/uploads`)"
+      entryPoints:
+        - web
+      service: backend
+      priority: 10
+
+    frontend:
+      rule: "(Host(`{{env "BASE_DOMAIN"}}`) || HostRegexp(`^[a-z0-9-]+\\.{{env "BASE_DOMAIN"}}$`)) && PathPrefix(`/`)"
+      entryPoints:
+        - web
+      service: frontend
+      priority: 1
+
+  middlewares:
+    backend-stripprefix:
+      stripPrefix:
+        prefixes:
+          - /api
+    dashboard-stripprefix:
+      stripPrefix:
+        prefixes:
+          - /traefik
+
+  services:
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:4000"
+
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:5173"

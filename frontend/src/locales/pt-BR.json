@@ -1,0 +1,511 @@
+{
+  "common": {
+    "appName": "eckko.ai",
+    "logOut": "Sair",
+    "back": "Voltar",
+    "next": "Avançar",
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "yes": "Sim",
+    "no": "Não",
+    "status": {
+      "queued": "na fila",
+      "processing": "processando",
+      "ready": "pronto",
+      "indexed": "indexado",
+      "error": "erro",
+      "connected": "conectado",
+      "disconnected": "desconectado"
+    }
+  },
+  "header": {
+    "theme": {
+      "light": "Tema claro",
+      "dark": "Tema escuro",
+      "system": "Seguir sistema"
+    },
+    "notifications": "Notificações",
+    "notificationsTooltip": "Notificações — avisos quando vídeos ou documentos ficam prontos",
+    "notificationsEmpty": "Nenhuma notificação ainda.",
+    "jobs": "Processos em andamento",
+    "jobsTooltip": "Processos em andamento — acompanhe vídeos e documentos sendo gerados",
+    "jobsEmpty": "Nada em processamento no momento.",
+    "languagePtBR": "Mudar para português",
+    "languageEn": "Switch to English"
+  },
+  "nav": {
+    "dashboard": "Painel",
+    "createVideo": "Criar vídeo",
+    "content": "Conteúdo",
+    "settings": "Configurações",
+    "mySubscription": "Minha Assinatura",
+    "rag": "Base de conhecimento (RAG)"
+  },
+  "landing": {
+    "nav": {
+      "howItWorks": "Como funciona",
+      "features": "Recursos",
+      "pricing": "Planos",
+      "faq": "Perguntas frequentes",
+      "login": "Entrar",
+      "cta": "Começar grátis"
+    },
+    "hero": {
+      "headline": "Crie vídeos com o seu avatar digital em minutos!",
+      "subtitle": "Envie uma foto e um roteiro — o eckko.ai treina seu avatar, clona sua voz e gera o vídeo final, sem equipe de produção.",
+      "cta": "Começar grátis"
+    },
+    "problemSolution": {
+      "title": "Gravar vídeo toda semana não escala",
+      "body": "Contratar estúdio, agendar gravação e editar cada vídeo consome um tempo que a maioria dos times não tem. O eckko.ai treina um avatar digital seu uma única vez e gera quantos vídeos você precisar a partir de um roteiro — sem câmera, sem estúdio, sem edição manual."
+    },
+    "howItWorks": {
+      "title": "Como funciona",
+      "steps": [
+        { "title": "Configure seu avatar", "desc": "Envie fotos e um vídeo curto de referência — o eckko.ai clona sua aparência e sua voz uma única vez." },
+        { "title": "Escreva o roteiro", "desc": "Escreva do zero ou peça pro copiloto de IA rascunhar o texto que o avatar vai falar." },
+        { "title": "Escolha cenário e traje", "desc": "Descreva em texto ou envie uma imagem de referência do ambiente e da roupa." },
+        { "title": "Gere o vídeo", "desc": "Em poucos minutos, seu vídeo final fica pronto para baixar." }
+      ]
+    },
+    "features": {
+      "title": "Tudo o que você precisa pra escalar vídeo",
+      "items": [
+        { "title": "Avatar realista", "desc": "Clone de aparência e voz a partir de fotos e uma gravação de referência." },
+        { "title": "Knowledge & media", "desc": "Documentos e imagens da sua empresa indexados pra alimentar roteiros com contexto real do seu negócio." },
+        { "title": "Copiloto de IA", "desc": "Assistente dentro do app pra tirar dúvidas sobre o produto e ajudar a escrever roteiros." }
+      ]
+    },
+    "pricing": {
+      "title": "Planos",
+      "subtitle": "Comece grátis, mude de plano quando precisar.",
+      "free": "Grátis",
+      "perMonth": "/mês",
+      "videosPerMonth": "{{count}} vídeos por mês",
+      "storageDrive": "Armazenamento: seu Google Drive",
+      "storageHosted": "Armazenamento: hospedado pela eckko.ai",
+      "cta": "Começar grátis",
+      "loading": "Carregando planos…"
+    },
+    "faq": {
+      "title": "Perguntas frequentes",
+      "items": [
+        { "q": "Preciso saber gravar ou editar vídeo?", "a": "Não. Você grava a referência do seu avatar uma única vez; depois disso, gerar um novo vídeo é só escrever (ou gerar com IA) um roteiro." },
+        { "q": "Meus dados ficam isolados dos de outros clientes?", "a": "Sim. Cada conta é isolada por tenant — avatares, vídeos, documentos e credenciais de um cliente nunca aparecem para outro." },
+        { "q": "Preciso conectar minha própria chave de IA?", "a": "Sim, para gerar vídeos de verdade. O eckko.ai usa o modelo BYOK: você conecta suas próprias chaves dos provedores de avatar, voz e roteiro em Configurações." },
+        { "q": "Onde ficam armazenados os arquivos que eu envio?", "a": "Você escolhe entre manter os arquivos no seu próprio Google Drive ou hospedados pela eckko.ai, dependendo do plano." },
+        { "q": "Posso testar antes de pagar?", "a": "Sim, o plano Free permite criar sua conta e explorar o produto sem custo." }
+      ]
+    },
+    "finalCta": {
+      "title": "Pronto pra criar seu primeiro vídeo?",
+      "subtitle": "Leva menos de 2 minutos pra criar sua conta.",
+      "cta": "Começar grátis"
+    },
+    "footer": {
+      "rights": "Todos os direitos reservados.",
+      "contactWhatsapp": "Fale conosco no WhatsApp",
+      "whatsappMessage": "Olá! Tenho uma dúvida sobre o eckko.ai."
+    },
+    "copilot": {
+      "openButton": "Abrir copiloto de demonstração",
+      "title": "Copiloto eckko.ai (demo)",
+      "emptyState": "Pergunte qualquer coisa sobre como o eckko.ai funciona.",
+      "placeholder": "Digite uma mensagem…",
+      "send": "Enviar",
+      "sending": "Enviando…",
+      "notConfigured": "O copiloto de demonstração ainda não está configurado.",
+      "error": "Algo deu errado. Tente novamente.",
+      "rateLimited": "Muitas mensagens em pouco tempo. Tente novamente em alguns minutos."
+    }
+  },
+  "login": {
+    "emailLabel": "Email",
+    "emailHelp": "O endereço com o qual você foi convidado.",
+    "passwordLabel": "Senha",
+    "passwordHelp": "Diferencia maiúsculas de minúsculas.",
+    "signIn": "Entrar",
+    "signingIn": "Entrando…",
+    "error": "Email ou senha inválidos.",
+    "noAccount": "Ainda não tem conta?",
+    "signUp": "Cadastre-se"
+  },
+  "signup": {
+    "emailLabel": "Email",
+    "passwordLabel": "Senha",
+    "passwordHelp": "Mínimo de 8 caracteres.",
+    "signUp": "Criar conta",
+    "signingUp": "Criando conta…",
+    "error": "Não foi possível criar a conta. Tente novamente.",
+    "hasAccount": "Já tem conta?",
+    "signIn": "Entrar"
+  },
+  "adminPanel": {
+    "title": "Painel admin",
+    "subtitle": "Conectado como {{name}}",
+    "loading": "Carregando…",
+    "backToList": "← Voltar para a lista",
+    "colTenant": "Tenant",
+    "colPlan": "Plano",
+    "colStatus": "Status",
+    "colConnected": "Provedores conectados",
+    "colCreated": "Criado em",
+    "manage": "Gerenciar",
+    "noneConnected": "Nenhum",
+    "suspend": "Suspender",
+    "reactivate": "Reativar",
+    "tenantStatus": {
+      "active": "Ativo",
+      "suspended": "Suspenso"
+    },
+    "provider": {
+      "avatar": "Avatar",
+      "voice": "Voz",
+      "script": "Roteiro"
+    },
+    "plan": {
+      "free": "Free",
+      "pro": "Pro",
+      "business": "Business"
+    },
+    "navTenants": "Tenants",
+    "navCostRates": "Taxas de custo",
+    "navPlans": "Planos",
+    "plans": {
+      "title": "Planos",
+      "subtitle": "Editáveis em tempo real — o tenant vê o resultado assim que recarregar a tela de Minha Assinatura, sem precisar de deploy.",
+      "colId": "ID",
+      "colName": "Nome",
+      "colPrice": "Preço (centavos)",
+      "colLimit": "Limite de vídeos/mês",
+      "colScriptLimit": "Limite de roteiros/mês",
+      "colAvatarLimit": "Limite de avatares/mês",
+      "colFeatures": "Recursos (um por linha)",
+      "colActive": "Ativo",
+      "newPlan": "Novo plano",
+      "idHelp": "Identificador estável, minúsculo, só letras/números/hífen — não dá pra mudar depois.",
+      "create": "Criar plano",
+      "createError": "Não foi possível criar o plano. Confira se o ID já existe."
+    },
+    "usage": {
+      "title": "Custo por provedor",
+      "estimatedBanner": "Estimativa — taxas ainda não conferidas contra o preço real do provedor. Não trate como custo real.",
+      "verifiedBanner": "Taxas conferidas — valores abaixo refletem as taxas confirmadas pelo admin.",
+      "empty": "Nenhum uso registrado ainda.",
+      "colProvider": "Provedor",
+      "colVendor": "Vendor",
+      "colUnitType": "Unidade",
+      "colUnits": "Total de unidades",
+      "colCost": "Custo estimado",
+      "colVerified": "Conferido",
+      "total": "Total"
+    },
+    "unitType": {
+      "seconds": "Segundos",
+      "characters": "Caracteres",
+      "tokens_in": "Tokens (entrada)",
+      "tokens_out": "Tokens (saída)"
+    },
+    "costRates": {
+      "title": "Taxas de custo por provedor",
+      "subtitle": "Valores usados para estimar o custo real por chamada de provedor. Marque \"conferido\" só depois de validar contra o preço público de verdade do vendor.",
+      "colProvider": "Provedor",
+      "colVendor": "Vendor",
+      "colUnitType": "Unidade",
+      "colCostPerUnit": "Custo por unidade (centavos)",
+      "colVerified": "Conferido",
+      "save": "Salvar"
+    }
+  },
+  "dashboard": {
+    "title": "Painel",
+    "subtitle": "Visão geral do seu uso, fila de geração e vídeos recentes.",
+    "createVideo": "Criar vídeo",
+    "creditsRemaining": "Créditos restantes",
+    "creditsNotConnected": "Ainda não conectado a um provedor de cobrança",
+    "videosThisMonth": "Vídeos este mês",
+    "videosThisMonthSub": "Em todos os avatares",
+    "estimatedCost": "Custo estimado",
+    "estimatedCostSub": "Rastreamento de custo em breve",
+    "savedAvatars": "Avatares salvos",
+    "savedAvatarsSub": "Prontos para reutilizar",
+    "generationQueue": "Fila de geração",
+    "queueEmpty": "Nada sendo gerado no momento.",
+    "recentVideos": "Vídeos recentes",
+    "videosEmptyPrefix": "Nenhum vídeo ainda.",
+    "videosEmptyLink": "Crie o primeiro",
+    "avatarsEmptyPrefix": "Nenhum avatar salvo ainda.",
+    "avatarsEmptyLink": "Configure um"
+  },
+  "content": {
+    "title": "Conteúdo",
+    "subtitle": "Gerencie avatares salvos e navegue pela biblioteca de vídeos.",
+    "tabAvatars": "Avatares",
+    "tabVideos": "Biblioteca de vídeos",
+    "avatarsEmptyPrefix": "Nenhum avatar salvo ainda.",
+    "avatarsEmptyLink": "Configure um",
+    "videosEmptyPrefix": "Nenhum vídeo ainda.",
+    "videosEmptyLink": "Crie o primeiro",
+    "colName": "Nome",
+    "colVoice": "Voz",
+    "colCreated": "Criado em",
+    "colScript": "Roteiro",
+    "colDuration": "Duração",
+    "colStatus": "Status",
+    "retrain": "Retreinar",
+    "download": "Baixar"
+  },
+  "settings": {
+    "title": "Configurações",
+    "subtitle": "Conecte os provedores que geram avatares, clonam vozes e escrevem roteiros.",
+    "avatarProviderTitle": "Provedor de avatar / vídeo",
+    "avatarProviderDesc": "Gera o vídeo final do avatar.",
+    "voiceProviderTitle": "Provedor de clonagem de voz",
+    "voiceProviderDesc": "Clona a voz do avatar a partir da sua gravação de referência.",
+    "scriptProviderTitle": "Provedor de IA para geração de roteiro",
+    "scriptProviderDesc": "Gera um rascunho de roteiro a partir de um prompt.",
+    "vendorLabel": "Provedor",
+    "vendorHelpPrompt": "Explique o que é o campo 'Provedor' nesta tela, por que ele aparece desabilitado (somente leitura) e quem gerencia essa configuração hoje.",
+    "vendor": {
+      "anthropic": {
+        "label": "Anthropic",
+        "keyLabel": "Chave de API da Anthropic",
+        "keyPlaceholder": "sk-ant-...",
+        "help": "Gerada em console.anthropic.com. Colada uma vez e armazenada criptografada — nunca exibida por completo novamente."
+      },
+      "gemini": {
+        "label": "Gemini (Google AI Studio)",
+        "keyLabel": "Chave de API do Gemini",
+        "keyPlaceholder": "AIza...",
+        "help": "Gerada no Google AI Studio (aistudio.google.com). Colada uma vez e armazenada criptografada — nunca exibida por completo novamente."
+      },
+      "openai": {
+        "label": "OpenAI",
+        "keyLabel": "Chave de API da OpenAI",
+        "keyPlaceholder": "sk-...",
+        "help": "Gerada em platform.openai.com/api-keys. Colada uma vez e armazenada criptografada — nunca exibida por completo novamente."
+      },
+      "elevenlabs": {
+        "label": "ElevenLabs",
+        "keyLabel": "Chave de API da ElevenLabs",
+        "keyPlaceholder": "sk_...",
+        "help": "Gerada em elevenlabs.io/app/settings/api-keys. Usada pra clonar a voz a partir do vídeo de referência e gerar a fala do roteiro."
+      },
+      "heygen": {
+        "label": "HeyGen",
+        "keyLabel": "Chave de API da HeyGen",
+        "keyPlaceholder": "Cole a chave de API",
+        "help": "Gerada em app.heygen.com/settings/api. Usada pra treinar o avatar de foto e gerar o vídeo final."
+      },
+      "did": {
+        "label": "D-ID",
+        "keyLabel": "Chave de API da D-ID",
+        "keyPlaceholder": "Cole a chave de API",
+        "help": "Gerada em studio.d-id.com/account-settings. Usada pra treinar o avatar de foto e gerar o vídeo final."
+      }
+    },
+    "apiKeyLabel": "Chave de API",
+    "apiKeyHelp": "Colada uma vez e armazenada criptografada — nunca exibida por completo novamente.",
+    "apiKeyCurrentHint": "(atual: ••••{{lastFour}})",
+    "apiKeyPlaceholder": "Cole a chave de API",
+    "saving": "Salvando…",
+    "testConnection": "Testar conexão",
+    "testing": "Testando…",
+    "testOk": "Conexão OK",
+    "testFailed": "Falha na conexão",
+    "managedByPlatform": "Gerenciado pela plataforma. Fale com o suporte para alterar.",
+    "storageTitle": "Armazenamento",
+    "storageProviderTitle": "Onde seus arquivos ficam salvos",
+    "storageProviderDesc": "Escolha entre manter os arquivos enviados (fotos, vídeos, documentos) no seu próprio Google Drive ou hospedados pela eckko.ai.",
+    "storageProviderOptions": {
+      "drive": "Google Drive",
+      "platform_hosted": "Hospedado pela plataforma"
+    }
+  },
+  "createVideo": {
+    "title": "Criar vídeo",
+    "subtitle": "Configure um avatar, escreva um roteiro e gere um vídeo.",
+    "steps": {
+      "avatarSetup": "Configurar avatar",
+      "script": "Roteiro",
+      "assets": "Recursos",
+      "duration": "Duração",
+      "generate": "Gerar"
+    },
+    "avatarSetup": {
+      "scopeNote": "Esta tela configura seu avatar reutilizável (fotos, vídeo de referência e voz) — não é aqui que você personaliza cenário, traje ou roteiro para este vídeo específico. Isso é feito nos próximos passos. Escolha um fundo e ajuste a intensidade para destacar melhor o rosto, conforme a luz do ambiente e a roupa usada.",
+      "yourAvatars": "Seus avatares",
+      "noAvatarsYet": "Nenhum avatar salvo ainda. Configure um avatar uma vez e reutilize-o em todos os vídeos.",
+      "photosVoiceStatus": "{{count}}/3 fotos · {{voiceStatus}}",
+      "voiceReady": "voz pronta",
+      "voiceNotReady": "voz ainda não configurada",
+      "avatarTrained": "Avatar treinado",
+      "avatarPending": "Treino pendente",
+      "voiceCloned": "Voz clonada",
+      "voicePending": "Clonagem pendente",
+      "newAvatarButton": "+ Configurar novo avatar",
+      "newAvatarTitle": "Configurar um novo avatar",
+      "nameLabel": "Nome do avatar",
+      "nameHelp": "Um rótulo curto para reconhecer este avatar depois, ex.: o nome ou o papel do apresentador.",
+      "nameHelpPrompt": "Explique o que é o campo 'Nome do avatar' nesta tela e como escolher um bom nome.",
+      "namePlaceholder": "ex.: Âncora de notícias",
+      "startCapture": "Iniciar captura",
+      "cameraPreview": "Pré-visualização da câmera",
+      "facePhotos": "Fotos do rosto ({{count}}/3)",
+      "slotFront": "Frente",
+      "slotRight": "Lado direito",
+      "slotLeft": "Lado esquerdo",
+      "capture": "Capturar",
+      "referenceVideoTitle": "Vídeo de referência e voz",
+      "referenceSaved": "Vídeo de referência salvo.",
+      "recordWithCamera": "Gravar com a câmera",
+      "stopRecording": "Parar gravação",
+      "saveRecording": "Salvar gravação",
+      "orUploadFile": "Ou envie um arquivo",
+      "scenarioTitle": "Cenário padrão",
+      "scenarioHelp": "Onde o avatar aparece.",
+      "scenarioPromptHelp": "Descreva o cenário em texto para a IA usar como referência.",
+      "scenarioHelpPrompt": "Explique o que é o campo 'Cenário' nesta tela, para que serve e como preenchê-lo corretamente (tanto a opção de enviar imagem quanto a de gerar via IA).",
+      "scenarioPlaceholder": "ex.: Estúdio de telejornal moderno",
+      "outfitTitle": "Traje padrão",
+      "outfitHelp": "O que o avatar veste.",
+      "outfitPromptHelp": "Descreva o traje em texto para a IA usar como referência.",
+      "outfitHelpPrompt": "Explique o que é o campo 'Traje' nesta tela, para que serve e como preenchê-lo corretamente (tanto a opção de enviar imagem quanto a de gerar via IA).",
+      "outfitPlaceholder": "ex.: Terno azul-marinho",
+      "uploadImageLabel": "Enviar imagem de referência",
+      "generateViaAiLabel": "Gerar via IA",
+      "imageSaved": "Imagem salva.",
+      "finishSetup": "Concluir configuração",
+      "background": {
+        "label": "Fundo virtual",
+        "help": "Aplicado ao vivo nas fotos e no vídeo de referência — ajuda o rosto a se destacar do ambiente.",
+        "unavailable": "Segmentação indisponível neste navegador — só a câmera original funciona.",
+        "none": "Nenhum",
+        "white": "Branco",
+        "lightGray": "Cinza claro",
+        "darkGray": "Cinza escuro",
+        "chromaGreen": "Verde (chroma)",
+        "intensityLabel": "Intensidade",
+        "intensityHelp": "Quanto o fundo é substituído — útil pra suavizar bordas em ambientes mal iluminados."
+      },
+      "imageQuality": {
+        "label": "Qualidade da imagem",
+        "help": "Aplicado ao vivo nas fotos e no vídeo de referência — corrige exposição, contraste, nitidez e ruído.",
+        "auto": "Automático",
+        "manual": "Manual",
+        "brightness": "Brilho",
+        "contrast": "Contraste",
+        "sharpness": "Nitidez",
+        "denoise": "Redução de ruído"
+      },
+      "audioTreatment": {
+        "title": "Tratamento de áudio da voz",
+        "help": "Limpa e normaliza a voz clonada deste avatar antes de cada geração futura de vídeo — redução de ruído mais normalização de volume para o alvo abaixo.",
+        "enabled": "Ativado",
+        "disabled": "Desativado",
+        "targetLufsLabel": "Volume alvo",
+        "targetLufsHelp": "Mais alto (perto de -6) soa mais impactante; mais baixo (perto de -24) soa mais natural. -16 LUFS é um padrão comum pra streaming."
+      }
+    },
+    "script": {
+      "title": "Roteiro",
+      "scriptLabel": "Roteiro do vídeo",
+      "scriptHelp": "O que o avatar vai ler em voz alta, palavra por palavra.",
+      "scriptHelpPrompt": "Explique o que é o campo 'Roteiro do vídeo' nesta tela e como escrever um bom roteiro para o avatar falar (tamanho ideal para a duração escolhida, o que evitar, como soa quando narrado em voz alta).",
+      "scriptPlaceholder": "Escreva ou cole o roteiro que seu avatar vai ler…",
+      "promptLabel": "Gerar com IA (opcional)",
+      "promptHelp": "Descreva o vídeo em uma frase e deixe a IA rascunhar um roteiro.",
+      "promptHelpPrompt": "Explique o que é o campo 'Gerar com IA' do roteiro nesta tela e como escrever um bom prompt para obter um roteiro melhor.",
+      "promptPlaceholder": "ex.: notícia de 30 segundos sobre um lançamento tecnológico local",
+      "generate": "Gerar com IA",
+      "generating": "Gerando…"
+    },
+    "assets": {
+      "title": "Escolha os recursos para este vídeo",
+      "avatarLabel": "Avatar",
+      "avatarHelp": "Usa por padrão o avatar configurado, editável por vídeo.",
+      "avatarHelpPrompt": "Explique o que é o campo 'Avatar' nesta tela, de onde vem o valor pré-selecionado (o padrão definido no passo 1) e o que acontece se eu trocar o avatar só para este vídeo específico.",
+      "selectAvatar": "Selecione um avatar",
+      "uploadImageLabel": "Enviar imagem de referência",
+      "imageSaved": "Imagem salva.",
+      "scenarioLabel": "Cenário (gerar via IA)",
+      "scenarioHelp": "Usa por padrão o cenário salvo do avatar, editável por vídeo.",
+      "scenarioPlaceholder": "ex.: Estúdio de telejornal moderno",
+      "outfitLabel": "Traje (gerar via IA)",
+      "outfitHelp": "Usa por padrão o traje salvo do avatar, editável por vídeo.",
+      "outfitPlaceholder": "ex.: Terno azul-marinho"
+    },
+    "duration": {
+      "title": "Duração"
+    },
+    "generate": {
+      "title": "Gerar e revisar",
+      "generateButton": "Gerar vídeo",
+      "submitting": "Enviando…",
+      "download": "Baixar",
+      "failed": "Falha na geração. Tente novamente."
+    }
+  },
+  "knowledge": {
+    "delete": "Excluir",
+    "confirmDelete": "Excluir \"{{name}}\"? Essa ação não pode ser desfeita.",
+    "documents": {
+      "title": "Documentos",
+      "description": "Envie arquivos .docx, .xlsx ou .pdf. O texto é extraído e vetorizado para busca semântica, usada pelo assistente de roteiro.",
+      "upload": "Enviar documento",
+      "uploading": "Enviando…",
+      "empty": "Nenhum documento enviado ainda.",
+      "colName": "Nome",
+      "colStatus": "Status",
+      "colCreated": "Enviado em"
+    },
+    "referenceImages": {
+      "title": "Imagens de referência",
+      "description": "Material de referência geral do cliente — catálogos, fotografia de marca, referências de estilo — apenas para consulta humana. Não é indexado para busca, e é separado das imagens de cenário/traje usadas em Criar vídeo.",
+      "upload": "Enviar imagem",
+      "uploading": "Enviando…",
+      "empty": "Nenhuma imagem de referência enviada ainda."
+    }
+  },
+  "rag": {
+    "title": "Base de conhecimento (RAG)",
+    "subtitle": "Envie documentos e imagens de referência do seu negócio para alimentar o copiloto de roteiro e a busca semântica."
+  },
+  "subscription": {
+    "title": "Minha Assinatura",
+    "subtitle": "Perfil da empresa, plano, uso e pagamento.",
+    "checkoutSuccess": "Assinatura confirmada! Pode levar alguns segundos para o plano atualizar aqui.",
+    "checkoutCancelled": "Checkout cancelado — seu plano não mudou.",
+    "completeProfileTitle": "Complete seu perfil",
+    "completeProfileDesc": "Falta só o nome da sua empresa para terminar a configuração da conta.",
+    "companyNameLabel": "Nome da empresa",
+    "saving": "Salvando…",
+    "currentPlanTitle": "Plano atual",
+    "usageLabel": "{{used}}/{{limit}} vídeos este mês",
+    "paymentMethodTitle": "Forma de pagamento",
+    "noPaymentMethod": "Nenhum cartão salvo ainda.",
+    "cardNumberPlaceholder": "Número do cartão",
+    "updateCard": "Atualizar cartão",
+    "plansTitle": "Planos",
+    "free": "Grátis",
+    "currentPlanBadge": "Plano atual",
+    "selectPlan": "Selecionar",
+    "invoicesTitle": "Faturas",
+    "invoicesEmpty": "Nenhuma fatura ainda."
+  },
+  "copilot": {
+    "title": "Copiloto",
+    "openButton": "Abrir copiloto",
+    "newConversation": "Nova conversa",
+    "history": "Histórico",
+    "historyEmpty": "Nenhuma conversa ainda.",
+    "emptyState": "Pergunte qualquer coisa sobre como usar o app.",
+    "placeholder": "Digite uma mensagem…",
+    "send": "Enviar",
+    "sending": "Enviando…",
+    "notConfigured": "Conecte a chave de API do provedor de roteiro em Configurações para usar o copiloto.",
+    "adminNotConfigured": "O copiloto interno ainda não está configurado — defina PLATFORM_COPILOT_API_KEY no ambiente do backend.",
+    "error": "Algo deu errado. Tente novamente.",
+    "fieldHelpTooltip": "Perguntar ao copiloto sobre este campo"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "video-avatar-studio",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up"],
+      "port": 8090
+    },
+    {
+      "name": "eckko-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "-y",
+        "serve",
+        "-l",
+        "8878",
+        "C:\\Users\\manfr\\Documents\\1A_A_PROJETOS\\AVATAR VIDEO MÓDULO\\TWINAI"
+      ],
+      "port": 8878
+    }
+  ]
+}
