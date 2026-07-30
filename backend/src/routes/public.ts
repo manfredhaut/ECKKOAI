@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
 import { getAllPlans } from "../plans.js";
-import { loadDocsContent } from "../services/docs.js";
+import { loadPublicDocsContent } from "../services/docs.js";
 import { askCopilot, CopilotProviderError } from "../services/providers/copilotProvider.js";
 
 const RATE_LIMIT_MAX = 10;
@@ -45,7 +45,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "History is required" });
       }
 
-      const docsContent = await loadDocsContent();
+      const docsContent = await loadPublicDocsContent();
       try {
         const replyText = await askCopilot({
           apiKey: config.platformCopilotApiKey,

@@ -22,17 +22,37 @@ são conhecimento operacional sobre o app em si.
 - [screens/minha-assinatura.md](screens/minha-assinatura.md) — perfil da empresa, plano, uso e pagamento
 - [faq.md](faq.md) — perguntas frequentes
 
+## Quem enxerga cada arquivo
+
+A exposição de cada arquivo desta pasta é decidida por uma **allowlist
+explícita** em
+[backend/src/services/docsManifest.ts](../backend/src/services/docsManifest.ts),
+com três níveis cumulativos:
+
+| Nível | Quem lê |
+|---|---|
+| `public` | copiloto da landing (visitante anônimo), copiloto do tenant e do admin |
+| `tenant` | copiloto do tenant e do admin |
+| `admin` | só o copiloto do admin |
+
+**Um arquivo que não está no manifesto não chega a nenhum copiloto** — nem ao
+do admin. Criar o arquivo não publica nada; alguém precisa classificá-lo no
+manifesto. Se um `.md` desta pasta não estiver listado, o backend registra um
+aviso no log ao carregar a documentação pela primeira vez.
+
+Antes disso a regra era o inverso: varria-se `docs/**/*.md` e excluía-se
+apenas `docs/admin/`. Excluir o que é secreto falha aberto para qualquer
+arquivo novo — foi assim que [setup.md](setup.md), que descreve variáveis de
+ambiente e o funcionamento da sessão, acabou dentro do prompt do copiloto
+público. Incluir o que é público falha fechado.
+
 ## Pasta `admin/`
 
 [admin/](admin/) é conteúdo **interno**, sobre o próprio painel
 administrativo da plataforma (`/admin`) — não é sobre nenhuma tela que um
-tenant vê. `loadDocsContent()` ([services/docs.ts](../backend/src/services/docs.ts))
-exclui essa pasta de propósito: o copiloto do tenant e o demo público
-**nunca** recebem esse conteúdo. Só o copiloto do admin
-([routes/adminCopilot.ts](../backend/src/routes/adminCopilot.ts)), via
-`loadAdminDocsContent()`, lê os arquivos daqui (além de todo o resto desta
-pasta). Ao adicionar um novo arquivo aqui, ele já fica automaticamente
-restrito — não precisa registrar em nenhuma lista separada.
+tenant vê. Todos os arquivos daqui são classificados como `admin` no
+manifesto, e só o copiloto do admin
+([routes/adminCopilot.ts](../backend/src/routes/adminCopilot.ts)) os recebe.
 
 - [admin/admin-tenants.md](admin/admin-tenants.md) — lista/detalhe de tenants, credenciais, suspensão, uso e custo
 - [admin/admin-taxas-de-custo.md](admin/admin-taxas-de-custo.md) — tabela de taxas usada pra estimar custo

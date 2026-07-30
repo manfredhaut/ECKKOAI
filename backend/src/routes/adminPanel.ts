@@ -200,10 +200,16 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
           // de raciocínio e devolvem HTTP 200 sem nenhuma parte de texto, o
           // que o providerRegistry (corretamente) trata como erro — com 5
           // tokens isso dava um falso negativo em chave boa.
+          //
+          // Com 64 ainda era cara-ou-coroa: quatro sondagens contra a chave
+          // real do Gemini gastaram 59–61 tokens só de `thoughtsTokenCount`
+          // e duas voltaram sem texto. 256 põe o teto bem acima desse piso
+          // em vez de encostado nele. O custo de um ping continua desprezível
+          // — o modelo para na primeira palavra da resposta, não no teto.
           await complete(vendor as ScriptVendor, {
             apiKey,
             messages: [{ role: "user", content: "ping" }],
-            maxTokens: 64,
+            maxTokens: 256,
           });
         }
         result = { ok: true, message: null };

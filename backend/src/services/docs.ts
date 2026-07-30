@@ -1,26 +1,29 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
+import { audienceAllows, DOCS_MANIFEST, type DocAudience } from "./docsManifest.js";
 
-// docs/admin/ holds internal-only content about the admin panel itself
-// (billing, cost rates, tenant suspension) — must never reach the
-// tenant/public copilot prompts (see routes/copilot.ts, routes/public.ts),
-// only the admin one (routes/adminCopilot.ts). Excluded by name, not by an
-// audience flag threaded through every caller, so a future doc author can't
-// accidentally leak it just by adding a file to the wrong folder — the
-// exclusion is a directory boundary, not a per-file decision.
-const ADMIN_ONLY_DIR = "admin";
+// Documentation is fed to the copilots' system prompt from an explicit
+// allowlist (services/docsManifest.ts), never from a directory sweep. A file
+// sitting in docs/ that nobody classified is invisible to every audience —
+// including the admin one — so a forgotten classification degrades into
+// "missing answer", not "leaked document".
+//
+// Cached per audience for the life of the process; docs only change on a
+// redeploy/restart.
+const cache = new Map<DocAudience, string>();
 
-let cachedGeneral: string | null = null;
-let cachedAdmin: string | null = null;
+// Files present on disk but absent from the manifest are reported once, at
+// first load, so an unclassified doc surfaces as a startup warning instead of
+// silently never being used.
+let driftReported = false;
 
-async function collectMarkdownFiles(dir: string, skipDirName?: string): Promise<string[]> {
+async function collectMarkdownFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      if (skipDirName && entry.name === skipDirName) continue;
-      files.push(...(await collectMarkdownFiles(path.join(dir, entry.name), skipDirName)));
+      files.push(...(await collectMarkdownFiles(path.join(dir, entry.name))));
     } else if (entry.name.endsWith(".md")) {
       files.push(path.join(dir, entry.name));
     }
@@ -28,31 +31,87 @@ async function collectMarkdownFiles(dir: string, skipDirName?: string): Promise<
   return files;
 }
 
-async function buildDocsContent(skipDirName?: string): Promise<string> {
-  const files = (await collectMarkdownFiles(config.docsDir, skipDirName)).sort();
-  const sections = await Promise.all(
-    files.map(async (file) => {
-      const content = await readFile(file, "utf-8");
-      const relativePath = path.relative(config.docsDir, file).replace(/\\/g, "/");
-      return `## ${relativePath}\n\n${content}`;
-    }),
-  );
+function toRelativeKey(absolutePath: string): string {
+  return path.relative(config.docsDir, absolutePath).replace(/\\/g, "/");
+}
+
+async function reportManifestDrift(): Promise<void> {
+  if (driftReported) return;
+  driftReported = true;
+
+  let onDisk: string[];
+  try {
+    onDisk = (await collectMarkdownFiles(config.docsDir)).map(toRelativeKey);
+  } catch {
+    return; // docs dir missing entirely — buildDocsContent already reports per-file
+  }
+
+  const unclassified = onDisk.filter((key) => !(key in DOCS_MANIFEST));
+  if (unclassified.length > 0) {
+    console.warn(
+      `[docs] ${unclassified.length} markdown file(s) in docs/ are not in DOCS_MANIFEST and will not reach any copilot: ${unclassified.join(", ")}`,
+    );
+  }
+
+  const missing = Object.keys(DOCS_MANIFEST).filter((key) => !onDisk.includes(key));
+  if (missing.length > 0) {
+    console.warn(
+      `[docs] ${missing.length} manifest entr(ies) have no file on disk: ${missing.join(", ")}`,
+    );
+  }
+}
+
+async function buildDocsContent(viewer: DocAudience): Promise<string> {
+  await reportManifestDrift();
+
+  const allowed = Object.entries(DOCS_MANIFEST)
+    .filter(([, docAudience]) => audienceAllows(viewer, docAudience))
+    .map(([relativePath]) => relativePath)
+    .sort();
+
+  const sections: string[] = [];
+  for (const relativePath of allowed) {
+    const absolutePath = path.resolve(config.docsDir, relativePath);
+
+    // The manifest is authored by us, but resolving it against docsDir and
+    // re-checking containment keeps a stray "../" from ever reading outside
+    // the docs tree.
+    const root = path.resolve(config.docsDir);
+    if (absolutePath !== root && !absolutePath.startsWith(root + path.sep)) {
+      console.warn(`[docs] manifest entry escapes docs dir, skipped: ${relativePath}`);
+      continue;
+    }
+
+    try {
+      const content = await readFile(absolutePath, "utf-8");
+      sections.push(`## ${relativePath}\n\n${content}`);
+    } catch {
+      console.warn(`[docs] manifest entry could not be read, skipped: ${relativePath}`);
+    }
+  }
+
   return sections.join("\n\n---\n\n");
 }
 
-// Loads every /docs markdown file EXCEPT docs/admin/ into a single string,
-// for the tenant and public copilots' system prompt. Cached in memory for
-// the life of the process — docs only change on a redeploy/restart.
-export async function loadDocsContent(): Promise<string> {
-  if (!cachedGeneral) cachedGeneral = await buildDocsContent(ADMIN_ONLY_DIR);
-  return cachedGeneral;
+export async function loadDocsFor(viewer: DocAudience): Promise<string> {
+  const cached = cache.get(viewer);
+  if (cached !== undefined) return cached;
+  const built = await buildDocsContent(viewer);
+  cache.set(viewer, built);
+  return built;
 }
 
-// Everything loadDocsContent() has, plus docs/admin/ — only ever passed to
-// the admin copilot (routes/adminCopilot.ts). An admin asking "how does the
-// wizard work" should still get a real answer, so this is additive on top
-// of the general docs, not a replacement for them.
+// Anonymous landing-page copilot (routes/public.ts). Public-level docs only.
+export async function loadPublicDocsContent(): Promise<string> {
+  return loadDocsFor("public");
+}
+
+// Authenticated tenant copilot (routes/copilot.ts). Public + tenant docs.
+export async function loadDocsContent(): Promise<string> {
+  return loadDocsFor("tenant");
+}
+
+// Internal admin copilot (routes/adminCopilot.ts). Everything.
 export async function loadAdminDocsContent(): Promise<string> {
-  if (!cachedAdmin) cachedAdmin = await buildDocsContent();
-  return cachedAdmin;
+  return loadDocsFor("admin");
 }
