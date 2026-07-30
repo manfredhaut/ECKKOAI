@@ -480,9 +480,148 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-07-30 — rotação de credenciais expostas +
-rodada de fechamento pré-demo (commit de ponto de retorno, dump do banco,
-bug conhecido do `/admin` registrado)
+**Última atualização:** 2026-07-30 — rodada de fechamento pré-demo
+completa (credenciais fixas de dev, desduplicação de e-mail, landing como
+porta única, cosméticos) + abertura da frente "copiloto como suporte real",
+parada no veredito de viabilidade do RAG
+
+---
+
+**ONDE PAROU (leia primeiro) — frente nova: copiloto do tenant como
+suporte real (doc + diagnóstico + RAG).** O plano tem 8 blocos; só o
+**Bloco 0 (viabilidade)** foi executado, e ele **reprovou o RAG** por
+falta de peça, não por bug:
+
+- `embeddingProvider.ts` é stub declarado — devolve `Math.random()` de
+  1536 dimensões. Similaridade sobre ruído não significa nada.
+- **Não existe nenhuma variável de ambiente de embedding** no projeto
+  (grep em `config.ts` e `.env.example`: zero).
+- **Não existe código de recuperação vetorial**: `generateEmbedding()` só
+  é chamado na ingestão ([routes/documents.ts](backend/src/routes/documents.ts));
+  nenhuma query no backend usa o operador `<=>` ou lê `document_chunks`.
+  O RAG falta nas duas pontas, não só numa.
+- `document_chunks.embedding` é `vector(1536)` — **compatível** com
+  `text-embedding-3-small` (OpenAI, 1536 nativo) e com
+  `gemini-embedding-001` (3072, truncável a 1536 via
+  `outputDimensionality`). A dimensão **não** é o bloqueio.
+- `documents` e `document_chunks` estão **zerados em todos os tenants** —
+  nada nunca foi indexado, então não há dívida de reindexação.
+
+**Copiloto do tenant funciona de verdade** — primeira resposta real de
+copiloto registrada neste arquivo (pergunta real, resposta real do Gemini
+em ~5s, via a BYOK do tenant `dev-c77a5b`; ele **não** usa a chave da
+plataforma). **Copiloto do admin continua sem nunca ter respondido**:
+`PLATFORM_COPILOT_API_KEY` está vazia.
+
+**Pegadinha registrada:** `askCopilot()` faz `vendor = input.vendor ??
+"anthropic"`, e `public.ts`/`adminCopilot.ts` não passam vendor. Ou seja,
+**a chave da plataforma tem que ser Anthropic**; colar uma chave Gemini ali
+manda ela para `api.anthropic.com` e dá 401. Para usar Gemini seria preciso
+uma variável tipo `PLATFORM_COPILOT_VENDOR` repassada nas duas rotas (~3
+linhas). Nada disso foi implementado.
+
+**Duas decisões pendentes do usuário para destravar a frente:** (1) qual
+chave vai em `PLATFORM_COPILOT_API_KEY` (Anthropic sem mudança, ou Gemini
+com a mudança de vendor); (2) qual provedor/modelo de embedding e de quem
+é a chave (plataforma, coerente com a migração BYOK→plataforma, ou BYOK do
+tenant). **Bloqueados** por isso: Bloco 3 (RAG) e Bloco 6 (isolamento entre
+tenants). **Livres para tocar já:** Bloco 1 (allowlist de `docs/` por
+visibilidade — que também fecha o vazamento descrito abaixo), Bloco 2
+(documentação do produto), Bloco 4 (diagnóstico por SQL escopado), Bloco 5
+(ajuda por campo) e Bloco 7 (teto de perguntas + truncagem de contexto).
+
+**Vazamento conhecido, ainda aberto:** `services/docs.ts` varre
+`docs/**/*.md` inteiro (pulando só `docs/admin/`) e injeta no system prompt
+do copiloto do tenant **e do copiloto público da landing**. Qualquer
+arquivo colocado em `docs/` vira legível por visitante anônimo. Foi por
+isso que `DEV-ACCESS.local.md` ficou na raiz do repo, não em `docs/`.
+
+---
+
+**O que foi feito (2026-07-30, rodada de fechamento pré-demo):**
+
+*Credenciais fixas de dev* — ver o bloco "Credenciais fixas de
+desenvolvimento" logo abaixo. Substituíram a rotação manual feita mais cedo
+no mesmo dia; as senhas antigas (inclusive as expostas em chat) estão
+inválidas, confirmado por `bcrypt.compare`.
+
+*Desduplicação de e-mail (dados, nenhum schema mudado).* 8 tenants tinham
+e-mail repetido entre si, o que tornava ambíguo o lookup sem escopo do
+`POST /login` no domínio raiz. Renomeados com plus-addressing que preserva
+entregabilidade (`manfredhaut+manfredhaut-3@gmail.com`), numa transação
+única, `UPDATE` por `tenant_id` com abort se alguma linha ≠ 1. **Nenhum
+tenant apagado**: `credit_ledger.tenant_id` é `ON DELETE CASCADE`, então
+excluir tenant destruiria ledger. Rastro em `audit_log`
+(`system.tenant_email_deduplicated`, slug + e-mail antigo + novo →
+reversível por leitura). Resultado: 17 usuários / 17 e-mails distintos.
+`users` já tinha `UNIQUE (tenant_id, email)`; um índice **global** foi
+avaliado e **descartado** (quebraria a mesma pessoa dona de vários tenants
+e o `/auth/signup` de e-mail repetido) — o conserto certo é de resolução,
+não de schema, e é o que a landing passou a fazer.
+
+*Landing como porta única de acesso (Fase A aprovada → Fase B entregue).*
+"Já tenho conta" agora **navega de verdade** para
+`dev-c77a5b.<BASE_DOMAIN>/login` em vez de postar do domínio raiz — a
+autenticação acontece no subdomínio, onde `resolveTenantFromHost` escopa a
+busca. Novo [AdminLoginModal.tsx](frontend/src/pages/Landing/AdminLoginModal.tsx):
+formulário próprio no rodapé, postando em `POST /admin/login` (que já
+existia, só-admin, rate limiter próprio) — **admin e tenant não
+compartilham formulário nem endpoint**. Depois do sucesso usa
+`window.location.assign('/admin')` (navegação real), o que contorna o bug
+do `AdminAuthProvider` sem tocar nele. Testado digitando no navegador:
+login pelo modal → painel, 2 telas + reload real, login de tenant pelo
+caminho novo, e **as duas zonas coexistindo em abas paralelas**
+(`admin/me` 200 **e** `auth/me` 200 ao mesmo tempo). Ressalva: `Sair` em
+qualquer zona chama `session.destroy()` e derruba as duas.
+
+*Teste das 3 chaves de provedor pelo botão "Testar conexão"* (tenant
+`dev-c77a5b`): **HeyGen OK, ElevenLabs OK, Gemini falha**. A falha é
+**falso negativo**, não chave ruim: o Google devolve HTTP 200, mas o ping
+usava `maxTokens: 5` e modelos com *thinking* gastam o orçamento inteiro
+na fase de raciocínio, voltando sem parte de texto — o que o
+`providerRegistry` (corretamente) trata como erro. Subido para 64 e
+**ainda insuficiente**: 4 sondagens com a chave real deram
+`finishReason: MAX_TOKENS` nas 4, com `thoughtsTokenCount` de 59–61 de 64
+— 2 devolveram texto, 2 não. Ou seja, hoje o teste é cara-ou-coroa. **Não
+corrigido além disso, a pedido**; a correção pendente é subir o teto bem
+acima do piso de ~60 tokens (256 dá folga). Descartada de propósito a
+alternativa de aceitar HTTP 200 como sucesso — deixaria chave revogada
+passar.
+
+*Cosméticos aplicados (só os de risco baixo e alta visibilidade):* os 3
+planos prometiam além do limite real (Free dizia 5 vídeos com limite 2;
+Pro 30 com 20; Business 100 com 50; Pro/Business ainda diziam "Avatares
+ilimitados" com limite 5 e 20) — corrigidos pelo `PUT /admin/plans/:id`,
+sem deploy. `WHATSAPP_NUMBER` esvaziada (era o placeholder
+`5511999999999`, um link real para número inexistente) — o botão some
+sozinho. FAQ da landing não manda mais conectar chave própria "em
+Configurações" (contradizia a migração para credencial da plataforma).
+Dados de teste do tenant de demo removidos (5 avatares e 4 vídeos,
+incluindo um cujo roteiro dizia "Meet TWINAI"), preservando "Mário" e os 2
+vídeos reais; conferido antes que **zero** linhas de `credit_ledger`,
+`provider_usage` ou `avatar_trainings` apontavam para eles, e o ledger
+segue com as mesmas 48 linhas.
+
+*Deixados de propósito para depois (diagnosticados, não corrigidos):*
+"6/2 vídeos este mês" na Minha Assinatura (contador por plano vs. saldo de
+crédito, que se contradizem na tela); moeda inconsistente (landing em
+`R$`, app em `$`); "CRÉDITOS RESTANTES —" no painel do tenant embora
+`tenant_credits` tenha saldo real; frase órfã sobre fundo virtual no passo
+1 do wizard; truncagem sem reticências na biblioteca; header quebrando
+abaixo de ~500px.
+
+*Gotchas de ambiente descobertos nesta rodada:* (1) `docker compose
+restart` **não** recarrega variável de ambiente — para `.env` novo tem que
+ser `docker compose up -d <serviço>`, que recria o container; (2) o
+Browser pane erra o mapeamento de clique quando o viewport é forçado por
+`resize_window` com largura fixa (janela real 1474×864 vs. viewport
+emulado) — no tamanho nativo, clicar nas coordenadas lidas direto do
+screenshot funciona; digitação e Tab funcionam sempre, mas Enter/Espaço
+não ativam botão.
+
+*Ponto de retorno:* commits `6f2c978` (aba APIs + teste de credencial),
+`850666f` (CLAUDE.md) e `d24cdda` (tudo desta rodada), mais um `pg_dump`
+completo em `AVATAR VIDEO MÓDULO/_backups/` — **fora** da árvore do git.
 
 ---
 
