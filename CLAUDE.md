@@ -480,7 +480,67 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-07-22 — continuação (download de vídeo
+**Última atualização:** 2026-07-30 — rotação de credenciais expostas +
+rodada de fechamento pré-demo (commit de ponto de retorno, dump do banco,
+bug conhecido do `/admin` registrado)
+
+---
+
+**O que foi feito (2026-07-30 — rotação de credenciais + preparação da
+demo):**
+
+*Rotação de senhas (admin da plataforma + tenant de demo).* As senhas de
+`admin@eckkoai.com` e de `demo@eckko.ai` (tenant `dev-c77a5b`) tinham sido
+digitadas em texto puro numa conversa de chat e foram trocadas por
+credenciais novas, válidas só a partir desta data. **As senhas em si não
+ficam registradas aqui nem em nenhum arquivo do repo, por desenho** — se
+elas se perderem, o caminho é rotacionar de novo, não recuperá-las. As
+antigas foram confirmadas inválidas por `bcrypt.compare` contra os hashes
+gravados (não só "a nova funciona"), e os dois logins foram retestados
+digitando de verdade no navegador, com sessão confirmada em 2+ páginas de
+cada zona.
+
+*Como rotacionar uma senha neste projeto (não existe endpoint pra isso).*
+Nem `adminAuth.ts` nem `auth.ts`/`login.ts` expõem troca de senha — só
+verificação no login. Então a rotação é, obrigatoriamente:
+1. `UPDATE` direto em `admin_users.password_hash` (admin) ou
+   `users.password_hash` (tenant, escopado por `tenant_id`), com o hash
+   gerado por `bcryptjs` (`SALT_ROUNDS = 10`, ver
+   [services/passwords.ts](backend/src/services/passwords.ts)) **dentro do
+   container do backend** — a senha viaja por variável de ambiente
+   (`docker compose exec -e NEW_PW=... backend node -e ...`) e o valor
+   entra no SQL por parâmetro `$1`, nunca interpolado na linha de comando
+   (evita o problema de escaping de shell/autofill já enfrentado antes).
+2. **`INSERT` manual no `audit_log`** — como não passa por nenhuma rota, o
+   evento não é registrado sozinho. Convenção de
+   [auditLog.ts](backend/src/services/auditLog.ts): ator nulo exige prefixo
+   de sistema, então a ação usada foi `system.admin_password_rotated`, com
+   `after` contendo só metadado (`adminUserId`, `adminEmail`, `method`,
+   `reason`) — **nunca a senha nem o hash**.
+
+*Bug conhecido — `/admin` acessado direto entra em loop.* Abrir
+`/admin` pela barra de endereço não estabiliza a sessão: o
+`AdminAuthProvider` não revalida a sessão depois do `POST` de login, então
+a tela volta pro formulário mesmo com sessão válida no servidor — e cada
+volta consome uma das 5 tentativas/15min do rate limiter de `POST /login`,
+o que rapidamente leva a `429` e faz o sintoma parecer "senha errada".
+**Workaround em uso (vale pra demo):** entrar por `/login` no domínio raiz
+(`twinai.localhost:8090/login`) e deixar o redirect levar ao painel — esse
+caminho funciona de ponta a ponta, testado. **Correção real (revalidar a
+sessão no provider) continua pendente** e foi deliberadamente deixada fora
+do escopo desta rodada.
+
+*Ponto de retorno criado antes da rodada de fechamento:* commit `6f2c978`
+em `master` (aba "APIs" do admin + `POST
+/admin/tenants/:id/credentials/:provider/test`, Tarefas 1 e 2 já
+verificadas) e um `pg_dump` completo do banco guardado **fora do
+repositório**, em `AVATAR VIDEO MÓDULO/_backups/` (irmão de `TWINAI/`, não
+versionado por estar fora da árvore do git) — tirado antes de qualquer
+alteração de dados.
+
+---
+
+**Atualização anterior:** 2026-07-22 — continuação (download de vídeo
 corrigido + download de avatar implementado, ambos testados com clique
 real no navegador; achado paralelo do tenant "Dev" com HeyGen real
 investigado — origem exata ainda indeterminada, ver Seção 3)
