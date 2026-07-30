@@ -46,7 +46,7 @@ configurar um avatar.
 Pela tela de cadastro (`/signup`), só com email e senha — isso cria
 automaticamente sua empresa (tenant), com um subdomínio próprio. Depois do
 cadastro é só completar o nome da empresa em "Minha Assinatura". Veja
-[screens/minha-assinatura.md](screens/minha-assinatura.md) e [setup.md](setup.md).
+[screens/minha-assinatura.md](screens/minha-assinatura.md).
 
 **Em quais idiomas o app funciona?**
 Português (pt-BR) e inglês (en), alternáveis pelos botões no topo de qualquer

@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
-import { audienceAllows, DOCS_MANIFEST, type DocAudience } from "./docsManifest.js";
+import { audienceAllows, DOCS_EXCLUDED, DOCS_MANIFEST, type DocAudience } from "./docsManifest.js";
 
 // Documentation is fed to the copilots' system prompt from an explicit
 // allowlist (services/docsManifest.ts), never from a directory sweep. A file
@@ -46,7 +46,9 @@ async function reportManifestDrift(): Promise<void> {
     return; // docs dir missing entirely — buildDocsContent already reports per-file
   }
 
-  const unclassified = onDisk.filter((key) => !(key in DOCS_MANIFEST));
+  const unclassified = onDisk.filter(
+    (key) => !(key in DOCS_MANIFEST) && !DOCS_EXCLUDED.includes(key),
+  );
   if (unclassified.length > 0) {
     console.warn(
       `[docs] ${unclassified.length} markdown file(s) in docs/ are not in DOCS_MANIFEST and will not reach any copilot: ${unclassified.join(", ")}`,

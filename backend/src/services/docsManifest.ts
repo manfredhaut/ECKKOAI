@@ -40,11 +40,18 @@ export const DOCS_MANIFEST: Record<string, DocAudience> = {
   // table, a container, or an internal process.
   "faq.md": "public",
 
+  // README.md is deliberately absent from every level. It is meta-content
+  // for whoever edits this folder — an index that names and summarizes files
+  // at all three levels, including docs/admin/. Classifying it as "tenant"
+  // leaked upward in adversarial testing: asked "what's in docs/admin?", the
+  // tenant copilot happily listed all three admin files and what each covers,
+  // straight out of the index. An index is only ever as confidential as the
+  // most confidential thing it indexes, so it belongs to no audience.
+
   // --- tenant: authenticated customer, inside their own account ----------
   // How the screens work. Not secret, but useless to a prospect and it
   // describes internals of the app's navigation that we would rather not
   // hand to an anonymous scraper.
-  "README.md": "tenant",
   "screens/painel.md": "tenant",
   "screens/criar-video.md": "tenant",
   "screens/configurar-avatar.md": "tenant",
@@ -64,3 +71,14 @@ export const DOCS_MANIFEST: Record<string, DocAudience> = {
   "admin/admin-taxas-de-custo.md": "admin",
   "admin/admin-planos.md": "admin",
 };
+
+// Files that exist in docs/ and are meant to reach no copilot at all. Listing
+// them here is not what keeps them out — anything absent from DOCS_MANIFEST is
+// already excluded. It only records that the omission was a decision, so the
+// drift warning stays meaningful: an unlisted, unexcluded file is a genuine
+// "someone forgot to classify this".
+export const DOCS_EXCLUDED: readonly string[] = [
+  // Index of the docs folder itself, for humans editing it. Names and
+  // summarizes files at every level, admin included — see the note above.
+  "README.md",
+];
