@@ -15,6 +15,7 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { Field } from "../../components/ui/Field";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { VENDORS_BY_PROVIDER } from "../Settings/providerVendors";
+import { AdminApisPanel } from "./AdminApisPanel";
 import { AdminCostRatesPanel } from "./AdminCostRatesPanel";
 import { AdminPlansPanel } from "./AdminPlansPanel";
 import { Copilot } from "../../components/copilot/Copilot";
@@ -277,6 +278,18 @@ function AdminTenantDetailPanel({
   );
 }
 
+type AdminView = "tenants" | "apis" | "costRates" | "plans";
+
+// Same shape as AppShell's navItems (tenant app), except the admin panel
+// swaps panels in place instead of routing — so these are buttons driving
+// `view`, not NavLinks. Styling is the shared .nav-link/.active pair.
+const NAV_ITEMS: { id: AdminView; labelKey: string }[] = [
+  { id: "tenants", labelKey: "adminPanel.navTenants" },
+  { id: "apis", labelKey: "adminPanel.navApis" },
+  { id: "costRates", labelKey: "adminPanel.navCostRates" },
+  { id: "plans", labelKey: "adminPanel.navPlans" },
+];
+
 export function AdminPanelPage() {
   const { t } = useTranslation();
   const { admin, logout } = useAdminAuth();
@@ -284,7 +297,7 @@ export function AdminPanelPage() {
   const navigate = useNavigate();
   const [tenants, setTenants] = useState<AdminTenantSummary[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
-  const [view, setView] = useState<"tenants" | "costRates" | "plans">("tenants");
+  const [view, setView] = useState<AdminView>("tenants");
 
   useEffect(() => {
     api.get<AdminTenantSummary[]>("/admin/tenants").then(setTenants);
@@ -296,48 +309,51 @@ export function AdminPanelPage() {
   }
 
   return (
-    <div style={{ maxWidth: 1080, margin: "0 auto", padding: "24px 20px" }}>
-      <div className="brand" style={{ marginBottom: 20 }}>
-        <span className="brand-logo-chip brand-logo-chip--nav">
-          <img src="/brand/logo-eckko-transparent.png" alt={t("common.appName")} />
-        </span>
-      </div>
+    <div className="app-shell app-shell--admin">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-logo-chip">
+            <img src="/brand/logo-eckko-transparent.png" alt={t("common.appName")} />
+          </span>
+        </div>
 
-      <PageHeader
-        title={t("adminPanel.title")}
-        subtitle={t("adminPanel.subtitle", { name: admin?.name ?? "" })}
-        action={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Copilot value={adminCopilot} />
-            <button className="btn btn-outline" onClick={handleLogout}>
-              {t("common.logOut")}
+        <nav className="nav-links">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`nav-link${view === item.id ? " active" : ""}`}
+              aria-current={view === item.id ? "page" : undefined}
+              onClick={() => setView(item.id)}
+            >
+              {t(item.labelKey)}
             </button>
-          </div>
-        }
-      />
+          ))}
+        </nav>
 
-      <div className="chip-group" style={{ marginBottom: 16 }}>
-        <button
-          className={`chip${view === "tenants" ? " selected" : ""}`}
-          onClick={() => setView("tenants")}
-        >
-          {t("adminPanel.navTenants")}
-        </button>
-        <button
-          className={`chip${view === "costRates" ? " selected" : ""}`}
-          onClick={() => setView("costRates")}
-        >
-          {t("adminPanel.navCostRates")}
-        </button>
-        <button
-          className={`chip${view === "plans" ? " selected" : ""}`}
-          onClick={() => setView("plans")}
-        >
-          {t("adminPanel.navPlans")}
-        </button>
-      </div>
+        <div style={{ marginTop: "auto" }}>
+          {admin && (
+            <div className="text-muted" style={{ fontSize: 12, padding: "0 8px 8px" }}>
+              {admin.name} · {admin.email}
+            </div>
+          )}
+          <button className="btn btn-ghost" style={{ width: "100%" }} onClick={handleLogout}>
+            {t("common.logOut")}
+          </button>
+        </div>
+      </aside>
 
-      {view === "costRates" ? (
+      <div className="content-column">
+        <main className="main-content">
+          <PageHeader
+            title={t("adminPanel.title")}
+            subtitle={t("adminPanel.subtitle", { name: admin?.name ?? "" })}
+            action={<Copilot value={adminCopilot} />}
+          />
+
+          {view === "apis" ? (
+        <AdminApisPanel tenants={tenants} />
+      ) : view === "costRates" ? (
         <AdminCostRatesPanel />
       ) : view === "plans" ? (
         <AdminPlansPanel />
@@ -385,7 +401,9 @@ export function AdminPanelPage() {
             ))}
           </tbody>
         </table>
-      )}
+          )}
+        </main>
+      </div>
     </div>
   );
 }

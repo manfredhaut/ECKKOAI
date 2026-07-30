@@ -135,6 +135,49 @@ select {
   color: var(--color-primary-text);
 }
 
+/* The admin panel swaps panels in place instead of routing, so its sidebar
+   items are <button>s — same look as the <a> variant above, minus the UA
+   button defaults. */
+button.nav-link {
+  width: 100%;
+  border: none;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Narrow screens: the admin panel is a desktop tool (no mobile usage
+   identified), so the sidebar just stacks above the content instead of
+   collapsing to icons. Scoped to --admin on purpose — the tenant AppShell
+   shares these classes and is deliberately left unchanged. */
+@media (max-width: 720px) {
+  .app-shell--admin {
+    flex-direction: column;
+  }
+
+  .app-shell--admin .sidebar {
+    width: auto;
+    gap: 16px;
+    padding: 16px;
+    border-right: none;
+    border-bottom: var(--border-width) solid var(--color-border);
+  }
+
+  .app-shell--admin .nav-links {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .app-shell--admin button.nav-link {
+    width: auto;
+  }
+
+  .app-shell--admin .main-content {
+    padding: 20px 16px;
+  }
+}
+
 .content-column {
   flex: 1;
   min-width: 0;

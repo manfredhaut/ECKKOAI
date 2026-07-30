@@ -169,8 +169,25 @@
       "business": "Business"
     },
     "navTenants": "Tenants",
+    "navApis": "APIs",
     "navCostRates": "Taxas de custo",
     "navPlans": "Planos",
+    "apis": {
+      "title": "Integrações por tenant",
+      "subtitle": "Visão espelhada das credenciais de API de cada cliente. O status abaixo reflete a chave já cadastrada — nenhum teste é executado ao abrir esta tela.",
+      "searchLabel": "Buscar tenant",
+      "searchPlaceholder": "Nome ou slug do tenant",
+      "tenantLabel": "Tenant",
+      "selectTenant": "Selecione um tenant…",
+      "pickTenantHint": "Escolha um tenant acima para ver e editar as integrações dele.",
+      "lastUpdated": "Chave atualizada em {{date}}",
+      "neverConfigured": "Nenhuma chave cadastrada ainda.",
+      "test": "Testar conexão",
+      "testing": "Testando…",
+      "testHint": "Faz uma chamada real ao provedor, só quando você clica.",
+      "testOk": "Conexão bem-sucedida — o provedor aceitou a chave.",
+      "testFailed": "Falhou: {{message}}"
+    },
     "plans": {
       "title": "Planos",
       "subtitle": "Editáveis em tempo real — o tenant vê o resultado assim que recarregar a tela de Minha Assinatura, sem precisar de deploy.",

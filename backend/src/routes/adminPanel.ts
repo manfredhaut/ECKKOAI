@@ -1,8 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
-import { encrypt, maskKey } from "../services/crypto.js";
+import { decrypt, encrypt, maskKey } from "../services/crypto.js";
 import { recordAuditLog } from "../services/auditLog.js";
 import { defaultVendor, isValidVendor } from "../services/providers/vendorCatalog.js";
+import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCatalog.js";
+import { checkAvatarConnection } from "../services/providers/avatarProvider.js";
+import { checkElevenLabsConnection } from "../services/providers/voiceProvider.js";
+import { complete } from "../services/providers/providerRegistry.js";
 import { STORAGE_PROVIDER_IDS, type StorageProviderId } from "../services/providers/storageProvider.js";
 import { getAllPlansIncludingInactive, createPlan, updatePlan } from "../plans.js";
 import { runMonthlyGrantSweep } from "../services/billing/monthlyGrant.js";
@@ -142,6 +146,78 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
 
     return after;
   });
+
+  // Tests the credential ALREADY STORED for this tenant — the key never
+  // travels over the wire again, and the caller can't smuggle in a
+  // different one. Strictly on demand (a click in the admin "APIs" tab);
+  // nothing calls this on page load, because a test is a real billable
+  // call against the vendor for script vendors. Avatar/voice hit a plain
+  // listing endpoint (free); script spends a handful of tokens.
+  //
+  // Deliberately does NOT write `connected` (or any other column): that
+  // flag means "a key is stored", and a failing test doesn't unstore it.
+  // The result is reported to the caller and audit-logged, not persisted
+  // as state — no schema change (see CLAUDE.md / admin panel plan).
+  app.post<{ Params: { tenantId: string; provider: string } }>(
+    "/admin/tenants/:tenantId/credentials/:provider/test",
+    async (req, reply) => {
+      const { tenantId, provider } = req.params;
+      if (!isProvider(provider)) return reply.code(400).send({ error: "Unknown provider" });
+
+      const tenant = await getTenantOr404(tenantId);
+      if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+
+      const { rows } = await pool.query<CredentialRow>(
+        "SELECT * FROM api_credentials WHERE tenant_id = $1 AND provider = $2",
+        [tenantId, provider],
+      );
+      const credential = rows[0];
+      if (!credential?.encrypted_key) {
+        return reply.code(400).send({ error: "no_credential", message: "No API key stored for this provider." });
+      }
+
+      const vendor = credential.vendor ?? defaultVendor(provider);
+      let apiKey: string;
+      try {
+        apiKey = decrypt(credential.encrypted_key);
+      } catch {
+        // A key encrypted under a different ENCRYPTION_KEY can't be read
+        // back — surface it as a failed test instead of a 500.
+        return { ok: false, message: "Stored key could not be decrypted (ENCRYPTION_KEY mismatch?)." };
+      }
+
+      let result: { ok: boolean; message: string | null };
+      try {
+        if (provider === "avatar") {
+          await checkAvatarConnection(apiKey, vendor as AvatarVendor);
+        } else if (provider === "voice") {
+          await checkElevenLabsConnection(apiKey);
+        } else {
+          // Smallest possible real call — enough to prove the key is
+          // accepted by the vendor without generating anything useful.
+          await complete(vendor as ScriptVendor, {
+            apiKey,
+            messages: [{ role: "user", content: "ping" }],
+            maxTokens: 5,
+          });
+        }
+        result = { ok: true, message: null };
+      } catch (err) {
+        result = { ok: false, message: err instanceof Error ? err.message : "Unknown error" };
+      }
+
+      await recordAuditLog({
+        tenantId,
+        actorAdminUserId: req.adminUserId,
+        action: `credential.${provider}.test`,
+        before: null,
+        // Never the key or the vendor's raw error body beyond its message.
+        after: { vendor, ok: result.ok },
+      });
+
+      return result;
+    },
+  );
 
   app.put<{ Params: { tenantId: string }; Body: { provider: string } }>(
     "/admin/tenants/:tenantId/storage-provider",

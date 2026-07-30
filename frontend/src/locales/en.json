@@ -169,8 +169,25 @@
       "business": "Business"
     },
     "navTenants": "Tenants",
+    "navApis": "APIs",
     "navCostRates": "Cost rates",
     "navPlans": "Plans",
+    "apis": {
+      "title": "Integrations by tenant",
+      "subtitle": "Mirrored view of each customer's API credentials. The status below reflects the stored key — no test runs when this screen opens.",
+      "searchLabel": "Search tenant",
+      "searchPlaceholder": "Tenant name or slug",
+      "tenantLabel": "Tenant",
+      "selectTenant": "Select a tenant…",
+      "pickTenantHint": "Pick a tenant above to view and edit its integrations.",
+      "lastUpdated": "Key updated on {{date}}",
+      "neverConfigured": "No key stored yet.",
+      "test": "Test connection",
+      "testing": "Testing…",
+      "testHint": "Makes a real call to the provider, only when you click.",
+      "testOk": "Connection succeeded — the provider accepted the key.",
+      "testFailed": "Failed: {{message}}"
+    },
     "plans": {
       "title": "Plans",
       "subtitle": "Editable live — a tenant sees the change as soon as they reload My Subscription, no deploy needed.",
