@@ -6,6 +6,7 @@
     "next": "Next",
     "save": "Save",
     "cancel": "Cancel",
+    "close": "Close",
     "yes": "Yes",
     "no": "No",
     "status": {
@@ -47,13 +48,26 @@
       "features": "Features",
       "pricing": "Pricing",
       "faq": "FAQ",
-      "login": "Log in",
-      "cta": "Start for free"
+      "login": "I already have an account",
+      "cta": "Get started"
+    },
+    "adminAccess": {
+      "link": "Administrative access",
+      "kicker": "eckko.ai internal area",
+      "title": "Administrative access",
+      "warning": "A separate identity from your customer account. Don't use your tenant credentials here.",
+      "emailLabel": "Administrator email",
+      "passwordLabel": "Password",
+      "submit": "Enter the admin panel",
+      "submitting": "Signing in…",
+      "error": "Invalid email or password.",
+      "note": "Its own form, separate from the customer login — different endpoint, different identity table."
     },
     "hero": {
       "headline": "Create videos with your digital avatar in minutes, not days",
       "subtitle": "Upload a photo and a script — eckko.ai trains your avatar, clones your voice, and renders the final video, no production crew needed.",
-      "cta": "Start for free"
+      "cta": "Get started",
+      "demoChip": "Demo · {{slug}}"
     },
     "problemSolution": {
       "title": "Recording video every week doesn't scale",
@@ -92,7 +106,7 @@
       "items": [
         { "q": "Do I need to know how to shoot or edit video?", "a": "No. You record your avatar's reference footage once; after that, generating a new video is just writing (or AI-generating) a script." },
         { "q": "Is my data isolated from other customers?", "a": "Yes. Every account is isolated by tenant — one customer's avatars, videos, documents, and credentials are never visible to another." },
-        { "q": "Do I need to connect my own AI key?", "a": "Yes, to generate real videos. eckko.ai uses a BYOK model: you connect your own avatar, voice, and script provider keys in Settings." },
+        { "q": "Do I need to connect my own AI key?", "a": "No. The avatar, voice, and script integrations are eckko.ai's own — you don't need an account with any provider, and there's no API key to manage. Just pick a plan and go." },
         { "q": "Where are my uploaded files stored?", "a": "You choose between keeping files in your own Google Drive or hosted by eckko.ai, depending on your plan." },
         { "q": "Can I try it before paying?", "a": "Yes, the Free plan lets you create an account and explore the product at no cost." }
       ]

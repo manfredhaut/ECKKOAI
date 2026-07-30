@@ -518,6 +518,29 @@ verificação no login. Então a rotação é, obrigatoriamente:
    `after` contendo só metadado (`adminUserId`, `adminEmail`, `method`,
    `reason`) — **nunca a senha nem o hash**.
 
+*Credenciais fixas de desenvolvimento (não invente senha nova a cada
+sessão).* Existem duas contas de dev com senha fixa — o admin da plataforma
+e o usuário do tenant de demo `dev-c77a5b`. **Os valores em claro NÃO ficam
+neste arquivo nem em nenhum arquivo versionado**: estão em
+`DEV-ACCESS.local.md`, na raiz do repo, ignorado pelo git. Para restaurar o
+acesso (ou recriar as contas do zero num banco limpo):
+
+```bash
+docker compose exec backend npm run dev:seed-access
+```
+
+O script ([backend/scripts/seedDevAccess.ts](backend/scripts/seedDevAccess.ts))
+é idempotente (`INSERT ... ON CONFLICT DO UPDATE`), recebe as senhas por
+variável de ambiente com os valores padrão embutidos, passa tudo ao Postgres
+por parâmetro `$1/$2/$3`, e **aborta** se `NODE_ENV=production` ou se o host
+do `DATABASE_URL` não estiver na lista de hosts locais. Cada execução grava
+`system.dev_access_seeded` no `audit_log`, sem senha nem hash. Duas
+pegadinhas registradas de propósito: ele vive **fora** de `backend/src`
+(logo, fora do bind mount e fora do `tsconfig`) — editá-lo exige
+`docker compose build backend`; e o arquivo de credenciais fica na **raiz**,
+nunca em `docs/`, porque `services/docs.ts` varre `docs/**/*.md` inteiro
+para dentro do system prompt do copiloto do tenant e do copiloto público.
+
 *Bug conhecido — `/admin` acessado direto entra em loop.* Abrir
 `/admin` pela barra de endereço não estabiliza a sessão: o
 `AdminAuthProvider` não revalida a sessão depois do `POST` de login, então

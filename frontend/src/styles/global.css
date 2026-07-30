@@ -992,3 +992,161 @@ th {
   font-size: 13px;
   min-height: 40px;
 }
+
+/* ---------------------------------------------------------------------------
+   Landing: acessos concentrados (Fase B) — CTA de cliente + porta do admin.
+   O modal usa cor fixa de marca (#1A1E20 / #0D0D0D) em vez de token de tema:
+   ele precisa ler como "outra zona" tanto no tema claro quanto no escuro.
+--------------------------------------------------------------------------- */
+.landing-hero-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.landing-demo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.landing-admin-link {
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  opacity: 0.7;
+  cursor: pointer;
+  padding: 0;
+}
+
+.landing-admin-link:hover {
+  opacity: 1;
+  color: var(--color-primary);
+}
+
+.admin-modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(13, 13, 13, 0.62);
+}
+
+.admin-modal {
+  width: 100%;
+  max-width: 400px;
+  background: #1a1e20;
+  color: #e8ede6;
+  border: 1px solid #2c3330;
+  border-radius: 16px;
+  padding: 26px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.admin-modal h2 {
+  font-size: 19px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.admin-modal-close {
+  float: right;
+  background: none;
+  border: none;
+  color: #7e8983;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.admin-modal-close:hover {
+  color: #fff;
+}
+
+.admin-modal-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+
+.admin-modal-kicker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.admin-modal-sub {
+  margin: 8px 0 20px;
+  font-size: 13px;
+  color: #98a29c;
+}
+
+.admin-modal-field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.admin-modal-field span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #98a29c;
+}
+
+.admin-modal-field input {
+  width: 100%;
+  font: inherit;
+  padding: 10px 12px;
+  border: 1px solid #2c3330;
+  border-radius: 10px;
+  background: #121517;
+  color: #fff;
+}
+
+.admin-modal-field input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.admin-modal-submit {
+  width: 100%;
+}
+
+.admin-modal-error {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--color-tertiary);
+}
+
+.admin-modal-note {
+  margin: 14px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid #2c3330;
+  font-size: 12px;
+  color: #7e8983;
+}

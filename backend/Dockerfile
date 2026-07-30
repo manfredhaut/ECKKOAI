@@ -11,6 +11,9 @@ RUN npm install
 
 COPY tsconfig.json ./
 COPY src ./src
+# Ferramentas de linha de comando fora do build do tsc (rootDir/include = src),
+# rodadas via tsx — hoje só o seed de acesso de dev (npm run dev:seed-access).
+COPY scripts ./scripts
 
 EXPOSE 4000
 

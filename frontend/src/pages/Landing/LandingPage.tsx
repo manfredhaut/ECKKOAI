@@ -3,8 +3,21 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { Plan } from "../../types";
-import { WHATSAPP_NUMBER } from "../../publicConfig";
+import { BASE_DOMAIN, WHATSAPP_NUMBER } from "../../publicConfig";
 import { PublicCopilotWidget } from "./PublicCopilotWidget";
+import { AdminLoginModal } from "./AdminLoginModal";
+
+// Slug do tenant de demonstração. O login de cliente na landing NÃO posta do
+// domínio raiz de propósito: lá o lookup por e-mail em POST /login é feito sem
+// escopo de tenant, então um mesmo e-mail em mais de um tenant resolveria de
+// forma ambígua. Mandar o visitante para o subdomínio faz o
+// resolveTenantFromHost escopar a busca — sem tocar em login.ts.
+const DEMO_TENANT_SLUG = "dev-c77a5b";
+
+function demoTenantLoginUrl(): string {
+  const { protocol, port } = window.location;
+  return `${protocol}//${DEMO_TENANT_SLUG}.${BASE_DOMAIN}${port ? `:${port}` : ""}/login`;
+}
 
 interface Step {
   title: string;
@@ -25,6 +38,7 @@ interface FaqItem {
 export function LandingPage() {
   const { t } = useTranslation();
   const [plans, setPlans] = useState<Plan[] | null>(null);
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
 
   useEffect(() => {
     api.get<Plan[]>("/public/plans").then(setPlans);
@@ -53,9 +67,10 @@ export function LandingPage() {
           <a href="#faq">{t("landing.nav.faq")}</a>
         </nav>
         <div style={{ display: "flex", gap: 8 }}>
-          <Link to="/login" className="btn btn-outline">
+          {/* Navegação real (não <Link>): cruza para o subdomínio do tenant. */}
+          <a href={demoTenantLoginUrl()} className="btn btn-outline">
             {t("landing.nav.login")}
-          </Link>
+          </a>
           <Link to="/signup" className="btn btn-primary">
             {t("landing.nav.cta")}
           </Link>
@@ -65,9 +80,15 @@ export function LandingPage() {
       <section className="landing-hero">
         <h1>{t("landing.hero.headline")}</h1>
         <p>{t("landing.hero.subtitle")}</p>
-        <Link to="/signup" className="btn btn-primary landing-hero-cta">
-          {t("landing.hero.cta")}
-        </Link>
+        <div className="landing-hero-actions">
+          <Link to="/signup" className="btn btn-primary landing-hero-cta">
+            {t("landing.hero.cta")}
+          </Link>
+          <a href={demoTenantLoginUrl()} className="btn btn-outline landing-hero-cta">
+            {t("landing.nav.login")}
+          </a>
+        </div>
+        <span className="landing-demo-chip">{t("landing.hero.demoChip", { slug: DEMO_TENANT_SLUG })}</span>
       </section>
 
       <section className="landing-section landing-section-narrow">
@@ -191,7 +212,13 @@ export function LandingPage() {
         <span className="text-muted" style={{ fontSize: 12 }}>
           © {new Date().getFullYear()} {t("common.appName")}. {t("landing.footer.rights")}
         </span>
+        {/* Discreto de propósito: é a porta da equipe interna, não do cliente. */}
+        <button type="button" className="landing-admin-link" onClick={() => setAdminModalOpen(true)}>
+          {t("landing.adminAccess.link")}
+        </button>
       </footer>
+
+      {adminModalOpen && <AdminLoginModal onClose={() => setAdminModalOpen(false)} />}
 
       <PublicCopilotWidget />
     </div>

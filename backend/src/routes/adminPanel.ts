@@ -193,12 +193,17 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
         } else if (provider === "voice") {
           await checkElevenLabsConnection(apiKey);
         } else {
-          // Smallest possible real call — enough to prove the key is
-          // accepted by the vendor without generating anything useful.
+          // Smallest useful real call — enough to prove the key is accepted
+          // by the vendor without generating anything useful. Não abaixar
+          // este teto: modelos com "thinking" ligado por padrão (o Gemini
+          // `gemini-flash-latest` é um) gastam o orçamento inteiro na fase
+          // de raciocínio e devolvem HTTP 200 sem nenhuma parte de texto, o
+          // que o providerRegistry (corretamente) trata como erro — com 5
+          // tokens isso dava um falso negativo em chave boa.
           await complete(vendor as ScriptVendor, {
             apiKey,
             messages: [{ role: "user", content: "ping" }],
-            maxTokens: 5,
+            maxTokens: 64,
           });
         }
         result = { ok: true, message: null };

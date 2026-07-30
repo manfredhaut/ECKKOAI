@@ -1,4 +1,10 @@
 .env
+# Credenciais fixas de desenvolvimento em texto claro — o ponteiro (sem
+# senhas) fica no CLAUDE.md; os valores nunca entram no repositório.
+# Fica na raiz, NÃO em docs/: services/docs.ts varre docs/**.md inteiro para
+# dentro do system prompt do copiloto do tenant e do copiloto público, então
+# um arquivo de senha ali seria legível por qualquer visitante da landing.
+DEV-ACCESS.local.md
 node_modules/
 dist/
 uploads/*

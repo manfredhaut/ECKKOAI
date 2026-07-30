@@ -6,6 +6,7 @@
     "next": "Avançar",
     "save": "Salvar",
     "cancel": "Cancelar",
+    "close": "Fechar",
     "yes": "Sim",
     "no": "Não",
     "status": {
@@ -47,13 +48,26 @@
       "features": "Recursos",
       "pricing": "Planos",
       "faq": "Perguntas frequentes",
-      "login": "Entrar",
-      "cta": "Começar grátis"
+      "login": "Já tenho conta",
+      "cta": "Começar agora"
+    },
+    "adminAccess": {
+      "link": "Acesso administrativo",
+      "kicker": "Área interna eckko.ai",
+      "title": "Acesso administrativo",
+      "warning": "Identidade separada da conta de cliente. Não use suas credenciais de tenant aqui.",
+      "emailLabel": "E-mail do administrador",
+      "passwordLabel": "Senha",
+      "submit": "Entrar no painel admin",
+      "submitting": "Entrando…",
+      "error": "E-mail ou senha inválidos.",
+      "note": "Formulário próprio, separado do login de cliente — outro endpoint, outra tabela de identidade."
     },
     "hero": {
       "headline": "Crie vídeos com o seu avatar digital em minutos!",
       "subtitle": "Envie uma foto e um roteiro — o eckko.ai treina seu avatar, clona sua voz e gera o vídeo final, sem equipe de produção.",
-      "cta": "Começar grátis"
+      "cta": "Começar agora",
+      "demoChip": "Demo · {{slug}}"
     },
     "problemSolution": {
       "title": "Gravar vídeo toda semana não escala",
@@ -92,7 +106,7 @@
       "items": [
         { "q": "Preciso saber gravar ou editar vídeo?", "a": "Não. Você grava a referência do seu avatar uma única vez; depois disso, gerar um novo vídeo é só escrever (ou gerar com IA) um roteiro." },
         { "q": "Meus dados ficam isolados dos de outros clientes?", "a": "Sim. Cada conta é isolada por tenant — avatares, vídeos, documentos e credenciais de um cliente nunca aparecem para outro." },
-        { "q": "Preciso conectar minha própria chave de IA?", "a": "Sim, para gerar vídeos de verdade. O eckko.ai usa o modelo BYOK: você conecta suas próprias chaves dos provedores de avatar, voz e roteiro em Configurações." },
+        { "q": "Preciso conectar minha própria chave de IA?", "a": "Não. As integrações de avatar, voz e roteiro são da própria eckko.ai — você não precisa criar conta em provedor nenhum nem gerenciar chave de API. É só escolher o plano e usar." },
         { "q": "Onde ficam armazenados os arquivos que eu envio?", "a": "Você escolhe entre manter os arquivos no seu próprio Google Drive ou hospedados pela eckko.ai, dependendo do plano." },
         { "q": "Posso testar antes de pagar?", "a": "Sim, o plano Free permite criar sua conta e explorar o produto sem custo." }
       ]
