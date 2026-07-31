@@ -1,3 +1,4 @@
+import type { Session } from "fastify";
 import { pool } from "../db/pool.js";
 
 // Backs @fastify/session with the "sessions" table instead of an in-memory
@@ -19,9 +20,15 @@ export class PgSessionStore {
       .catch(callback);
   }
 
-  get(sessionId: string, callback: (err: Error | null, session?: unknown) => void): void {
+  // The callback signature has to match @fastify/session's CallbackSession
+  // (`(err, result?: Session | null) => void`) or `app.register(fastifySession,
+  // { store })` fails to typecheck — which it did, and that single error kept
+  // `npm run check` red and therefore useless as a gate. Types only: the value
+  // passed back is exactly what it always was, `rows[0]?.sess`, undefined
+  // included, since @fastify/session treats undefined as "no session".
+  get(sessionId: string, callback: (err: Error | null, session?: Session | null) => void): void {
     pool
-      .query<{ sess: unknown }>(
+      .query<{ sess: Session }>(
         "SELECT sess FROM sessions WHERE id = $1 AND expires_at > now()",
         [sessionId],
       )

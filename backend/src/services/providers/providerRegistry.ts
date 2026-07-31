@@ -24,6 +24,16 @@ export interface CompleteInput {
   maxTokens?: number;
 }
 
+// The vendor accepted the request — HTTP 2xx, so the API key is valid — but
+// the response carried no text. With reasoning models this is a normal
+// outcome of a tiny output budget: the model spends it thinking and stops.
+//
+// It is a failure for generation and a SUCCESS for authentication, which is
+// why it gets its own type. Callers that need text (script generation, the
+// copilots) treat it like any other AiProviderError; the credential probe in
+// routes/adminPanel.ts catches it specifically and reports the key as good.
+export class AiEmptyResponseError extends AiProviderError {}
+
 // Token usage as reported by the vendor's own response — used to record
 // real (not estimated) cost for script/copilot calls (see
 // services/billing/usageTracking.ts). null only if a vendor response is
@@ -83,7 +93,7 @@ async function completeAnthropic(model: string, _baseUrl: string | null, input: 
     usage?: { input_tokens: number; output_tokens: number };
   };
   const text = data.content.find((block) => block.type === "text")?.text;
-  if (!text) throw new AiProviderError("Anthropic API returned no text content");
+  if (!text) throw new AiEmptyResponseError("Anthropic API returned no text content");
   const usage = data.usage ? { inputTokens: data.usage.input_tokens, outputTokens: data.usage.output_tokens } : null;
   return { text, usage };
 }
@@ -101,6 +111,13 @@ async function completeGemini(model: string, _baseUrl: string | null, input: Com
           role: m.role === "assistant" ? "model" : "user",
           parts: [{ text: m.content }],
         })),
+        // Não adicionar `thinkingConfig` aqui: testado contra a chave real,
+        // `generationConfig.thinkingConfig.thinkingBudget` é rejeitado com
+        // 400 INVALID_ARGUMENT pelo modelo em uso (a família Gemini 3 trocou
+        // `thinkingBudget` por `thinkingLevel`, e nem todo modelo aceita
+        // desligar o raciocínio). Desligar o thinking, portanto, não é um
+        // caminho disponível — a resposta sem texto é tratada como
+        // AiEmptyResponseError logo abaixo.
         generationConfig: { maxOutputTokens: input.maxTokens ?? DEFAULT_MAX_TOKENS },
       }),
     });
@@ -119,7 +136,7 @@ async function completeGemini(model: string, _baseUrl: string | null, input: Com
     usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
   };
   const text = data.candidates?.[0]?.content?.parts?.find((p) => p.text)?.text;
-  if (!text) throw new AiProviderError("Gemini API returned no text content");
+  if (!text) throw new AiEmptyResponseError("Gemini API returned no text content");
   const usage = data.usageMetadata
     ? {
         inputTokens: data.usageMetadata.promptTokenCount ?? 0,
@@ -175,7 +192,7 @@ async function completeOpenAiChatCompletions(
     usage?: { prompt_tokens: number; completion_tokens: number };
   };
   const text = data.choices?.[0]?.message?.content;
-  if (!text) throw new AiProviderError("OpenAI-compatible API returned no text content");
+  if (!text) throw new AiEmptyResponseError("OpenAI-compatible API returned no text content");
   const usage = data.usage
     ? { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens }
     : null;

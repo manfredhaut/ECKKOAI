@@ -6,7 +6,7 @@ import { defaultVendor, isValidVendor } from "../services/providers/vendorCatalo
 import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCatalog.js";
 import { checkAvatarConnection } from "../services/providers/avatarProvider.js";
 import { checkElevenLabsConnection } from "../services/providers/voiceProvider.js";
-import { complete } from "../services/providers/providerRegistry.js";
+import { AiEmptyResponseError, complete } from "../services/providers/providerRegistry.js";
 import { STORAGE_PROVIDER_IDS, type StorageProviderId } from "../services/providers/storageProvider.js";
 import { getAllPlansIncludingInactive, createPlan, updatePlan } from "../plans.js";
 import { runMonthlyGrantSweep } from "../services/billing/monthlyGrant.js";
@@ -194,23 +194,32 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
           await checkElevenLabsConnection(apiKey);
         } else {
           // Smallest useful real call — enough to prove the key is accepted
-          // by the vendor without generating anything useful. Não abaixar
-          // este teto: modelos com "thinking" ligado por padrão (o Gemini
-          // `gemini-flash-latest` é um) gastam o orçamento inteiro na fase
-          // de raciocínio e devolvem HTTP 200 sem nenhuma parte de texto, o
-          // que o providerRegistry (corretamente) trata como erro — com 5
-          // tokens isso dava um falso negativo em chave boa.
+          // by the vendor without generating anything useful.
           //
-          // Com 64 ainda era cara-ou-coroa: quatro sondagens contra a chave
-          // real do Gemini gastaram 59–61 tokens só de `thoughtsTokenCount`
-          // e duas voltaram sem texto. 256 põe o teto bem acima desse piso
-          // em vez de encostado nele. O custo de um ping continua desprezível
-          // — o modelo para na primeira palavra da resposta, não no teto.
-          await complete(vendor as ScriptVendor, {
-            apiKey,
-            messages: [{ role: "user", content: "ping" }],
-            maxTokens: 256,
-          });
+          // Este ping responde "a chave é válida?", não "o modelo produz
+          // texto?". A causa do falso negativo era confundir as duas: o
+          // parser de geração exige uma parte de texto, e um modelo que
+          // raciocina antes de responder pode gastar o orçamento inteiro
+          // pensando e devolver 2xx sem texto nenhum. Subir o teto de tokens
+          // (5 -> 64 -> 256) só tornava o acidente mais raro; não era
+          // conserto. Desligar o raciocínio também não é caminho: o
+          // `thinkingConfig` é rejeitado com 400 por este modelo (ver nota em
+          // providerRegistry.ts).
+          //
+          // O conserto é responder a pergunta certa. Uma chave inválida,
+          // revogada ou sem cota nunca produz 2xx — produz 400/401/403/429,
+          // que continuam falhando aqui. Uma resposta 2xx sem texto prova
+          // que o vendor aceitou a chave, e é isso que AiEmptyResponseError
+          // representa. Por isso um teto baixo volta a bastar.
+          try {
+            await complete(vendor as ScriptVendor, {
+              apiKey,
+              messages: [{ role: "user", content: "ping" }],
+              maxTokens: 16,
+            });
+          } catch (err) {
+            if (!(err instanceof AiEmptyResponseError)) throw err;
+          }
         }
         result = { ok: true, message: null };
       } catch (err) {
