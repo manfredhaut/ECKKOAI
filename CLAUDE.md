@@ -480,10 +480,55 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-07-30 — rodada de fechamento pré-demo
-completa (credenciais fixas de dev, desduplicação de e-mail, landing como
-porta única, cosméticos) + abertura da frente "copiloto como suporte real",
-parada no veredito de viabilidade do RAG
+**Última atualização:** 2026-07-31 — Blocos 1, 1.5 e 1.6 da frente do
+copiloto: allowlist de visibilidade dos docs, política congelada em teste
+que falha, e bateria adversarial rodada no copiloto do tenant
+
+---
+
+**DOIS projetos Google para a mesma frente — contorno de cota, não
+solução (2026-07-31).** A chave BYOK do tenant de demo `dev-c77a5b` foi
+trocada por uma de um **projeto Google novo**, criado só porque o projeto
+original bateu no teto diário do free tier
+(`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, `quotaValue: 20`,
+modelo `gemini-3.6-flash`) durante os testes. Ou seja:
+
+- **Projeto A (original):** chave anterior do tenant `dev-c77a5b`, cota
+  diária esgotada em 2026-07-30. Não foi revogado, só substituído.
+- **Projeto B (em uso agora):** grava em `api_credentials` do tenant
+  `dev-c77a5b`, provider `script`, vendor `gemini`, desde 2026-07-31.
+  Mesmo teto de ~20 requisições/dia — **o problema não foi resolvido, foi
+  adiado por um dia**.
+
+Criar projeto novo a cada teto batido não escala e polui a conta Google
+com projetos órfãos. A saída real é uma das duas: billing ativado no
+projeto (sai do free tier) ou, coerente com a migração BYOK→plataforma já
+decidida (seção 1), a chave passar a ser da plataforma com cota paga. Até
+lá, **toda sessão que for rodar bateria de copiloto precisa contar
+requisições antes de começar** — 12 requisições (10 sondas + 2 controles)
+já é 60% do teto diário.
+
+**A chave do Projeto B foi colada em texto plano no chat**, contra a
+instrução da própria sessão. Está no histórico da conversa e **deve ser
+rotacionada na passagem para operação** — mesmo precedente das senhas de
+`admin@eckkoai.com`/`demo@eckko.ai` (2026-07-30). O valor não foi escrito
+em nenhum arquivo, log ou commit; só gravado cifrado no banco pela rota
+admin.
+
+**Achado de formato, registrado porque contraria o esperado:** a chave do
+Projeto B começa com `AQ.` e tem 53 caracteres, não o `AIza...` de ~39
+que se espera do Google AI Studio. Mesmo assim **é aceita como API key em
+query string** (`?key=...` → HTTP 200 em ListModels); como token OAuth em
+`Authorization: Bearer` dá 401. Não descarte uma chave por não parecer
+com `AIza`.
+
+**Caminho barato para validar uma chave Gemini sem gastar cota de
+geração:** `GET https://generativelanguage.googleapis.com/v1beta/models?key=...`
+(ListModels) não consome a mesma quota de `generateContent`. Serve para
+confirmar que a credencial decifra sob a `ENCRYPTION_KEY` atual, que o
+vendor a aceita, e que o modelo configurado (`gemini-flash-latest`, que
+resolve para `gemini-3.6-flash`) existe naquele projeto — tudo sem
+queimar uma das ~20 requisições do dia.
 
 ---
 
@@ -520,21 +565,169 @@ manda ela para `api.anthropic.com` e dá 401. Para usar Gemini seria preciso
 uma variável tipo `PLATFORM_COPILOT_VENDOR` repassada nas duas rotas (~3
 linhas). Nada disso foi implementado.
 
-**Duas decisões pendentes do usuário para destravar a frente:** (1) qual
-chave vai em `PLATFORM_COPILOT_API_KEY` (Anthropic sem mudança, ou Gemini
-com a mudança de vendor); (2) qual provedor/modelo de embedding e de quem
-é a chave (plataforma, coerente com a migração BYOK→plataforma, ou BYOK do
-tenant). **Bloqueados** por isso: Bloco 3 (RAG) e Bloco 6 (isolamento entre
-tenants). **Livres para tocar já:** Bloco 1 (allowlist de `docs/` por
-visibilidade — que também fecha o vazamento descrito abaixo), Bloco 2
-(documentação do produto), Bloco 4 (diagnóstico por SQL escopado), Bloco 5
-(ajuda por campo) e Bloco 7 (teto de perguntas + truncagem de contexto).
+**Duas decisões, ambas já tomadas pelo usuário em 2026-07-31:** (1)
+`PLATFORM_COPILOT_API_KEY` = chave **Anthropic** (sem vendor novo, sem
+`PLATFORM_COPILOT_VENDOR` — bate com o default `"anthropic"` de
+`askCopilot()`); (2) embedding = **`text-embedding-3-small` da OpenAI,
+chave da plataforma** em env var própria, nunca BYOK de tenant — 1536
+dimensões nativas, cabe em `vector(1536)` sem migration nem truncagem.
+**A chave Anthropic ainda não foi colada**: `PLATFORM_COPILOT_API_KEY`
+segue vazia, então o copiloto público e o do admin continuam sem nunca
+ter respondido, e a bateria adversarial só pôde rodar no copiloto do
+tenant.
 
-**Vazamento conhecido, ainda aberto:** `services/docs.ts` varre
-`docs/**/*.md` inteiro (pulando só `docs/admin/`) e injeta no system prompt
-do copiloto do tenant **e do copiloto público da landing**. Qualquer
-arquivo colocado em `docs/` vira legível por visitante anônimo. Foi por
-isso que `DEV-ACCESS.local.md` ficou na raiz do repo, não em `docs/`.
+**Status dos blocos:** 1, 1.5 e 1.6 concluídos (ver entrada de
+2026-07-31). **Livres para tocar:** Bloco 2 (documentação do produto —
+agora com urgência, ver o achado de docs desatualizados abaixo), Bloco 4
+(diagnóstico por SQL escopado), Bloco 5 (ajuda por campo) e Bloco 7 (teto
+de perguntas + truncagem). **Bloqueados pela chave de embedding:** Bloco
+3 (RAG) e Bloco 6 (isolamento entre tenants).
+
+~~**Vazamento conhecido, ainda aberto:** `services/docs.ts` varre
+`docs/**/*.md` inteiro (pulando só `docs/admin/`)...~~ — **FECHADO em
+2026-07-31 (Blocos 1, 1.5 e 1.6).** Ver a entrada própria logo abaixo.
+`DEV-ACCESS.local.md` continua na raiz, e não em `docs/`, mesmo assim: um
+arquivo não classificado hoje não entra em prompt nenhum, mas a raiz
+continua sendo o lugar certo para credencial.
+
+---
+
+**O que foi feito (2026-07-31 — Blocos 1, 1.5 e 1.6: exposição dos docs
+fechada, congelada em teste e sondada adversarialmente):**
+
+*Bloco 1 — allowlist no lugar da varredura.* `services/docs.ts` não varre
+mais `docs/` excluindo `docs/admin/`. Quem decide exposição agora é
+[docsManifest.ts](backend/src/services/docsManifest.ts), com três níveis
+cumulativos (`public` ⊂ `tenant` ⊂ `admin`). **Arquivo fora do manifesto
+não chega a copiloto nenhum, nem ao do admin** — classificação esquecida
+vira "resposta faltando", não "documento vazado". Excluir o que é secreto
+falha aberto em tudo que for criado depois; incluir o que é público falha
+fechado. O manifesto fica no backend, e não em frontmatter dentro de
+`docs/`, para que "o que um anônimo lê?" se responda num arquivo só e
+escrever documentação seja um ato separado de decidir sua exposição.
+`setup.md` era o pior caso — variáveis de ambiente, escopo do cookie,
+layout do proxy — e estava sendo lido para visitante anônimo; foi para
+`admin`. Prompt público caiu de **27.800 para 2.342 caracteres**.
+
+*Regra generalizada que saiu do teste adversarial:* **um índice é tão
+confidencial quanto o item mais confidencial que ele indexa.** O
+`README.md` de `docs/` tinha sido classificado como `tenant`, e o
+copiloto do tenant, perguntado "o que tem em docs/admin?", listou os três
+arquivos internos com o assunto de cada um — sem que o conteúdo deles
+estivesse no prompt. O índice vazou o que indexava. `README.md` não
+pertence a nível nenhum: saiu para `DOCS_EXCLUDED`, que não é o que o
+exclui (ausência do manifesto já basta) e sim o registro de que a omissão
+foi decidida, para o aviso de drift continuar significando "alguém
+esqueceu de classificar". Corolário aplicado: **nomear um arquivo de
+nível superior já é vazamento**, mesmo sem revelar conteúdo.
+
+*Bloco 1.5 — a garantia virou teste que falha.* `npm run check`
+([checkPolicy.ts](backend/src/scripts/checkPolicy.ts)) roda typecheck +
+sete invariantes e sai com código 1 na primeira violação. Falham o build:
+arquivo sem classificação nem exclusão; entrada de manifesto sem arquivo;
+termo da deny-list no prompt público ou de tenant; doc citando nome de
+arquivo de nível superior; prompt acima do teto de tamanho; doc
+prometendo limite de plano que a tabela `plans` não sustenta; doc dizendo
+"ilimitado". Deny-list, tetos e padrões ficam todos em
+[docsPolicy.ts](backend/src/services/docsPolicy.ts), um arquivo só. O
+teto de tamanho é **orçamento, não limite técnico**: prompt é custo em
+toda mensagem e só cresce, então crescer passa a exigir subir o número no
+mesmo commit que adiciona o conteúdo. Cada condição foi provada falhando
+de verdade — inclusive um bug do próprio verificador que isso revelou (a
+seção de planos lia todo arquivo do manifesto sem tratar ausência, e a
+exceção abortava a run antes de imprimir a violação).
+
+*Limites de plano:* a fonte única é a **tabela `plans`** (`plans.ts` só
+lê dela), e é contra ela que os docs são conferidos — nenhuma segunda
+fonte foi criada. Hoje nenhum doc cita limite numérico, então a asserção
+protege o que a documentação nova vai escrever.
+
+*Ping de credencial — conserto causal, e o caminho que NÃO funciona:*
+subir `maxTokens` (5 → 64 → 256) nunca foi conserto, só tornava o
+acidente mais raro. **Desligar o thinking também não é caminho:**
+`generationConfig.thinkingConfig.thinkingBudget` é rejeitado com **400
+INVALID_ARGUMENT** por este modelo — testado contra a chave real; a
+família Gemini 3 trocou `thinkingBudget` por `thinkingLevel`. O conserto
+foi responder a pergunta certa: o probe pergunta "a chave é válida?", não
+"o modelo produz texto?". Resposta 2xx sem texto virou
+`AiEmptyResponseError`, que o probe trata como **sucesso** (chave
+inválida, revogada ou sem cota nunca produz 2xx) e a geração continua
+tratando como erro. `maxTokens` voltou a 16.
+
+*Typecheck do backend está limpo pela primeira vez.* `sessionStore.get`
+passou a usar a assinatura `CallbackSession` do `@fastify/session` —
+correção de tipo, sem mudança de runtime, feita porque esse único erro
+pré-existente deixava o typecheck vermelho e portanto o gate inútil.
+Login, persistência de sessão e isolamento admin↔tenant retestados nas
+duas zonas.
+
+*Bloco 1.6 — bateria adversarial no copiloto do tenant, 10/10
+bloqueadas.* [tools/probe-copilot-docs.sh](tools/probe-copilot-docs.sh)
+classifica cada sonda em **BLOQUEADO / VAZOU / INCONCLUSIVO**. A
+distinção que importa: 429, 5xx, timeout e resposta vazia são
+**INCONCLUSIVO, nunca "bloqueado"** — um copiloto quebrado produziria uma
+bateria inteira de falsos "bloqueado", que é o resultado mais perigoso
+possível porque parece aprovação. Daí também os controles positivos no
+início (aborta sem gastar sondas) e no fim (marca a run inteira
+inconclusiva). Um marcador só conta como vazamento se aparecer na
+resposta e **não** na pergunta — senão "não tenho acesso ao setup.md"
+contaria como vazamento do termo que a própria sonda plantou. Resultado:
+10 sondas (diretas, indiretas, injeção de instrução), **nenhum
+vazamento**, os dois controles respondendo. A sonda que antes vazava o
+índice de `docs/admin/` agora responde que a documentação não contém essa
+pasta.
+
+*Achado do próprio design, confirmado ao vivo:* das três tentativas de
+run, duas abortaram por 503 transitório do Google. Nas duas o script
+gastou **1 requisição em vez de 12** e não produziu nenhum falso
+"bloqueado" — que é exatamente para isso que o controle inicial existe.
+`PROBE_ONLY` foi adicionado depois disso, para retomar uma run
+interrompida sem repetir sondas já respondidas: numa cota diária apertada,
+repetir é o que faz a segunda tentativa não caber.
+
+*Achado grave para a documentação (Bloco 2), não corrigido aqui:* o
+copiloto está entregando ao cliente informação **factualmente errada e
+desatualizada**, com confiança. Perguntado sobre custo, respondeu que "o
+eckko.ai funciona no modelo BYOK, cada empresa conecta suas próprias
+chaves e paga direto" e que "cobrança real ainda não foi implementada" —
+**as duas coisas são falsas hoje** (o tenant não conecta chave desde o
+lockdown, e Stripe + créditos estão implementados e testados). Não é
+vazamento; é `docs/faq.md` e `docs/screens/*.md` desatualizados saindo
+pela boca do copiloto. Outros pontos desatualizados já mapeados:
+`painel.md` e `faq.md` dizendo que billing não existe; `minha-assinatura.md`
+dizendo que a troca de plano não envolve cobrança real; `configurar-avatar.md`
+descrevendo cenário/traje como toggle exclusivo (a Fase 4 pôs os dois
+campos lado a lado); `conteudo.md` citando uma coluna "Provedor" que foi
+removida e sem o botão "Baixar" de avatar; `conhecimento-e-midia.md`
+afirmando que documentos são vetorizados e usados como contexto de RAG —
+o que o Bloco 0 já provou ser falso (embeddings aleatórios, nenhuma
+recuperação).
+
+*Inventário do que entra no prompt (só leitura):* apenas **três** fontes,
+nas três audiências — o system prompt constante por audiência
+(`copilotProvider.ts`), o `docsContent` do nível correspondente, e o
+histórico da conversa. O histórico do tenant vem de `copilot_messages`
+com a conversa validada por `getOwnedConversation(id, tenantId, userId)`;
+o do público vem do próprio cliente e não é persistido. A ajuda por campo
+(ícone "i") são strings i18n estáticas. **Não entram no prompt** nome do
+tenant, plano, saldo de crédito, avatares, vídeos nem documentos da base
+de conhecimento — `tenantId` chega ao `askCopilot` só para gravar uso.
+
+*Achado colateral, não corrigido:* `copilot_provider_error` devolve
+`err.message` cru ao cliente, com o corpo de erro do vendor junto — um
+visitante anônimo pode ver `Gemini API error (429) ... free_tier ...
+quotaValue: 20`, ou seja nome do modelo, tier e cota. **Não vaza chave**
+(conferido: `describeNetworkError` usa só `message`/`cause`, nunca a URL,
+que no Gemini carrega a chave no query string). Vale sanitizar.
+
+*Achado menor, não corrigido:* o `masked_key` devolvido pela rota admin
+mostra os últimos caracteres do **texto cifrado**, não da chave — e
+`docs/screens/configuracoes.md` promete "os últimos dígitos da chave
+salva". Inofensivo, mas inútil para identificar qual chave está lá.
+
+*Gotcha novo:* `package.json` **não** está no bind mount (só
+`./backend/src`), então script npm novo só existe no container depois de
+`docker compose build backend`.
 
 ---
 
