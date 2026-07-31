@@ -1,6 +1,11 @@
 services:
   traefik:
     image: traefik:v3.3
+    # Único serviço exposto ao navegador: se ele cair e não voltar, o
+    # endereço da demo simplesmente não existe, por mais que backend e
+    # frontend estejam de pé. Era o único dos quatro sem política de
+    # restart.
+    restart: unless-stopped
     ports:
       - "${TRAEFIK_HTTP_PORT:-8090}:80"
     environment:
@@ -53,6 +58,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Sobe só depois do Postgres aceitar conexão, porque as migrations rodam
+    # no boot: sem isso, um start simultâneo faz o backend morrer na
+    # primeira query e a política de restart vira laço de reinício.
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - twinai
 

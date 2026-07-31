@@ -486,6 +486,48 @@ que falha, e bateria adversarial rodada no copiloto do tenant
 
 ---
 
+## RETOMADA — sessão interrompida no Bloco 6 (2026-07-31)
+
+Sessão encerrada às pressas por troca de conta, **no meio da Parte A do
+Bloco 6**. O ambiente ficou **no ar e funcional** (landing 200, 4 containers
+running), mas o bloco NÃO está terminado.
+
+**O que já foi feito e está commitado** (blocos 0, 1, 1.5, 1.6, 2A, 3, 4 —
+ver entradas próprias abaixo). Último commit: `9777519`.
+
+**O que foi feito no Bloco 6 e ainda NÃO estava commitado quando parou:**
+duas edições em `docker-compose.yml`:
+1. `restart: unless-stopped` no **traefik** — era o único dos quatro
+   serviços sem política de restart, e é o único exposto ao navegador: se
+   ele cai e não volta, o endereço da demo deixa de existir mesmo com
+   backend e frontend de pé.
+2. `healthcheck` no **backend** (bate em `/health`), para o Compose saber
+   quando ele está realmente pronto.
+
+**ACHADO IMPORTANTE, NÃO RESOLVIDO — o teste de restart FALHOU.** Matei os
+quatro containers com `docker kill` (SIGKILL, simulando crash) e eles **não
+voltaram sozinhos** — `docker compose ps` ficou vazio por 90s e a landing
+não respondeu. Só voltaram com `docker compose up -d` manual. Ou seja:
+
+- **A política `unless-stopped` não se comportou como esperado neste
+  ambiente** (Docker Desktop no Windows/WSL2). A hipótese mais provável é
+  que matar os 4 simultaneamente derrubou algo do próprio daemon, mas isso
+  **não foi confirmado** — pode também ser comportamento do Docker Desktop
+  com `unless-stopped` após kill múltiplo.
+- **Consequência prática para a demo: não confie em recuperação
+  automática.** Se o ambiente cair, rode `docker compose up -d` à mão.
+- **Próximo passo sugerido:** repetir o teste matando UM container por vez
+  (`docker kill twinai-traefik-1`, esperar, verificar) em vez dos quatro
+  juntos. Isso separa "a política não funciona" de "o daemon caiu junto".
+  Não repita o kill dos quatro simultâneos sem necessidade.
+
+**O que falta do Bloco 6:** provar o restart (item 1), reconfirmar os três
+caminhos após o ciclo (item 2), testar ordem de subida backend↔postgres
+(item 3), rodar o smoke (item 4) e escrever o handoff completo da Parte B
+(itens 5-7 — este bloco é um começo, não o handoff completo pedido).
+
+---
+
 ## ROTEIRO DA DEMO (leia antes de apresentar)
 
 **Endereço único: `http://twinai.localhost:8090`.** Não abra mais nada pela
