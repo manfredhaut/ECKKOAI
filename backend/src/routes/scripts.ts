@@ -5,6 +5,7 @@ import { generateScript, ScriptProviderError } from "../services/providers/scrip
 import type { ScriptVendor } from "../services/providers/vendorCatalog.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { debitCredit } from "../services/billing/creditGate.js";
+import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 
 export async function scriptRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { prompt: string; targetSeconds?: number } }>("/scripts/generate", { preHandler: requireActiveTenant }, async (req, reply) => {
@@ -50,7 +51,8 @@ export async function scriptRoutes(app: FastifyInstance): Promise<void> {
       });
     } catch (err) {
       if (err instanceof ScriptProviderError) {
-        return reply.code(502).send({ error: "script_provider_error", message: err.message });
+        const { failure, message } = toClientVendorError("script", "scripts.generate", err);
+        return reply.code(vendorErrorStatus(failure)).send({ error: "script_provider_error", message });
       }
       throw err;
     }

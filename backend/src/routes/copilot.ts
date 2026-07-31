@@ -5,6 +5,7 @@ import { loadDocsContent } from "../services/docs.js";
 import { askCopilot, CopilotProviderError } from "../services/providers/copilotProvider.js";
 import type { ScriptVendor } from "../services/providers/vendorCatalog.js";
 import type { CopilotConversation, CopilotMessage } from "../types.js";
+import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 
 const TITLE_MAX_LENGTH = 60;
 
@@ -88,7 +89,8 @@ export async function copilotRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         if (err instanceof CopilotProviderError) {
-          return reply.code(502).send({ error: "copilot_provider_error", message: err.message });
+          const { failure, message } = toClientVendorError("script", "tenant.copilot", err);
+          return reply.code(vendorErrorStatus(failure)).send({ error: "copilot_provider_error", message });
         }
         throw err;
       }

@@ -486,6 +486,64 @@ que falha, e bateria adversarial rodada no copiloto do tenant
 
 ---
 
+## ROTEIRO DA DEMO (leia antes de apresentar)
+
+**Endereço único: `http://twinai.localhost:8090`.** Não abra mais nada pela
+barra de endereço — os três caminhos saem todos de lá:
+
+| Caminho | Onde clicar | Para onde vai |
+|---|---|---|
+| **Cliente novo** | "Começar agora" / "Começar grátis" (hero, planos, CTA) | `/signup` — cria tenant, subdomínio próprio e cai em Minha Assinatura |
+| **Cliente existente** | "Já tenho conta" (topo e rodapé) | `dev-c77a5b.twinai.localhost/login` — navegação real para o subdomínio, onde o login é escopado |
+| **Painel admin** | "Acesso administrativo" (rodapé) | modal próprio → `POST /admin/login` → `/admin` |
+
+**Dez minutos antes de apresentar, rode:**
+
+```bash
+./tools/smoke-demo.sh
+```
+
+21 verificações numa passada — containers, landing, os três caminhos,
+credenciais fixas, avatar treinado, créditos, credenciais de provedor e se o
+bundle do Vite está atualizado. **Não gasta nenhuma requisição de
+fornecedor.** Sai 1 se algo que a demo usa estiver quebrado.
+
+**Armadilha durante a demo:** `Sair` em qualquer zona chama
+`session.destroy()` e **derruba admin e tenant ao mesmo tempo** — as duas
+sessões vivem no mesmo cookie. Se for mostrar as duas zonas, use abas
+separadas e não clique em Sair no meio; para trocar, abra uma aba anônima.
+Também não entre em `/admin` pela barra de endereço: o `AdminAuthProvider`
+não revalida a sessão e cada volta consome uma das 5 tentativas/15min do
+rate limiter, fazendo parecer "senha errada".
+
+### Cota de cada fornecedor — o que dá para ensaiar
+
+| Fornecedor | Estado em 2026-07-31 | O que isso permite |
+|---|---|---|
+| **HeyGen** | `billing_type: wallet`, saldo **US$ 1,50**. `remaining_quota` caiu de 189 para 90 depois de UM vídeo de 33,7s | **No máximo 1 vídeo novo, e provavelmente nem isso.** Não ensaie gerando vídeo |
+| **Gemini** | Free tier, ~20 requisições/dia, compartilhado com o copiloto | Um roteiro custa 1–2 requisições. Cabem poucos ensaios por dia |
+| **ElevenLabs** | Chave sem permissão `user_read` — **não dá para consultar a própria cota** | TTS funciona normalmente; o limite restante é desconhecido |
+
+**Sobre o HeyGen, com honestidade:** a unidade de `remaining_quota` não é
+declarada em lugar nenhum da resposta. O que se sabe com certeza é que um
+vídeo de 33,7s consumiu 99 unidades de 189, e que o endpoint atual
+(`/v3/users/me`) informa carteira em dólar com **US$ 1,50**. As duas leituras
+não se reconciliam com certeza, mas ambas apontam para o mesmo lugar: **o
+saldo é baixíssimo**. Trate como "cabe um vídeo, talvez". Para ensaiar o
+fluxo completo mais de uma vez, é preciso pôr saldo antes.
+
+**Não há billing em nenhum dos três antes da demo.** Isso é uma decisão, não
+um esquecimento — mas significa que a margem para erro ao vivo é pequena. O
+caminho mais seguro é apresentar o fluxo usando o avatar "Mário", que já está
+treinado com voz clonada, e gerar no máximo um vídeo.
+
+**Pendência de segurança que não pode ir para operação:** a chave Gemini em
+uso pelo tenant de demo foi colada em texto plano numa conversa de chat.
+**Rotacione antes de qualquer billing ou uso real** — mesmo precedente das
+senhas de `admin@eckkoai.com`/`demo@eckko.ai`.
+
+---
+
 **DOIS projetos Google para a mesma frente — contorno de cota, não
 solução (2026-07-31).** A chave BYOK do tenant de demo `dev-c77a5b` foi
 trocada por uma de um **projeto Google novo**, criado só porque o projeto
@@ -776,6 +834,54 @@ salva". Inofensivo, mas inútil para identificar qual chave está lá.
 *Gotcha novo:* `package.json` **não** está no bind mount (só
 `./backend/src`), então script npm novo só existe no container depois de
 `docker compose build backend`.
+
+---
+
+**O que foi feito (2026-07-31 — Bloco 4: blindagem para a demo):**
+
+*Erro de fornecedor deixou de vazar.* Oito pontos devolviam `err.message`
+cru ao cliente — inclusive o copiloto público, onde qualquer visitante
+anônimo arrancava a resposta de erro do Google inteira (modelo, tier, valor
+da cota). [vendorError.ts](backend/src/services/providers/vendorError.ts)
+classifica a falha (`rate_limited`/`unavailable`/`auth`/`unknown`), devolve
+frase em pt-BR que não cita fornecedor nenhum — para o cliente, HeyGen e
+ElevenLabs são detalhe de implementação nosso — e manda o detalhe cru para
+o log do servidor. Isso inclui o `error_message` gravado em `videos`, que é
+**exibido na tela** e carregava texto do vendor. 429 vira 429; o resto, 502.
+Sete casos reais (copiados das respostas que estes fornecedores deram
+durante o desenvolvimento) viraram asserção no `npm run check`, que verifica
+as duas metades: que o vazamento sumiu da resposta **e** que o detalhe
+continua no log — sanitizar apagando o rastro de diagnóstico trocaria um
+problema por outro.
+
+*Dois defeitos de UI achados no caminho, ambos fatais numa demonstração:*
+`client.ts` transformava o corpo de erro inteiro em mensagem (a tela
+mostrava `502 Bad Gateway: {"error":...}`); e **`ScriptStep` não tinha
+`catch` nenhum** — `try/finally` sem `catch` deixava a falha virar promise
+rejeitada sem dono, então o botão parava de girar e **nada aparecia**. O
+mesmo valia para todos os handlers de `AvatarSetupStep`, incluindo o upload
+do vídeo de referência, que é o passo que dispara treino de avatar **e**
+clonagem de voz — os dois fornecedores ao mesmo tempo, o ponto mais provável
+de falha do fluxo inteiro. Todos ganharam tratamento visível (`guard()` +
+`.alert-error`, classe que também não existia).
+
+*Verificado na UI real, com resposta controlada e zero requisição de
+fornecedor:* interceptando só `/scripts/generate` no navegador, um 429
+sanitizado aparece como caixa vermelha em pt-BR; e um 502 com **corpo HTML
+de proxy** (sem JSON) cai no fallback genérico sem vazar `502`, `upstream`
+ou tag nenhuma para a tela.
+
+*ElevenLabs sem `user_read`:* confirmado por grep que **nenhum caminho do
+produto** lê `user/subscription` — `checkElevenLabsConnection` usa
+`/v1/voices`, que a chave acessa. A falta dessa permissão não derruba
+geração; só impede saber a cota restante, que fica registrada como
+desconhecida no roteiro da demo.
+
+*[tools/smoke-demo.sh](tools/smoke-demo.sh):* 21 verificações numa passada,
+sem gastar requisição de fornecedor — containers, landing, os três caminhos
+de entrada, credenciais fixas, avatar treinado com voz, saldo de crédito,
+credenciais conectadas, e o gotcha do bundle Vite desatualizado (compara o
+que está em disco com o que o dev server entrega).
 
 ---
 

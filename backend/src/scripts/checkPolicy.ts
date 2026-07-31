@@ -182,6 +182,9 @@ async function main(): Promise<void> {
   // --- 6c. generation pipeline: retry, cap, truncation, meta stripping ----
   await checkScriptPipeline();
 
+  // --- 6d. vendor errors never reach the client verbatim ------------------
+  await checkVendorErrorSanitization();
+
   // --- 7. credential probe semantics --------------------------------------
   // The probe answers "is this key valid?", not "does the model produce
   // text?". Proven against controlled vendor responses because the real
@@ -371,6 +374,126 @@ async function checkScriptPipeline(): Promise<void> {
     void countWords;
   } finally {
     globalThis.fetch = realFetch;
+  }
+}
+
+// Nenhuma resposta de API pode carregar texto do fornecedor. O caso que
+// motivou isso: o copiloto público devolvia o corpo de erro do Google inteiro
+// — modelo, tier, valor da cota — para qualquer visitante anônimo.
+//
+// Verifica as duas metades da garantia: que o vazamento sumiu do que vai ao
+// cliente, e que o detalhe continua indo para o log do servidor (uma
+// sanitização que também apaga o rastro de diagnóstico troca um problema por
+// outro).
+async function checkVendorErrorSanitization(): Promise<void> {
+  const { toClientVendorError, classifyVendorFailure, vendorErrorMessage, vendorErrorStatus } =
+    await import("../services/providers/vendorError.js");
+
+  // Erros reais, copiados das respostas que estes fornecedores devolveram
+  // durante o desenvolvimento.
+  const casos: { nome: string; erro: string; esperado: string }[] = [
+    {
+      nome: "Gemini 429 (cota diária)",
+      erro:
+        'Gemini API error (429): {"error":{"code":429,"message":"You exceeded your current quota","status":"RESOURCE_EXHAUSTED","details":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaValue":"20","model":"gemini-3.6-flash"}]}}',
+      esperado: "rate_limited",
+    },
+    {
+      nome: "Gemini 503 (sobrecarga)",
+      erro: 'Gemini API error (503): {"error":{"code":503,"message":"This model is currently experiencing high demand."}}',
+      esperado: "unavailable",
+    },
+    {
+      nome: "Gemini 400 (chave inválida)",
+      erro: 'Gemini API error (400): {"error":{"message":"API key not valid. Please pass a valid API key."}}',
+      esperado: "auth",
+    },
+    {
+      nome: "ElevenLabs 401 (sem permissão)",
+      erro:
+        'ElevenLabs API error (401): {"detail":{"status":"missing_permissions","message":"The API key you used is missing the permission user_read"}}',
+      esperado: "auth",
+    },
+    {
+      nome: "HeyGen 500",
+      erro: 'HeyGen API error (500): {"error":{"message":"internal error"}}',
+      esperado: "unavailable",
+    },
+    {
+      nome: "timeout de rede",
+      erro: "Could not reach ElevenLabs API: fetch failed: ETIMEDOUT",
+      esperado: "unavailable",
+    },
+  ];
+
+  // Fragmentos que jamais podem aparecer numa resposta de API.
+  const PROIBIDO = [
+    "gemini-3.6-flash",
+    "FreeTier",
+    "quotaValue",
+    "RESOURCE_EXHAUSTED",
+    "API key",
+    "user_read",
+    "missing_permissions",
+    "generativelanguage",
+    "elevenlabs",
+    "heygen",
+    "api error",
+    "fetch failed",
+    "ETIMEDOUT",
+  ];
+
+  const logged: string[] = [];
+  const realError = console.error;
+  console.error = (...args: unknown[]) => {
+    logged.push(args.map(String).join(" "));
+  };
+
+  try {
+    for (const caso of casos) {
+      const { failure, message } = toClientVendorError("script", "check", new Error(caso.erro));
+
+      if (failure !== caso.esperado) {
+        fail("erro de vendor", `"${caso.nome}" classificado como "${failure}", esperado "${caso.esperado}".`);
+      }
+
+      const lower = message.toLowerCase();
+      for (const termo of PROIBIDO) {
+        if (lower.includes(termo.toLowerCase())) {
+          fail("erro de vendor", `a mensagem ao cliente para "${caso.nome}" contém "${termo}": "${message}".`);
+        }
+      }
+      // Precisa ser útil ao usuário, não só inofensiva.
+      if (message.length < 25 || !/[áâãéêíóôõúç]/i.test(message)) {
+        fail("erro de vendor", `a mensagem para "${caso.nome}" não parece uma frase em pt-BR: "${message}".`);
+      }
+    }
+
+    // O detalhe cru tem de continuar existindo — no servidor.
+    const juntos = logged.join("\n");
+    if (!juntos.includes("gemini-3.6-flash") || !juntos.includes("vendor_error")) {
+      fail("erro de vendor", "o detalhe do fornecedor não está sendo registrado no log do servidor.");
+    }
+
+    // 429 vira 429 (o cliente pode tentar de novo); o resto vira 502.
+    if (vendorErrorStatus(classifyVendorFailure(new Error("x (429)"))) !== 429) {
+      fail("erro de vendor", "429 do fornecedor não está virando 429 na resposta.");
+    }
+    if (vendorErrorStatus("unavailable") !== 502) {
+      fail("erro de vendor", "indisponibilidade deveria virar 502.");
+    }
+
+    // As três famílias de serviço falam do serviço, nunca do fornecedor.
+    for (const kind of ["script", "voice", "avatar"] as const) {
+      const msg = vendorErrorMessage(kind, "unavailable").toLowerCase();
+      if (/heygen|elevenlabs|gemini|anthropic|openai|d-id/.test(msg)) {
+        fail("erro de vendor", `a mensagem de "${kind}" cita o fornecedor: "${msg}".`);
+      }
+    }
+
+    note(`erro de vendor: ${casos.length} falhas reais sanitizadas, detalhe preservado só no log`);
+  } finally {
+    console.error = realError;
   }
 }
 

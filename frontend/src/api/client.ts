@@ -9,10 +9,27 @@ class ApiError extends Error {
   }
 }
 
+// Mensagem mostrada quando a resposta de erro não traz nada aproveitável.
+// Nunca cai em texto técnico: o que aparece na tela precisa fazer sentido
+// para quem está usando o produto, inclusive na frente de uma plateia.
+const FALLBACK_ERROR = "Não foi possível concluir a operação. Tente novamente em alguns instantes.";
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    const body = await res.text();
-    throw new ApiError(res.status, `${res.status} ${res.statusText}: ${body}`);
+    // O backend já devolve `message` pronta para exibição e sanitizada
+    // (services/providers/vendorError.ts). Antes, o corpo cru inteiro virava
+    // a mensagem — a tela mostrava algo como
+    // '502 Bad Gateway: {"error":"...","message":"..."}'.
+    let message = FALLBACK_ERROR;
+    try {
+      const body = await res.json();
+      if (body && typeof body.message === "string" && body.message.trim()) {
+        message = body.message;
+      }
+    } catch {
+      // resposta sem JSON (proxy, HTML de erro, corpo vazio): fica o fallback
+    }
+    throw new ApiError(res.status, message);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

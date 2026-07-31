@@ -13,13 +13,20 @@ export function ScriptStep({
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleGenerate() {
     if (!prompt) return;
     setGenerating(true);
+    setError(null);
     try {
       const result = await api.post<{ script: string }>("/scripts/generate", { prompt });
       onChange(result.script);
+    } catch (err) {
+      // Sem este catch, a falha virava uma promise rejeitada sem dono: o
+      // botão parava de girar e absolutamente nada aparecia na tela. A
+      // mensagem já vem pronta e sanitizada do backend.
+      setError(err instanceof Error ? err.message : t("errors.generic"));
     } finally {
       setGenerating(false);
     }
@@ -56,6 +63,7 @@ export function ScriptStep({
       <button className="btn btn-secondary" onClick={handleGenerate} disabled={!prompt || generating}>
         {generating ? t("createVideo.script.generating") : t("createVideo.script.generate")}
       </button>
+      {error && <div className="alert alert-error">{error}</div>}
     </div>
   );
 }

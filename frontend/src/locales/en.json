@@ -76,18 +76,39 @@
     "howItWorks": {
       "title": "How it works",
       "steps": [
-        { "title": "Set up your avatar", "desc": "Upload photos and a short reference video — eckko.ai clones your look and voice once." },
-        { "title": "Write the script", "desc": "Write it yourself or ask the AI copilot to draft what the avatar will say." },
-        { "title": "Choose scenario and outfit", "desc": "Describe it in text or upload a reference image for the setting and clothing." },
-        { "title": "Generate the video", "desc": "Your final video is ready to download in a few minutes." }
+        {
+          "title": "Set up your avatar",
+          "desc": "Upload photos and a short reference video — eckko.ai clones your look and voice once."
+        },
+        {
+          "title": "Write the script",
+          "desc": "Write it yourself or ask the AI copilot to draft what the avatar will say."
+        },
+        {
+          "title": "Choose scenario and outfit",
+          "desc": "Describe it in text or upload a reference image for the setting and clothing."
+        },
+        {
+          "title": "Generate the video",
+          "desc": "Your final video is ready to download in a few minutes."
+        }
       ]
     },
     "features": {
       "title": "Everything you need to scale video",
       "items": [
-        { "title": "Realistic avatar", "desc": "A clone of your look and voice from photos and a reference recording." },
-        { "title": "Knowledge & media", "desc": "Your company's documents and images, indexed to feed scripts with real context about your business." },
-        { "title": "AI copilot", "desc": "An in-app assistant to answer questions and help write scripts." }
+        {
+          "title": "Realistic avatar",
+          "desc": "A clone of your look and voice from photos and a reference recording."
+        },
+        {
+          "title": "Knowledge & media",
+          "desc": "Your company's documents and images, indexed to feed scripts with real context about your business."
+        },
+        {
+          "title": "AI copilot",
+          "desc": "An in-app assistant to answer questions and help write scripts."
+        }
       ]
     },
     "pricing": {
@@ -104,11 +125,26 @@
     "faq": {
       "title": "Frequently asked questions",
       "items": [
-        { "q": "Do I need to know how to shoot or edit video?", "a": "No. You record your avatar's reference footage once; after that, generating a new video is just writing (or AI-generating) a script." },
-        { "q": "Is my data isolated from other customers?", "a": "Yes. Every account is isolated by tenant — one customer's avatars, videos, documents, and credentials are never visible to another." },
-        { "q": "Do I need to connect my own AI key?", "a": "No. The avatar, voice, and script integrations are eckko.ai's own — you don't need an account with any provider, and there's no API key to manage. Just pick a plan and go." },
-        { "q": "Where are my uploaded files stored?", "a": "You choose between keeping files in your own Google Drive or hosted by eckko.ai, depending on your plan." },
-        { "q": "Can I try it before paying?", "a": "Yes, the Free plan lets you create an account and explore the product at no cost." }
+        {
+          "q": "Do I need to know how to shoot or edit video?",
+          "a": "No. You record your avatar's reference footage once; after that, generating a new video is just writing (or AI-generating) a script."
+        },
+        {
+          "q": "Is my data isolated from other customers?",
+          "a": "Yes. Every account is isolated by tenant — one customer's avatars, videos, documents, and credentials are never visible to another."
+        },
+        {
+          "q": "Do I need to connect my own AI key?",
+          "a": "No. The avatar, voice, and script integrations are eckko.ai's own — you don't need an account with any provider, and there's no API key to manage. Just pick a plan and go."
+        },
+        {
+          "q": "Where are my uploaded files stored?",
+          "a": "You choose between keeping files in your own Google Drive or hosted by eckko.ai, depending on your plan."
+        },
+        {
+          "q": "Can I try it before paying?",
+          "a": "Yes, the Free plan lets you create an account and explore the product at no cost."
+        }
       ]
     },
     "finalCta": {
@@ -538,5 +574,8 @@
     "adminNotConfigured": "The internal copilot isn't configured yet — set PLATFORM_COPILOT_API_KEY in the backend environment.",
     "error": "Something went wrong. Please try again.",
     "fieldHelpTooltip": "Ask the copilot about this field"
+  },
+  "errors": {
+    "generic": "We couldn't complete the operation. Please try again in a moment."
   }
 }

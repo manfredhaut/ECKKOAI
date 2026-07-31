@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import { getAllPlans } from "../plans.js";
 import { loadPublicDocsContent } from "../services/docs.js";
 import { askCopilot, CopilotProviderError } from "../services/providers/copilotProvider.js";
+import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -56,7 +57,10 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         return { content: replyText };
       } catch (err) {
         if (err instanceof CopilotProviderError) {
-          return reply.code(502).send({ error: "copilot_provider_error", message: err.message });
+          // Visitante anônimo: é o caminho mais exposto do produto. Nunca
+          // devolver o corpo de erro do fornecedor aqui.
+          const { failure, message } = toClientVendorError("script", "public.copilot", err);
+          return reply.code(vendorErrorStatus(failure)).send({ error: "copilot_provider_error", message });
         }
         throw err;
       }

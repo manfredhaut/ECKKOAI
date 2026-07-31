@@ -76,18 +76,39 @@
     "howItWorks": {
       "title": "Como funciona",
       "steps": [
-        { "title": "Configure seu avatar", "desc": "Envie fotos e um vídeo curto de referência — o eckko.ai clona sua aparência e sua voz uma única vez." },
-        { "title": "Escreva o roteiro", "desc": "Escreva do zero ou peça pro copiloto de IA rascunhar o texto que o avatar vai falar." },
-        { "title": "Escolha cenário e traje", "desc": "Descreva em texto ou envie uma imagem de referência do ambiente e da roupa." },
-        { "title": "Gere o vídeo", "desc": "Em poucos minutos, seu vídeo final fica pronto para baixar." }
+        {
+          "title": "Configure seu avatar",
+          "desc": "Envie fotos e um vídeo curto de referência — o eckko.ai clona sua aparência e sua voz uma única vez."
+        },
+        {
+          "title": "Escreva o roteiro",
+          "desc": "Escreva do zero ou peça pro copiloto de IA rascunhar o texto que o avatar vai falar."
+        },
+        {
+          "title": "Escolha cenário e traje",
+          "desc": "Descreva em texto ou envie uma imagem de referência do ambiente e da roupa."
+        },
+        {
+          "title": "Gere o vídeo",
+          "desc": "Em poucos minutos, seu vídeo final fica pronto para baixar."
+        }
       ]
     },
     "features": {
       "title": "Tudo o que você precisa pra escalar vídeo",
       "items": [
-        { "title": "Avatar realista", "desc": "Clone de aparência e voz a partir de fotos e uma gravação de referência." },
-        { "title": "Knowledge & media", "desc": "Documentos e imagens da sua empresa indexados pra alimentar roteiros com contexto real do seu negócio." },
-        { "title": "Copiloto de IA", "desc": "Assistente dentro do app pra tirar dúvidas sobre o produto e ajudar a escrever roteiros." }
+        {
+          "title": "Avatar realista",
+          "desc": "Clone de aparência e voz a partir de fotos e uma gravação de referência."
+        },
+        {
+          "title": "Knowledge & media",
+          "desc": "Documentos e imagens da sua empresa indexados pra alimentar roteiros com contexto real do seu negócio."
+        },
+        {
+          "title": "Copiloto de IA",
+          "desc": "Assistente dentro do app pra tirar dúvidas sobre o produto e ajudar a escrever roteiros."
+        }
       ]
     },
     "pricing": {
@@ -104,11 +125,26 @@
     "faq": {
       "title": "Perguntas frequentes",
       "items": [
-        { "q": "Preciso saber gravar ou editar vídeo?", "a": "Não. Você grava a referência do seu avatar uma única vez; depois disso, gerar um novo vídeo é só escrever (ou gerar com IA) um roteiro." },
-        { "q": "Meus dados ficam isolados dos de outros clientes?", "a": "Sim. Cada conta é isolada por tenant — avatares, vídeos, documentos e credenciais de um cliente nunca aparecem para outro." },
-        { "q": "Preciso conectar minha própria chave de IA?", "a": "Não. As integrações de avatar, voz e roteiro são da própria eckko.ai — você não precisa criar conta em provedor nenhum nem gerenciar chave de API. É só escolher o plano e usar." },
-        { "q": "Onde ficam armazenados os arquivos que eu envio?", "a": "Você escolhe entre manter os arquivos no seu próprio Google Drive ou hospedados pela eckko.ai, dependendo do plano." },
-        { "q": "Posso testar antes de pagar?", "a": "Sim, o plano Free permite criar sua conta e explorar o produto sem custo." }
+        {
+          "q": "Preciso saber gravar ou editar vídeo?",
+          "a": "Não. Você grava a referência do seu avatar uma única vez; depois disso, gerar um novo vídeo é só escrever (ou gerar com IA) um roteiro."
+        },
+        {
+          "q": "Meus dados ficam isolados dos de outros clientes?",
+          "a": "Sim. Cada conta é isolada por tenant — avatares, vídeos, documentos e credenciais de um cliente nunca aparecem para outro."
+        },
+        {
+          "q": "Preciso conectar minha própria chave de IA?",
+          "a": "Não. As integrações de avatar, voz e roteiro são da própria eckko.ai — você não precisa criar conta em provedor nenhum nem gerenciar chave de API. É só escolher o plano e usar."
+        },
+        {
+          "q": "Onde ficam armazenados os arquivos que eu envio?",
+          "a": "Você escolhe entre manter os arquivos no seu próprio Google Drive ou hospedados pela eckko.ai, dependendo do plano."
+        },
+        {
+          "q": "Posso testar antes de pagar?",
+          "a": "Sim, o plano Free permite criar sua conta e explorar o produto sem custo."
+        }
       ]
     },
     "finalCta": {
@@ -538,5 +574,8 @@
     "adminNotConfigured": "O copiloto interno ainda não está configurado — defina PLATFORM_COPILOT_API_KEY no ambiente do backend.",
     "error": "Algo deu errado. Tente novamente.",
     "fieldHelpTooltip": "Perguntar ao copiloto sobre este campo"
+  },
+  "errors": {
+    "generic": "Não foi possível concluir a operação. Tente novamente em alguns instantes."
   }
 }

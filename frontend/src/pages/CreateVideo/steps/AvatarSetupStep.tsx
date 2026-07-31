@@ -77,19 +77,37 @@ export function AvatarSetupStep({
     refreshAvatars();
   }
 
+  // Erro visível de qualquer ação que fale com o servidor. Sem isso, uma
+  // falha de treino de avatar ou de clonagem de voz virava promise rejeitada
+  // sem dono: o botão voltava ao normal e a tela não dizia nada.
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function guard(action: () => Promise<void>): Promise<void> {
+    setActionError(null);
+    try {
+      await action();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t("errors.generic"));
+    }
+  }
+
   async function handleCreateAvatar() {
     if (!name) return;
-    const avatar = await api.post<Avatar>("/avatars", { name });
-    setDraftAvatar(avatar);
-    await camera.start();
+    await guard(async () => {
+      const avatar = await api.post<Avatar>("/avatars", { name });
+      setDraftAvatar(avatar);
+      await camera.start();
+    });
   }
 
   async function handleCapturePhoto() {
     if (!draftAvatar) return;
     const blob = await camera.capturePhoto();
     if (!blob) return;
-    const updated = await api.upload<Avatar>(`/avatars/${draftAvatar.id}/photos`, blob, "photo.jpg");
-    setDraftAvatar(updated);
+    await guard(async () => {
+      const updated = await api.upload<Avatar>(`/avatars/${draftAvatar.id}/photos`, blob, "photo.jpg");
+      setDraftAvatar(updated);
+    });
   }
 
   function handleStartRecording() {
@@ -99,23 +117,30 @@ export function AvatarSetupStep({
 
   async function handleUploadRecording() {
     if (!draftAvatar || !recorder.recordedBlob) return;
-    const updated = await api.upload<Avatar>(
-      `/avatars/${draftAvatar.id}/reference-video`,
-      recorder.recordedBlob,
-      "reference.webm",
-    );
-    setDraftAvatar(updated);
+    // Este é o passo que dispara treino de avatar e clonagem de voz — os
+    // dois fornecedores externos ao mesmo tempo, e o ponto mais provável de
+    // falha do fluxo inteiro.
+    await guard(async () => {
+      const updated = await api.upload<Avatar>(
+        `/avatars/${draftAvatar.id}/reference-video`,
+        recorder.recordedBlob as Blob,
+        "reference.webm",
+      );
+      setDraftAvatar(updated);
+    });
   }
 
   async function handleReferenceFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !draftAvatar) return;
-    const updated = await api.upload<Avatar>(
-      `/avatars/${draftAvatar.id}/reference-video`,
-      file,
-      file.name,
-    );
-    setDraftAvatar(updated);
+    await guard(async () => {
+      const updated = await api.upload<Avatar>(
+        `/avatars/${draftAvatar.id}/reference-video`,
+        file,
+        file.name,
+      );
+      setDraftAvatar(updated);
+    });
   }
 
   function handleFinishSetup() {
@@ -250,6 +275,7 @@ export function AvatarSetupStep({
           <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={handleCreateAvatar} disabled={!name}>
             {t("createVideo.avatarSetup.startCapture")}
           </button>
+          {actionError && <div className="alert alert-error">{actionError}</div>}
         </div>
       ) : (
         <>
@@ -257,6 +283,7 @@ export function AvatarSetupStep({
             <div>
               <div className="card-title">{t("createVideo.avatarSetup.cameraPreview")}</div>
               {camera.error && <p style={{ color: "var(--color-tertiary)" }}>{camera.error}</p>}
+              {actionError && <div className="alert alert-error">{actionError}</div>}
               {/* Hidden source the segmenter/canvas read frames from — the
                   canvas below is what the user actually sees and what gets
                   captured/recorded, since it already reflects the current

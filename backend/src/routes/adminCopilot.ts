@@ -5,6 +5,7 @@ import { loadAdminDocsContent } from "../services/docs.js";
 import { askCopilot, CopilotProviderError } from "../services/providers/copilotProvider.js";
 import { createRateLimiter } from "../services/rateLimit.js";
 import type { AdminCopilotConversation, AdminCopilotMessage } from "../types.js";
+import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 
 const TITLE_MAX_LENGTH = 60;
 
@@ -102,7 +103,8 @@ export async function adminCopilotRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         if (err instanceof CopilotProviderError) {
-          return reply.code(502).send({ error: "copilot_provider_error", message: err.message });
+          const { failure, message } = toClientVendorError("script", "admin.copilot", err);
+          return reply.code(vendorErrorStatus(failure)).send({ error: "copilot_provider_error", message });
         }
         throw err;
       }

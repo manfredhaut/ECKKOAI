@@ -11,6 +11,7 @@ import { saveUpload, readUpload } from "../services/storage.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { debitCredit } from "../services/billing/creditGate.js";
 import { sendAttachment, contentTypeForExtension } from "../services/downloadProxy.js";
+import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 
 export async function avatarRoutes(app: FastifyInstance): Promise<void> {
   app.get("/avatars", async (req) => {
@@ -55,8 +56,8 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       sendAttachment(reply, buffer, `avatar-reference-${avatar.id}${ext}`, contentTypeForExtension(ext));
       return reply;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      return reply.code(502).send({ error: "download_failed", message });
+      console.error(JSON.stringify({ event: "download_failed", context: "avatars.referenceVideo", detail: err instanceof Error ? err.message : String(err) }));
+      return reply.code(502).send({ error: "download_failed", message: "Não foi possível baixar o arquivo agora. Tente novamente." });
     }
   });
 
@@ -189,8 +190,8 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         photoUrls: existing[0].photo_urls,
       }));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      return reply.code(502).send({ error: "avatar_provider_error", message });
+      const { failure, message } = toClientVendorError("avatar", "avatars.train", err);
+      return reply.code(vendorErrorStatus(failure)).send({ error: "avatar_provider_error", message });
     }
 
     // Persist the successful avatar training immediately, before attempting
@@ -219,8 +220,8 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         );
         return withVoice[0];
       } catch (err) {
-        const message = err instanceof VoiceProviderError ? err.message : "Unknown error";
-        return reply.code(502).send({ error: "voice_provider_error", message });
+        const { failure, message } = toClientVendorError("voice", "avatars.cloneVoice", err);
+        return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
       }
     }
 

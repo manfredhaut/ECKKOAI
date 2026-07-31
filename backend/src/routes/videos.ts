@@ -10,6 +10,7 @@ import { recordProviderUsage } from "../services/billing/usageTracking.js";
 import { debitCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { proxyRemoteAttachment } from "../services/downloadProxy.js";
+import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -48,16 +49,17 @@ function pollJob(
         });
       } else if (result.status === "error") {
         clearInterval(interval);
+        const { message: pollMessage } = toClientVendorError("avatar", "videos.poll", new Error(result.errorMessage));
         await pool.query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1", [
           videoId,
-          result.errorMessage,
+          pollMessage,
         ]);
-        await createNotification(tenantId, "video_error", `Video generation failed: ${result.errorMessage}`);
+        await createNotification(tenantId, "video_error", pollMessage);
       } else if (attempts === 1) {
         await pool.query("UPDATE videos SET status = 'processing' WHERE id = $1", [videoId]);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
+      const { message } = toClientVendorError("avatar", "videos.pollLoop", err);
       clearInterval(interval);
       await pool
         .query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1", [videoId, message])
@@ -66,7 +68,7 @@ function pollJob(
     if (attempts >= MAX_POLL_ATTEMPTS) {
       clearInterval(interval);
       await pool
-        .query("UPDATE videos SET status = 'error', error_message = 'Timed out waiting for the provider.' WHERE id = $1 AND status != 'ready'", [
+        .query("UPDATE videos SET status = 'error', error_message = 'O serviço de vídeo demorou mais que o esperado. Tente gerar novamente.' WHERE id = $1 AND status != 'ready'", [
           videoId,
         ])
         .catch(() => {});
@@ -116,8 +118,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       await proxyRemoteAttachment(reply, video.output_url, `video-${video.id}${ext}`);
       return reply;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      return reply.code(502).send({ error: "download_failed", message });
+      console.error(JSON.stringify({ event: "download_failed", context: "videos.download", detail: err instanceof Error ? err.message : String(err) }));
+      return reply.code(502).send({ error: "download_failed", message: "Não foi possível baixar o vídeo agora. Tente novamente." });
     }
   });
 
@@ -213,7 +215,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         duration_seconds,
       );
     } catch (err) {
-      const message = err instanceof AvatarProviderError ? err.message : "Unknown error";
+      const { message } = toClientVendorError("avatar", "videos.create", err);
       const { rows: errored } = await pool.query<Video>(
         "UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 RETURNING *",
         [video.id, message],
