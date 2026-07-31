@@ -293,7 +293,10 @@
       "colCostPerUnit": "Custo por unidade (centavos)",
       "colVerified": "Conferido",
       "save": "Salvar"
-    }
+    },
+    "navFeatures": "Recursos",
+    "loadError": "Não foi possível carregar.",
+    "saveError": "Não foi possível salvar."
   },
   "dashboard": {
     "title": "Painel",
@@ -581,12 +584,30 @@
     "placeholder": "Digite uma mensagem…",
     "send": "Enviar",
     "sending": "Enviando…",
-    "notConfigured": "Conecte a chave de API do provedor de roteiro em Configurações para usar o copiloto.",
+    "notConfigured": "O assistente está indisponível no momento. A equipe já foi avisada — tente novamente em instantes.",
     "adminNotConfigured": "O copiloto interno ainda não está configurado — defina PLATFORM_COPILOT_API_KEY no ambiente do backend.",
     "error": "Algo deu errado. Tente novamente.",
     "fieldHelpTooltip": "Perguntar ao copiloto sobre este campo"
   },
   "errors": {
     "generic": "Não foi possível concluir a operação. Tente novamente em alguns instantes."
+  },
+  "simulated": {
+    "short": "SIMULADO",
+    "full": "Resultado simulado",
+    "notice": "Este resultado foi SIMULADO: o ambiente está em modo de demonstração e não chamou os provedores de vídeo e voz. O arquivo abaixo é um artefato de teste, não uma geração real.",
+    "ledgerReal": "Consumo real",
+    "ledgerSimulated": "Consumo simulado",
+    "ledgerWarning": "Os dois nunca são somados: consumo simulado não custou nada e não representa uso do plano."
+  },
+  "featureFlags": {
+    "unavailable": "Indisponível no momento",
+    "adminTitle": "Recursos (feature flags)",
+    "adminDesc": "Ligue e desligue recursos sem publicar versão nova. O motivo aparece para o cliente quando o recurso está desligado.",
+    "colFeature": "Recurso",
+    "colState": "Estado",
+    "colReason": "Motivo exibido ao cliente",
+    "on": "Ligado",
+    "off": "Desligado"
   }
 }

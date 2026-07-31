@@ -481,7 +481,9 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-07-31 — Bloco ACESSO-FINAL: o backend agora
+**Última atualização:** 2026-07-31 — Bloco VIDEO-0: modo fixture (geração
+simulada ponta a ponta, sem rede), registro de feature flags e separação
+das três chaves de plataforma. Antes dele, Bloco ACESSO-FINAL: o backend agora
 morre de verdade quando o bootstrap falha (e volta sozinho), os 4 serviços
 têm restart policy e healthcheck, o loop do `/admin` foi corrigido na
 causa, o limiter virou configurável e as telas de login vêm preenchidas em
@@ -577,6 +579,27 @@ lido. Falta nas duas pontas.
    `PLATFORM_COPILOT_VENDOR`: `askCopilot()` faz `vendor = input.vendor ??
    "anthropic"` e nem `public.ts` nem `adminCopilot.ts` passam vendor. Colar
    uma chave Gemini ali a manda para `api.anthropic.com` e dá 401.
+
+1b. **A chave do copiloto do TENANT está FECHADA desde 2026-07-31**: é a
+   chave **Google DA PLATAFORMA** (`PLATFORM_GOOGLE_API_KEY`), não a BYOK do
+   cliente. Suporte deixou de exigir que o cliente conecte provedor — cobrar
+   configuração de API para poder pedir ajuda sobre o produto era o oposto do
+   que suporte deve ser. São **três** chaves de plataforma distintas, e
+   confundi-las é o erro recorrente aqui:
+
+   | Variável | Vendor | Serve a |
+   |---|---|---|
+   | `PLATFORM_COPILOT_API_KEY` | Anthropic | copiloto público e do admin |
+   | `PLATFORM_GOOGLE_API_KEY` | Google | roteiro e copiloto do tenant |
+   | `PLATFORM_EMBEDDING_API_KEY` | Google | só embeddings |
+
+   A de embedding é separada da de roteiro **mesmo sendo o mesmo vendor**:
+   indexação é consumo em lote com limite diário próprio, e dividir cota com
+   o suporte faria uma reindexação derrubar o copiloto. Enquanto
+   `PLATFORM_GOOGLE_API_KEY` estiver vazia, o copiloto do tenant cai na BYOK
+   do cliente como retaguarda — ver `services/providers/platformKeys.ts`.
+   **O teto de ~20 requisições/dia por projeto deixou de ser o limite do
+   suporte** e não deve mais ser citado como restrição em doc nem em UI.
 2. **Embedding será `gemini-embedding-001`, a 1536 dimensões via
    `output_dimensionality`, com chave DA PLATAFORMA** em variável de
    ambiente própria — nunca a BYOK de um tenant.
@@ -622,6 +645,7 @@ lido. Falta nas duas pontas.
 | O quê | Dono | Observação |
 |---|---|---|
 | Colar `PLATFORM_COPILOT_API_KEY` (Anthropic) | **usuário** | Sem ela, copiloto público e do admin **nunca responderam** |
+| Colar `PLATFORM_GOOGLE_API_KEY` (Google, com créditos) | **usuário** | Roteiro e copiloto do tenant. Enquanto vazia, o copiloto do tenant cai na BYOK do cliente |
 | Fornecer chave de plataforma do Gemini para embedding | **usuário** | `gemini-embedding-001`; desbloqueia os Blocos 3 e 6 |
 | Rotacionar a chave Gemini do tenant de demo | **usuário** | Foi colada em texto plano no chat |
 | Rotacionar as senhas de `admin@eckkoai.com` e `demo@eckko.ai` | **usuário** | Mesmo motivo; via `npm run dev:seed-access` |
@@ -657,6 +681,71 @@ lido. Falta nas duas pontas.
   chave — inútil para identificar qual chave está lá.
 - **Header quebra abaixo de ~500px.**
 - Nenhum destes bloqueia a demo pelo caminho ensaiado.
+
+### Bloco VIDEO-0 — modo fixture, feature flags e chaves (CONCLUÍDO)
+
+**1. `PROVIDER_MODE=fixture` gera de ponta a ponta sem tocar a rede.**
+Vale só para HeyGen e ElevenLabs (os caros); provedores de texto ficam de
+fora de propósito. Padrão `fixture` em desenvolvimento, `live` em produção,
+e valor inválido cai no seguro em vez de virar um terceiro modo silencioso
+([providerMode.ts](backend/src/services/providers/providerMode.ts)).
+
+O que dá valor ao modo é ele **não** devolver o resultado pronto: o job
+simulado fica 12 s em `processing` antes de concluir. Um stub que responde
+"pronto" na primeira chamada esconderia justamente os defeitos de fluxo
+assíncrono. *Medido:* `queued → processing → processing → ready`, depois
+download **HTTP 200** com `Content-Disposition: attachment` e 50.600 bytes
+— exatamente o tamanho da fixture.
+
+As fixtures são geradas por ffmpeg e **versionadas** em `backend/fixtures/`
+(mp4 h264 640×360 5 s com áudio; mp3 3 s). Antes de gerar, procurei
+artefatos aproveitáveis: os únicos mp4 do projeto tinham **16 bytes**
+(placeholders vazios), e os mp3/wav existentes são de um tenant real —
+versionar dado de cliente como fixture não era opção.
+
+*Dois defeitos achados por rodar de verdade, não por revisar:* o Dockerfile
+não copiava `backend/fixtures/`, então a simulação falhava **no meio do
+job** (o pior momento para descobrir); e o proxy de download recebia URL
+relativa e devolvia 502. O segundo foi corrigido resolvendo a URL contra o
+próprio servidor, e **não** desviando para leitura em disco — desviar faria
+o proxy só rodar em produção, que é onde não se quer descobrir defeito nele.
+
+**2. Marca de simulação, por item e não por ambiente.** `SimulatedBadge`
+usa o fato gravado na linha (`videos.simulated`), com o modo global só como
+retaguarda. *Verificado na tela:* na Biblioteca de vídeos, os 3 vídeos de
+fixture aparecem com **SIMULADO** e os 3 vídeos reais do HeyGen **não** —
+mesmo com o ambiente inteiro em modo fixture. Fosse pelo modo global, os
+reais teriam sido marcados como simulados, que é a mentira inversa.
+
+**3. Ledger separado.** `credit_ledger.simulated` é coluna própria, não um
+`reason` novo — simulação é ortogonal ao motivo, e codificá-la dentro de
+`reason` dobraria a lista a cada modo. `GET /admin/tenants/:id/credit-usage`
+devolve `real` e `simulated` em listas separadas, **nunca somadas**, e a
+tela repete o aviso. *Medido:* `video real=1, video simulado=3`.
+
+**4. Registro de feature flags** ([featureFlags.ts](backend/src/services/featureFlags.ts)):
+o código define quais existem e o **motivo**; a tabela `feature_flags`
+guarda o estado, alternável pelo admin sem rebuild. Primeira flag:
+`removable_background`, **desligada**, motivo "depende de teste ainda não
+realizado com a HeyGen". Contrato de UI: recurso atrás de flag desligada
+aparece inerte **com o motivo** — nunca some, nunca vira botão que dá erro.
+
+**5. Chaves de plataforma separadas** — ver decisão 1b acima.
+
+**Quatro guardas novas no `npm run check`, todas provadas reprovando:**
+fixture com `NODE_ENV=production`; caminho de vendor sem consultar
+`isFixtureMode()`; flag fora do registro; e o caso que **deve** passar.
+
+**Achado que vale registrar:** a guarda de flag, na primeira versão, **não
+pegava nada** — a lista de helpers trazia `useFeatureFlag`, e o hook real
+chama-se `useFeature`. Ela passava sem inspecionar uma linha sequer. Uma
+guarda que não casa com nada é pior que guarda nenhuma, porque parece
+cobertura. Só apareceu porque testei se ela reprovava de verdade.
+
+**Não verificado visualmente:** o contrato de flag na tela de avatar. O
+bloco de fundo só renderiza depois de "Iniciar captura", e a câmera é
+bloqueada nesta ferramenta. Verificado por API (o motivo chega ao cliente)
+e por código, não por olho.
 
 ### Bloco ACESSO-FINAL — ambiente de pé e acesso destravado (CONCLUÍDO)
 

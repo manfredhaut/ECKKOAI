@@ -1,4 +1,5 @@
 import { readLoginRateLimit } from "./services/loginRateLimitPolicy.js";
+import { readProviderMode } from "./services/providers/providerMode.js";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -36,6 +37,22 @@ export const config = {
   // tenant's BYOK credential (no tenant exists yet at that point). Optional:
   // the public copilot endpoint degrades to a "not configured" error when unset.
   platformCopilotApiKey: optional("PLATFORM_COPILOT_API_KEY"),
+  // Três chaves de plataforma DISTINTAS, de propósito. Confundi-las já
+  // produziu 401: askCopilot() usa vendor "anthropic" por padrão, então uma
+  // chave Google colada em PLATFORM_COPILOT_API_KEY vai para
+  // api.anthropic.com e falha.
+  //
+  //  - platformCopilotApiKey  → Anthropic. Copiloto PÚBLICO e do ADMIN.
+  //  - platformGoogleApiKey   → Google. Roteiro e copiloto do TENANT.
+  //  - platformEmbeddingApiKey→ Google. Só embeddings (gemini-embedding-001).
+  //
+  // A de embedding é separada da de roteiro mesmo sendo do mesmo vendor:
+  // indexação é um consumo em lote, com limite diário próprio, e dividir a
+  // cota com o suporte faria uma reindexação derrubar o copiloto.
+  platformGoogleApiKey: optional("PLATFORM_GOOGLE_API_KEY"),
+  platformEmbeddingApiKey: optional("PLATFORM_EMBEDDING_API_KEY"),
+  // fixture | live — ver services/providers/providerMode.ts.
+  providerMode: readProviderMode(),
   // Optional overrides for the default AI model used by the script/copilot
   // providers — see services/providers/providerRegistry.ts for the fallback.
   aiModelOverrides: {

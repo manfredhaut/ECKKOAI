@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
@@ -104,6 +104,68 @@ function AdminCredentialEditor({
 // Cost is always an ESTIMATE (see types.ts TenantUsage) — the banner is not
 // cosmetic, it's the whole point of shipping this before rates are
 // verified (see CLAUDE.md / billing plan, Fase 1 review).
+/**
+ * Consumo de crédito separado em REAL e SIMULADO.
+ *
+ * Duas tabelas, nunca uma soma. Misturar geração que custou dinheiro com
+ * geração de fixture produziria um número que parece medida e não é — e é
+ * exatamente o número que alguém usaria para decidir preço.
+ */
+function AdminTenantCreditUsagePanel({ tenantId }: { tenantId: string }) {
+  const { t } = useTranslation();
+  const [data, setData] = useState<TenantCreditUsage | null>(null);
+
+  useEffect(() => {
+    setData(null);
+    api.get<TenantCreditUsage>(`/admin/tenants/${tenantId}/credit-usage`).then(setData);
+  }, [tenantId]);
+
+  if (!data) return null;
+  if (data.real.length === 0 && data.simulated.length === 0) return null;
+
+  const block = (title: string, rows: CreditUsageRow[]) => (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{title}</div>
+      {rows.length === 0 ? (
+        <p className="text-muted" style={{ fontSize: 13 }}>—</p>
+      ) : (
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+          {rows.map((r) => (
+            <li key={r.creditType}>
+              {r.creditType}: {r.consumed}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-title">
+        {t("simulated.ledgerReal")} / {t("simulated.ledgerSimulated")}
+      </div>
+      {block(t("simulated.ledgerReal"), data.real)}
+      {block(t("simulated.ledgerSimulated"), data.simulated)}
+      <p className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>
+        {t("simulated.ledgerWarning")}
+      </p>
+    </div>
+  );
+}
+
+interface CreditUsageRow {
+  creditType: string;
+  consumed: number;
+  entries: number;
+}
+
+interface TenantCreditUsage {
+  real: CreditUsageRow[];
+  simulated: CreditUsageRow[];
+  providerMode: "fixture" | "live";
+}
+
 function AdminTenantUsagePanel({ tenantId }: { tenantId: string }) {
   const { t } = useTranslation();
   const [usage, setUsage] = useState<TenantUsage | null>(null);
@@ -274,11 +336,12 @@ function AdminTenantDetailPanel({
       </div>
 
       <AdminTenantUsagePanel tenantId={tenantId} />
+      <AdminTenantCreditUsagePanel tenantId={tenantId} />
     </div>
   );
 }
 
-type AdminView = "tenants" | "apis" | "costRates" | "plans";
+type AdminView = "tenants" | "apis" | "costRates" | "plans" | "features";
 
 // Same shape as AppShell's navItems (tenant app), except the admin panel
 // swaps panels in place instead of routing — so these are buttons driving
@@ -288,6 +351,7 @@ const NAV_ITEMS: { id: AdminView; labelKey: string }[] = [
   { id: "apis", labelKey: "adminPanel.navApis" },
   { id: "costRates", labelKey: "adminPanel.navCostRates" },
   { id: "plans", labelKey: "adminPanel.navPlans" },
+  { id: "features", labelKey: "adminPanel.navFeatures" },
 ];
 
 export function AdminPanelPage() {
@@ -357,6 +421,8 @@ export function AdminPanelPage() {
         <AdminCostRatesPanel />
       ) : view === "plans" ? (
         <AdminPlansPanel />
+      ) : view === "features" ? (
+        <AdminFeatureFlagsPanel />
       ) : selectedTenantId ? (
         <AdminTenantDetailPanel tenantId={selectedTenantId} onBack={() => setSelectedTenantId(null)} />
       ) : (
@@ -406,4 +472,96 @@ export function AdminPanelPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Feature flags: ligar e desligar recurso sem publicar versão nova.
+ *
+ * O motivo NÃO é editável aqui de propósito. Ele é texto de produto que
+ * viaja com o código (services/featureFlags.ts) e aparece na tela do
+ * cliente; deixá-lo editável em runtime convidaria a um texto escrito às
+ * pressas para justificar um recurso que acabou de ser desligado. Trocar o
+ * motivo é uma mudança de produto, e passa por commit.
+ */
+function AdminFeatureFlagsPanel() {
+  const { t } = useTranslation();
+  const [flags, setFlags] = useState<AdminFeatureFlag[] | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.get<{ flags: AdminFeatureFlag[] }>("/admin/feature-flags");
+      setFlags(res.flags);
+    } catch {
+      setError(t("adminPanel.loadError"));
+    }
+  }, [t]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function toggle(key: string, enabled: boolean) {
+    setSaving(key);
+    setError(null);
+    try {
+      await api.put(`/admin/feature-flags/${key}`, { enabled });
+      await load();
+    } catch {
+      setError(t("adminPanel.saveError"));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{t("featureFlags.adminTitle")}</h2>
+      <p className="text-muted" style={{ fontSize: 13, marginBottom: 16 }}>
+        {t("featureFlags.adminDesc")}
+      </p>
+
+      {error && <p className="alert-error">{error}</p>}
+
+      {flags === null ? (
+        <p className="text-muted">{t("adminPanel.loading")}</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>{t("featureFlags.colFeature")}</th>
+              <th>{t("featureFlags.colState")}</th>
+              <th>{t("featureFlags.colReason")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {flags.map((flag) => (
+              <tr key={flag.key}>
+                <td>{flag.label}</td>
+                <td>
+                  <button
+                    type="button"
+                    className={flag.enabled ? "btn btn-primary" : "btn btn-outline"}
+                    disabled={saving === flag.key}
+                    onClick={() => void toggle(flag.key, !flag.enabled)}
+                  >
+                    {flag.enabled ? t("featureFlags.on") : t("featureFlags.off")}
+                  </button>
+                </td>
+                <td className="text-muted">{flag.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+interface AdminFeatureFlag {
+  key: string;
+  label: string;
+  enabled: boolean;
+  reason: string;
 }

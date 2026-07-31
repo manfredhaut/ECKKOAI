@@ -16,6 +16,7 @@ import { config } from "../config.js";
 import { loadDocsFor } from "../services/docs.js";
 import { DOCS_EXCLUDED, DOCS_MANIFEST, type DocAudience } from "../services/docsManifest.js";
 import { checkEnvironmentPolicy } from "./checkEnvironmentPolicy.js";
+import { checkProviderPolicy } from "./checkProviderPolicy.js";
 import {
   DENY_ENFORCED_FOR,
   DENY_TERMS,
@@ -201,6 +202,11 @@ async function main(): Promise<void> {
   // então entram direto — passar por fail() duplicaria o rótulo.
   envResult.failures.forEach((f) => failures.push(f));
   envResult.notes.forEach((n) => note(n));
+
+  // --- 9. modo de provedor (fixture/live) e registro de feature flags ----
+  const providerResult = await checkProviderPolicy(process.env.REPO_ROOT ?? "/repo");
+  providerResult.failures.forEach((f) => failures.push(f));
+  providerResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

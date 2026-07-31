@@ -12,6 +12,8 @@ export interface Avatar {
   // Postgres `numeric` columns serialize as strings over JSON — parse with
   // Number(...) before using this in arithmetic or a range input's value.
   audio_treatment_target_lufs: string;
+  /** Treinado em PROVIDER_MODE=fixture — não passou pelo provedor real. */
+  simulated: boolean;
   created_at: string;
 }
 
@@ -27,6 +29,8 @@ export interface Video {
   status: VideoStatus;
   output_url: string | null;
   error_message: string | null;
+  /** Gerado em PROVIDER_MODE=fixture — artefato de teste, não geração real. */
+  simulated: boolean;
   created_at: string;
 }
 

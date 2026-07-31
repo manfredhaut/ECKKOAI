@@ -9,6 +9,7 @@ import { Field } from "../../../components/ui/Field";
 import { BACKGROUND_OPTIONS, DEFAULT_BACKGROUND_ID } from "../virtualBackground/backgroundOptions";
 import { DEFAULT_QUALITY } from "../imageQuality/applyQualityTreatment";
 import type { QualityOptions } from "../imageQuality/applyQualityTreatment";
+import { useFeature } from "../../../features/FeatureFlagContext";
 
 export function AvatarSetupStep({
   selectedAvatarId,
@@ -38,6 +39,8 @@ export function AvatarSetupStep({
   const [name, setName] = useState("");
   const [draftAvatar, setDraftAvatar] = useState<Avatar | null>(null);
   const [backgroundId, setBackgroundId] = useState(DEFAULT_BACKGROUND_ID);
+  // Fundo removível está atrás de flag: ver services/featureFlags.ts.
+  const removableBackground = useFeature("removable_background");
   const [intensity, setIntensity] = useState(1);
   const [quality, setQualityState] = useState<QualityOptions>(DEFAULT_QUALITY);
   const [targetLufsDraft, setTargetLufsDraft] = useState(-16);
@@ -299,6 +302,18 @@ export function AvatarSetupStep({
                 }}
               />
 
+              {/* Contrato de feature flag: quando desligada, o recurso NÃO
+                  some e NÃO vira um botão que dá erro — aparece inerte, com
+                  o motivo que o admin cadastrou. Some sem explicação parece
+                  defeito; botão que falha parece descaso. */}
+              {!removableBackground.enabled ? (
+                <div className="feature-unavailable">
+                  <div className="feature-unavailable-title">
+                    {t("createVideo.avatarSetup.background.label")} — {t("featureFlags.unavailable")}
+                  </div>
+                  {removableBackground.reason}
+                </div>
+              ) : (
               <Field
                 label={t("createVideo.avatarSetup.background.label")}
                 help={
@@ -336,8 +351,9 @@ export function AvatarSetupStep({
                   ))}
                 </div>
               </Field>
+              )}
 
-              {backgroundId !== "none" && (
+              {removableBackground.enabled && backgroundId !== "none" && (
                 <Field
                   label={`${t("createVideo.avatarSetup.background.intensityLabel")} (${Math.round(intensity * 100)}%)`}
                   help={t("createVideo.avatarSetup.background.intensityHelp")}

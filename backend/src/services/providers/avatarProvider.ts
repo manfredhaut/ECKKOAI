@@ -16,6 +16,13 @@ import {
   SCRIPT_DURATION,
 } from "../script/scriptDuration.js";
 import type { AvatarVendor } from "./vendorCatalog.js";
+import { isFixtureMode } from "./providerMode.js";
+import {
+  checkAvatarConnectionFixture,
+  generateVideoFixture,
+  pollVideoJobFixture,
+  trainAvatarFixture,
+} from "./fixtureProvider.js";
 
 export class AvatarProviderError extends Error {}
 
@@ -307,22 +314,31 @@ async function checkDidConnection(apiKey: string): Promise<void> {
 // Vendor dispatch
 // ---------------------------------------------------------------------------
 
+// Toda função exportada daqui passa por isFixtureMode() ANTES de qualquer
+// chamada de rede. Este é o ponto único de decisão para o provedor de
+// avatar/vídeo, e `npm run check` reprova o build se alguma export deste
+// arquivo deixar de consultá-lo — ver scripts/checkProviderMode.ts.
+
 export async function trainAvatar(input: TrainAvatarInput): Promise<TrainAvatarResult> {
   if (input.photoUrls.length === 0) {
     throw new AvatarProviderError("At least one face photo is required to train an avatar.");
   }
+  if (isFixtureMode()) return trainAvatarFixture();
   const photoBuffer = await readUpload(input.photoUrls[0]);
   return input.vendor === "did" ? trainAvatarDid(input.apiKey, photoBuffer) : trainAvatarHeygen(input.apiKey, photoBuffer);
 }
 
 export async function generateVideo(input: GenerateVideoInput): Promise<GenerateVideoResult> {
+  if (isFixtureMode()) return generateVideoFixture(input);
   return input.vendor === "did" ? generateVideoDid(input) : generateVideoHeygen(input);
 }
 
 export async function pollVideoJob(vendor: AvatarVendor, apiKey: string, jobId: string): Promise<PollResult> {
+  if (isFixtureMode()) return pollVideoJobFixture(jobId);
   return vendor === "did" ? pollDidTalk(apiKey, jobId) : pollHeygenVideo(apiKey, jobId);
 }
 
 export async function checkAvatarConnection(apiKey: string, vendor: AvatarVendor): Promise<void> {
+  if (isFixtureMode()) return checkAvatarConnectionFixture();
   return vendor === "did" ? checkDidConnection(apiKey) : checkHeygenConnection(apiKey);
 }

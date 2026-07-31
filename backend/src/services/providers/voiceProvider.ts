@@ -1,6 +1,12 @@
 // Real integration: ElevenLabs instant voice cloning. Only vendor today —
 // see vendorCatalog.ts.
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
+import { isFixtureMode } from "./providerMode.js";
+import {
+  checkVoiceConnectionFixture,
+  cloneVoiceFixture,
+  synthesizeSpeechFixture,
+} from "./fixtureProvider.js";
 const ELEVENLABS_ADD_VOICE_URL = "https://api.elevenlabs.io/v1/voices/add";
 const ELEVENLABS_VOICES_URL = "https://api.elevenlabs.io/v1/voices";
 
@@ -18,7 +24,11 @@ export interface CloneVoiceResult {
   voiceId: string;
 }
 
+// Toda export deste arquivo consulta isFixtureMode() antes de qualquer
+// chamada de rede — ver scripts/checkProviderMode.ts, que reprova o build
+// se alguma deixar de consultar.
 export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResult> {
+  if (isFixtureMode()) return cloneVoiceFixture();
   const form = new FormData();
   form.set("name", input.name);
   form.set("files", new Blob([new Uint8Array(input.fileBuffer)], { type: input.mimeType }), input.filename);
@@ -49,6 +59,7 @@ export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResu
 // tenant's voices instead of a real clone, so testing a key doesn't spend a
 // voice slot.
 export async function checkElevenLabsConnection(apiKey: string): Promise<void> {
+  if (isFixtureMode()) return checkVoiceConnectionFixture();
   let res: Response;
   try {
     res = await fetch(ELEVENLABS_VOICES_URL, {
@@ -93,6 +104,7 @@ export async function synthesizeSpeech(
   voiceId: string,
   text: string,
 ): Promise<SynthesizedSpeech> {
+  if (isFixtureMode()) return synthesizeSpeechFixture();
   const base = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`;
 
   let res: Response;

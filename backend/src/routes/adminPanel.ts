@@ -10,6 +10,8 @@ import { AiEmptyResponseError, complete } from "../services/providers/providerRe
 import { STORAGE_PROVIDER_IDS, type StorageProviderId } from "../services/providers/storageProvider.js";
 import { getAllPlansIncludingInactive, createPlan, updatePlan } from "../plans.js";
 import { runMonthlyGrantSweep } from "../services/billing/monthlyGrant.js";
+import { getFeatureFlags, setFeatureFlag } from "../services/featureFlagStore.js";
+import { config } from "../config.js";
 import type { CredentialProvider, Tenant } from "../types.js";
 
 const PLAN_ID_PATTERN = /^[a-z0-9-]+$/;
@@ -348,6 +350,81 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
       allRatesVerified: breakdown.length > 0 && breakdown.every((b) => b.verified),
     };
   });
+
+  // Consumo de crédito separado em REAL e SIMULADO.
+  //
+  // Os dois nunca são somados num número só: um total que mistura geração
+  // que custou dinheiro com geração de fixture é pior que não ter total
+  // nenhum, porque parece uma medida e não é. Quem quiser a soma que a
+  // faça sabendo o que está somando.
+  app.get<{ Params: { tenantId: string } }>("/admin/tenants/:tenantId/credit-usage", async (req, reply) => {
+    const tenant = await getTenantOr404(req.params.tenantId);
+    if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+
+    const { rows } = await pool.query<{
+      credit_type: string;
+      simulated: boolean;
+      consumed: string;
+      entries: string;
+    }>(
+      `SELECT credit_type, simulated,
+              sum(-delta) AS consumed,
+              count(*)    AS entries
+       FROM credit_ledger
+       WHERE tenant_id = $1 AND reason = 'consumption'
+       GROUP BY credit_type, simulated
+       ORDER BY credit_type, simulated`,
+      [tenant.id],
+    );
+
+    const pick = (simulated: boolean) =>
+      rows
+        .filter((r) => r.simulated === simulated)
+        .map((r) => ({
+          creditType: r.credit_type,
+          consumed: Number(r.consumed),
+          entries: Number(r.entries),
+        }));
+
+    return {
+      real: pick(false),
+      simulated: pick(true),
+      providerMode: config.providerMode,
+    };
+  });
+
+  // Feature flags: alternáveis daqui, sem rebuild e sem deploy.
+  app.get("/admin/feature-flags", async () => ({
+    flags: await getFeatureFlags(),
+    providerMode: config.providerMode,
+  }));
+
+  app.put<{ Params: { key: string }; Body: { enabled: boolean } }>(
+    "/admin/feature-flags/:key",
+    async (req, reply) => {
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") {
+        return reply.code(400).send({ error: "invalid_state", message: "enabled deve ser booleano." });
+      }
+
+      const before = (await getFeatureFlags()).find((f) => f.key === req.params.key) ?? null;
+      const updated = await setFeatureFlag(req.params.key, enabled, req.adminUserId!);
+      if (!updated) {
+        // Chave fora do registro do código — recusa em vez de gravar, para
+        // o banco nunca divergir do catálogo.
+        return reply.code(404).send({ error: "unknown_flag", message: "Flag não existe no registro." });
+      }
+
+      await recordAuditLog({
+        tenantId: null,
+        actorAdminUserId: req.adminUserId!,
+        action: "feature_flag.updated",
+        before,
+        after: updated,
+      });
+      return updated;
+    },
+  );
 
   // Admin-editable rate card (see migration 022/026). Not tenant-scoped —
   // one global table shared by every tenant's cost estimate.

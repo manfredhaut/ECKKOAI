@@ -28,6 +28,7 @@ import { jobRoutes } from "./routes/jobs.js";
 import { copilotRoutes } from "./routes/copilot.js";
 import { subscriptionRoutes } from "./routes/subscription.js";
 import { storageRoutes } from "./routes/storage.js";
+import { featureFlagRoutes } from "./routes/featureFlags.js";
 import { publicRoutes } from "./routes/public.js";
 import { stripeWebhookRoutes } from "./routes/stripeWebhook.js";
 
@@ -86,6 +87,7 @@ export async function buildApp() {
     await protectedApp.register(copilotRoutes);
     await protectedApp.register(subscriptionRoutes);
     await protectedApp.register(storageRoutes);
+    await protectedApp.register(featureFlagRoutes);
   });
 
   // Cross-tenant admin routes — gated by requireAdmin (admin_users session),

@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import type { Avatar, Video } from "../../types";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { StatusPill } from "../../components/ui/StatusPill";
+import { SimulatedBadge } from "../../features/SimulatedBadge";
 
 type Tab = "avatars" | "videos";
 
@@ -100,7 +101,12 @@ export function ContentPage() {
               <tbody>
                 {videos.map((v) => (
                   <tr key={v.id}>
-                    <td>{v.script.slice(0, 60)}</td>
+                    <td>
+                      {v.script.slice(0, 60)}
+                      {/* Marca por linha: usa o fato gravado no vídeo, não o
+                          modo atual do ambiente. */}
+                      <SimulatedBadge compact simulated={v.simulated} />
+                    </td>
                     <td>{v.duration_seconds}s</td>
                     <td>
                       <StatusPill status={v.status} />

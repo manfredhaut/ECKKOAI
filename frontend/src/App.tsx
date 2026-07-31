@@ -6,6 +6,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminProtectedRoute } from "./components/AdminProtectedRoute";
 import { AppShell } from "./components/layout/AppShell";
 import { CopilotProvider } from "./copilot/CopilotContext";
+import { FeatureFlagProvider } from "./features/FeatureFlagContext";
 import { isRootDomain } from "./publicConfig";
 import { LandingPage } from "./pages/Landing/LandingPage";
 import { LoginPage } from "./pages/Login/LoginPage";
@@ -61,6 +62,7 @@ export function App() {
           path="/*"
           element={
             <ProtectedRoute>
+              <FeatureFlagProvider>
               <CopilotProvider>
                 <AppShell>
                   <Routes>
@@ -73,6 +75,7 @@ export function App() {
                   </Routes>
                 </AppShell>
               </CopilotProvider>
+              </FeatureFlagProvider>
             </ProtectedRoute>
           }
         />

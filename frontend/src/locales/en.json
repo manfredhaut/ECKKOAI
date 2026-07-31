@@ -293,7 +293,10 @@
       "colCostPerUnit": "Cost per unit (cents)",
       "colVerified": "Verified",
       "save": "Save"
-    }
+    },
+    "navFeatures": "Features",
+    "loadError": "Could not load.",
+    "saveError": "Could not save."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -581,12 +584,30 @@
     "placeholder": "Type a message…",
     "send": "Send",
     "sending": "Sending…",
-    "notConfigured": "Connect the script-generation provider's API key in Settings to use the copilot.",
+    "notConfigured": "The assistant is unavailable right now. The team has been notified — please try again shortly.",
     "adminNotConfigured": "The internal copilot isn't configured yet — set PLATFORM_COPILOT_API_KEY in the backend environment.",
     "error": "Something went wrong. Please try again.",
     "fieldHelpTooltip": "Ask the copilot about this field"
   },
   "errors": {
     "generic": "We couldn't complete the operation. Please try again in a moment."
+  },
+  "simulated": {
+    "short": "SIMULATED",
+    "full": "Simulated result",
+    "notice": "This result was SIMULATED: the environment is in demo mode and did not call the video and voice providers. The file below is a test artifact, not a real generation.",
+    "ledgerReal": "Real usage",
+    "ledgerSimulated": "Simulated usage",
+    "ledgerWarning": "The two are never added together: simulated usage cost nothing and does not represent plan usage."
+  },
+  "featureFlags": {
+    "unavailable": "Currently unavailable",
+    "adminTitle": "Features (feature flags)",
+    "adminDesc": "Turn features on and off without shipping a new build. The reason is shown to the customer when a feature is off.",
+    "colFeature": "Feature",
+    "colState": "State",
+    "colReason": "Reason shown to customer",
+    "on": "On",
+    "off": "Off"
   }
 }

@@ -7,6 +7,7 @@ import type { Avatar } from "../types.js";
 import { trainAvatar } from "../services/providers/avatarProvider.js";
 import { cloneVoice, VoiceProviderError } from "../services/providers/voiceProvider.js";
 import { getCredential } from "../services/credentialLookup.js";
+import { isFixtureMode } from "../services/providers/providerMode.js";
 import { saveUpload, readUpload } from "../services/storage.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { debitCredit } from "../services/billing/creditGate.js";
@@ -199,9 +200,9 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     // transient error, etc.) would discard training that already succeeded
     // and cost real provider quota, forcing a wasteful retry from scratch.
     const { rows: trained } = await pool.query<Avatar>(
-      `UPDATE avatars SET reference_video_url = $3, provider_avatar_id = $4, provider = $5
+      `UPDATE avatars SET reference_video_url = $3, provider_avatar_id = $4, provider = $5, simulated = $6
        WHERE id = $1 AND tenant_id = $2 RETURNING *`,
-      [req.params.id, req.tenantId, url, providerAvatarId, avatarCredential.vendor],
+      [req.params.id, req.tenantId, url, providerAvatarId, avatarCredential.vendor, isFixtureMode()],
     );
 
     const voiceCredential = await getCredential(req.tenantId, "voice");

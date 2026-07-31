@@ -11,6 +11,7 @@ import { debitCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { proxyRemoteAttachment } from "../services/downloadProxy.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
+import { isFixtureMode } from "../services/providers/providerMode.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -167,9 +168,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     const voiceCredential = await getCredential(req.tenantId, "voice");
 
     const { rows } = await pool.query<Video>(
-      `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9) RETURNING *`,
-      [req.tenantId, avatar_id, script, scenario, outfit, scenarioPrompt, outfitPrompt, duration_seconds, avatarCredential.vendor],
+      `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10) RETURNING *`,
+      [req.tenantId, avatar_id, script, scenario, outfit, scenarioPrompt, outfitPrompt, duration_seconds, avatarCredential.vendor, isFixtureMode()],
     );
     const video = rows[0];
 

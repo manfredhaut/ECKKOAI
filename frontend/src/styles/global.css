@@ -1244,3 +1244,49 @@ th {
   border: 1px dashed var(--color-border);
   border-radius: 7px;
 }
+
+/* --- Marca de simulação (PROVIDER_MODE=fixture) -------------------------
+   Deliberadamente difícil de ignorar: sem isto, uma barra de teste e um
+   vídeo real ocupam o mesmo lugar na tela. */
+.simulated-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--color-secondary);
+  color: var(--color-secondary-text);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.simulated-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-secondary);
+  background: color-mix(in srgb, var(--color-secondary) 12%, transparent);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* --- Recurso atrás de feature flag desligada ----------------------------
+   Nunca some, nunca vira botão que dá erro: aparece inerte, com o motivo
+   ao lado. */
+.feature-unavailable {
+  padding: 10px 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.feature-unavailable-title {
+  font-weight: 600;
+  color: var(--color-text);
+}

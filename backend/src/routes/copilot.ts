@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
 import { getCredential } from "../services/credentialLookup.js";
+import { resolveTenantAiKey } from "../services/providers/platformKeys.js";
 import { loadDocsContent } from "../services/docs.js";
 import { askCopilot, CopilotProviderError } from "../services/providers/copilotProvider.js";
 import type { ScriptVendor } from "../services/providers/vendorCatalog.js";
@@ -58,12 +59,17 @@ export async function copilotRoutes(app: FastifyInstance): Promise<void> {
       const { content } = req.body;
       if (!content?.trim()) return reply.code(400).send({ error: "Message content is required" });
 
-      const credential = await getCredential(req.tenantId, "script");
-      if (!credential) {
-        return reply.code(400).send({
-          error: "no_script_credential",
+      // Chave DA PLATAFORMA (Google) para o suporte, com a BYOK do tenant
+      // apenas como retaguarda enquanto ela não estiver configurada — ver
+      // services/providers/platformKeys.ts. O cliente não precisa mais
+      // conectar provedor nenhum para conversar com o copiloto.
+      const byok = await getCredential(req.tenantId, "script");
+      const aiKey = resolveTenantAiKey(byok);
+      if (!aiKey) {
+        return reply.code(503).send({
+          error: "copilot_unavailable",
           message:
-            "Connect the script-generation provider's API key in Settings to use the copilot.",
+            "O assistente está indisponível no momento. A equipe já foi avisada — tente novamente em instantes.",
         });
       }
 
@@ -81,8 +87,8 @@ export async function copilotRoutes(app: FastifyInstance): Promise<void> {
       let replyText: string;
       try {
         replyText = await askCopilot({
-          apiKey: credential.apiKey,
-          vendor: credential.vendor as ScriptVendor,
+          apiKey: aiKey.apiKey,
+          vendor: aiKey.vendor,
           tenantId: req.tenantId,
           docsContent,
           history: historyRows.map((m) => ({ role: m.role, content: m.content })),

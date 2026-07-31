@@ -14,6 +14,11 @@ COPY src ./src
 # Ferramentas de linha de comando fora do build do tsc (rootDir/include = src),
 # rodadas via tsx — hoje só o seed de acesso de dev (npm run dev:seed-access).
 COPY scripts ./scripts
+# Artefatos do modo fixture (PROVIDER_MODE=fixture). Versionados junto do
+# código porque são parte do comportamento, não dado de ambiente — sem eles
+# a simulação falha no meio do job, não no boot, que é o pior momento para
+# descobrir que faltam.
+COPY fixtures ./fixtures
 COPY docker-entrypoint.sh ./
 # chmod no build: o bit de execução não sobrevive de forma confiável a um
 # checkout no Windows, e um entrypoint sem permissão faz o container morrer

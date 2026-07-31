@@ -4,6 +4,7 @@ import { api } from "../../../api/client";
 import type { Video } from "../../../types";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import type { WizardState } from "../types";
+import { SimulatedNotice } from "../../../features/SimulatedBadge";
 
 const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   queued: 15,
@@ -76,6 +77,9 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
 
           {video.status === "ready" && video.output_url && (
             <>
+              {/* Marca de simulação acima do player: quem olha o vídeo tem
+                  de ler isto antes, não depois. */}
+              <SimulatedNotice simulated={video.simulated} />
               <video
                 src={video.output_url}
                 controls

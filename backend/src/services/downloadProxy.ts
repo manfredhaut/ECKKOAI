@@ -6,6 +6,7 @@
 // CDN). Routes call this instead of linking the raw URL directly.
 import type { FastifyReply } from "fastify";
 import { Readable } from "node:stream";
+import { config } from "../config.js";
 
 const EXTENSION_CONTENT_TYPES: Record<string, string> = {
   ".mp4": "video/mp4",
@@ -35,6 +36,23 @@ export function sendAttachment(
   reply.send(buffer);
 }
 
+/**
+ * Resolve uma URL relativa contra o próprio servidor.
+ *
+ * O `output_url` de um vídeo real é absoluto (CDN do vendor). O de um vídeo
+ * gerado em modo fixture é relativo (`/uploads/<tenant>/<arquivo>`), porque
+ * é servido pela nossa própria origem — e `fetch()` recusa URL relativa.
+ *
+ * Resolver aqui, em vez de desviar para leitura em disco, é deliberado: o
+ * ponto do modo fixture é exercitar o caminho INTEIRO. Se a simulação
+ * pulasse o proxy, o proxy só rodaria em produção, que é exatamente onde
+ * não se quer descobrir um defeito nele.
+ */
+function absoluteUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  return new URL(url, `http://127.0.0.1:${config.port}`).toString();
+}
+
 // Fetches url on the server and streams it straight through to the client,
 // so the browser never navigates to (or even sees) the upstream origin.
 export async function proxyRemoteAttachment(
@@ -42,7 +60,7 @@ export async function proxyRemoteAttachment(
   url: string,
   filename: string,
 ): Promise<void> {
-  const upstream = await fetch(url);
+  const upstream = await fetch(absoluteUrl(url));
   if (!upstream.ok || !upstream.body) {
     throw new Error(`Upstream returned ${upstream.status}`);
   }

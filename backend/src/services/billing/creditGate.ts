@@ -1,4 +1,5 @@
 import { pool } from "../../db/pool.js";
+import { isFixtureMode } from "../providers/providerMode.js";
 
 export type CreditType = "video" | "script" | "avatar";
 
@@ -49,14 +50,23 @@ export async function debitCredit(input: DebitCreditInput): Promise<DebitCreditR
       [input.tenantId, input.creditType, amount],
     );
 
+    // `simulated` é lido do modo do provedor, não recebido como parâmetro:
+    // se dependesse de cada chamador lembrar de passar a flag, bastaria um
+    // esquecer para um consumo simulado entrar no ledger como real — e um
+    // número inflado que parece legítimo é pior que um número faltando.
+    // Só os tipos que passam por HeyGen/ElevenLabs podem ser simulados;
+    // roteiro usa provedor de texto, que não tem modo fixture.
+    const simulated = isFixtureMode() && (input.creditType === "video" || input.creditType === "avatar");
+
     await client.query(
       `INSERT INTO credit_ledger
-         (tenant_id, credit_type, delta, reason, related_video_id, related_script_generation_id, related_avatar_training_id)
-       VALUES ($1, $2, $3, 'consumption', $4, $5, $6)`,
+         (tenant_id, credit_type, delta, reason, simulated, related_video_id, related_script_generation_id, related_avatar_training_id)
+       VALUES ($1, $2, $3, 'consumption', $4, $5, $6, $7)`,
       [
         input.tenantId,
         input.creditType,
         -amount,
+        simulated,
         input.relatedVideoId ?? null,
         input.relatedScriptGenerationId ?? null,
         input.relatedAvatarTrainingId ?? null,
