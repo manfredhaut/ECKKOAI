@@ -480,51 +480,226 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-07-31 — Blocos 1, 1.5 e 1.6 da frente do
-copiloto: allowlist de visibilidade dos docs, política congelada em teste
-que falha, e bateria adversarial rodada no copiloto do tenant
+**Última atualização:** 2026-07-31 — Bloco 6 concluído (resiliência de
+ambiente: causa do não-restart isolada, modo de falha do backend
+descoberto) e handoff completo escrito. Leia a seção HANDOFF logo abaixo
+antes de qualquer coisa.
 
 ---
 
-## RETOMADA — sessão interrompida no Bloco 6 (2026-07-31)
+## HANDOFF — leia esta seção inteira antes de tocar em qualquer coisa
 
-Sessão encerrada às pressas por troca de conta, **no meio da Parte A do
-Bloco 6**. O ambiente ficou **no ar e funcional** (landing 200, 4 containers
-running), mas o bloco NÃO está terminado.
+Escrito para quem chega **sem nenhum contexto** da conversa anterior. Bloco 6
+concluído em 2026-07-31; o que vem depois está em "Frente aberta".
 
-**O que já foi feito e está commitado** (blocos 0, 1, 1.5, 1.6, 2A, 3, 4 —
-ver entradas próprias abaixo). Último commit: `9777519`.
+### O que é isto, em cinco linhas
 
-**O que foi feito no Bloco 6 e ainda NÃO estava commitado quando parou:**
-duas edições em `docker-compose.yml`:
-1. `restart: unless-stopped` no **traefik** — era o único dos quatro
-   serviços sem política de restart, e é o único exposto ao navegador: se
-   ele cai e não volta, o endereço da demo deixa de existir mesmo com
-   backend e frontend de pé.
-2. `healthcheck` no **backend** (bate em `/health`), para o Compose saber
-   quando ele está realmente pronto.
+eckko.ai (nome antigo: TWINAI) é um SaaS multi-tenant que gera vídeos de
+avatar digital falando um roteiro. Roda inteiro em Docker Compose com quatro
+serviços — `traefik` (única porta exposta, `8090`), `postgres`, `backend`
+(Fastify/TS) e `frontend` (React/Vite). Existe uma **demo a apresentar**, e a
+maior parte do trabalho recente é blindagem para ela, não funcionalidade
+nova. O produto é vendido com assinatura + créditos via Stripe (real,
+testado), e as chaves de IA hoje ainda são BYOK por tenant no código.
 
-**ACHADO IMPORTANTE, NÃO RESOLVIDO — o teste de restart FALHOU.** Matei os
-quatro containers com `docker kill` (SIGKILL, simulando crash) e eles **não
-voltaram sozinhos** — `docker compose ps` ficou vazio por 90s e a landing
-não respondeu. Só voltaram com `docker compose up -d` manual. Ou seja:
+### Como validar que está tudo de pé (faça isto primeiro)
 
-- **A política `unless-stopped` não se comportou como esperado neste
-  ambiente** (Docker Desktop no Windows/WSL2). A hipótese mais provável é
-  que matar os 4 simultaneamente derrubou algo do próprio daemon, mas isso
-  **não foi confirmado** — pode também ser comportamento do Docker Desktop
-  com `unless-stopped` após kill múltiplo.
-- **Consequência prática para a demo: não confie em recuperação
-  automática.** Se o ambiente cair, rode `docker compose up -d` à mão.
-- **Próximo passo sugerido:** repetir o teste matando UM container por vez
-  (`docker kill twinai-traefik-1`, esperar, verificar) em vez dos quatro
-  juntos. Isso separa "a política não funciona" de "o daemon caiu junto".
-  Não repita o kill dos quatro simultâneos sem necessidade.
+```bash
+./tools/smoke-demo.sh
+```
 
-**O que falta do Bloco 6:** provar o restart (item 1), reconfirmar os três
-caminhos após o ciclo (item 2), testar ordem de subida backend↔postgres
-(item 3), rodar o smoke (item 4) e escrever o handoff completo da Parte B
-(itens 5-7 — este bloco é um começo, não o handoff completo pedido).
+21 verificações numa passada: containers, landing, os três caminhos de
+entrada, credenciais fixas, avatar treinado, créditos, credenciais de
+provedor, e se o Vite está servindo bundle atualizado. **Não gasta nenhuma
+requisição de fornecedor.** Sai 1 se algo que a demo usa estiver quebrado.
+Ele consome 2 das 5 tentativas/15min do rate limiter de login — **rode uma
+vez só**. Complemento, para o gate de qualidade do código:
+
+```bash
+docker compose exec backend npm run check
+```
+
+Typecheck + sete invariantes de documentação + duração de roteiro +
+sanitização de erro de vendor + probe de credencial. Última execução:
+ambos verdes, 21/21 e "todas as invariantes passaram".
+
+### Estado por bloco (frente do copiloto como suporte real)
+
+| Bloco | Assunto | Estado |
+|---|---|---|
+| 0 | Viabilidade do RAG | **Concluído — reprovou o RAG.** Falta peça, não é bug |
+| 1 | Allowlist de visibilidade dos docs | Concluído |
+| 1.5 | Política congelada em teste que falha (`npm run check`) | Concluído |
+| 1.6 | Bateria adversarial no copiloto do tenant | Concluído — 10/10 bloqueadas |
+| 2A | Remoção das afirmações falsas dos docs | Concluído (deixou buracos de propósito) |
+| 2B | Escrever a documentação nova | **NÃO INICIADO — é o próximo** |
+| 3 | RAG de verdade | **Bloqueado**: falta chave de embedding |
+| 4 | Diagnóstico por SQL escopado | Livre |
+| 5 | Ajuda por campo | Livre |
+| 6 | Isolamento entre tenants | **Bloqueado**: depende do Bloco 3 |
+| 7 | Teto de perguntas + truncagem | Livre |
+
+Blocos de blindagem para a demo (numeração paralela, já concluídos): erro de
+vendor sanitizado + falha visível na tela; duração-alvo de roteiro;
+`tools/smoke-demo.sh`; e este Bloco 6 (resiliência de ambiente).
+
+### Frente aberta e próximo bloco
+
+**Próximo é o Bloco 2B: escrever a documentação nova.** O 2A apagou o que era
+falso e deliberadamente **não** substituiu — apagar leva minutos, reescrever
+leva horas, e uma declaração comercial falsa a quem é cobrado via Stripe não
+podia esperar. A lista exata dos buracos, arquivo por arquivo, está na tabela
+"LACUNAS DEIXADAS PELO 2A" mais abaixo nesta mesma seção. Comece por ela.
+
+**Não comece o Bloco 3 (RAG)** antes de existir chave de embedding: hoje
+`embeddingProvider.ts` devolve `Math.random()`, não há variável de ambiente
+de embedding em lugar nenhum, e **não existe código de recuperação vetorial**
+— nenhuma query usa `<=>`, `document_chunks` só recebe `INSERT` e nunca é
+lido. Falta nas duas pontas.
+
+### Decisões travadas — não reabrir
+
+1. **`PLATFORM_COPILOT_API_KEY` será uma chave Anthropic.** Não invente
+   `PLATFORM_COPILOT_VENDOR`: `askCopilot()` faz `vendor = input.vendor ??
+   "anthropic"` e nem `public.ts` nem `adminCopilot.ts` passam vendor. Colar
+   uma chave Gemini ali a manda para `api.anthropic.com` e dá 401.
+2. **Embedding será `text-embedding-3-small` da OpenAI, chave da
+   plataforma**, em variável própria — nunca BYOK de tenant. 1536 dimensões
+   nativas, cabe em `vector(1536)` sem migration nem truncagem.
+3. **A fonte única de limites de plano é a tabela `plans`**; `plans.ts` só lê
+   dela. Não crie uma segunda fonte.
+4. **O manifesto de exposição dos docs mora no backend**
+   (`docsManifest.ts`), não em frontmatter dentro de `docs/`. Motivo: "o que
+   um anônimo lê?" tem que se responder num arquivo só, e escrever
+   documentação deve ser um ato separado de decidir sua exposição.
+5. **Um índice é tão confidencial quanto o item mais confidencial que ele
+   indexa.** Foi assim que o `README.md` de `docs/` vazou os nomes de
+   `docs/admin/`. Nomear um arquivo de nível superior já é vazamento.
+6. **Migração BYOK → chave-da-plataforma** (cliente consome crédito) está
+   decidida e **não construída**. O código segue 100% BYOK.
+7. **Créditos são "use ou perca"** — o grant mensal reseta o saldo, não
+   acumula.
+
+### Pendências com dono
+
+| O quê | Dono | Observação |
+|---|---|---|
+| Colar `PLATFORM_COPILOT_API_KEY` (Anthropic) | **usuário** | Sem ela, copiloto público e do admin **nunca responderam** |
+| Fornecer chave de embedding OpenAI | **usuário** | Desbloqueia os Blocos 3 e 6 |
+| Rotacionar a chave Gemini do tenant de demo | **usuário** | Foi colada em texto plano no chat |
+| Rotacionar as senhas de `admin@eckkoai.com` e `demo@eckko.ai` | **usuário** | Mesmo motivo; via `npm run dev:seed-access` |
+| Pôr saldo no HeyGen | **usuário** | Hoje comporta ~1 vídeo, ver tabela de cota |
+| Billing/cota do Gemini (sair do free tier) | **usuário** | Criar projeto novo a cada teto batido não escala |
+| Conferir os 9 valores de `provider_cost_rates` | **usuário** | São placeholder; toda tela já mostra banner de estimativa |
+| Escrever o Bloco 2B | próxima sessão | Insumo pronto na tabela de lacunas |
+| Validar fundo virtual com câmera real | **usuário** | Câmera bloqueada em toda automação desta ferramenta |
+
+### Riscos conhecidos e NÃO corrigidos
+
+- **Não há recuperação automática confiável do ambiente.** Ver a seção do
+  Bloco 6 logo abaixo: a política funciona para crash de processo, mas o
+  backend tem um modo de falha em que o container fica `running` mentindo.
+- **`Sair` em qualquer zona derruba admin e tenant juntos** —
+  `session.destroy()`, as duas sessões vivem no mesmo cookie.
+- **`/admin` pela barra de endereço entra em laço** — o `AdminAuthProvider`
+  não revalida a sessão, e cada volta consome uma das 5 tentativas/15min,
+  fazendo o sintoma parecer "senha errada". Entre pelo modal do rodapé.
+- **"Créditos restantes" mostra "—"** no painel do tenant embora
+  `tenant_credits` tenha saldo real. Bug de UI, catalogado, não corrigido.
+- **"6/2 vídeos este mês"** na Minha Assinatura: contador por plano e saldo
+  de crédito se contradizem na tela.
+- **Moeda inconsistente**: landing em `R$`, app em `$`.
+- **`masked_key` mostra os últimos caracteres do texto cifrado**, não da
+  chave — inútil para identificar qual chave está lá.
+- **Header quebra abaixo de ~500px.**
+- Nenhum destes bloqueia a demo pelo caminho ensaiado.
+
+### Bloco 6 — resiliência de ambiente (CONCLUÍDO, com dois achados)
+
+Duas edições em `docker-compose.yml`, ambas commitadas: `restart:
+unless-stopped` no **traefik** (era o único dos quatro sem política, e é o
+único exposto ao navegador) e um `healthcheck` em `/health` no **backend**.
+
+**Achado 1 — a política de restart funciona; o teste anterior é que estava
+errado.** A sessão anterior matou os quatro containers com `docker kill`,
+viu que não voltaram, e registrou como possível falha do Docker
+Desktop/WSL2. Refeito um por vez, a causa ficou isolada e é outra:
+
+- Matei **só** o frontend. Resultado: `Exited (137)`, `restartCount=0`,
+  **60 s inteiros sem voltar** — e os outros três seguiram `running`. Ou
+  seja, **o daemon nunca caiu**; a hipótese do kill múltiplo está descartada.
+- Container descartável com a mesma política, saindo sozinho com `exit 1`:
+  `restartCount` subiu para 1, depois 2. **A política reinicia.**
+- O mesmo container, morto com `docker kill`: `Exited (137)`,
+  `restartCount=0`, não voltou.
+
+**Conclusão: `docker kill` não simula crash.** O daemon o trata como parada
+solicitada pelo operador, igual a `docker stop`, e `unless-stopped` significa
+literalmente "reinicie, a menos que tenham parado" — kill conta como parar.
+Não é limitação do Docker Desktop nem do WSL2 (`LiveRestore=false` foi
+verificado e não teve papel aqui). Para testar recuperação, faça o processo
+morrer por conta própria.
+
+**O `docker compose ps` "vazio" também tem explicação prosaica:** sem `-a`
+ele **só lista containers em execução**. Quatro containers `exited` produzem
+listagem vazia sem que nenhum tenha desaparecido. Use `docker compose ps -a`
+ao diagnosticar.
+
+**Achado 2, mais sério — o backend tem um modo de falha em que o container
+mente `running`.** Testado derrubando o Postgres e recriando o backend com
+`--no-deps`:
+
+- O backend **não morre**: fica `running`, `restartCount=0`, servidor sem
+  nunca fazer `listen`, e `/api/health` responde **502**.
+- Causa: o container roda `npm run dev` → `tsx watch`. O
+  `main().catch(→ process.exit(1))` de `index.ts` mata **só o processo
+  filho**; `npm run dev` (PID 1) e `tsx watch` (PID 18) continuam vivos
+  esperando mudança de arquivo. Confirmado com `ps` dentro do container.
+- Como o processo principal não saiu, **a política de restart nunca
+  dispara**. E o healthcheck detecta (`FailingStreak` subiu até 10) mas
+  **não conserta**: no Docker standalone, healthcheck não reinicia container
+  — só o Swarm faz isso.
+- **O backend não se recuperou sozinho nem depois do Postgres voltar** —
+  mais de 60 s em 502. Só voltou com `docker compose restart backend`
+  (5 s até `healthy`).
+- Na operação normal isso não aparece, porque `depends_on: condition:
+  service_healthy` segura o backend. O cenário exige `--no-deps`, ou o
+  Postgres caindo depois.
+
+**Regra prática que sai daí: `running` não é sinal de saúde neste
+projeto — `/api/health` é.** Se a API responder 502 com o container
+`running`, o conserto é `docker compose restart backend`, não investigar
+código.
+
+Dado colateral: com o **frontend** fora do ar, a landing devolve **502** e a
+API segue 200. Se a tela cair mas a API responder, o suspeito é o frontend.
+
+**Os três caminhos foram reconfirmados após todo esse ciclo**: smoke 21/21, e
+na landing real os botões apontam para `/signup`, para
+`dev-c77a5b.twinai.localhost:8090/login` (navegação real ao subdomínio, não
+POST do domínio raiz) e para o modal de acesso administrativo.
+
+### Gotchas de ambiente (todos já custaram tempo)
+
+- **Bundle velho do Vite:** editar `.tsx`/`.css` e "não aparecer" no
+  navegador é o caso comum. Rode `docker compose restart frontend` **antes**
+  de suspeitar do código React. O smoke detecta isso na verificação 21.
+- **`tsx watch` não recarrega rota editada** via bind mount: se uma edição
+  em `backend/src/routes/*.ts` não tiver efeito, `docker compose restart
+  backend`.
+- **`docker compose restart` NÃO recarrega variável de ambiente.** Para
+  `.env` novo é preciso `docker compose up -d <serviço>`, que recria o
+  container.
+- **`package.json` não está no bind mount** (só `./backend/src`): script npm
+  novo só existe no container após `docker compose build backend`.
+  Vale também para `backend/scripts/seedDevAccess.ts`.
+- **Não teste recuperação com `docker kill`** — ver Achado 1.
+- **`docker compose ps` esconde containers parados** — use `-a`.
+- O Browser pane **erra o mapeamento de clique** quando o viewport é forçado
+  por `resize_window` com largura fixa; no tamanho nativo funciona.
+  Digitação e Tab sempre funcionam; Enter/Espaço não ativam botão.
+- **A câmera é bloqueada no Browser pane** (`NotAllowedError`) em toda
+  sessão registrada. Validação de fundo virtual só o usuário consegue fazer.
 
 ---
 
@@ -549,6 +724,21 @@ barra de endereço — os três caminhos saem todos de lá:
 credenciais fixas, avatar treinado, créditos, credenciais de provedor e se o
 bundle do Vite está atualizado. **Não gasta nenhuma requisição de
 fornecedor.** Sai 1 se algo que a demo usa estiver quebrado.
+
+**Se algo cair no meio da demo, o diagnóstico é por sintoma, não por
+`docker compose ps`** (que esconde container parado — use `-a`):
+
+| Sintoma | Causa provável | Conserto |
+|---|---|---|
+| Tela em branco / 502 na landing, mas API responde | frontend caído ou bundle velho | `docker compose restart frontend` |
+| Landing abre, mas tudo dá erro; `/api/health` = 502 | backend morto **com o container ainda `running`** (ver Bloco 6) | `docker compose restart backend` |
+| O endereço não existe mais | traefik caído | `docker compose up -d` |
+
+**`running` não é sinal de saúde neste projeto — `/api/health` é.** A
+política `restart: unless-stopped` cobre crash de processo, mas **não** cobre
+o modo de falha do backend descrito no Bloco 6, em que o `tsx watch`
+sobrevive à morte do servidor. Na dúvida, `docker compose up -d` é sempre
+seguro.
 
 **Armadilha durante a demo:** `Sair` em qualquer zona chama
 `session.destroy()` e **derruba admin e tenant ao mesmo tempo** — as duas
