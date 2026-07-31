@@ -18,19 +18,15 @@ vs. limite do plano).
 ## Comparação de planos
 
 Grade com os planos disponíveis (Free, Pro, Business) e um botão para trocar
-de plano. A troca é imediata na conta, mas ainda não envolve cobrança real —
-isso chega numa fase futura com um provedor de pagamento (Stripe) integrado.
+de plano.
 
 ## Forma de pagamento
 
-Mostra o cartão salvo (mascarado) e um botão para atualizar. Assim como a
-troca de plano, isso ainda é um cadastro simples sem processamento de
-pagamento de verdade por trás.
+Mostra o cartão salvo (mascarado) e um botão para atualizar.
 
 ## Faturas
 
-Lista do histórico de faturas — vazia por enquanto, já que nenhuma cobrança
-real acontece ainda.
+Lista do histórico de faturas.
 
 > **Nota:** cada tenant tem um subdomínio próprio (`<slug>.dominio`), gerado
 > automaticamente no cadastro. É nele que o app roda depois do login/cadastro

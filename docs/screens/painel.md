@@ -8,13 +8,10 @@ geração e o que foi feito recentemente.
 
 Quatro cartões no topo:
 
-- **Créditos restantes** — hoje mostra "—", porque ainda não existe um
-  provedor de cobrança conectado à conta (billing real ainda não foi
-  implementado).
+- **Créditos restantes**
 - **Vídeos este mês** — contagem real de vídeos gerados no mês corrente, em
   todos os avatares.
-- **Custo estimado** — também "—" por enquanto; rastreamento de custo por
-  geração é uma funcionalidade futura.
+- **Custo estimado**
 - **Avatares salvos** — quantidade de avatares já configurados na conta.
 
 ## Fila de geração

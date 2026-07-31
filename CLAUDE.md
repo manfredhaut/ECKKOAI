@@ -576,12 +576,60 @@ segue vazia, então o copiloto público e o do admin continuam sem nunca
 ter respondido, e a bateria adversarial só pôde rodar no copiloto do
 tenant.
 
-**Status dos blocos:** 1, 1.5 e 1.6 concluídos (ver entrada de
-2026-07-31). **Livres para tocar:** Bloco 2 (documentação do produto —
-agora com urgência, ver o achado de docs desatualizados abaixo), Bloco 4
-(diagnóstico por SQL escopado), Bloco 5 (ajuda por campo) e Bloco 7 (teto
-de perguntas + truncagem). **Bloqueados pela chave de embedding:** Bloco
-3 (RAG) e Bloco 6 (isolamento entre tenants).
+**Status dos blocos:** 1, 1.5, 1.6 e 2A concluídos (ver entradas de
+2026-07-31). **Próximo:** Bloco 2B (escrever a documentação nova) — o 2A
+só apagou o que era falso e deixou buracos, listados em "Lacunas
+deixadas pelo 2A" abaixo. **Livres para tocar:** Bloco 4 (diagnóstico por
+SQL escopado), Bloco 5 (ajuda por campo) e Bloco 7 (teto de perguntas +
+truncagem). **Bloqueados pela chave de embedding:** Bloco 3 (RAG) e Bloco
+6 (isolamento entre tenants).
+
+---
+
+**LACUNAS DEIXADAS PELO 2A — insumo direto do 2B.** O 2A removeu
+afirmações falsas sem substituir nada, por escolha explícita: apagar leva
+minutos, reescrever leva horas, e uma declaração comercial falsa a quem é
+cobrado via Stripe não podia esperar a reescrita. O que ficou faltando,
+por arquivo:
+
+| Onde | Buraco deixado | O que o 2B precisa apurar antes de escrever |
+|---|---|---|
+| `faq.md` | Sumiu a pergunta "por que preciso conectar chaves de API" e a que explicava qual chave o copiloto usa | Qual é a resposta certa hoje ao cliente que pergunta "quem paga os provedores?" — depende da migração BYOK→plataforma (seção 1), que está decidida mas não construída |
+| `faq.md` | A diferença entre "Conhecimento e mídia" e "Imagens de referência" perdeu o lado dos documentos | O que os documentos fazem **de fato** hoje: são extraídos e chunkados, e nada mais os lê. Descrever sem prometer RAG |
+| `faq.md` / `painel.md` | Sumiu a explicação do card "Créditos restantes" | A tela mostra "—" mas `tenant_credits` tem saldo real (bug de UI já catalogado). Documentar depois de decidir se conserta a tela ou o texto |
+| `painel.md` | "Custo estimado" ficou sem explicação | O rastreamento existe (`provider_usage` + `provider_cost_rates`), mas só aparece no painel admin. Decidir se o tenant deve ver |
+| `minha-assinatura.md` | Troca de plano, forma de pagamento e faturas ficaram sem contexto | Descrever o fluxo real do Stripe (checkout, webhook, top-up de crédito) e por que a lista de faturas ainda volta vazia mesmo com cobrança real acontecendo |
+| `conhecimento-e-midia.md` | Sumiu o "para que serve" dos documentos | Mesmo ponto do FAQ: hoje não serve para nada além de armazenar. É honestidade desconfortável, e é a verdade até o Bloco 3 |
+| `conhecimento-e-midia.md` | Sumiu o **contraste** entre documentos e imagens de referência ("essas imagens não são indexadas, diferente dos documentos") | Sem RAG, os dois hoje se comportam igual — o contraste que justificava duas seções separadas deixou de existir. Decidir se as seções continuam separadas |
+| `configuracoes.md` | Sumiu o modelo de negócio por trás da tela (era descrito como BYOK) e a mensagem que o copiloto mostra quando falta credencial | Como orientar o cliente que quer trocar de provedor, e o que ele vê quando a chave não está conectada |
+| `conteudo.md` | Sumiu a menção ao botão **"Retreinar"**, removida junto com a coluna "Provedor" na mesma frase | O botão existe e continua funcionando — foi dano colateral da remoção. O 2B precisa redocumentar as ações da linha (Retreinar e Baixar) |
+| `criar-video.md` / `configurar-avatar.md` | Sumiram as notas de "depende do provedor X conectado em Configurações" | O que dizer quando a geração falha por falta de credencial, já que o cliente não pode resolver sozinho |
+| `setup.md` (admin) | Sumiu a seção "Modelo BYOK" inteira e a citação da rota de login | Descrever de quem é a chave hoje e qual é a rota real (`POST /login` unificado) — é doc de operação interna, precisa estar certa |
+
+**Telas que já não existem como os docs descrevem** (apontado, não
+reescrito — item 5 do 2A):
+
+- `conteudo.md` — aba Avatares: a coluna "Provedor" foi removida em
+  2026-07-22 (já corrigido no doc), mas o doc também **não menciona o
+  botão "Baixar"** do vídeo de referência, que existe desde 2026-07-22
+  (`GET /avatars/:id/reference-video/download`). Omissão, não falsidade —
+  por isso não foi tocado no 2A.
+- `minha-assinatura.md` — descreve "um botão para trocar de plano" como
+  ação local; hoje o botão leva a um **checkout do Stripe hospedado**, com
+  redirect para fora do app e volta com `?checkout=success|cancelled`.
+  Fluxo materialmente diferente do descrito.
+- `painel.md` — descreve 4 cards, dos quais 2 ("Créditos restantes" e
+  "Custo estimado") mostram "—" por bug/decisão pendente, não por
+  ausência de funcionalidade.
+- `conhecimento-e-midia.md` — a tela se chama **"Base de conhecimento
+  (RAG)"** no menu lateral, e não existe RAG nenhum. O nome da tela é o
+  problema, não o doc; renomear é decisão de produto, fora do 2A e do 2B.
+- `configuracoes.md` — diz que o cartão mostra "os últimos dígitos da
+  chave salva"; o `masked_key` devolvido pela API são os últimos
+  caracteres do **texto cifrado**, não da chave. Inútil para identificar
+  qual chave está lá.
+
+---
 
 ~~**Vazamento conhecido, ainda aberto:** `services/docs.ts` varre
 `docs/**/*.md` inteiro (pulando só `docs/admin/`)...~~ — **FECHADO em
@@ -728,6 +776,60 @@ salva". Inofensivo, mas inútil para identificar qual chave está lá.
 *Gotcha novo:* `package.json` **não** está no bind mount (só
 `./backend/src`), então script npm novo só existe no container depois de
 `docker compose build backend`.
+
+---
+
+**O que foi feito (2026-07-31 — Bloco 2A: afirmações falsas removidas dos
+docs):** o copiloto tinha afirmado a um cliente que o produto é BYOK e
+que "cobrança real ainda não foi implementada" — declaração comercial
+falsa para quem é cobrado via Stripe. Decisão: **apagar antes de
+reescrever**, deixando buraco (as lacunas viraram insumo do 2B, listadas
+acima).
+
+Cada afirmação foi validada contra o código **antes** de ser apagada, sem
+confiar na lista da rodada anterior:
+
+| Afirmação removida | Por que é falsa | Fonte da verdade |
+|---|---|---|
+| "modelo BYOK", "cada tenant usa e paga sua própria conta", "conecte a chave em Configurações" | O tenant não conecta chave nenhuma | `routes/credentials.ts`: `PUT` e `POST` devolvem `403 managed_by_platform`; única escrita é `PUT /admin/tenants/:id/credentials/:provider` |
+| "transformado em embeddings para busca semântica", "usado como contexto (RAG)" | Não há vetorização nem recuperação | `embeddingProvider.ts` devolve `Math.random()`; nenhuma query usa `<=>`; `document_chunks` só recebe `INSERT`, nunca é lido |
+| "a troca de plano não envolve cobrança real", "cadastro sem processamento de pagamento", "nenhuma cobrança real acontece ainda" | Stripe está integrado e testado | `routes/stripeWebhook.ts`, `POST /subscription/checkout`, `POST /subscription/credits/checkout`; **`PUT /subscription/plan` não existe mais** |
+| "créditos restantes (quando um provedor de cobrança estiver conectado)", "billing real ainda não foi implementado" | O tenant de demo tem saldo real (video 2 / script 10 / avatar 1) | tabela `tenant_credits` |
+| "rastreamento de custo por geração é uma funcionalidade futura" | Existe e alimenta o painel admin | `provider_usage` + `provider_cost_rates` |
+| aba Avatares mostra coluna "provedor" | Coluna removida em 2026-07-22 | `ContentPage.tsx` não tem mais `colProvider` |
+| cenário/traje: 'modo "Prompt de IA"' **ou** 'modo "Enviar imagem"' | Não há modos — os dois campos coexistem lado a lado desde a Fase 4 | `AvatarSetupStep.tsx`: `Field` de texto e `Field` com `input type="file"` irmãos |
+| `setup.md`: "pgvector, usada para busca semântica" | pgvector está instalado, mas nada faz busca | idem embeddings |
+| `setup.md`: "Login é por `POST /auth/login`" | O frontend usa `POST /login` unificado desde 2026-07-22 | `routes/login.ts` |
+
+*Enforcement para o 2B não reintroduzir:* `docsPolicy.ts` ganhou
+`FALSE_CLAIM_TERMS` — 17 afirmações, cada uma com o motivo de ser falsa
+gravado ao lado, para quem achar que voltou a ser verdade saber o que
+re-checar. **Vale nos três níveis**, diferente da deny-list de segurança
+(public+tenant): uma afirmação falsa não fica aceitável porque o leitor é
+interno — um operador que age sobre "billing não existe" erra igual a um
+cliente. Provado falhando com BYOK, com vetorização/busca semântica e com
+negação de cobrança em doc de admin.
+
+*Exceção proposta e aplicada, em vez de decidida no escuro:* **"cobrança
+real" sozinho não entra na lista.** `docs/admin/admin-tenants.md` usa a
+expressão legitimamente, para avisar o operador a **nunca** tratar o custo
+estimado como cobrança real — bani-la quebraria justamente o aviso que
+protege uma decisão de negócio. Só as frases que **negam** a existência de
+cobrança foram proibidas ("não envolve cobrança real", "cobrança real
+ainda não", "sem processamento de pagamento"...). Pelo mesmo critério,
+"RAG" solto continua permitido: é o nome da tela no menu lateral; o que
+se proíbe é afirmar que algo é vetorizado ou recuperado.
+
+*Efeito no tamanho dos prompts:* public **2.342 → 1.535** (−34%), tenant
+**14.184 → 11.554** (−19%), admin **24.365 → 21.509** (−12%). O prompt
+público perdeu um terço só removendo o que era falso.
+
+*Erro de processo registrado:* usei `git checkout <arquivo>` para desfazer
+os arquivos de teste da deny-list e isso **descartou também as edições do
+próprio bloco**, que ainda não estavam commitadas — precisou reaplicar
+duas. Para testar invariante que depende de editar arquivo já modificado,
+copiar para fora e restaurar da cópia; `git checkout` só é seguro sobre
+arquivo limpo.
 
 ---
 

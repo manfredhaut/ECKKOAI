@@ -18,7 +18,7 @@ são conhecimento operacional sobre o app em si.
 - [screens/configurar-avatar.md](screens/configurar-avatar.md) — como treinar um avatar (fotos, vídeo de referência, voz)
 - [screens/conteudo.md](screens/conteudo.md) — histórico de avatares e vídeos já gerados
 - [screens/conhecimento-e-midia.md](screens/conhecimento-e-midia.md) — documentos indexados e imagens de referência (página "Base de conhecimento (RAG)")
-- [screens/configuracoes.md](screens/configuracoes.md) — conectar os provedores de IA (BYOK)
+- [screens/configuracoes.md](screens/configuracoes.md) — estado das chaves dos provedores de IA
 - [screens/minha-assinatura.md](screens/minha-assinatura.md) — perfil da empresa, plano, uso e pagamento
 - [faq.md](faq.md) — perguntas frequentes
 

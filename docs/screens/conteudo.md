@@ -11,9 +11,8 @@ da conta em duas abas — **Avatares** e **Biblioteca de vídeos**.
 
 ## Aba Avatares
 
-Tabela com todos os avatares já configurados: nome, provedor (HeyGen/D-ID
-etc., ou "—" se ainda não treinado), voz clonada (ou "—") e data de criação.
-Cada linha tem um botão **"Retreinar"**.
+Tabela com todos os avatares já configurados: nome, voz clonada (ou "—") e
+data de criação.
 
 Se ainda não existe nenhum avatar, aparece um atalho para configurar o
 primeiro em **Criar vídeo** — esta tela não tem um fluxo próprio de criação

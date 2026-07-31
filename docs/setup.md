@@ -6,8 +6,7 @@ O app roda como 4 serviços via Docker Compose:
 
 - **traefik** — proxy reverso; é o único ponto de entrada exposto no navegador
   (porta configurável via `TRAEFIK_HTTP_PORT`, padrão `8090`)
-- **postgres** — banco de dados (Postgres 16 com a extensão `pgvector`, usada
-  para busca semântica nos documentos da base de conhecimento)
+- **postgres** — banco de dados (Postgres 16 com a extensão `pgvector`)
 - **backend** — API (Fastify/TypeScript)
 - **frontend** — interface (React/Vite)
 
@@ -76,22 +75,20 @@ Não existe mais uma rota administrativa para criar tenant (o antigo
 caller vivo fora desta própria documentação, confirmado por grep no repo
 inteiro). O painel admin (`/admin/login`, sessão própria em `admin_users`,
 ver `routes/adminPanel.ts`) só **lista e edita** tenants já existentes
-(credenciais BYOK, storage provider) — não cria tenant novo.
+(credenciais de provedor, storage provider) — não cria tenant novo.
 
 ## Autenticação
 
-Login é por email/senha (`POST /auth/login`), com sessão guardada em cookie
-(`httpOnly`, `Domain=.twinai.localhost`, backing store no Postgres). O tenant é
-resolvido pelo subdomínio do Host (`<slug>.twinai.localhost` → tenant daquele
-slug) quando o acesso é por um subdomínio; no domínio raiz, o login busca o
-email sem esse escopo (como antes de subdomínios existirem). Todas as telas
-do app exigem sessão ativa.
+Login é por email/senha, com sessão guardada em cookie (`httpOnly`,
+`Domain=.twinai.localhost`, backing store no Postgres). O tenant é resolvido
+pelo subdomínio do Host (`<slug>.twinai.localhost` → tenant daquele slug)
+quando o acesso é por um subdomínio; no domínio raiz, o login busca o email
+sem esse escopo (como antes de subdomínios existirem). Todas as telas do app
+exigem sessão ativa.
 
-## Modelo BYOK (bring your own key)
+## Chaves de API dos provedores
 
-Cada tenant ainda usa sua própria chave de API por provedor de IA (nenhuma
-chave compartilhada da plataforma nas chamadas reais) — mas desde a fundação
-do painel admin, só a equipe interna (via `/admin/login`) pode ler/editar
-essas chaves. Em **Configurações**, o tenant só vê o estado atual (provedor,
-últimos dígitos da chave, status), sem poder alterá-lo — ver
+Só a equipe interna (via `/admin/login`) pode ler/editar as chaves de API dos
+provedores de IA. Em **Configurações**, o tenant só vê o estado atual
+(provedor, status), sem poder alterá-lo — ver
 [screens/configuracoes.md](screens/configuracoes.md).

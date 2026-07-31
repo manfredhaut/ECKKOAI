@@ -11,12 +11,8 @@ documento"`**. Depois do envio, cada documento passa pelo status *processando*
 → *indexado* (ou *erro*, com uma mensagem explicando o que falhou). A lista se
 atualiza automaticamente.
 
-O que acontece por trás: o texto do arquivo é extraído, dividido em pedaços
-(chunks) e transformado em embeddings para busca semântica. Esse material é
-usado como contexto (RAG) pelo assistente de geração de roteiro — ou seja, é a
-forma de ensinar ao app informações específicas do negócio do tenant
-(produtos, tom de voz, políticas etc.) para que os roteiros gerados façam mais
-sentido.
+O que acontece por trás: o texto do arquivo é extraído e dividido em pedaços
+(chunks).
 
 Documentos podem ser excluídos a qualquer momento pelo botão de excluir na
 linha correspondente.
@@ -29,10 +25,8 @@ linha correspondente.
 ## Imagens de referência
 
 Material de referência geral do cliente — catálogos, fotografia de marca,
-referências de estilo — enviado apenas para **consulta humana**. Diferente dos
-documentos acima, essas imagens **não são indexadas** para busca semântica, e
-também são **separadas** das imagens de cenário/traje usadas no fluxo de
-Criar vídeo.
+referências de estilo — enviado apenas para **consulta humana**. São
+**separadas** das imagens de cenário/traje usadas no fluxo de Criar vídeo.
 
 Upload pelo botão **"Enviar imagem"**; as imagens aparecem em uma grade de
 miniaturas, cada uma com um botão de exclusão (×) sobreposto.

@@ -21,8 +21,7 @@ Escreva o roteiro no campo principal — é exatamente o texto que o avatar vai
 
 Se preferir, descreva o vídeo em uma frase no campo **"Gerar com IA"** e clique
 em **"Gerar com IA"**: o roteiro é rascunhado automaticamente e preenche o
-campo principal (ainda editável depois). Essa geração usa o provedor de IA
-para roteiro conectado em Configurações.
+campo principal (ainda editável depois).
 
 É preciso ter algum texto no roteiro para avançar.
 
@@ -45,7 +44,3 @@ que é atualizada automaticamente a cada poucos segundos. Quando o status fica
 
 O vídeo gerado também aparece na aba **Conteúdo → Biblioteca de vídeos**,
 mesmo depois de sair desta tela.
-
-> **Nota:** a geração de vídeo depende do provedor de avatar/vídeo (ex.:
-> HeyGen ou D-ID) estar conectado em Configurações para funcionar com
-> qualidade de produção.

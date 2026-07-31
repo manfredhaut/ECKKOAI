@@ -32,7 +32,7 @@ Três cards, um por provedor. Diferente da tela **Configurações** do
 próprio tenant (que hoje é somente leitura — "gerenciado pela
 plataforma"), aqui o admin **escreve de verdade**: escolhe o vendor e cola
 a chave de API em nome do tenant. É o único lugar do sistema onde uma
-credencial BYOK de tenant pode ser criada/atualizada.
+credencial de provedor pode ser criada/atualizada.
 
 ### Armazenamento
 

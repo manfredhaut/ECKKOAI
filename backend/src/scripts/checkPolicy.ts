@@ -18,6 +18,8 @@ import { DOCS_EXCLUDED, DOCS_MANIFEST, type DocAudience } from "../services/docs
 import {
   DENY_ENFORCED_FOR,
   DENY_TERMS,
+  FALSE_CLAIM_ENFORCED_FOR,
+  FALSE_CLAIM_TERMS,
   PLAN_LIMIT_PATTERNS,
   SIZE_LIMITS,
   UNLIMITED_CLAIM_PATTERN,
@@ -87,6 +89,20 @@ async function main(): Promise<void> {
     }
   }
   note(`deny-list: ${DENY_TERMS.length} termos verificados em ${DENY_ENFORCED_FOR.join(" e ")}`);
+
+  // --- 3b. false claims ---------------------------------------------------
+  // Nada aqui é confidencial — é simplesmente falso. Uma afirmação comercial
+  // falsa dita com confiança a quem é cobrado via Stripe é pior que vazar um
+  // nome de tabela.
+  for (const audience of FALSE_CLAIM_ENFORCED_FOR) {
+    const prompt = (prompts.get(audience) ?? "").toLowerCase();
+    for (const { term, why } of FALSE_CLAIM_TERMS) {
+      if (prompt.includes(term.toLowerCase())) {
+        fail("promessa falsa", `o prompt de nível "${audience}" afirma "${term}" — ${why}.`);
+      }
+    }
+  }
+  note(`promessa falsa: ${FALSE_CLAIM_TERMS.length} afirmações verificadas em todos os níveis`);
 
   // --- 4. no doc names a file that lives at a higher level ----------------
   // Generalizes the README finding: an index is as confidential as the most

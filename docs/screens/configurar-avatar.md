@@ -25,10 +25,9 @@ em **"+ Configurar novo avatar"** para criar um novo.
    Esse material serve tanto de referência visual quanto para a clonagem de
    voz.
 
-4. **Cenário e traje padrão** (opcionais) — descreva por texto (modo
-   "Prompt de IA") ou envie uma imagem de referência (modo "Enviar imagem").
-   Esses valores viram o padrão sugerido ao criar vídeos com este avatar, mas
-   podem ser trocados por vídeo individualmente.
+4. **Cenário e traje padrão** (opcionais) — descreva por texto e/ou envie uma
+   imagem de referência. Esses valores viram o padrão sugerido ao criar
+   vídeos com este avatar, mas podem ser trocados por vídeo individualmente.
 
 5. Com as 3 fotos e o vídeo de referência salvos, o botão **"Concluir
    configuração"** fica habilitado. Ao confirmar, o avatar passa a aparecer na
@@ -36,10 +35,6 @@ em **"+ Configurar novo avatar"** para criar um novo.
 
 ## Onde os avatares aparecem depois
 
-Todo avatar salvo aparece também em **Conteúdo → Avatares**, com nome,
-provedor e status da voz — e pode ser reutilizado em qualquer novo vídeo sem
-precisar repetir a captura.
-
-> **Nota:** o treino do avatar e a clonagem de voz de verdade dependem dos
-> provedores de avatar/vídeo e de voz (ex.: HeyGen/D-ID e ElevenLabs) estarem
-> conectados em Configurações.
+Todo avatar salvo aparece também em **Conteúdo → Avatares**, com nome e
+status da voz — e pode ser reutilizado em qualquer novo vídeo sem precisar
+repetir a captura.
