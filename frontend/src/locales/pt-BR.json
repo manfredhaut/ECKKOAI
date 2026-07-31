@@ -17,7 +17,8 @@
       "error": "erro",
       "connected": "conectado",
       "disconnected": "desconectado"
-    }
+    },
+    "devAutofill": "Modo de desenvolvimento: campos preenchidos automaticamente."
   },
   "header": {
     "theme": {
@@ -167,6 +168,16 @@
       "notConfigured": "O copiloto de demonstração ainda não está configurado.",
       "error": "Algo deu errado. Tente novamente.",
       "rateLimited": "Muitas mensagens em pouco tempo. Tente novamente em alguns minutos."
+    },
+    "entry": {
+      "signupTab": "Criar conta",
+      "loginTab": "Entrar",
+      "signupTitle": "Criar sua conta",
+      "signupBody": "Você escolhe o plano, recebe um subdomínio próprio e já entra na sua área. Leva menos de um minuto.",
+      "signupAction": "Criar conta grátis",
+      "loginTitle": "Entrar na sua conta",
+      "loginBody": "Sua conta vive no subdomínio da sua empresa — é lá que o login acontece. Vamos te levar até ele.",
+      "loginAction": "Ir para o login"
     }
   },
   "login": {

@@ -3,13 +3,21 @@ import { pool } from "../db/pool.js";
 import { verifyPassword } from "../services/passwords.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
 import { createRateLimiter } from "../services/rateLimit.js";
+import { config } from "../config.js";
 import type { AdminUser } from "../types.js";
 
-// Nothing in the frontend calls this endpoint anymore — POST /login
-// (routes/login.ts) is the real entry point now, and has its own rate
-// limiter. Kept working (not deleted) in case anything external still
-// depends on it directly.
-const isLoginRateLimited = createRateLimiter(5, 15 * 60 * 1000);
+// Este endpoint É chamado pelo frontend: AdminLoginModal.tsx (o link
+// "Acesso administrativo" no rodapé da landing) posta aqui, de propósito,
+// para que admin e tenant nunca compartilhem formulário nem endpoint.
+// POST /login (routes/login.ts) atende o cliente e tem limiter próprio.
+//
+// Limiter com contador independente do de /login — cada chamada a
+// createRateLimiter cria seu próprio Map, então gastar tentativas numa
+// zona não cega a outra. Mesmos valores configuráveis.
+const isLoginRateLimited = createRateLimiter(
+  config.loginRateLimit.maxAttempts,
+  config.loginRateLimit.windowMs,
+);
 
 // Login for the eckko.ai internal team — a separate identity from tenant
 // users (`admin_users`, not a role on `users`). Tenant login in routes/auth.ts

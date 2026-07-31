@@ -6,6 +6,7 @@ import type { Plan } from "../../types";
 import { BASE_DOMAIN, WHATSAPP_NUMBER } from "../../publicConfig";
 import { PublicCopilotWidget } from "./PublicCopilotWidget";
 import { AdminLoginModal } from "./AdminLoginModal";
+import { EntryPanel, type EntryTab } from "./EntryPanel";
 
 // Slug do tenant de demonstração. O login de cliente na landing NÃO posta do
 // domínio raiz de propósito: lá o lookup por e-mail em POST /login é feito sem
@@ -39,6 +40,9 @@ export function LandingPage() {
   const { t } = useTranslation();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
+  // Porta de entrada do cliente. `null` = fechado; o valor diz em qual aba
+  // abrir, para "Já tenho conta" cair direto em "Entrar".
+  const [entryTab, setEntryTab] = useState<EntryTab | null>(null);
 
   useEffect(() => {
     api.get<Plan[]>("/public/plans").then(setPlans);
@@ -67,13 +71,14 @@ export function LandingPage() {
           <a href="#faq">{t("landing.nav.faq")}</a>
         </nav>
         <div style={{ display: "flex", gap: 8 }}>
-          {/* Navegação real (não <Link>): cruza para o subdomínio do tenant. */}
-          <a href={demoTenantLoginUrl()} className="btn btn-outline">
+          {/* Os dois abrem o MESMO painel, em abas diferentes: quem errou o
+              botão troca de aba em vez de voltar para a landing. */}
+          <button type="button" className="btn btn-outline" onClick={() => setEntryTab("login")}>
             {t("landing.nav.login")}
-          </a>
-          <Link to="/signup" className="btn btn-primary">
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => setEntryTab("signup")}>
             {t("landing.nav.cta")}
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -81,12 +86,20 @@ export function LandingPage() {
         <h1>{t("landing.hero.headline")}</h1>
         <p>{t("landing.hero.subtitle")}</p>
         <div className="landing-hero-actions">
-          <Link to="/signup" className="btn btn-primary landing-hero-cta">
+          <button
+            type="button"
+            className="btn btn-primary landing-hero-cta"
+            onClick={() => setEntryTab("signup")}
+          >
             {t("landing.hero.cta")}
-          </Link>
-          <a href={demoTenantLoginUrl()} className="btn btn-outline landing-hero-cta">
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline landing-hero-cta"
+            onClick={() => setEntryTab("login")}
+          >
             {t("landing.nav.login")}
-          </a>
+          </button>
         </div>
         <span className="landing-demo-chip">{t("landing.hero.demoChip", { slug: DEMO_TENANT_SLUG })}</span>
       </section>
@@ -193,9 +206,13 @@ export function LandingPage() {
       <section className="landing-section landing-section-narrow landing-final-cta">
         <h2>{t("landing.finalCta.title")}</h2>
         <p className="text-muted">{t("landing.finalCta.subtitle")}</p>
-        <Link to="/signup" className="btn btn-primary landing-hero-cta">
+        <button
+          type="button"
+          className="btn btn-primary landing-hero-cta"
+          onClick={() => setEntryTab("signup")}
+        >
           {t("landing.finalCta.cta")}
-        </Link>
+        </button>
       </section>
 
       <footer className="landing-footer">
@@ -217,6 +234,14 @@ export function LandingPage() {
           {t("landing.adminAccess.link")}
         </button>
       </footer>
+
+      {entryTab && (
+        <EntryPanel
+          initialTab={entryTab}
+          loginUrl={demoTenantLoginUrl()}
+          onClose={() => setEntryTab(null)}
+        />
+      )}
 
       {adminModalOpen && <AdminLoginModal onClose={() => setAdminModalOpen(false)} />}
 

@@ -4,14 +4,18 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../../auth/AuthContext";
 import { Field } from "../../components/ui/Field";
 import { BASE_DOMAIN } from "../../publicConfig";
+import { devTenantCredential } from "../../devCredentials";
 import { PublicCopilotWidget } from "../Landing/PublicCopilotWidget";
 
 export function LoginPage() {
   const { t } = useTranslation();
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  // Em desenvolvimento os campos já chegam preenchidos (ver devCredentials.ts).
+  // Fora disso `devTenantCredential` é null e o estado inicial é vazio,
+  // exatamente como antes.
+  const [email, setEmail] = useState(devTenantCredential?.email ?? "");
+  const [password, setPassword] = useState(devTenantCredential?.password ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -22,7 +26,16 @@ export function LoginPage() {
     try {
       const result = await login(email, password);
       if (result.type === "admin") {
-        navigate("/admin", { replace: true });
+        // Navegação REAL, não client-side. Este formulário autentica pelo
+        // AuthContext (do tenant), que não tem como avisar o
+        // AdminAuthContext — são contextos separados de propósito. Um
+        // navigate() aqui mantinha o AdminAuthProvider montado com
+        // admin=null, então o AdminProtectedRoute rejeitava e devolvia para
+        // /admin/login: o login parecia falhar, e cada volta queimava uma
+        // tentativa do rate limiter, fazendo o sintoma parecer "senha
+        // errada". Recarregar remonta o provider, que se hidrata pelo
+        // GET /admin/me. Mesmo padrão do AdminLoginModal.
+        window.location.assign("/admin");
         return;
       }
 
@@ -80,6 +93,8 @@ export function LoginPage() {
             required
           />
         </Field>
+
+        {devTenantCredential && <p className="dev-autofill-note">{t("common.devAutofill")}</p>}
 
         {error && (
           <p style={{ color: "var(--color-tertiary)", fontSize: 13, marginBottom: 12 }}>{error}</p>

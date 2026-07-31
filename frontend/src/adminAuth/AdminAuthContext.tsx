@@ -12,6 +12,17 @@ interface AdminAuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * Revalida a sessão contra GET /admin/me.
+   *
+   * Exposto porque nem todo caminho de entrada no painel passa pelo
+   * `login()` daqui: o formulário unificado (LoginPage) autentica pelo
+   * AuthContext do tenant, e o AdminLoginModal posta direto em
+   * /admin/login. Os dois hoje fazem navegação real, o que remonta este
+   * provider — mas quem adicionar um caminho client-side no futuro precisa
+   * ter como revalidar sem recarregar a página.
+   */
+  refreshMe: () => Promise<void>;
 }
 
 // Completely separate from AuthContext (tenant login) — a different session
@@ -51,7 +62,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AdminAuthContext.Provider value={{ admin, loading, login, logout }}>
+    <AdminAuthContext.Provider value={{ admin, loading, login, logout, refreshMe }}>
       {children}
     </AdminAuthContext.Provider>
   );

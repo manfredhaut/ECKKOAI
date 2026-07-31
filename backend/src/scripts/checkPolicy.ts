@@ -15,6 +15,7 @@ import path from "node:path";
 import { config } from "../config.js";
 import { loadDocsFor } from "../services/docs.js";
 import { DOCS_EXCLUDED, DOCS_MANIFEST, type DocAudience } from "../services/docsManifest.js";
+import { checkEnvironmentPolicy } from "./checkEnvironmentPolicy.js";
 import {
   DENY_ENFORCED_FOR,
   DENY_TERMS,
@@ -191,6 +192,15 @@ async function main(): Promise<void> {
   // free-tier quota makes a live 5x run unreliable — and because a live run
   // can only ever exercise whichever branch the vendor happens to take.
   await checkProbeSemantics();
+
+  // --- 8. resiliência do ambiente e higiene das credenciais de acesso -----
+  // Roda contra /repo (montado somente-leitura no compose) porque o alvo
+  // são arquivos que vivem fora deste container.
+  const envResult = await checkEnvironmentPolicy(process.env.REPO_ROOT ?? "/repo");
+  // As mensagens já vêm prefixadas por seção ("ambiente:" / "acesso:"),
+  // então entram direto — passar por fail() duplicaria o rótulo.
+  envResult.failures.forEach((f) => failures.push(f));
+  envResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

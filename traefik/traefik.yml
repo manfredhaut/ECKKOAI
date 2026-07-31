@@ -2,6 +2,14 @@ api:
   dashboard: true
   insecure: true
 
+# Endpoint /ping, desabilitado por padrão. Habilitado para que o healthcheck
+# do Compose possa usar `traefik healthcheck`, que é o comando que a própria
+# imagem oferece — sem precisar de curl/wget dentro do container.
+# Traefik é o único serviço exposto ao navegador: se ele estiver de pé mas
+# não roteando, o endereço da demo "existe" e não funciona, que é o modo de
+# falha mais confuso de diagnosticar.
+ping: {}
+
 entryPoints:
   web:
     address: ":80"

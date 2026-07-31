@@ -1,3 +1,5 @@
+import { readLoginRateLimit } from "./services/loginRateLimitPolicy.js";
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -17,6 +19,14 @@ function optional(name: string): string | null {
 
 export const config = {
   port: Number(process.env.PORT ?? 4000),
+  // Ambiente declarado. Usado por guardas que precisam distinguir
+  // "conveniência de desenvolvimento" de "configuração de produção" —
+  // ver loginRateLimitPolicy.ts e scripts/checkPolicy.ts.
+  nodeEnv: process.env.NODE_ENV ?? "development",
+  // Configurável para não travar o desenvolvimento, com o default igual ao
+  // valor de produção. `npm run check` reprova o build se um valor folgado
+  // estiver ativo com NODE_ENV=production.
+  loginRateLimit: readLoginRateLimit(),
   databaseUrl: required("DATABASE_URL"),
   encryptionKey: required("ENCRYPTION_KEY"),
   uploadsDir: process.env.UPLOADS_DIR ?? "/app/uploads",

@@ -210,8 +210,9 @@ avatares, vídeos, credenciais de API e documentos, isolados por `tenant_id`.
 
 **Ainda não implementado (stubs explícitos, ver comentários `TODO` no código):**
 - `services/providers/embeddingProvider.ts` — embeddings são **aleatórios**
-  (vetores randômicos de 1536 dimensões); integração real (OpenAI/Voyage AI)
-  pendente — único dos 4 provedores de IA de domínio que continua stub
+  (vetores randômicos de 1536 dimensões); integração real pendente, já
+  decidida como `gemini-embedding-001` a 1536 dims com chave da plataforma
+  (ver seção HANDOFF) — único dos 4 provedores de IA de domínio ainda stub
 - Agente de perfil de conteúdo (perfil de tópico por tenant + campo de
   orientação/guidance, busca web plugável, sugestões de ângulo de pauta
   cruzando com documentos de Conhecimento e mídia) — não existe em nenhuma
@@ -480,10 +481,11 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-07-31 — Bloco 6 concluído (resiliência de
-ambiente: causa do não-restart isolada, modo de falha do backend
-descoberto) e handoff completo escrito. Leia a seção HANDOFF logo abaixo
-antes de qualquer coisa.
+**Última atualização:** 2026-07-31 — Bloco ACESSO-FINAL: o backend agora
+morre de verdade quando o bootstrap falha (e volta sozinho), os 4 serviços
+têm restart policy e healthcheck, o loop do `/admin` foi corrigido na
+causa, o limiter virou configurável e as telas de login vêm preenchidas em
+desenvolvimento. Leia a seção HANDOFF logo abaixo antes de qualquer coisa.
 
 ---
 
@@ -503,6 +505,18 @@ nova. O produto é vendido com assinatura + créditos via Stripe (real,
 testado), e as chaves de IA hoje ainda são BYOK por tenant no código.
 
 ### Como validar que está tudo de pé (faça isto primeiro)
+
+```bash
+./tools/up.sh
+```
+
+Sobe os quatro serviços, espera cada um ficar *healthy* (com timeout) e só
+devolve o controle depois de confirmar **landing 200 e `/api/health` 200** —
+porque `docker compose up -d` volta quando os containers foram criados, que
+não é a mesma coisa que a aplicação responder. Não consome tentativa de
+login nem fala com fornecedor. Equivalente: `npm run up`.
+
+Depois, para conferir a demo inteira:
 
 ```bash
 ./tools/smoke-demo.sh
@@ -563,9 +577,32 @@ lido. Falta nas duas pontas.
    `PLATFORM_COPILOT_VENDOR`: `askCopilot()` faz `vendor = input.vendor ??
    "anthropic"` e nem `public.ts` nem `adminCopilot.ts` passam vendor. Colar
    uma chave Gemini ali a manda para `api.anthropic.com` e dá 401.
-2. **Embedding será `text-embedding-3-small` da OpenAI, chave da
-   plataforma**, em variável própria — nunca BYOK de tenant. 1536 dimensões
-   nativas, cabe em `vector(1536)` sem migration nem truncagem.
+2. **Embedding será `gemini-embedding-001`, a 1536 dimensões via
+   `output_dimensionality`, com chave DA PLATAFORMA** em variável de
+   ambiente própria — nunca a BYOK de um tenant.
+
+   *(Correção de registro, 2026-07-31: este arquivo dizia
+   "`text-embedding-3-small` da OpenAI" e listava os blocos de RAG como
+   bloqueados por falta de chave OpenAI. Estava errado — a decisão travada
+   é a de cima. A chave que falta é a da plataforma para o Gemini.)*
+
+   Três gotchas que vêm junto com essa escolha e precisam estar no código
+   desde a primeira versão, não descobertos depois:
+   - **Normalização manual abaixo de 3072 dimensões.** O modelo só devolve
+     vetor normalizado no tamanho nativo; pedindo 1536 via
+     `output_dimensionality`, a normalização é responsabilidade nossa. Sem
+     ela, similaridade de cosseno compara magnitudes além de direções, e o
+     ranking sai errado de um jeito plausível — que é o pior tipo de erro,
+     porque não parece defeito.
+   - **Teto de 2048 tokens por texto.** O chunking
+     (`services/chunking.ts`) precisa respeitar isso; chunk maior é
+     truncado pelo vendor, e o pedaço perdido some sem aviso.
+   - **Batelada obrigatória por causa do limite diário de requisições.**
+     Uma chamada por chunk estoura a cota em qualquer base real. Indexar
+     tem de agrupar chunks por requisição desde o começo — reescrever o
+     ingestor depois é bem mais caro que já nascer em lote.
+
+   Nada disso foi implementado, e nenhuma chave foi testada.
 3. **A fonte única de limites de plano é a tabela `plans`**; `plans.ts` só lê
    dela. Não crie uma segunda fonte.
 4. **O manifesto de exposição dos docs mora no backend**
@@ -585,7 +622,7 @@ lido. Falta nas duas pontas.
 | O quê | Dono | Observação |
 |---|---|---|
 | Colar `PLATFORM_COPILOT_API_KEY` (Anthropic) | **usuário** | Sem ela, copiloto público e do admin **nunca responderam** |
-| Fornecer chave de embedding OpenAI | **usuário** | Desbloqueia os Blocos 3 e 6 |
+| Fornecer chave de plataforma do Gemini para embedding | **usuário** | `gemini-embedding-001`; desbloqueia os Blocos 3 e 6 |
 | Rotacionar a chave Gemini do tenant de demo | **usuário** | Foi colada em texto plano no chat |
 | Rotacionar as senhas de `admin@eckkoai.com` e `demo@eckko.ai` | **usuário** | Mesmo motivo; via `npm run dev:seed-access` |
 | Pôr saldo no HeyGen | **usuário** | Hoje comporta ~1 vídeo, ver tabela de cota |
@@ -593,17 +630,24 @@ lido. Falta nas duas pontas.
 | Conferir os 9 valores de `provider_cost_rates` | **usuário** | São placeholder; toda tela já mostra banner de estimativa |
 | Escrever o Bloco 2B | próxima sessão | Insumo pronto na tabela de lacunas |
 | Validar fundo virtual com câmera real | **usuário** | Câmera bloqueada em toda automação desta ferramenta |
+| **Ligar o autostart do Docker Desktop** | **usuário** | Verificado: `AutoStart: false` em `%APPDATA%\Docker\settings-store.json`. **Não é código** — nenhuma política de restart do Compose ajuda se o próprio daemon não estiver rodando. Caminho: **Docker Desktop → ícone de engrenagem (Settings) → General → marcar "Start Docker Desktop when you sign in to your computer"** |
 
 ### Riscos conhecidos e NÃO corrigidos
 
-- **Não há recuperação automática confiável do ambiente.** Ver a seção do
-  Bloco 6 logo abaixo: a política funciona para crash de processo, mas o
-  backend tem um modo de falha em que o container fica `running` mentindo.
+- ~~Não há recuperação automática confiável do ambiente.~~ **Corrigido no
+  bloco ACESSO-FINAL** — ver a seção própria abaixo. O backend agora morre
+  quando o bootstrap falha e volta sozinho quando o Postgres retorna,
+  medido. O que continua verdade é a dependência externa: **se o daemon do
+  Docker não estiver rodando, nada disso vale** (ver pendência de autostart
+  na tabela acima).
+- ~~`/admin` pela barra de endereço entra em laço.~~ **Corrigido no bloco
+  ACESSO-FINAL** — a causa era outra, ver a seção própria abaixo.
 - **`Sair` em qualquer zona derruba admin e tenant juntos** —
   `session.destroy()`, as duas sessões vivem no mesmo cookie.
-- **`/admin` pela barra de endereço entra em laço** — o `AdminAuthProvider`
-  não revalida a sessão, e cada volta consome uma das 5 tentativas/15min,
-  fazendo o sintoma parecer "senha errada". Entre pelo modal do rodapé.
+- **Em `/admin/login`, o autofill preenche a credencial do TENANT**, não a
+  do admin. Não é bug: essa rota renderiza o `LoginPage` unificado, que é o
+  formulário do cliente. Mas confunde — a porta certa do admin é o
+  "Acesso administrativo" no rodapé da landing, que preenche o admin.
 - **"Créditos restantes" mostra "—"** no painel do tenant embora
   `tenant_credits` tenha saldo real. Bug de UI, catalogado, não corrigido.
 - **"6/2 vídeos este mês"** na Minha Assinatura: contador por plano e saldo
@@ -613,6 +657,99 @@ lido. Falta nas duas pontas.
   chave — inútil para identificar qual chave está lá.
 - **Header quebra abaixo de ~500px.**
 - Nenhum destes bloqueia a demo pelo caminho ensaiado.
+
+### Bloco ACESSO-FINAL — ambiente de pé e acesso destravado (CONCLUÍDO)
+
+**1. O backend agora morre de verdade quando o bootstrap falha.** O Bloco 6
+tinha diagnosticado o modo de falha (container `running`, servidor morto,
+`tsx watch` sobrevivendo ao filho); aqui ele foi corrigido na causa.
+
+A escolha foi separar **migrar de servir** num entrypoint
+([backend/docker-entrypoint.sh](backend/docker-entrypoint.sh)): `set -e` faz
+a falha do migrate encerrar o PID 1 com código ≠ 0, e `exec` faz o servidor
+*ser* o PID 1, de modo que a morte dele seja a morte do container. As outras
+duas opções foram descartadas com evidência, não por gosto: **propagar a
+saída pelo `tsx watch` é impossível** — o `--help` do tsx instalado só
+oferece `--no-cache`, `--tsconfig`, `-h`, `-v`, nenhuma flag de exit code; e
+**autoheal** acrescentaria um quinto container vigiando sintoma em vez de
+corrigir a causa.
+
+**Consequência deliberada: sem `watch` dentro do container.** O hot reload
+já não era confiável através do bind mount (editar rota exigia restart
+manual de qualquer jeito — está registrado neste arquivo), então ele cobrava
+o custo de esconder crashes sem entregar o benefício. `npm run dev` continua
+existindo com watch para uso local; o container usa `npm run serve`.
+
+*Medido, não deduzido:* com o Postgres derrubado, o backend saiu de
+`running` e entrou em `restarting` com `RestartCount` subindo de 2 a 9; ao
+subir o Postgres de volta, **`/api/health` voltou a 200 em +20s sem nenhuma
+ação humana**.
+
+**2. Os quatro serviços têm restart policy e healthcheck.** Faltavam
+healthchecks no traefik e no frontend. O do traefik usa `traefik
+healthcheck`, o comando da própria imagem, o que exigiu habilitar `ping: {}`
+em `traefik/traefik.yml` (vem desabilitado por padrão). Isso importa porque
+traefik é a única porta exposta: de pé mas sem rotear, o endereço "existe" e
+não funciona, que é o modo de falha mais confuso de diagnosticar.
+
+**3. O loop do `/admin` foi corrigido — e a causa registrada aqui estava
+errada.** Este arquivo dizia que "o `AdminAuthProvider` não revalida a
+sessão". Ele revalida: tem `refreshMe()` no mount e no próprio `login()`. A
+causa real é outra: `/admin/login` renderiza o **`LoginPage` unificado**,
+que autentica pelo `AuthContext` do *tenant* e fazia `navigate("/admin")`
+client-side. Isso não remonta o `AdminAuthProvider`, então `admin` seguia
+`null`, o `AdminProtectedRoute` rejeitava e devolvia para `/admin/login` — e
+cada volta queimava uma tentativa do limiter, fazendo o sintoma parecer
+"senha errada". Correção: navegação **real** nesse caso, como o
+`AdminLoginModal` já fazia. `refreshMe` também passou a ser exposto no
+contexto, para quem adicionar um caminho client-side no futuro.
+
+*Medido:* com o limiter zerado, o primeiro 429 cai na 6ª tentativa (limite
+5). Depois de **cinco** acessos a `/admin` pela barra de endereço, o
+primeiro 429 continua na 6ª — ou seja, `/admin` não consome tentativa
+nenhuma. E o login pelo modal do rodapé leva ao Painel admin de primeira,
+verificado com clique real.
+
+**4. Limiter de login configurável, com o default igual ao valor de
+produção** ([loginRateLimitPolicy.ts](backend/src/services/loginRateLimitPolicy.ts)).
+Afrouxar é opt-in por variável de ambiente; `npm run check` **reprova o
+build** se um valor folgado estiver ativo com `NODE_ENV=production`. Valor
+inválido ou negativo cai no default em vez de virar `NaN` — um limiter com
+`NaN` compararia sempre falso e desligaria a proteção em silêncio.
+
+**5. Credenciais de dev preenchem os formulários, sem literal no fonte.** Os
+valores entram só por `define` do Vite, lidos do `.env` (fora do git), e
+falham fechado: sem `DEV_AUTOFILL=1`, e em qualquer build de produção,
+chegam vazios. Há aviso visível ao lado dos campos.
+
+**Achado no caminho, e é o mais sério deste bloco:** as senhas de dev
+**estavam publicadas no repositório** — como default de um `||` em
+`backend/scripts/seedDevAccess.ts`, que é versionado. Um default confortável
+é exatamente como uma senha vaza: ninguém a digita, então ninguém percebe
+que ela está no git. Os defaults foram removidos (o script agora exige as
+variáveis) e `npm run check` passou a varrer o fonte procurando o valor das
+`DEV_*_PASSWORD`. **A guarda provou seu valor imediatamente: reprovou o
+build por causa de um comentário que eu mesmo escrevi citando a senha
+antiga.** Como as senhas estiveram no histórico do git, continuam valendo
+como comprometidas — a rotação já pendente segue pendente.
+
+**Todas as guardas novas foram provadas falhando de verdade**, não só
+escritas: limiter folgado com `NODE_ENV=production`; `DEV_AUTOFILL=1` com
+`NODE_ENV=production`; serviço sem healthcheck e serviço sem restart (num
+compose de teste, em diretório temporário — nunca com `git checkout` sobre
+arquivo modificado, pela lição já registrada); e a de credencial literal.
+Também foi verificado o caso que **deve passar**: limiter folgado fora de
+produção não reprova nada.
+
+**6. Porta de entrada única na landing.** "Começar agora"/"Começar grátis" e
+"Já tenho conta" abrem o **mesmo** painel, em abas diferentes ("Criar conta"
+é a padrão) — quem erra o botão troca de aba em vez de voltar. "Entrar"
+continua navegando de verdade para o subdomínio do tenant, que é onde o
+lookup é escopado. Os botões **dos planos** continuam indo direto para
+`/signup`: ali o cliente já escolheu o plano, e interceptar com um painel
+adicionaria um passo no funil de compra. **Se você quiser os planos também
+passando pelo painel, é uma linha — não fiz por não ser reversível sem
+decisão sua.**
 
 ### Bloco 6 — resiliência de ambiente (CONCLUÍDO, com dois achados)
 
@@ -684,9 +821,14 @@ POST do domínio raiz) e para o modal de acesso administrativo.
 - **Bundle velho do Vite:** editar `.tsx`/`.css` e "não aparecer" no
   navegador é o caso comum. Rode `docker compose restart frontend` **antes**
   de suspeitar do código React. O smoke detecta isso na verificação 21.
-- **`tsx watch` não recarrega rota editada** via bind mount: se uma edição
-  em `backend/src/routes/*.ts` não tiver efeito, `docker compose restart
-  backend`.
+- **O container do backend não usa mais `tsx watch`** (ver bloco
+  ACESSO-FINAL): editar `backend/src/**` exige `docker compose restart
+  backend` para ter efeito — o que na prática já era necessário, porque o
+  watch não recarregava de forma confiável através do bind mount.
+- **`vite.config.ts`, `package.json`, `Dockerfile` e o entrypoint NÃO estão
+  no bind mount.** Mexer em qualquer um deles exige
+  `docker compose build <serviço>`; um `restart` não basta e o sintoma é a
+  mudança simplesmente não existir.
 - **`docker compose restart` NÃO recarrega variável de ambiente.** Para
   `.env` novo é preciso `docker compose up -d <serviço>`, que recria o
   container.
@@ -710,9 +852,15 @@ barra de endereço — os três caminhos saem todos de lá:
 
 | Caminho | Onde clicar | Para onde vai |
 |---|---|---|
-| **Cliente novo** | "Começar agora" / "Começar grátis" (hero, planos, CTA) | `/signup` — cria tenant, subdomínio próprio e cai em Minha Assinatura |
-| **Cliente existente** | "Já tenho conta" (topo e rodapé) | `dev-c77a5b.twinai.localhost/login` — navegação real para o subdomínio, onde o login é escopado |
-| **Painel admin** | "Acesso administrativo" (rodapé) | modal próprio → `POST /admin/login` → `/admin` |
+| **Cliente novo** | "Começar agora" / "Começar grátis" | painel de entrada, aba **Criar conta** (padrão) → `/signup` |
+| **Cliente existente** | "Já tenho conta" | o **mesmo** painel, já na aba **Entrar** → `dev-c77a5b.twinai.localhost/login`, navegação real ao subdomínio |
+| **Painel admin** | "Acesso administrativo" (rodapé, discreto) | modal próprio → `POST /admin/login` → `/admin` |
+
+Os botões **dentro dos planos** continuam indo direto para `/signup`, sem
+passar pelo painel — ali o plano já foi escolhido.
+
+**Em desenvolvimento os formulários já vêm preenchidos** (com aviso na
+tela), então na demo não é preciso digitar senha nenhuma.
 
 **Dez minutos antes de apresentar, rode:**
 
@@ -835,10 +983,10 @@ falta de peça, não por bug:
   é chamado na ingestão ([routes/documents.ts](backend/src/routes/documents.ts));
   nenhuma query no backend usa o operador `<=>` ou lê `document_chunks`.
   O RAG falta nas duas pontas, não só numa.
-- `document_chunks.embedding` é `vector(1536)` — **compatível** com
-  `text-embedding-3-small` (OpenAI, 1536 nativo) e com
-  `gemini-embedding-001` (3072, truncável a 1536 via
-  `outputDimensionality`). A dimensão **não** é o bloqueio.
+- `document_chunks.embedding` é `vector(1536)` — **compatível** com o
+  `gemini-embedding-001` já escolhido (3072 nativo, reduzido a 1536 via
+  `output_dimensionality`, com normalização manual por nossa conta). A
+  dimensão **não** é o bloqueio.
 - `documents` e `document_chunks` estão **zerados em todos os tenants** —
   nada nunca foi indexado, então não há dívida de reindexação.
 
@@ -858,9 +1006,14 @@ linhas). Nada disso foi implementado.
 **Duas decisões, ambas já tomadas pelo usuário em 2026-07-31:** (1)
 `PLATFORM_COPILOT_API_KEY` = chave **Anthropic** (sem vendor novo, sem
 `PLATFORM_COPILOT_VENDOR` — bate com o default `"anthropic"` de
-`askCopilot()`); (2) embedding = **`text-embedding-3-small` da OpenAI,
-chave da plataforma** em env var própria, nunca BYOK de tenant — 1536
-dimensões nativas, cabe em `vector(1536)` sem migration nem truncagem.
+`askCopilot()`); (2) embedding = **`gemini-embedding-001` a 1536 dimensões
+via `output_dimensionality`, com chave da plataforma** em env var própria,
+nunca BYOK de tenant — cabe em `vector(1536)` sem migration. Exige
+normalização manual (o vetor só vem normalizado em 3072), respeita teto de
+2048 tokens por texto, e a indexação precisa ser em lote por causa do
+limite diário de requisições. *(Correção de 2026-07-31: este parágrafo
+dizia `text-embedding-3-small` da OpenAI — ver "Decisões travadas" na
+seção HANDOFF.)*
 **A chave Anthropic ainda não foi colada**: `PLATFORM_COPILOT_API_KEY`
 segue vazia, então o copiloto público e o do admin continuam sem nunca
 ter respondido, e a bateria adversarial só pôde rodar no copiloto do

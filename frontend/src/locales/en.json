@@ -17,7 +17,8 @@
       "error": "error",
       "connected": "connected",
       "disconnected": "disconnected"
-    }
+    },
+    "devAutofill": "Development mode: fields filled in automatically."
   },
   "header": {
     "theme": {
@@ -167,6 +168,16 @@
       "notConfigured": "The demo copilot isn't configured yet.",
       "error": "Something went wrong. Please try again.",
       "rateLimited": "Too many messages in a short time. Try again in a few minutes."
+    },
+    "entry": {
+      "signupTab": "Create account",
+      "loginTab": "Sign in",
+      "signupTitle": "Create your account",
+      "signupBody": "Pick a plan, get your own subdomain, and land straight in your workspace. Takes under a minute.",
+      "signupAction": "Create free account",
+      "loginTitle": "Sign in to your account",
+      "loginBody": "Your account lives on your company's subdomain — that's where sign-in happens. We'll take you there.",
+      "loginAction": "Go to sign in"
     }
   },
   "login": {

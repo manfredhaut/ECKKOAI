@@ -10,11 +10,31 @@ const baseDomain = process.env.BASE_DOMAIN ?? "twinai.localhost";
 // `define` below — see src/publicConfig.ts.
 const whatsappNumber = process.env.WHATSAPP_NUMBER ?? "";
 
+// Preenchimento automático das telas de login em desenvolvimento.
+//
+// Regra: os valores NUNCA aparecem no fonte — entram no bundle só por este
+// `define`, lidos do ambiente (que vem do .env, fora do git). E só entram
+// se a flag estiver explicitamente em "1": qualquer outro valor, incluindo
+// ausência, produz credenciais vazias e o autofill some da tela.
+//
+// A segunda condição é a que importa: mesmo com a flag ligada por engano,
+// um build de produção não pode carregar senha nenhuma. Aqui isso falha
+// fechado; `npm run check` ainda reprova o build antes, para o erro
+// aparecer como erro em vez de virar um silêncio conveniente.
+const isProduction = process.env.NODE_ENV === "production";
+const devAutofill = process.env.DEV_AUTOFILL === "1" && !isProduction;
+const devCred = (name: string) => (devAutofill ? (process.env[name] ?? "") : "");
+
 export default defineConfig({
   plugins: [react()],
   define: {
     __BASE_DOMAIN__: JSON.stringify(baseDomain),
     __WHATSAPP_NUMBER__: JSON.stringify(whatsappNumber),
+    __DEV_AUTOFILL__: JSON.stringify(devAutofill),
+    __DEV_ADMIN_EMAIL__: JSON.stringify(devCred("DEV_ADMIN_EMAIL")),
+    __DEV_ADMIN_PASSWORD__: JSON.stringify(devCred("DEV_ADMIN_PASSWORD")),
+    __DEV_TENANT_EMAIL__: JSON.stringify(devCred("DEV_TENANT_EMAIL")),
+    __DEV_TENANT_PASSWORD__: JSON.stringify(devCred("DEV_TENANT_PASSWORD")),
   },
   server: {
     host: true,

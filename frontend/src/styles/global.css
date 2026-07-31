@@ -1029,9 +1029,11 @@ th {
   padding: 0;
 }
 
+/* Sem cor de marca no hover, de propósito: é a porta da equipe interna, e
+   verde de marca a faria competir com os CTAs do cliente. */
 .landing-admin-link:hover {
   opacity: 1;
-  color: var(--color-primary);
+  text-decoration: underline;
 }
 
 .admin-modal-scrim {
@@ -1166,4 +1168,79 @@ th {
   background: color-mix(in srgb, var(--color-tertiary) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-tertiary) 45%, transparent);
   color: var(--color-tertiary);
+}
+
+/* --- Porta de entrada do cliente (EntryPanel) ---------------------------
+   Reaproveita o scrim do AdminLoginModal; o corpo tem estilo próprio porque
+   este painel é do cliente, não da equipe interna. */
+.entry-panel {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 26px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+.entry-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 20px;
+  padding: 4px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.entry-tab {
+  flex: 1;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.entry-tab--active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.entry-pane h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.entry-pane p {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.entry-action {
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+/* Aviso de preenchimento automático em desenvolvimento. Discreto, mas
+   impossível de confundir com um campo que o usuário digitou. */
+.dev-autofill-note {
+  margin: 0 0 12px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border);
+  border-radius: 7px;
 }

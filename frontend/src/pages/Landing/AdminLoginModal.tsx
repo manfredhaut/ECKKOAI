@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
+import { devAdminCredential } from "../../devCredentials";
 
 interface AdminLoginResponse {
   id: string;
@@ -23,8 +24,10 @@ interface AdminLoginResponse {
  */
 export function AdminLoginModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  // Preenchido em desenvolvimento (ver devCredentials.ts); vazio em
+  // qualquer outro caso, inclusive build de produção.
+  const [email, setEmail] = useState(devAdminCredential?.email ?? "");
+  const [password, setPassword] = useState(devAdminCredential?.password ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
@@ -88,6 +91,8 @@ export function AdminLoginModal({ onClose }: { onClose: () => void }) {
               required
             />
           </label>
+
+          {devAdminCredential && <p className="dev-autofill-note">{t("common.devAutofill")}</p>}
 
           {error && <p className="admin-modal-error">{error}</p>}
 

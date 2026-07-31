@@ -1,0 +1,13 @@
+{
+  "name": "eckkoai",
+  "private": true,
+  "description": "Atalhos de operação do ambiente. O código vive em backend/ e frontend/ — este arquivo não tem dependências e não é um workspace; existe só para dar nome aos comandos que a gente digita todo dia.",
+  "scripts": {
+    "up": "bash tools/up.sh",
+    "smoke": "bash tools/smoke-demo.sh",
+    "check": "docker compose exec -T backend npm run check",
+    "down": "docker compose down",
+    "logs": "docker compose logs -f --tail=50",
+    "seed-access": "docker compose exec -T backend npm run dev:seed-access"
+  }
+}

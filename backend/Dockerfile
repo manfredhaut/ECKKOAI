@@ -14,7 +14,14 @@ COPY src ./src
 # Ferramentas de linha de comando fora do build do tsc (rootDir/include = src),
 # rodadas via tsx — hoje só o seed de acesso de dev (npm run dev:seed-access).
 COPY scripts ./scripts
+COPY docker-entrypoint.sh ./
+# chmod no build: o bit de execução não sobrevive de forma confiável a um
+# checkout no Windows, e um entrypoint sem permissão faz o container morrer
+# no boot com "permission denied" — falha barulhenta, mas fácil de perder.
+RUN chmod +x ./docker-entrypoint.sh
 
 EXPOSE 4000
 
-CMD ["npm", "run", "dev"]
+# Migrar e servir em dois passos, para que a falha de bootstrap saia pelo
+# PID 1 e a política de restart consiga agir — ver docker-entrypoint.sh.
+CMD ["./docker-entrypoint.sh"]

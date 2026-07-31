@@ -2,9 +2,15 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
 import { verifyPassword } from "../services/passwords.js";
 import { createRateLimiter } from "../services/rateLimit.js";
+import { config } from "../config.js";
 import type { AdminUser, Tenant, User } from "../types.js";
 
-const isLoginRateLimited = createRateLimiter(5, 15 * 60 * 1000);
+// Default idêntico ao valor anterior (5 / 15 min); só passou a ser
+// configurável por ambiente — ver services/loginRateLimitPolicy.ts.
+const isLoginRateLimited = createRateLimiter(
+  config.loginRateLimit.maxAttempts,
+  config.loginRateLimit.windowMs,
+);
 
 const INVALID_CREDENTIALS = { error: "invalid_credentials", message: "Invalid email or password" };
 

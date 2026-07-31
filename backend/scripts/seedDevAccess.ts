@@ -19,13 +19,38 @@ import { pool } from "../src/db/pool.js";
 import { hashPassword } from "../src/services/passwords.js";
 import { recordAuditLog } from "../src/services/auditLog.js";
 
-const ADMIN_EMAIL = "admin@eckkoai.com";
 const ADMIN_NAME = "Admin eckko.ai";
-const TENANT_SLUG = "dev-c77a5b";
-const TENANT_EMAIL = "demo@eckko.ai";
 
-const adminPassword = process.env.DEV_ADMIN_PASSWORD || "AdminEckko2026";
-const tenantPassword = process.env.DEV_TENANT_PASSWORD || "DemoEckko2026";
+/**
+ * Tudo vem do ambiente, sem default embutido.
+ *
+ * As senhas eram literais aqui, como default de um `||`, e este arquivo É
+ * versionado — ou seja, a credencial de dev estava publicada no repositório.
+ * Um default confortável é exatamente como uma senha vaza: ninguém a digita,
+ * então ninguém percebe que ela está no git. `npm run check` agora reprova o
+ * build se qualquer valor de DEV_*_PASSWORD reaparecer no fonte.
+ *
+ * Os valores ficam em `.env` (fora do git), documentados em
+ * DEV-ACCESS.local.md.
+ */
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    abort(
+      `variável de ambiente ${name} não definida.\n` +
+        "  As credenciais de dev não têm mais default embutido (ficavam num arquivo\n" +
+        "  versionado). Defina DEV_ADMIN_EMAIL/DEV_ADMIN_PASSWORD/DEV_TENANT_EMAIL/\n" +
+        "  DEV_TENANT_PASSWORD/DEV_TENANT_SLUG no .env — ver DEV-ACCESS.local.md.",
+    );
+  }
+  return value;
+}
+
+const ADMIN_EMAIL = requiredEnv("DEV_ADMIN_EMAIL");
+const TENANT_EMAIL = requiredEnv("DEV_TENANT_EMAIL");
+const TENANT_SLUG = requiredEnv("DEV_TENANT_SLUG");
+const adminPassword = requiredEnv("DEV_ADMIN_PASSWORD");
+const tenantPassword = requiredEnv("DEV_TENANT_PASSWORD");
 
 // Hosts aceitos como "banco local". Cobre acesso direto da máquina e o nome
 // do serviço dentro da rede do Docker Compose (`postgres`), que é como o

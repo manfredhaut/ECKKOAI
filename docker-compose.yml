@@ -13,6 +13,13 @@ services:
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+    # Comando da própria imagem, batendo no /ping habilitado em traefik.yml.
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     networks:
       - twinai
 
@@ -51,10 +58,34 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # Limiter de login: default = valor de produção (5 / 15 min). Só
+      # afrouxe em desenvolvimento; npm run check reprova valor folgado com
+      # NODE_ENV=production. Ver services/loginRateLimitPolicy.ts.
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-}
+      LOGIN_RATE_LIMIT_WINDOW_MS: ${LOGIN_RATE_LIMIT_WINDOW_MS:-}
+      # Contas fixas de desenvolvimento, consumidas por
+      # `npm run dev:seed-access`. Sem default embutido no código: os valores
+      # vivem só no .env (fora do git).
+      DEV_ADMIN_EMAIL: ${DEV_ADMIN_EMAIL:-}
+      DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-}
+      DEV_TENANT_EMAIL: ${DEV_TENANT_EMAIL:-}
+      DEV_TENANT_PASSWORD: ${DEV_TENANT_PASSWORD:-}
+      DEV_TENANT_SLUG: ${DEV_TENANT_SLUG:-}
+      DEV_AUTOFILL: ${DEV_AUTOFILL:-}
     volumes:
       - ./backend/src:/app/src
       - ./uploads:/app/uploads
       - ./docs:/app/docs:ro
+      # Somente leitura, só para o gate de política (`npm run check`), que
+      # roda dentro deste container e precisa inspecionar arquivos que vivem
+      # fora dele: a definição do Compose e o fonte do frontend.
+      # Montados um a um de propósito — montar a raiz do repo traria junto
+      # .env e DEV-ACCESS.local.md, que não têm por que existir aqui dentro.
+      - ./docker-compose.yml:/repo/docker-compose.yml:ro
+      - ./backend/src:/repo/backend/src:ro
+      - ./backend/scripts:/repo/backend/scripts:ro
+      - ./frontend/src:/repo/frontend/src:ro
+      - ./tools:/repo/tools:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,12 +112,30 @@ services:
       TRAEFIK_HTTP_PORT: ${TRAEFIK_HTTP_PORT:-8090}
       BASE_DOMAIN: ${BASE_DOMAIN}
       WHATSAPP_NUMBER: ${WHATSAPP_NUMBER:-}
+      # Preenchimento automático dos formulários de login em desenvolvimento.
+      # Só tem efeito com DEV_AUTOFILL=1; os valores entram no bundle via
+      # `define` do Vite (nunca literais no fonte) e npm run check reprova o
+      # build se a flag estiver ligada com NODE_ENV=production.
+      DEV_AUTOFILL: ${DEV_AUTOFILL:-}
+      DEV_ADMIN_EMAIL: ${DEV_ADMIN_EMAIL:-}
+      DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-}
+      DEV_TENANT_EMAIL: ${DEV_TENANT_EMAIL:-}
+      DEV_TENANT_PASSWORD: ${DEV_TENANT_PASSWORD:-}
+      NODE_ENV: ${NODE_ENV:-development}
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
       - ./frontend/public:/app/public
     depends_on:
       - backend
+    # Vite dev server. `start_period` folgado porque a primeira subida
+    # compila as dependências antes de aceitar conexão.
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     networks:
       - twinai
 
