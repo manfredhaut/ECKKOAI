@@ -9,6 +9,12 @@ import { synthesizeSpeech } from "./voiceProvider.js";
 import { processVoiceAudio } from "../audioProcessing.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { recordProviderUsage } from "../billing/usageTracking.js";
+import {
+  countWords,
+  estimateSeconds,
+  logScriptDuration,
+  SCRIPT_DURATION,
+} from "../script/scriptDuration.js";
 import type { AvatarVendor } from "./vendorCatalog.js";
 
 export class AvatarProviderError extends Error {}
@@ -58,7 +64,23 @@ async function requireAudio(input: GenerateVideoInput): Promise<Buffer> {
     unitType: "characters",
     unitCount: input.script.length,
   });
-  return processVoiceAudio(input.tenantId, synthesized, {
+
+  // Único ponto do sistema onde a duração REAL do que vai ser falado é
+  // conhecida. É aqui que a estimativa de scriptDuration.ts encontra a
+  // medição — e é comparando as duas ao longo de várias gerações que o
+  // words-per-minute deixa de ser chute. Só registra; não bloqueia nada.
+  const words = countWords(input.script);
+  logScriptDuration({
+    tenantId: input.tenantId,
+    stage: "synthesis",
+    words,
+    estimatedSeconds: estimateSeconds(words),
+    targetSeconds: SCRIPT_DURATION.targetSeconds,
+    actualSeconds: synthesized.durationSeconds,
+    actualSource: synthesized.source,
+  });
+
+  return processVoiceAudio(input.tenantId, synthesized.audio, {
     enabled: input.audioTreatmentEnabled,
     targetLufs: input.audioTreatmentTargetLufs,
   });

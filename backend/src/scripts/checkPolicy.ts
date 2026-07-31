@@ -176,6 +176,12 @@ async function main(): Promise<void> {
   }
   note(`planos conferidos contra a tabela: ${plans.map((p) => p.id).join(", ")}`);
 
+  // --- 6b. script duration is derived, not hardcoded ----------------------
+  await checkScriptDuration();
+
+  // --- 6c. generation pipeline: retry, cap, truncation, meta stripping ----
+  await checkScriptPipeline();
+
   // --- 7. credential probe semantics --------------------------------------
   // The probe answers "is this key valid?", not "does the model produce
   // text?". Proven against controlled vendor responses because the real
@@ -193,6 +199,179 @@ async function main(): Promise<void> {
   }
   console.log("\n✓ Todas as invariantes de documentação e de probe de credencial passaram.");
   process.exit(0);
+}
+
+// O valor do bloco de duração está em o alvo ser DERIVADO: trocar 30s por 60s
+// tem de mudar tudo que depende disso sem editar mais nada. Um número literal
+// reaparecendo em algum lugar quebraria isso silenciosamente, e o sintoma
+// seria um vídeo com a duração errada — visível só depois de gastar cota dos
+// três vendors.
+async function checkScriptDuration(): Promise<void> {
+  const {
+    SCRIPT_DURATION,
+    targetWords,
+    wordBand,
+    estimateSeconds,
+    countWords,
+    truncateAtSentence,
+    buildLengthInstruction,
+  } = await import("../services/script/scriptDuration.js");
+
+  const wpm = SCRIPT_DURATION.wordsPerMinute;
+
+  const expected30 = Math.round((30 / 60) * wpm);
+  if (targetWords(30) !== expected30) {
+    fail("duração", `targetWords(30) devolveu ${targetWords(30)}, esperado ${expected30} (derivado de ${wpm} wpm).`);
+  }
+  // Dobrar a duração tem de dobrar o alvo de palavras. Se não dobrar, algum
+  // número parou de ser derivado.
+  if (targetWords(60) !== targetWords(30) * 2) {
+    fail("duração", `targetWords(60) (${targetWords(60)}) não é o dobro de targetWords(30) (${targetWords(30)}).`);
+  }
+
+  const band = wordBand(30);
+  if (!(band.min < targetWords(30) && targetWords(30) < band.max)) {
+    fail("duração", `a banda [${band.min}, ${band.max}] não contém o alvo ${targetWords(30)}.`);
+  }
+
+  const roundTrip = estimateSeconds(targetWords(30));
+  if (Math.abs(roundTrip - 30) > 1) {
+    fail("duração", `estimateSeconds(targetWords(30)) devolveu ${roundTrip}s, deveria voltar a ~30s.`);
+  }
+
+  if (countWords("- um\n- dois — três") !== 3) {
+    fail("duração", `countWords contou ${countWords("- um\n- dois — três")} em vez de 3 (bullets e travessões não são palavras).`);
+  }
+
+  // A garantia que mais importa no corte: nunca terminar no meio de uma
+  // frase. Um vídeo que corta a pessoa falando pela metade é pior que um
+  // vídeo alguns segundos mais curto.
+  const prosa = "Primeira frase aqui. Segunda frase um pouco maior que a outra. Terceira frase final!";
+  const cortado = truncateAtSentence(prosa, 6);
+  if (!/[.!?…]$/.test(cortado)) {
+    fail("duração", `truncateAtSentence terminou fora de fim de frase: "${cortado}".`);
+  }
+  if (!prosa.startsWith(cortado.slice(0, 20))) {
+    fail("duração", "truncateAtSentence não preservou o início do texto original.");
+  }
+  // Texto sem pontuação nenhuma não pode virar string vazia.
+  if (truncateAtSentence("uma frase sem ponto final nenhum", 2).length === 0) {
+    fail("duração", "truncateAtSentence devolveu vazio para texto sem pontuação.");
+  }
+
+  // O prompt fala em palavras, nunca em segundos — o modelo não sabe quanto
+  // tempo leva para falar um texto.
+  const instrucao = buildLengthInstruction(30);
+  if (!instrucao.includes(String(targetWords(30)))) {
+    fail("duração", "a instrução de tamanho não cita o alvo de palavras.");
+  }
+  if (/\b\d+\s*(s|seg|segundos?)\b/i.test(instrucao)) {
+    fail("duração", `a instrução de tamanho menciona segundos: "${instrucao}".`);
+  }
+
+  note(
+    `duração: alvo ${SCRIPT_DURATION.targetSeconds}s @ ${wpm} wpm -> ${targetWords()} palavras, banda [${wordBand().min}, ${wordBand().max}]`,
+  );
+}
+
+// Prova o pipeline de geração com respostas de vendor controladas. Feito
+// assim, e não com chamadas reais, por dois motivos: a cota gratuita não
+// comporta exercitar cada ramo, e uma chamada real não deixa ESCOLHER o ramo
+// — o caminho "voltou longo duas vezes seguidas" pode nunca acontecer numa
+// corrida ao vivo e é justamente o que precisa estar certo.
+async function checkScriptPipeline(): Promise<void> {
+  const { generateScript } = await import("../services/providers/scriptProvider.js");
+  const { wordBand, countWords } = await import("../services/script/scriptDuration.js");
+
+  const band = wordBand();
+  const realFetch = globalThis.fetch;
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `palavra${i}`).join(" ");
+
+  // Cada chamada consome a próxima resposta da fila e conta a requisição.
+  let calls = 0;
+  const queue: string[] = [];
+  globalThis.fetch = (async () => {
+    calls += 1;
+    const text = queue.shift() ?? "";
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  const run = async (responses: string[]) => {
+    calls = 0;
+    queue.length = 0;
+    queue.push(...responses);
+    const result = await generateScript({
+      apiKey: "x",
+      vendor: "gemini",
+      prompt: "p",
+      tenantId: "00000000-0000-0000-0000-000000000000",
+    });
+    return { ...result, calls };
+  };
+
+  try {
+    // Dentro da banda na primeira: uma chamada só, sem corte.
+    const ok = await run([`${words(band.min + 5)}.`]);
+    if (ok.calls !== 1) fail("roteiro", `resposta boa deveria custar 1 chamada, custou ${ok.calls}.`);
+    if (ok.truncated) fail("roteiro", "resposta dentro da banda não deveria ser cortada.");
+
+    // Longa, depois boa: exatamente 2 chamadas, sem corte.
+    const retried = await run([`${words(band.max + 40)}.`, `${words(band.min + 3)}.`]);
+    if (retried.calls !== 2) fail("roteiro", `deveria ter tentado 2x, tentou ${retried.calls}.`);
+    if (retried.truncated) fail("roteiro", "segunda tentativa dentro da banda não deveria ser cortada.");
+
+    // Longa duas vezes: para em 2 chamadas (teto) e corta em fim de frase.
+    const longSentences = "Uma frase completa aqui. " .repeat(60);
+    const cut = await run([longSentences, longSentences]);
+    if (cut.calls > 2) {
+      fail("roteiro", `teto de chamadas ao vendor furado: ${cut.calls} — a cota não comporta laço.`);
+    }
+    if (!cut.truncated) fail("roteiro", "resposta longa nas duas tentativas deveria ter sido cortada.");
+    if (cut.words > band.max) {
+      fail("roteiro", `após o corte ainda restaram ${cut.words} palavras, acima do teto ${band.max}.`);
+    }
+    if (!/[.!?…]$/.test(cut.script)) {
+      fail("roteiro", `o corte não terminou em fim de frase: "...${cut.script.slice(-40)}".`);
+    }
+
+    // Meta-comentário do modelo não pode virar fala do avatar. Este é o texto
+    // real que o Gemini devolveu como se fosse roteiro.
+    const meta = await run([
+      `55 words! Target is 56 to 84 (aiming for ~70). Need to add a bit more text.\n\n*Draft 2 (Adjusting length):\n${words(band.min + 4)}.`,
+      `${words(band.min + 4)}.`,
+    ]);
+    if (/draft|target is|\bwords!/i.test(meta.script)) {
+      fail("roteiro", `meta-comentário do modelo sobreviveu e iria para o TTS: "${meta.script.slice(0, 80)}".`);
+    }
+
+    // Texto cortado pelo teto de tokens do vendor: chega curto E com a última
+    // frase pela metade. Foi o que aconteceu ao vivo. A cauda incompleta tem
+    // de ser descartada mesmo quando o tamanho não é o problema.
+    const truncadoPeloVendor = `${words(30)}. Segunda frase completa aqui. Agora é possível criar conteúdos usando o seu próprio`;
+    const cortadoPeloTeto = await run([truncadoPeloVendor, truncadoPeloVendor]);
+    if (!/[.!?…]$/.test(cortadoPeloTeto.script)) {
+      fail("roteiro", `texto truncado pelo vendor chegaria ao TTS com frase pela metade: "...${cortadoPeloTeto.script.slice(-40)}".`);
+    }
+    if (/usando o seu próprio$/.test(cortadoPeloTeto.script)) {
+      fail("roteiro", "a cauda truncada não foi descartada.");
+    }
+
+    // Caso degenerado: texto sem pontuação nenhuma não tem cauda
+    // identificável. Preservar é melhor que devolver vazio — um roteiro
+    // estranho o usuário edita, um roteiro vazio quebra a tela.
+    const semPontuacao = await run([words(60), words(60)]);
+    if (semPontuacao.script.trim().length === 0) {
+      fail("roteiro", "texto sem pontuação virou string vazia.");
+    }
+
+    note(`roteiro: banda [${band.min}, ${band.max}], teto de ${2} chamadas ao vendor respeitado, corte em fim de frase ok`);
+    void countWords;
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }
 
 async function checkProbeSemantics(): Promise<void> {

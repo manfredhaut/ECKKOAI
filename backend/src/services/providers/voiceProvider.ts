@@ -65,13 +65,39 @@ export async function checkElevenLabsConnection(apiKey: string): Promise<void> {
   }
 }
 
+export interface SynthesizedSpeech {
+  audio: Buffer;
+  /** Duração real do áudio, quando pôde ser determinada. */
+  durationSeconds: number | null;
+  source: "elevenlabs_timestamps" | "bitrate_estimate" | null;
+}
+
+// Bitrate do formato padrão do ElevenLabs (mp3_44100_128). Só é usado no
+// fallback abaixo, para não deixar o log de duração cego quando o endpoint
+// com timestamps não está disponível.
+const DEFAULT_MP3_BITRATE_BPS = 128_000;
+
 // Text-to-speech using a cloned voice — used by avatarProvider.ts to
 // synthesize the video script in the tenant's own cloned voice before
 // handing the audio to HeyGen/D-ID.
-export async function synthesizeSpeech(apiKey: string, voiceId: string, text: string): Promise<Buffer> {
+//
+// Prefere o endpoint /with-timestamps porque ele devolve, junto do áudio, o
+// tempo final de cada caractere — ou seja, a duração REAL medida pelo próprio
+// vendor. É esse número que permite calibrar o words-per-minute de
+// scriptDuration.ts com dado em vez de opinião. Se o endpoint não estiver
+// disponível para a chave/plano em uso, cai no endpoint simples e estima pela
+// taxa de bits, marcando a origem para que estimativa nunca seja confundida
+// com medição.
+export async function synthesizeSpeech(
+  apiKey: string,
+  voiceId: string,
+  text: string,
+): Promise<SynthesizedSpeech> {
+  const base = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`;
+
   let res: Response;
   try {
-    res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
+    res = await fetch(`${base}/with-timestamps`, {
       method: "POST",
       headers: { "xi-api-key": apiKey, "content-type": "application/json" },
       body: JSON.stringify({ text }),
@@ -80,9 +106,49 @@ export async function synthesizeSpeech(apiKey: string, voiceId: string, text: st
     logProviderNetworkError("voiceProvider.synthesizeSpeech", err);
     throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
   }
-  if (!res.ok) {
-    const body = await res.text();
-    throw new VoiceProviderError(`ElevenLabs API error (${res.status}): ${body}`);
+
+  if (res.ok) {
+    const data = (await res.json()) as {
+      audio_base64?: string;
+      alignment?: { character_end_times_seconds?: number[] };
+      normalized_alignment?: { character_end_times_seconds?: number[] };
+    };
+    if (data.audio_base64) {
+      const ends =
+        data.alignment?.character_end_times_seconds ??
+        data.normalized_alignment?.character_end_times_seconds;
+      const last = ends && ends.length > 0 ? ends[ends.length - 1] : null;
+      return {
+        audio: Buffer.from(data.audio_base64, "base64"),
+        durationSeconds: last != null ? Number(last.toFixed(2)) : null,
+        source: last != null ? "elevenlabs_timestamps" : null,
+      };
+    }
   }
-  return Buffer.from(await res.arrayBuffer());
+
+  // Fallback: endpoint simples. Um 4xx aqui é erro de verdade (chave, voz,
+  // texto) e sobe; o with-timestamps acima pode ter falhado só por não estar
+  // liberado para o plano, e isso não deve impedir a geração do vídeo.
+  let plain: Response;
+  try {
+    plain = await fetch(base, {
+      method: "POST",
+      headers: { "xi-api-key": apiKey, "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  } catch (err) {
+    logProviderNetworkError("voiceProvider.synthesizeSpeech", err);
+    throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
+  }
+  if (!plain.ok) {
+    const body = await plain.text();
+    throw new VoiceProviderError(`ElevenLabs API error (${plain.status}): ${body}`);
+  }
+
+  const audio = Buffer.from(await plain.arrayBuffer());
+  return {
+    audio,
+    durationSeconds: Number(((audio.length * 8) / DEFAULT_MP3_BITRATE_BPS).toFixed(2)),
+    source: "bitrate_estimate",
+  };
 }

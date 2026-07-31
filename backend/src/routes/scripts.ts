@@ -7,7 +7,7 @@ import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { debitCredit } from "../services/billing/creditGate.js";
 
 export async function scriptRoutes(app: FastifyInstance): Promise<void> {
-  app.post<{ Body: { prompt: string } }>("/scripts/generate", { preHandler: requireActiveTenant }, async (req, reply) => {
+  app.post<{ Body: { prompt: string; targetSeconds?: number } }>("/scripts/generate", { preHandler: requireActiveTenant }, async (req, reply) => {
     const credential = await getCredential(req.tenantId, "script");
     if (!credential) {
       return reply.code(400).send({
@@ -38,11 +38,15 @@ export async function scriptRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
+      // targetSeconds vem do cliente quando informado, mas o default é a
+      // configuração do servidor (services/script/scriptDuration.ts) — a
+      // duração-alvo é decisão de produto, não do navegador.
       return await generateScript({
         apiKey: credential.apiKey,
         vendor: credential.vendor as ScriptVendor,
         prompt: req.body.prompt,
         tenantId: req.tenantId,
+        targetSeconds: req.body.targetSeconds,
       });
     } catch (err) {
       if (err instanceof ScriptProviderError) {
