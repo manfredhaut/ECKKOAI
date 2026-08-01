@@ -188,6 +188,21 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "This avatar hasn't finished training yet." });
     }
 
+    // Portão de treino. Só 'processing' barra: NULL (avatares criados antes
+    // desta coluna existir) e 'unknown' (perguntamos e não entendemos a
+    // resposta) LIBERAM de propósito — travar um avatar já pago por causa de
+    // uma suposição nossa seria pior que deixar a tentativa seguir e o
+    // fornecedor recusar. Ver migration 036.
+    if (avatar.provider_status === "processing") {
+      return reply.code(409).send({
+        error: "avatar_still_training",
+        message:
+          "O avatar ainda está em treino no fornecedor e não pode gerar vídeo agora. " +
+          "Isso leva alguns minutos e acontece uma vez só, logo depois de criar o avatar — " +
+          "atualize a página em instantes e tente de novo. Nenhum crédito foi consumido.",
+      });
+    }
+
     const avatarCredential = await getCredential(req.tenantId, "avatar");
     if (!avatarCredential) {
       return reply.code(400).send({

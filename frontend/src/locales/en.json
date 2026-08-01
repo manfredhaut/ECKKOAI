@@ -547,7 +547,8 @@
       "scenarioPlaceholder": "e.g. Modern newsroom studio",
       "outfitLabel": "Outfit (generate via AI)",
       "outfitHelp": "Defaults to your avatar's saved outfit, editable per video.",
-      "outfitPlaceholder": "e.g. Navy business suit"
+      "outfitPlaceholder": "e.g. Navy business suit",
+      "avatarTraining": "training"
     },
     "duration": {
       "title": "Duration"
@@ -557,7 +558,8 @@
       "generateButton": "Generate video",
       "submitting": "Submitting…",
       "download": "Download",
-      "failed": "Generation failed. Please try again."
+      "failed": "Generation failed. Please try again.",
+      "avatarTraining": "The avatar is still training at the provider. This takes a few minutes and happens only once, right after creating it — refresh the page shortly."
     }
   },
   "knowledge": {

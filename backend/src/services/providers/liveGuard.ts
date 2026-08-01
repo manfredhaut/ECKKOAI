@@ -55,12 +55,26 @@ export function readLiveMaxGenerations(env: NodeJS.ProcessEnv = process.env): nu
  */
 let used = 0;
 
+/**
+ * O QUE foi consumido, em ordem. Existe porque o teto conta voz e vídeo
+ * juntos, e a mensagem antiga só dizia "1/1" — deixando quem lê achar que
+ * eram duas tentativas de vídeo, quando na verdade a primeira unidade tinha
+ * sido gasta pela clonagem de voz, na tela anterior. Sem esta lista, a
+ * mensagem nomeia o teto mas não explica como ele acabou.
+ */
+const consumedBy: string[] = [];
+
 export function liveGenerationsUsed(): number {
   return used;
 }
 
+export function liveGenerationsConsumedBy(): readonly string[] {
+  return consumedBy;
+}
+
 export function resetLiveGenerationCount(): void {
   used = 0;
+  consumedBy.length = 0;
 }
 
 export interface LiveBudgetResult {
@@ -73,10 +87,14 @@ export interface LiveBudgetResult {
  * Consome uma unidade do teto. Chamado antes de qualquer geração tarifada
  * em modo live; em fixture nunca é chamado, porque ali nada custa.
  */
-export function consumeLiveGeneration(env: NodeJS.ProcessEnv = process.env): LiveBudgetResult {
+export function consumeLiveGeneration(
+  operation: string,
+  env: NodeJS.ProcessEnv = process.env,
+): LiveBudgetResult {
   const max = readLiveMaxGenerations(env);
   if (used >= max) return { allowed: false, used, max };
   used += 1;
+  consumedBy.push(operation);
   return { allowed: true, used, max };
 }
 
@@ -141,11 +159,13 @@ export class LiveBudgetExhaustedError extends Error {
     public readonly operation: string,
   ) {
     super(
-      `Teto de gerações tarifadas desta sessão atingido (${used}/${max}) ao tentar "${operation}". ` +
-        "Este limite é DESTE aplicativo, não do fornecedor — nenhuma chamada foi feita e nada foi cobrado. " +
-        `O teto é compartilhado entre clonagem de voz e geração de vídeo, então configurar um avatar já consome ${used === max ? "a cota" : "parte dela"}. ` +
-        `Para seguir: suba ${LIVE_LIMIT_ENV} (um fluxo completo de avatar + vídeo precisa de pelo menos 2) e recrie o container, ` +
-        "ou reinicie o backend para zerar a contagem da sessão.",
+      `Não foi possível "${operation}": o teto de operações tarifadas desta sessão já está em ${used}/${max}, ` +
+        `restam 0. Este limite é DESTE aplicativo, não do fornecedor — nenhuma chamada foi feita e nada foi cobrado. ` +
+        `O que consumiu o teto, em ordem: ${consumedBy.length > 0 ? consumedBy.join(" → ") : "(nada registrado nesta sessão)"}. ` +
+        "O teto conta CLONAGEM DE VOZ e GERAÇÃO DE VÍDEO juntas, então configurar um avatar já gasta uma unidade. " +
+        `Para seguir: defina ${LIVE_LIMIT_ENV}=2 ou mais (um fluxo completo de avatar + vídeo precisa de 2) e recrie o ` +
+        "container com `docker compose up -d backend` — `restart` não recarrega variável de ambiente. " +
+        "Reiniciar o backend também zera a contagem da sessão.",
     );
     this.name = "LiveBudgetExhaustedError";
   }

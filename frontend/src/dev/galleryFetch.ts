@@ -40,6 +40,7 @@ const FAKE_AVATAR: Avatar = {
   reference_video_url: "/uploads/exemplo/referencia.mp4",
   voice_id: "gallery-voice-1",
   provider_avatar_id: "gallery-provider-avatar-1",
+  provider_status: "ready",
   audio_treatment_enabled: true,
   audio_treatment_target_lufs: "-16",
   simulated: true,

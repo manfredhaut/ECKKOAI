@@ -1312,6 +1312,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **DEMO-4** | **Teto de sessão explica o que consumiu; avatar em treino é esperado e barra a geração. Ver abaixo.** |
 | 08-01 | **DEMO-3** | **Primeira passada live: custo real medido, teto de imagem por rota, teto de sessão deixa de se disfarçar de falha do fornecedor. Ver abaixo.** |
 | 08-01 | **LOG-1 / POLL-1** | **Resposta bruta do fornecedor no log antes de interpretar; "concluído sem artefato" falha na hora em vez de virar timeout.** |
 | 08-01 | **ESTORNO-1** | **Crédito volta quando o fornecedor recusa, nos 3 caminhos. Linha própria no ledger, idempotente. Ver abaixo.** |
@@ -1851,3 +1852,55 @@ avatar live (`provider_avatar_id` + `voice_id`) está no banco e é utilizável.
 **Gotcha de log, medido:** `docker compose logs > arquivo.log` no PowerShell
 grava em **UTF-16LE**, e `grep` não acha nada dentro. Use
 `docker compose logs | Out-File -Encoding utf8`, ou converta antes de ler.
+
+---
+
+### Bloco DEMO-4 — os dois bloqueios do caminho live (CONCLUÍDO)
+
+**1. O teto de sessão conta VOZ e VÍDEO juntos.** Esta é a frase que faltava.
+`PROVIDER_LIVE_MAX_GENERATIONS` tem cara de "gerações de vídeo", mas
+`consumeLiveGeneration()` é chamado em `cloneVoice()` **e** em
+`generateVideo()`. Com o padrão de 1, configurar um avatar clona a voz, gasta a
+única unidade, e o vídeo seguinte é recusado — foi exatamente isso que matou o
+passo 5 na primeira passada live.
+
+A mensagem agora diz **o que** consumiu, em ordem (`clonagem de voz → geração
+de vídeo`), que o limite é DESTE aplicativo e não do fornecedor, que nada foi
+cobrado, e como sair. *Provado reprovando:* removi o trecho que nomeia o
+consumo e `npm run check` acusou.
+
+**2. O avatar volta em `processing` e agora é esperado.**
+`waitForAvatarReady()` roda dentro da requisição de treino: espera até 90 s,
+consultando de 5 em 5. Estourar o tempo **não é erro** — grava `processing`, e
+a tela passa a dizer "em treino". Quem estoura o tempo é a nossa paciência, não
+o avatar.
+
+O portão de geração está em `videos.ts` e devolve **409 `avatar_still_training`**.
+*Provado nos dois sentidos:* `processing` → 409 com crédito intacto (video=2
+antes e depois); `ready` → 201 `queued`. E provado reprovando: trocando a
+condição por `if (false)`, o avatar em treino passou — e a guarda textual nova
+acusou a remoção.
+
+**A regra de quem passa importa mais que a de quem barra:** só `processing`
+bloqueia. `NULL` (avatares criados antes da migration 036 — inclusive o avatar
+live que a demo usa) e `unknown` (perguntamos e não entendemos a resposta)
+**liberam**. Travar um avatar já pago por causa de uma suposição nossa seria
+pior que deixar a tentativa seguir e o fornecedor recusar.
+
+**`GET /v3/avatars/{id}` é ASSUMPTION**, não confirmado. Por isso qualquer
+falha de leitura vira `unknown`, que libera: se a suposição estiver errada, o
+comportamento degrada para o de antes deste bloco, e não para um avatar preso.
+O corpo bruto vai ao log e confirma ou corrige na primeira vez em live.
+
+**3. `supported_api_engines` existe na resposta de criação** —
+`["avatar_iv", "avatar_iii"]` para o avatar criado hoje. O fornecedor DECLARA
+os motores aceitos por avatar. **Registrado, não implementado:** continuamos
+sem enviar motor nenhum em `POST /v3/videos`, então o vídeo sai no padrão da
+conta. Isto é o insumo que faltava para a "derivação de formatos".
+
+**Correção de registro do DEMO-3:** aquele bloco afirmou que `GenerateStep`
+tinha ganhado o `catch` que faltava. **Não tinha.** O script de edição relatou
+sucesso sem casar o texto, e o `tsc` passou porque as duas metades faltaram
+juntas — o estado do erro e o bloco que o exibe. Aplicado de verdade agora.
+Lição já registrada em outros blocos e repetida aqui: substituição por script
+que não confirma o resultado é indistinguível de sucesso.

@@ -8,6 +8,9 @@ export interface Avatar {
   reference_video_url: string | null;
   voice_id: string | null;
   provider_avatar_id: string | null;
+  // ready | processing | unknown | null. Só "processing" impede gerar vídeo;
+  // null (avatar antigo) e "unknown" liberam — ver migration 036.
+  provider_status: "ready" | "processing" | "unknown" | null;
   audio_treatment_enabled: boolean;
   // Postgres `numeric` columns serialize as strings over JSON — parse with
   // Number(...) before using this in arithmetic or a range input's value.

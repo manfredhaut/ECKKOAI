@@ -81,6 +81,7 @@ export function ChooseAssetsStep({
           {avatars.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}
+              {a.provider_status === "processing" ? ` — ${t("createVideo.assets.avatarTraining")}` : ""}
             </option>
           ))}
         </select>

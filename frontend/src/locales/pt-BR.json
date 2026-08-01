@@ -547,7 +547,8 @@
       "scenarioPlaceholder": "ex.: Estúdio de telejornal moderno",
       "outfitLabel": "Traje (gerar via IA)",
       "outfitHelp": "Usa por padrão o traje salvo do avatar, editável por vídeo.",
-      "outfitPlaceholder": "ex.: Terno azul-marinho"
+      "outfitPlaceholder": "ex.: Terno azul-marinho",
+      "avatarTraining": "em treino"
     },
     "duration": {
       "title": "Duração"
@@ -557,7 +558,8 @@
       "generateButton": "Gerar vídeo",
       "submitting": "Enviando…",
       "download": "Baixar",
-      "failed": "Falha na geração. Tente novamente."
+      "failed": "Falha na geração. Tente novamente.",
+      "avatarTraining": "O avatar ainda está em treino no fornecedor. Isso leva alguns minutos e acontece uma vez só, logo depois de criá-lo — atualize a página em instantes."
     }
   },
   "knowledge": {

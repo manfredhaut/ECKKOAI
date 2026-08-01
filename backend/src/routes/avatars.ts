@@ -4,7 +4,8 @@ import path from "node:path";
 import { pool } from "../db/pool.js";
 import { config } from "../config.js";
 import type { Avatar } from "../types.js";
-import { trainAvatar } from "../services/providers/avatarProvider.js";
+import { trainAvatar, waitForAvatarReady } from "../services/providers/avatarProvider.js";
+import type { AvatarProviderStatus } from "../services/providers/avatarProvider.js";
 import { cloneVoice, VoiceProviderError } from "../services/providers/voiceProvider.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { imageUploadMaxBytes, referenceVideoMaxBytes, takeUpload } from "../services/uploadLimits.js";
@@ -201,8 +202,9 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     }
 
     let providerAvatarId: string;
+    let providerStatus: AvatarProviderStatus;
     try {
-      ({ providerAvatarId } = await trainAvatar({
+      ({ providerAvatarId, status: providerStatus } = await trainAvatar({
         apiKey: avatarCredential.apiKey,
         vendor: avatarCredential.vendor as "heygen" | "did",
         photoUrls: existing[0].photo_urls,
@@ -225,10 +227,23 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     // voice cloning below — otherwise a voice-provider failure (rate limit,
     // transient error, etc.) would discard training that already succeeded
     // and cost real provider quota, forcing a wasteful retry from scratch.
+    // Espera o avatar sair de "processing" ANTES de responder. Medido em live:
+    // a HeyGen devolve o avatar já cobrado mas ainda em treino, e sem esperar
+    // aqui o cliente conclui a configuração achando que pode gerar vídeo — e
+    // leva a recusa na etapa seguinte, que é a cara. Estourar o tempo não é
+    // erro: grava "processing", e a tela passa a dizer "em treino".
+    providerStatus = await waitForAvatarReady(
+      avatarCredential.vendor as "heygen" | "did",
+      avatarCredential.apiKey,
+      providerAvatarId,
+      providerStatus,
+    );
+
     const { rows: trained } = await pool.query<Avatar>(
-      `UPDATE avatars SET reference_video_url = $3, provider_avatar_id = $4, provider = $5, simulated = $6
+      `UPDATE avatars SET reference_video_url = $3, provider_avatar_id = $4, provider = $5, simulated = $6,
+                          provider_status = $7
        WHERE id = $1 AND tenant_id = $2 RETURNING *`,
-      [req.params.id, req.tenantId, url, providerAvatarId, avatarCredential.vendor, isFixtureMode()],
+      [req.params.id, req.tenantId, url, providerAvatarId, avatarCredential.vendor, isFixtureMode(), providerStatus],
     );
 
     const voiceCredential = await getCredential(req.tenantId, "voice");

@@ -20,6 +20,7 @@ import { checkProviderPolicy } from "./checkProviderPolicy.js";
 import { checkPlatformKeyPolicy } from "./checkPlatformKeyPolicy.js";
 import { checkRefundPolicy } from "./checkRefundPolicy.js";
 import { checkPollPolicy } from "./checkPollPolicy.js";
+import { checkAvatarTrainingGate, checkLiveBudgetPolicy } from "./checkLiveBudgetPolicy.js";
 import {
   DENY_ENFORCED_FOR,
   DENY_TERMS,
@@ -225,6 +226,16 @@ async function main(): Promise<void> {
   const pollResult = await checkPollPolicy();
   pollResult.failures.forEach((f) => failures.push(f));
   pollResult.notes.forEach((n) => note(n));
+
+  // --- 13. teto de operações tarifadas: mensagem que explica ------------
+  const budgetResult = checkLiveBudgetPolicy();
+  budgetResult.failures.forEach((f) => failures.push(f));
+  budgetResult.notes.forEach((n) => note(n));
+
+  // --- 14. portão de avatar em treino -----------------------------------
+  const gateResult = await checkAvatarTrainingGate(process.env.REPO_ROOT ?? "/repo");
+  gateResult.failures.forEach((f) => failures.push(f));
+  gateResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

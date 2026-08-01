@@ -30,7 +30,7 @@ export interface CloneVoiceResult {
 // se alguma deixar de consultar.
 export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResult> {
   if (isFixtureMode()) return cloneVoiceFixture();
-  const budget = consumeLiveGeneration();
+  const budget = consumeLiveGeneration("clonagem de voz");
   if (!budget.allowed) {
     throw new LiveBudgetExhaustedError(budget.used, budget.max, "clonar voz");
   }

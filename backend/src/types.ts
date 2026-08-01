@@ -9,6 +9,7 @@ export interface Avatar {
   reference_video_url: string | null;
   voice_id: string | null;
   provider_avatar_id: string | null;
+  provider_status: "ready" | "processing" | "unknown" | null;
   audio_treatment_enabled: boolean;
   audio_treatment_target_lufs: number;
   created_at: string;

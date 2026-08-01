@@ -24,6 +24,7 @@ import {
   generateVideoFixture,
   pollVideoJobFixture,
   trainAvatarFixture,
+  waitForAvatarReadyFixture,
 } from "./fixtureProvider.js";
 
 export class AvatarProviderError extends Error {}
@@ -34,8 +35,34 @@ export interface TrainAvatarInput {
   photoUrls: string[];
 }
 
+/**
+ * Estado do avatar no fornecedor.
+ *
+ * "unknown" NÃO é um erro: é a resposta honesta para "perguntei e não entendi",
+ * e o portão de geração trata como liberado. Uma suposição nossa errada sobre o
+ * formato da resposta não pode impedir o cliente de usar um avatar que já foi
+ * pago.
+ */
+export type AvatarProviderStatus = "ready" | "processing" | "unknown";
+
 export interface TrainAvatarResult {
   providerAvatarId: string;
+  status: AvatarProviderStatus;
+}
+
+/**
+ * Traduz o texto de status do fornecedor para o nosso vocabulário.
+ *
+ * Qualquer valor fora do conhecido vira "unknown" — e portanto LIBERA — em vez
+ * de virar "processing" e travar. O custo de errar para o lado permissivo é uma
+ * tentativa de geração que o fornecedor recusa; o de errar para o restritivo é
+ * um avatar pago que nunca pode ser usado.
+ */
+export function normalizeAvatarStatus(raw: unknown): AvatarProviderStatus {
+  const value = String(raw ?? "").toLowerCase();
+  if (["ready", "completed", "success", "done", "active"].includes(value)) return "ready";
+  if (["processing", "pending", "training", "in_progress", "queued"].includes(value)) return "processing";
+  return "unknown";
 }
 
 export interface GenerateVideoInput {
@@ -179,7 +206,46 @@ async function trainAvatarHeygen(apiKey: string, photoBuffer: Buffer): Promise<T
   if (!avatarId) {
     throw new AvatarProviderError(unexpectedShapeMessage("heygen.createAvatar", "data.avatar_item.id", data));
   }
-  return { providerAvatarId: avatarId };
+  // Medido em live (DEMO-3): vem "processing". O avatar existe e já foi
+  // cobrado, mas ainda não serve para gerar vídeo.
+  return {
+    providerAvatarId: avatarId,
+    status: normalizeAvatarStatus(data?.data?.avatar_item?.status),
+  };
+}
+
+/**
+ * Pergunta ao fornecedor se o avatar já está pronto.
+ *
+ * ASSUMPTION: `GET /v3/avatars/{id}` é o caminho de leitura do avatar criado
+ * por `POST /v3/avatars`. É a forma REST natural, mas NÃO foi confirmada
+ * contra resposta real — o único corpo que já vimos é o da criação.
+ *
+ * Por isso o modo de falha é deliberadamente permissivo: qualquer erro de rede,
+ * status HTTP ruim ou formato inesperado devolve "unknown", que LIBERA a
+ * geração. Se a suposição estiver errada, o resultado é o comportamento de
+ * antes deste bloco — e não um avatar pago preso para sempre. O corpo bruto
+ * vai para o log (evento `vendor_response`) em qualquer caso, que é como esta
+ * suposição será confirmada ou corrigida no primeiro uso live.
+ */
+async function pollAvatarStatusHeygen(apiKey: string, avatarId: string): Promise<AvatarProviderStatus> {
+  try {
+    const res = await fetch(`${HEYGEN_BASE}/v3/avatars/${encodeURIComponent(avatarId)}`, {
+      headers: { "x-api-key": apiKey },
+    });
+    const data = await fetchJson(res, "HeyGen", "heygen.getAvatar");
+    return normalizeAvatarStatus(data?.data?.avatar_item?.status ?? data?.data?.status ?? data?.status);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "avatar_status_unreadable",
+        context: "heygen.getAvatar",
+        detail: err instanceof Error ? err.message : String(err),
+        consequence: "tratado como 'unknown', o que LIBERA a geração",
+      }),
+    );
+    return "unknown";
+  }
 }
 
 async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateVideoResult> {
@@ -295,7 +361,9 @@ async function trainAvatarDid(apiKey: string, photoBuffer: Buffer): Promise<Trai
   // D-ID has no separate "train" step — the hosted image URL itself is the
   // reference used directly in each talk's source_url.
   const url = await didUpload(apiKey, photoBuffer, "avatar.jpg", "image/jpeg", "images");
-  return { providerAvatarId: url };
+  // Sem etapa de treino, não há o que esperar: a imagem hospedada já é o
+  // avatar. "ready" aqui é fato do desenho da D-ID, não suposição.
+  return { providerAvatarId: url, status: "ready" };
 }
 
 async function generateVideoDid(input: GenerateVideoInput): Promise<GenerateVideoResult> {
@@ -376,12 +444,53 @@ export async function trainAvatar(input: TrainAvatarInput): Promise<TrainAvatarR
   return input.vendor === "did" ? trainAvatarDid(input.apiKey, photoBuffer) : trainAvatarHeygen(input.apiKey, photoBuffer);
 }
 
+/** Quanto tempo esperar o avatar ficar pronto, e de quanto em quanto. */
+const AVATAR_READY_TIMEOUT_MS = 90_000;
+const AVATAR_READY_INTERVAL_MS = 5_000;
+
+/**
+ * Espera o avatar sair de "processing".
+ *
+ * Roda DENTRO da requisição de treino, e não num laço de fundo, porque o
+ * resultado muda o que a tela mostra em seguida: sem esperar, o cliente
+ * termina a configuração achando que pode gerar vídeo e leva uma recusa do
+ * fornecedor na etapa seguinte — que é a cara.
+ *
+ * Estourar o tempo NÃO é erro: devolve "processing", que é a verdade. O
+ * fornecedor continua treinando, o avatar continua pago e válido, e a tela
+ * passa a dizer "em treino" em vez de "falhou". Quem estoura o tempo aqui é a
+ * nossa paciência, não o avatar.
+ */
+export async function waitForAvatarReady(
+  vendor: AvatarVendor,
+  apiKey: string,
+  providerAvatarId: string,
+  initialStatus: AvatarProviderStatus,
+): Promise<AvatarProviderStatus> {
+  if (initialStatus !== "processing") return initialStatus;
+  // Só a HeyGen tem etapa de treino; a D-ID já volta pronta.
+  if (vendor === "did") return "ready";
+  if (isFixtureMode()) return waitForAvatarReadyFixture(providerAvatarId);
+
+  const deadline = Date.now() + AVATAR_READY_TIMEOUT_MS;
+  let status: AvatarProviderStatus = initialStatus;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, AVATAR_READY_INTERVAL_MS));
+    status = await pollAvatarStatusHeygen(apiKey, providerAvatarId);
+    // "unknown" encerra a espera: se não conseguimos ler o estado, insistir
+    // 18 vezes não vai melhorar, e o portão de geração trata unknown como
+    // liberado de propósito.
+    if (status !== "processing") return status;
+  }
+  return "processing";
+}
+
 export async function generateVideo(input: GenerateVideoInput): Promise<GenerateVideoResult> {
   if (isFixtureMode()) return generateVideoFixture(input);
 
   // Teto por sessão: protege contra o laço que dispara N vezes, que nenhuma
   // declaração de intenção no boot impediria.
-  const budget = consumeLiveGeneration();
+  const budget = consumeLiveGeneration("geração de vídeo");
   if (!budget.allowed) {
     throw new LiveBudgetExhaustedError(budget.used, budget.max, "gerar vídeo");
   }

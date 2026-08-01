@@ -20,7 +20,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { saveUpload } from "../storage.js";
-import type { GenerateVideoInput, GenerateVideoResult, PollResult, TrainAvatarResult } from "./avatarProvider.js";
+import type { AvatarProviderStatus, GenerateVideoInput, GenerateVideoResult, PollResult, TrainAvatarResult } from "./avatarProvider.js";
 import type { CloneVoiceResult, SynthesizedSpeech } from "./voiceProvider.js";
 
 /** Quanto tempo o job simulado passa em `processing` antes de concluir. */
@@ -65,9 +65,10 @@ async function readFixture(name: string): Promise<Buffer> {
 // --------------------------------------------------------------- avatar ---
 
 export function trainAvatarFixture(): TrainAvatarResult {
+  // Caminho normal da simulação: avatar já nasce pronto.
   // Prefixo explícito: um id de avatar simulado nunca deve ser confundido
   // com um id real do vendor ao ler o banco depois.
-  return { providerAvatarId: `fixture-avatar-${randomUUID()}` };
+  return { providerAvatarId: `fixture-avatar-${randomUUID()}`, status: "ready" };
 }
 
 export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoResult {
@@ -120,4 +121,32 @@ export async function synthesizeSpeechFixture(): Promise<SynthesizedSpeech> {
 
 export function checkVoiceConnectionFixture(): void {
   // Idem.
+}
+
+/**
+ * Avatares simulados que ainda estão "em treino".
+ *
+ * Existe para que o portão de geração seja exercitável sem live. O id decide o
+ * comportamento — um avatar cujo id contém `-processing-` fica em treino até o
+ * prazo abaixo, e só então fica pronto. Assim os DOIS lados do portão têm como
+ * ser provados, e o caminho feliz continua instantâneo (o normal em simulação
+ * é o avatar já nascer pronto).
+ */
+const FIXTURE_AVATAR_TRAINING_MS = 10_000;
+const fixtureAvatarCreatedAt = new Map<string, number>();
+
+export function trainAvatarFixtureProcessing(): TrainAvatarResult {
+  const id = `fixture-avatar-processing-${randomUUID()}`;
+  fixtureAvatarCreatedAt.set(id, Date.now());
+  return { providerAvatarId: id, status: "processing" };
+}
+
+export function waitForAvatarReadyFixture(providerAvatarId: string): AvatarProviderStatus {
+  if (!providerAvatarId.includes("-processing-")) return "ready";
+  const startedAt = fixtureAvatarCreatedAt.get(providerAvatarId);
+  // Id desconhecido = o processo reiniciou desde a criação. Tratado como
+  // pronto, e não como travado: em simulação, prender o fluxo por causa de
+  // estado perdido em memória seria pior que a realidade.
+  if (startedAt === undefined) return "ready";
+  return Date.now() - startedAt < FIXTURE_AVATAR_TRAINING_MS ? "processing" : "ready";
 }
