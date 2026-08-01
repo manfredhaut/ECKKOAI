@@ -503,7 +503,14 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-01 — Bloco DEMO-1: o caminho principal do MVP
+**Última atualização:** 2026-08-01 — Bloco LIVE-1: **uma** geração live real,
+de ponta a ponta, com o avatar que já existia. Saiu vídeo utilizável em ~54 s,
+custo medido de US$ 0,15, e o `ffprobe` do arquivo baixado deu 1280×720 16:9
+25 fps. A unidade de `remaining_quota` foi reconciliada (60 por dólar). Três
+lacunas novas registradas e não corrigidas — ver a lista na seção de fatos
+verificados. **O ambiente foi desarmado de volta para `fixture` ao fim do
+bloco, com prova no log de boot.** Antes dele, o Bloco DEMO-1: o caminho
+principal do MVP
 (foto → avatar → voz → vídeo → download) foi percorrido inteiro no navegador em
 modo fixture, com **zero chamadas a fornecedor**. Corrigido o defeito que
 impedia criar avatar sem câmera, adicionada validação de artefato de vídeo em
@@ -813,6 +820,41 @@ apareceria em live ou numa conversa com cliente.
    gravado. Ou seja: toda tela de custo é estimativa sobre estimativa, e a
    diferença entre ela e a fatura real é desconhecida — não medida, não
    estimada, desconhecida.
+
+   **Atualização do LIVE-1 (2026-08-01): a diferença deixou de ser
+   desconhecida e é de 4,5× no caso medido.** Uma geração pediu
+   `duration_seconds = 15`; o vídeo entregue tem **3,372 s** (`ffprobe`), e
+   `provider_usage` gravou **15**. Não é imprecisão de arredondamento: é o
+   número errado, porque `duration_seconds` é o que o cliente escolheu na
+   tela, não o que a voz sintetizada de fato dura. O valor real existe e está
+   à mão — `synthesizeSpeech()` já devolve `durationSeconds` medido pelo
+   ElevenLabs ([voiceProvider.ts:140](backend/src/services/providers/voiceProvider.ts:140))
+   e é registrado no log de duração, mas **não** é o que vai para
+   `provider_usage`. NÃO corrigido.
+
+**Três lacunas novas, medidas na passada live do LIVE-1 (2026-08-01), todas
+registradas e NENHUMA corrigida:**
+
+1. **`provider_usage` grava a duração PEDIDA, não a real.** Ver o parágrafo
+   acima. Toda tela de custo por segundo herda o erro.
+2. **O LOG-1 não cobre o ElevenLabs.** A captura de resposta bruta vive em
+   `fetchJson()`, que é do `avatarProvider` — cobre as 4 chamadas HeyGen e as
+   3 D-ID. `voiceProvider.ts` faz `fetch` direto e **nunca** chama
+   `logVendorResponse`. Medido: a passada live registrou `voice/elevenlabs/
+   50 characters` em `provider_usage`, e **zero** eventos `vendor_response` de
+   voz no log. Ou seja, a clonagem e a síntese — que gastam dinheiro — são
+   exatamente os caminhos sem corpo de resposta registrado, que é o oposto da
+   intenção do LOG-1.
+3. **`GET /v2/user/remaining_quota` tem sunset declarado em 2026-10-31.** A
+   própria resposta traz o aviso, apontando `GET /v3/users/me` como
+   substituto. Dois caminhos vivos usam o endpoint condenado:
+   `checkHeygenConnection()` ([avatarProvider.ts:314](backend/src/services/providers/avatarProvider.ts:314)),
+   que atende `POST /credentials/avatar/test`, e `PROBE_ENDPOINTS.heygen`
+   ([platformKeyProbe.ts:27](backend/src/services/providers/platformKeyProbe.ts:27)),
+   que é o botão "Validar" do painel admin. Depois da data, os dois passam a
+   falhar — e o sintoma será "chave inválida", não "endpoint removido", que é
+   o diagnóstico errado. O `/v3/users/me` já foi exercitado com sucesso nesta
+   passada e devolve a carteira em dólar.
 
 ### Bloco PENDENCIAS-1 — galeria e carteira (PARCIAL: partes 1 e 2)
 
@@ -1181,24 +1223,33 @@ rate limiter, fazendo parecer "senha errada".
 
 ### Cota de cada fornecedor — o que dá para ensaiar
 
-| Fornecedor | Estado em 2026-07-31 | O que isso permite |
+| Fornecedor | Estado em 2026-08-01 | O que isso permite |
 |---|---|---|
-| **HeyGen** | `billing_type: wallet`, saldo **US$ 1,50**. `remaining_quota` caiu de 189 para 90 depois de UM vídeo de 33,7s | **No máximo 1 vídeo novo, e provavelmente nem isso.** Não ensaie gerando vídeo |
+| **HeyGen** | `billing_type: wallet`, saldo **US$ 15,35**, `remaining_quota` **921** (medido depois da passada live do LIVE-1) | ~340 vídeos curtos como o medido. Deixou de ser o gargalo |
 | **Gemini** | Free tier, ~20 requisições/dia, compartilhado com o copiloto | Um roteiro custa 1–2 requisições. Cabem poucos ensaios por dia |
 | **ElevenLabs** | Chave sem permissão `user_read` — **não dá para consultar a própria cota** | TTS funciona normalmente; o limite restante é desconhecido |
 
-**Sobre o HeyGen, com honestidade:** a unidade de `remaining_quota` não é
-declarada em lugar nenhum da resposta. O que se sabe com certeza é que um
-vídeo de 33,7s consumiu 99 unidades de 189, e que o endpoint atual
-(`/v3/users/me`) informa carteira em dólar com **US$ 1,50**. As duas leituras
-não se reconciliam com certeza, mas ambas apontam para o mesmo lugar: **o
-saldo é baixíssimo**. Trate como "cabe um vídeo, talvez". Para ensaiar o
-fluxo completo mais de uma vez, é preciso pôr saldo antes.
+**A unidade de `remaining_quota` deixou de ser mistério: 60 unidades por
+dólar.** O registro anterior dizia que as duas leituras (quota e carteira)
+"não se reconciliam com certeza". Reconciliam, e a razão fechou exata em dois
+pontos medidos na mesma passada: 930 ÷ 15,50 = 60,0 antes, 921 ÷ 15,35 = 60,0
+depois. **1 unidade ≈ US$ 0,0167.** Dois pontos com a mesma razão é forte, mas
+é dedução a partir de duas amostras — o fornecedor não declara a unidade em
+lugar nenhum da resposta.
 
-**Não há billing em nenhum dos três antes da demo.** Isso é uma decisão, não
-um esquecimento — mas significa que a margem para erro ao vivo é pequena. O
-caminho mais seguro é apresentar o fluxo usando o avatar "Mário", que já está
-treinado com voz clonada, e gerar no máximo um vídeo.
+**Custo real de vídeo, medido:** 3,372 s de vídeo custaram **US$ 0,15 / 9
+unidades** ⇒ **~US$ 0,045 por segundo**. Confere em ordem de grandeza com a
+medição antiga (33,7 s → 99 unidades = 2,94 un/s, contra 2,67 un/s agora); a
+diferença sugere arredondamento por bloco, não medido.
+
+**Formato real do que a HeyGen devolve, medido com `ffprobe` no arquivo
+baixado:** MP4 (QuickTime/MOV), **h264 High, 1280×720, DAR 16:9, SAR 1:1,
+25 fps**, áudio AAC-LC 48 kHz estéreo. É **horizontal**, e é o padrão da conta:
+como `POST /v3/videos` não manda `dimension` nem `aspect_ratio`, nunca
+escolhemos a proporção — ver o item 1 dos "três fatos verificados no POLL-1".
+
+**Custo de criação de avatar continua sendo o item caro:** US$ 1,00 por
+`photo_avatar` (medido no DEMO-3), contra US$ 0,15 por um vídeo curto.
 
 **Pendência de segurança que não pode ir para operação:** a chave Gemini em
 uso pelo tenant de demo foi colada em texto plano numa conversa de chat.
@@ -1312,6 +1363,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **LIVE-1** | **Uma geração live com avatar existente: vídeo em ~54 s por US$ 0,15; quota reconciliada (60/dólar); formato real 1280×720 16:9 25 fps; 3 lacunas novas. Ambiente desarmado de volta para `fixture`.** |
 | 08-01 | **DEMO-4** | **Teto de sessão explica o que consumiu; avatar em treino é esperado e barra a geração. Ver abaixo.** |
 | 08-01 | **DEMO-3** | **Primeira passada live: custo real medido, teto de imagem por rota, teto de sessão deixa de se disfarçar de falha do fornecedor. Ver abaixo.** |
 | 08-01 | **LOG-1 / POLL-1** | **Resposta bruta do fornecedor no log antes de interpretar; "concluído sem artefato" falha na hora em vez de virar timeout.** |
