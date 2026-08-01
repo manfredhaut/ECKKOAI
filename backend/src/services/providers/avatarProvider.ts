@@ -9,7 +9,7 @@ import { synthesizeSpeech } from "./voiceProvider.js";
 import { processVoiceAudio } from "../audioProcessing.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { recordProviderUsage } from "../billing/usageTracking.js";
-import { logVendorResponse, unexpectedShapeMessage } from "./vendorResponseLog.js";
+import { contractMismatch, logVendorResponse, unexpectedShapeMessage } from "./vendorResponseLog.js";
 import {
   countWords,
   estimateSeconds,
@@ -223,21 +223,16 @@ async function pollHeygenVideo(apiKey: string, jobId: string): Promise<PollResul
   const status: string | undefined = data?.data?.status ?? data?.status;
   const videoUrl: string | undefined = data?.data?.video_url ?? data?.video_url;
 
-  // ARMADILHA CONHECIDA, deliberadamente NÃO corrigida neste bloco (escopo:
-  // só logging). Quando o fornecedor diz "completed" mas não manda a URL, o
-  // `return` de "processing" lá embaixo assume o caso: o job fica em polling
-  // até estourar o teto de ~7,5 min e vira "demorou mais que o esperado" —
-  // uma mensagem que aponta para o lado errado, já que o vídeo FICOU pronto e
-  // foi cobrado. Aqui isso passa a gritar no log com as chaves que vieram, que
-  // é o que permite reconhecer o caso em vez de perseguir um timeout fantasma.
+  // Concluído sem URL: falha AGORA, não daqui a 7,5 minutos.
+  //
+  // Antes, este caso caía no `return` de "processing" lá embaixo e o job ficava
+  // em polling até estourar o teto, terminando como "demorou mais que o
+  // esperado" — uma mensagem que aponta para o lado errado. O vídeo não
+  // demorou: ficou pronto, foi cobrado, e nós é que não soubemos ler a
+  // resposta. Esperar não conserta contrato quebrado; só atrasa o diagnóstico
+  // e desperdiça 90 chamadas de polling.
   if (status === "completed" && !videoUrl) {
-    console.error(
-      JSON.stringify({
-        event: "vendor_contract_mismatch",
-        context: "heygen.pollVideo",
-        detail: unexpectedShapeMessage("heygen.pollVideo", "data.video_url", data),
-      }),
-    );
+    return { status: "error", errorMessage: contractMismatch("heygen.pollVideo", "data.video_url", data) };
   }
 
   if (status === "completed" && videoUrl) return { status: "ready", outputUrl: videoUrl };
@@ -338,16 +333,9 @@ async function pollDidTalk(apiKey: string, jobId: string): Promise<PollResult> {
     throw new AvatarProviderError(`Could not reach D-ID API: ${describeNetworkError(err)}`);
   }
   const data = await fetchJson(res, "D-ID", "did.pollTalk");
-  // Mesma armadilha registrada no poll da HeyGen: "done" sem URL cai no
-  // "processing" e vira timeout, apontando para o lado errado.
+  // Mesma armadilha da HeyGen, mesmo tratamento — ver o comentário lá.
   if (data?.status === "done" && !data?.result_url) {
-    console.error(
-      JSON.stringify({
-        event: "vendor_contract_mismatch",
-        context: "did.pollTalk",
-        detail: unexpectedShapeMessage("did.pollTalk", "result_url", data),
-      }),
-    );
+    return { status: "error", errorMessage: contractMismatch("did.pollTalk", "result_url", data) };
   }
   if (data?.status === "done" && data?.result_url) return { status: "ready", outputUrl: data.result_url };
   if (data?.status === "error" || data?.status === "rejected") {

@@ -109,6 +109,37 @@ export function unexpectedShapeMessage(context: string, expectedPath: string, bo
 }
 
 /**
+ * Contrato quebrado NO PIOR MOMENTO: o fornecedor diz que concluiu, e a
+ * resposta não traz o artefato.
+ *
+ * É diferente de um erro de geração, e a diferença importa em dinheiro. Aqui o
+ * trabalho FOI feito e quase certamente foi cobrado — só não conseguimos ler
+ * onde ele está. Por isso:
+ *
+ *  - **Falha na hora.** Continuar em polling até o teto transforma isto num
+ *    "demorou mais que o esperado", que manda quem lê procurar lentidão onde
+ *    houve contrato quebrado.
+ *  - **NÃO estorna.** É exatamente a fronteira fixada no bloco ESTORNO-1: o
+ *    estorno vale enquanto o fornecedor não aceitou o trabalho. Depois disso a
+ *    cota dele já foi gasta, e devolver crédito seria dar de graça algo que já
+ *    pagamos. Confirmado no código: `refundCredit()` só é chamado no `catch`
+ *    de `generateVideo()` em `routes/videos.ts`; o laço de polling nunca
+ *    estorna, e este caminho volta por ele.
+ *  - **Registra o suficiente para recuperar à mão.** As chaves recebidas vão
+ *    na mensagem, e o corpo inteiro já foi para o log em `vendor_response`.
+ */
+export function contractMismatch(context: string, expectedPath: string, body: unknown): string {
+  const detail =
+    `${context}: o fornecedor reportou CONCLUÍDO mas não devolveu "${expectedPath}". ` +
+    "O trabalho foi feito e provavelmente cobrado — isto NÃO é um erro de geração e NÃO gera estorno. " +
+    `Forma recebida: ${describeShape(body)}. ` +
+    "O corpo bruto completo está no log do servidor, no evento vendor_response.";
+
+  console.error(JSON.stringify({ event: "vendor_contract_mismatch", context, expectedPath, detail }));
+  return detail;
+}
+
+/**
  * Registra a resposta bruta. Chamado ANTES de qualquer parsing.
  *
  * `rawBody` é o texto exato que chegou. Quando é JSON válido, também vai a

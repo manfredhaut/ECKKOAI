@@ -782,6 +782,38 @@ o próprio comentário que a explicava).
 - **Header quebra abaixo de ~500px.**
 - Nenhum destes bloqueia a demo pelo caminho ensaiado.
 
+**Três fatos verificados no bloco POLL-1, registrados sem construir nada.** Os
+três têm a mesma natureza: algo que se supõe verdade e não é, e que só
+apareceria em live ou numa conversa com cliente.
+
+1. **"Derivação de formatos" é hoje INEXEQUÍVEL, e não só não-implementada.**
+   O payload de `POST /v3/videos` tem três campos —
+   `{ type, avatar_id, audio_asset_id }` ([avatarProvider.ts:195](backend/src/services/providers/avatarProvider.ts:195)).
+   **Não mandamos `dimension` nem `aspect_ratio`**, então nunca escolhemos
+   9:16, 1:1 ou qualquer outro: o vídeo sai no que a HeyGen decidir por
+   padrão. Derivar formatos não é acrescentar uma tela — exige primeiro
+   passar a controlar a proporção na geração, e depois descobrir se um mesmo
+   avatar rende bem em vertical. *(O usuário se refere a isto como "Decisão
+   6"; essa numeração vem do planejamento dele, não deste arquivo — não
+   existe decisão 6 sobre formatos aqui.)*
+2. **A UI exige 3 fotos e o provider usa só a primeira.**
+   `AvatarSetupStep` bloqueia "Concluir configuração" com menos de 3
+   (`photo_urls.length < 3`), e `trainAvatar()` faz
+   `readUpload(input.photoUrls[0])` ([avatarProvider.ts:375](backend/src/services/providers/avatarProvider.ts:375)).
+   As outras duas são gravadas, ocupam disco e **nunca chegam ao fornecedor**.
+   Ou a exigência cai para 1, ou o provider passa a enviar as três — hoje
+   pedimos ao cliente um trabalho que jogamos fora.
+3. **`provider_cost_rates` nunca foi reconciliada com fornecedor nenhum, e as
+   unidades são NOSSAS.** O vídeo registra `duration_seconds` *pedido*
+   ([videos.ts:70](backend/src/routes/videos.ts:70)) e a voz registra
+   `script.length` em caracteres — nenhum dos dois vem da resposta do
+   fornecedor, que não é lida para isso. O custo é `taxa × unidades` com taxa
+   de uma tabela mantida à mão. **O único número real que a HeyGen nos dá é
+   `remaining_quota`**, lido só pelo botão "Validar" do painel e nunca
+   gravado. Ou seja: toda tela de custo é estimativa sobre estimativa, e a
+   diferença entre ela e a fatura real é desconhecida — não medida, não
+   estimada, desconhecida.
+
 ### Bloco PENDENCIAS-1 — galeria e carteira (PARCIAL: partes 1 e 2)
 
 **Galeria de passos em `/dev/steps`** ([StepGallery.tsx](frontend/src/dev/StepGallery.tsx)),
@@ -1280,6 +1312,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **LOG-1 / POLL-1** | **Resposta bruta do fornecedor no log antes de interpretar; "concluído sem artefato" falha na hora em vez de virar timeout.** |
 | 08-01 | **ESTORNO-1** | **Crédito volta quando o fornecedor recusa, nos 3 caminhos. Linha própria no ledger, idempotente. Ver abaixo.** |
 | 08-01 | **DEMO-2** | **Teto de upload do vídeo de referência: 100 MB só nessa rota, erro legível, validação no cliente e cap de gravação. Ver abaixo.** |
 | 08-01 | **DEMO-1** | **Caminho principal do MVP validado ponta a ponta em fixture; validação de artefato de vídeo; `preflight:live`. Ver abaixo.** |
@@ -1681,3 +1714,52 @@ se ainda passar. **Cliente e servidor com a frase idêntica** (medido nos dois).
 minutos para melhor resultado, 30 segundos já funcionam. É texto, não
 validação — nada bloqueia o envio. Dizer isso depois, na recusa por tamanho ou
 num avatar de qualidade ruim, custa uma regravação inteira.
+
+---
+
+### Blocos LOG-1 e POLL-1 — ver a resposta antes de interpretá-la (CONCLUÍDOS)
+
+**LOG-1.** Toda resposta de vendor passa por `fetchJson()`, que virou o ponto
+único de captura: corpo **inteiro** no log (evento `vendor_response`) **antes**
+de qualquer parsing, com um `context` que diz qual das sete chamadas foi
+(4 HeyGen + 3 D-ID). O motivo é o `// ASSUMPTION` de `data.avatar_item.id`,
+nunca confirmado: se o parser errar em live, a HeyGen já cobrou e o id — única
+coisa que torna o avatar utilizável — se perderia com o corpo descartado.
+
+As mensagens de erro passaram a **nomear a forma recebida**, chave por chave.
+"Campo ausente" não ajuda; `{data: {avatar: {avatar_id: …}}}` diz na hora onde
+o contrato mudou.
+
+**Defeito que a própria prova pegou:** a primeira versão logava o objeto
+mascarado **e** o texto cru lado a lado, e a chave aparecia legível no segundo
+campo. Um segredo mascarado num campo e legível no seguinte não está mascarado.
+Hoje: JSON → só o objeto mascarado (que é o corpo inteiro); não-JSON → texto com
+varredura de padrões. *Medido:* 3193 → 3170 bytes, diferença só da redação.
+
+**Cabeçalho de requisição nunca vai ao log** — é onde a chave viaja. Da
+resposta, só uma allowlist. **Não suba o logger do Fastify para `trace`:** ele
+registraria o `x-api-key` por um caminho que este arquivo não controla.
+
+**POLL-1.** `status: completed` sem `video_url` **falha na hora**. Antes caía no
+`return { status: "processing" }` do fim da função — uma decisão que ninguém
+chegou a escrever — e o job ficava em polling até o teto de ~7,5 min,
+terminando como "demorou mais que o esperado". O vídeo não demorou: ficou
+pronto, foi cobrado, e nós é que não soubemos ler a resposta. Mesmo tratamento
+no `did.pollTalk`.
+
+**Este caso NÃO estorna, e isso está confirmado no código, não suposto:**
+`refundCredit()` só é chamado no `catch` de `generateVideo()`
+([videos.ts:254](backend/src/routes/videos.ts:254)); o laço de polling nunca
+estorna, e este caminho volta por ele. É exatamente a fronteira do ESTORNO-1 —
+o fornecedor entregou, nós é que não lemos.
+
+**Guarda nova** ([checkPollPolicy.ts](backend/src/scripts/checkPollPolicy.ts)),
+exercitando o caminho REAL (`pollVideoJob`, incluindo `fetchJson` e o log) com
+`fetch` substituído — nenhuma chamada de rede. Quatro formas de resposta, com
+os contrapontos que impedem a guarda de virar "sempre erro": `processing`
+continua processando e `completed` com URL continua pronto. **Provada
+reprovando duas vezes:** ao restaurar o `processing` antigo, e ao tirar a
+menção a estorno da mensagem.
+
+`PROVIDER_MODE` é trocado e restaurado em `finally`, e a guarda **verifica que
+voltou** — deixar o processo do check em live seria um efeito colateral caro.

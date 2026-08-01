@@ -19,6 +19,7 @@ import { checkEnvironmentPolicy } from "./checkEnvironmentPolicy.js";
 import { checkProviderPolicy } from "./checkProviderPolicy.js";
 import { checkPlatformKeyPolicy } from "./checkPlatformKeyPolicy.js";
 import { checkRefundPolicy } from "./checkRefundPolicy.js";
+import { checkPollPolicy } from "./checkPollPolicy.js";
 import {
   DENY_ENFORCED_FOR,
   DENY_TERMS,
@@ -219,6 +220,11 @@ async function main(): Promise<void> {
   const refundResult = await checkRefundPolicy(process.env.REPO_ROOT ?? "/repo");
   refundResult.failures.forEach((f) => failures.push(f));
   refundResult.notes.forEach((n) => note(n));
+
+  // --- 12. concluído sem artefato falha na hora --------------------------
+  const pollResult = await checkPollPolicy();
+  pollResult.failures.forEach((f) => failures.push(f));
+  pollResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));
