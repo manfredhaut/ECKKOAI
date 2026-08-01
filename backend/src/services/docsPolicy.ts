@@ -21,7 +21,16 @@ export const DENY_TERMS: readonly string[] = [
   "POSTGRES_PASSWORD",
   "POSTGRES_USER",
   "DATABASE_URL",
+  // As cinco chaves da plataforma. Nomear a variável já é meio caminho: diz
+  // ao leitor o que procurar e onde, e um doc que cita o nome ao lado do
+  // valor ("basta pôr AIza… em X") vaza os dois de uma vez.
   "PLATFORM_COPILOT_API_KEY",
+  "PLATFORM_GOOGLE_API_KEY",
+  "PLATFORM_EMBEDDING_API_KEY",
+  "PLATFORM_HEYGEN_API_KEY",
+  "PLATFORM_ELEVENLABS_API_KEY",
+  "PLATFORM_KEYS_FORCE_ENV",
+  "platform_credentials",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "ANTHROPIC_API_KEY",

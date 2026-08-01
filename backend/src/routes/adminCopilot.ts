@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
-import { config } from "../config.js";
 import { loadAdminDocsContent } from "../services/docs.js";
+import { resolvePlatformCopilotKey } from "../services/providers/platformKeys.js";
 import { askCopilot, CopilotProviderError } from "../services/providers/copilotProvider.js";
 import { createRateLimiter } from "../services/rateLimit.js";
 import type { AdminCopilotConversation, AdminCopilotMessage } from "../types.js";
@@ -75,10 +75,15 @@ export async function adminCopilotRoutes(app: FastifyInstance): Promise<void> {
 
       // Platform key, same as the public demo (routes/public.ts) — an admin
       // has no BYOK credential of their own, there's no tenant to own one.
-      if (!config.platformCopilotApiKey) {
+      //
+      // Resolvida a cada requisição (painel > .env, ver
+      // services/platformCredentialStore.ts): gravar a chave pelo painel tem
+      // de valer na mensagem seguinte, não no próximo boot.
+      const copilotApiKey = await resolvePlatformCopilotKey();
+      if (!copilotApiKey) {
         return reply.code(400).send({
           error: "no_script_credential",
-          message: "The admin copilot isn't configured yet (PLATFORM_COPILOT_API_KEY missing).",
+          message: "The admin copilot isn't configured yet (no platform Anthropic key stored).",
         });
       }
 
@@ -96,7 +101,7 @@ export async function adminCopilotRoutes(app: FastifyInstance): Promise<void> {
       let replyText: string;
       try {
         replyText = await askCopilot({
-          apiKey: config.platformCopilotApiKey,
+          apiKey: copilotApiKey,
           docsContent,
           history: historyRows.map((m) => ({ role: m.role, content: m.content })),
           audience: "admin",

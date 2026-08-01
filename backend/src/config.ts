@@ -51,6 +51,18 @@ export const config = {
   // cota com o suporte faria uma reindexação derrubar o copiloto.
   platformGoogleApiKey: optional("PLATFORM_GOOGLE_API_KEY"),
   platformEmbeddingApiKey: optional("PLATFORM_EMBEDDING_API_KEY"),
+  // Chaves de plataforma para HeyGen e ElevenLabs. Hoje só são ARMAZENADAS e
+  // VALIDADAS pelo painel — o caminho de geração continua lendo a credencial
+  // BYOK do tenant. Migrar a geração para cá muda quem paga a conta, e é uma
+  // decisão de negócio separada (ver CLAUDE.md, migração BYOK→plataforma).
+  platformHeygenApiKey: optional("PLATFORM_HEYGEN_API_KEY"),
+  platformElevenlabsApiKey: optional("PLATFORM_ELEVENLABS_API_KEY"),
+  // Saída de emergência da precedência. Por padrão o BANCO vence o .env, para
+  // que gravar pelo painel valha sem reiniciar. Com isto em "1" o .env volta a
+  // vencer — o caso de uso é uma chave ruim gravada pelo painel trancando do
+  // lado de fora justo quem precisaria entrar para consertá-la.
+  // Lido no boot de propósito: é decisão de operação, não de requisição.
+  platformKeysForceEnv: process.env.PLATFORM_KEYS_FORCE_ENV === "1",
   // fixture | live — ver services/providers/providerMode.ts.
   providerMode: readProviderMode(),
   // Optional overrides for the default AI model used by the script/copilot

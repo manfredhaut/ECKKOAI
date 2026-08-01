@@ -296,7 +296,32 @@
     },
     "navFeatures": "Features",
     "loadError": "Could not load.",
-    "saveError": "Could not save."
+    "saveError": "Could not save.",
+    "platformKeys": {
+      "title": "Platform keys",
+      "subtitle": "The keys eckko.ai pays for. Write-only — no route returns a stored value, not even to you. Each key is identified by the last 4 characters recorded when it was saved.",
+      "noConsumer": "stored and validated; no consumer in the code yet",
+      "notConfigured": "No key stored, and the environment variable is empty.",
+      "source": {
+        "panel": "Source: saved from this panel",
+        "env": "Source: environment variable (.env)"
+      },
+      "savedBy": "by {{who}} on {{date}}",
+      "unknownAuthor": "author not recorded",
+      "forcedEnvWarning": "PLATFORM_KEYS_FORCE_ENV=1 is active: the .env wins over the panel. A key saved here only takes effect once that variable is removed.",
+      "newKeyLabel": "Store a new key",
+      "newKeyPlaceholder": "Paste the key here",
+      "writeOnlyHint": "Saving replaces the previous key and clears the old validation result. Reading it back is not possible.",
+      "validate": "Validate",
+      "validating": "Validating…",
+      "validateHint": "One read-only call to the vendor, only when you click. Never generates anything.",
+      "validateFailed": "Could not validate the key.",
+      "saveFailed": "Could not store the key.",
+      "balance": "Balance: {{balance}}",
+      "balanceUnavailable": "Balance not read: {{reason}}",
+      "lastValidationOk": "Validated on {{date}}",
+      "lastValidationFailed": "Validation failed on {{date}}"
+    }
   },
   "dashboard": {
     "title": "Dashboard",

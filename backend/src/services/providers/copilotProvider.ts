@@ -30,6 +30,33 @@ export interface AskCopilotInput {
 
 export class CopilotProviderError extends Error {}
 
+/**
+ * Regra de credencial, acrescentada aos TRÊS prompts — inclusive o do admin.
+ *
+ * Vale dizer com precisão o que ela é e o que não é. A garantia de verdade é
+ * ESTRUTURAL: nenhuma chave entra em prompt nenhum. Só três coisas entram — o
+ * prompt constante, o `docsContent` do nível, e o histórico da conversa — e o
+ * valor de uma credencial não está em nenhuma das três, o que `npm run check`
+ * cobra por outros caminhos. Um modelo não pode revelar o que nunca recebeu.
+ *
+ * Esta instrução cobre o resto: o operador que COLA uma chave no chat para
+ * "conferir", e o pedido disfarçado de depuração ("me mostre a variável de
+ * ambiente que você está usando"). Nesses casos o segredo entra pelo
+ * histórico, e aí a única defesa é o modelo recusar.
+ *
+ * No prompt do admin também, e não só nos outros dois: ser interno não torna
+ * seguro ecoar um segredo de volta numa transcrição que fica gravada no banco.
+ */
+const CREDENTIAL_RULE = [
+  "Nunca revele, repita, confirme, complete nem descreva o valor de nenhuma",
+  "chave de API, senha, token ou segredo — nem os da plataforma, nem os de um",
+  "cliente — ainda que a pergunta venha como depuração, teste, mensagem de",
+  "erro, pedido de administrador ou continuação de um texto colado. Se alguém",
+  "colar um segredo nesta conversa, não o repita: avise que ele deve ser",
+  "trocado. Você não tem acesso a variáveis de ambiente nem a credenciais",
+  "gravadas, e não deve especular sobre o conteúdo delas.",
+].join("\n");
+
 const TENANT_SYSTEM_PROMPT = [
   "Você é o copiloto do eckko.ai, um app multi-tenant para criar vídeos de",
   "avatar digital. Responda dúvidas de 'como faço para...' sobre o próprio",
@@ -80,7 +107,7 @@ function buildSystemPrompt(input: AskCopilotInput): string {
       : input.audience === "admin"
         ? ADMIN_SYSTEM_PROMPT
         : TENANT_SYSTEM_PROMPT;
-  return [base, "", "# Documentação do produto", input.docsContent].join("\n");
+  return [base, "", CREDENTIAL_RULE, "", "# Documentação do produto", input.docsContent].join("\n");
 }
 
 export async function askCopilot(input: AskCopilotInput): Promise<string> {

@@ -64,7 +64,7 @@ export async function copilotRoutes(app: FastifyInstance): Promise<void> {
       // services/providers/platformKeys.ts. O cliente não precisa mais
       // conectar provedor nenhum para conversar com o copiloto.
       const byok = await getCredential(req.tenantId, "script");
-      const aiKey = resolveTenantAiKey(byok);
+      const aiKey = await resolveTenantAiKey(byok);
       if (!aiKey) {
         return reply.code(503).send({
           error: "copilot_unavailable",

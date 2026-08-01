@@ -17,6 +17,7 @@ import { loadDocsFor } from "../services/docs.js";
 import { DOCS_EXCLUDED, DOCS_MANIFEST, type DocAudience } from "../services/docsManifest.js";
 import { checkEnvironmentPolicy } from "./checkEnvironmentPolicy.js";
 import { checkProviderPolicy } from "./checkProviderPolicy.js";
+import { checkPlatformKeyPolicy } from "./checkPlatformKeyPolicy.js";
 import {
   DENY_ENFORCED_FOR,
   DENY_TERMS,
@@ -207,6 +208,11 @@ async function main(): Promise<void> {
   const providerResult = await checkProviderPolicy(process.env.REPO_ROOT ?? "/repo");
   providerResult.failures.forEach((f) => failures.push(f));
   providerResult.notes.forEach((n) => note(n));
+
+  // --- 10. chaves da plataforma: nenhuma rota devolve valor em claro ------
+  const platformKeyResult = await checkPlatformKeyPolicy(process.env.REPO_ROOT ?? "/repo");
+  platformKeyResult.failures.forEach((f) => failures.push(f));
+  platformKeyResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

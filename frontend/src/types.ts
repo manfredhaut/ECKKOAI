@@ -163,3 +163,32 @@ export interface Subscription {
   usage: { videosThisMonth: number; limit: number };
   paymentMethodMasked: string | null;
 }
+
+// Chaves DA PLATAFORMA (tabela platform_credentials) — não confundir com a
+// credencial BYOK do tenant acima. NENHUM campo aqui carrega valor de chave:
+// `lastFour` são os 4 últimos caracteres gravados na escrita, e o backend não
+// tem rota que devolva o valor em claro (invariante cobrada por npm run check).
+export interface PlatformCredentialView {
+  id: string;
+  envVar: string;
+  label: string;
+  servedBy: string;
+  configured: boolean;
+  source: "panel" | "env" | null;
+  lastFour: string | null;
+  updatedAt: string | null;
+  updatedByName: string | null;
+  lastValidatedAt: string | null;
+  lastValidationOk: boolean | null;
+  lastValidationDetail: string | null;
+  readsBalance: boolean;
+  balanceUnavailable: string | null;
+  forcedEnv: boolean;
+}
+
+export interface PlatformCredentialValidation {
+  ok: boolean;
+  detail: string | null;
+  balance: string | null;
+  validatedAt: string;
+}

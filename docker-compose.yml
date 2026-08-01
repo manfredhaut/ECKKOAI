@@ -50,7 +50,21 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       SESSION_SECRET: ${SESSION_SECRET}
       BASE_DOMAIN: ${BASE_DOMAIN}
+      # As cinco chaves da plataforma. Só a primeira era repassada até aqui —
+      # as outras estavam documentadas no .env.example e no CLAUDE.md, mas
+      # nunca chegavam ao container: preenchê-las no .env não teria efeito
+      # nenhum, e o sintoma seria "colei a chave e o copiloto continua caindo
+      # na do cliente". Desde o bloco CHAVES-2 a origem preferida é o painel
+      # admin (tabela platform_credentials); estas variáveis são a retaguarda.
       PLATFORM_COPILOT_API_KEY: ${PLATFORM_COPILOT_API_KEY:-}
+      PLATFORM_GOOGLE_API_KEY: ${PLATFORM_GOOGLE_API_KEY:-}
+      PLATFORM_EMBEDDING_API_KEY: ${PLATFORM_EMBEDDING_API_KEY:-}
+      PLATFORM_HEYGEN_API_KEY: ${PLATFORM_HEYGEN_API_KEY:-}
+      PLATFORM_ELEVENLABS_API_KEY: ${PLATFORM_ELEVENLABS_API_KEY:-}
+      # Inverte a precedência: o .env volta a vencer o painel. Saída de
+      # emergência para uma chave ruim gravada pela tela — ver
+      # services/platformCredentialStore.ts.
+      PLATFORM_KEYS_FORCE_ENV: ${PLATFORM_KEYS_FORCE_ENV:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}

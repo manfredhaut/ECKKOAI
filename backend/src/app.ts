@@ -15,6 +15,7 @@ import { adminAuthRoutes } from "./routes/adminAuth.js";
 import { loginRoutes } from "./routes/login.js";
 import { adminPanelRoutes } from "./routes/adminPanel.js";
 import { adminCopilotRoutes } from "./routes/adminCopilot.js";
+import { adminPlatformCredentialRoutes } from "./routes/adminPlatformCredentials.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { avatarRoutes } from "./routes/avatars.js";
 import { videoRoutes } from "./routes/videos.js";
@@ -96,6 +97,7 @@ export async function buildApp() {
     adminApp.addHook("preHandler", requireAdmin);
     await adminApp.register(adminPanelRoutes);
     await adminApp.register(adminCopilotRoutes);
+    await adminApp.register(adminPlatformCredentialRoutes);
   });
 
   return app;

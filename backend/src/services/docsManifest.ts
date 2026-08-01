@@ -68,6 +68,11 @@ export const DOCS_MANIFEST: Record<string, DocAudience> = {
   // — and until now it was being read out to anonymous visitors.
   "setup.md": "admin",
   "admin/admin-tenants.md": "admin",
+  // A tela das chaves da plataforma. "admin" e nada abaixo disso: mesmo sem
+  // citar valor nenhum, ela descreve onde os segredos da casa ficam, como a
+  // precedência entre painel e ambiente funciona, e qual é a saída de
+  // emergência — um mapa que não interessa a cliente nem a visitante.
+  "admin/admin-chaves-da-plataforma.md": "admin",
   "admin/admin-taxas-de-custo.md": "admin",
   "admin/admin-planos.md": "admin",
 };

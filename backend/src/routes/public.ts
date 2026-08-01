@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { config } from "../config.js";
 import { getAllPlans } from "../plans.js";
 import { loadPublicDocsContent } from "../services/docs.js";
+import { resolvePlatformCopilotKey } from "../services/providers/platformKeys.js";
 import { askCopilot, CopilotProviderError } from "../services/providers/copilotProvider.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 
@@ -34,7 +34,10 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(429).send({ error: "rate_limited", message: "Too many messages, try again later." });
       }
 
-      if (!config.platformCopilotApiKey) {
+      // Resolvida a cada requisição (painel > .env) — ver
+      // services/platformCredentialStore.ts.
+      const copilotApiKey = await resolvePlatformCopilotKey();
+      if (!copilotApiKey) {
         return reply.code(400).send({
           error: "no_script_credential",
           message: "The public copilot demo isn't configured yet.",
@@ -49,7 +52,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       const docsContent = await loadPublicDocsContent();
       try {
         const replyText = await askCopilot({
-          apiKey: config.platformCopilotApiKey,
+          apiKey: copilotApiKey,
           docsContent,
           history,
           audience: "public",

@@ -296,7 +296,32 @@
     },
     "navFeatures": "Recursos",
     "loadError": "Não foi possível carregar.",
-    "saveError": "Não foi possível salvar."
+    "saveError": "Não foi possível salvar.",
+    "platformKeys": {
+      "title": "Chaves da plataforma",
+      "subtitle": "As chaves que a eckko.ai paga. Campo de escrita apenas — nenhuma rota devolve o valor gravado, nem para você. O que identifica cada chave são os 4 últimos caracteres registrados na gravação.",
+      "noConsumer": "armazenada e validada; ainda sem consumidor no código",
+      "notConfigured": "Nenhuma chave gravada, e a variável de ambiente está vazia.",
+      "source": {
+        "panel": "Origem: gravada por este painel",
+        "env": "Origem: variável de ambiente (.env)"
+      },
+      "savedBy": "por {{who}} em {{date}}",
+      "unknownAuthor": "autor não registrado",
+      "forcedEnvWarning": "PLATFORM_KEYS_FORCE_ENV=1 está ativo: o .env vence o painel. Uma chave gravada aqui só passa a valer quando essa variável for removida.",
+      "newKeyLabel": "Gravar chave nova",
+      "newKeyPlaceholder": "Cole a chave aqui",
+      "writeOnlyHint": "Gravar substitui a chave anterior e apaga o resultado da validação antiga. Ler de volta não é possível.",
+      "validate": "Validar",
+      "validating": "Validando…",
+      "validateHint": "Uma chamada de leitura ao fornecedor, só quando você clica. Nunca gera nada.",
+      "validateFailed": "Não foi possível validar a chave.",
+      "saveFailed": "Não foi possível gravar a chave.",
+      "balance": "Saldo: {{balance}}",
+      "balanceUnavailable": "Saldo não lido: {{reason}}",
+      "lastValidationOk": "Validada em {{date}}",
+      "lastValidationFailed": "Validação falhou em {{date}}"
+    }
   },
   "dashboard": {
     "title": "Painel",

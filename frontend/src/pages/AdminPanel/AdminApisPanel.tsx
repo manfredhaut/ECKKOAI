@@ -5,6 +5,7 @@ import type { AdminTenantDetail, AdminTenantSummary, Credential, CredentialProvi
 import { Field } from "../../components/ui/Field";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { VENDORS_BY_PROVIDER } from "../Settings/providerVendors";
+import { AdminPlatformKeysSection } from "./AdminPlatformKeysSection";
 
 const PROVIDERS: CredentialProviderId[] = ["avatar", "voice", "script"];
 
@@ -189,6 +190,10 @@ export function AdminApisPanel({ tenants }: { tenants: AdminTenantSummary[] }) {
 
   return (
     <div>
+      {/* Chaves da plataforma primeiro: são as que a casa paga, e a pergunta
+          "qual chave está valendo?" chega aqui antes da de qualquer tenant. */}
+      <AdminPlatformKeysSection />
+
       <div className="section-heading">
         <h2>{t("adminPanel.apis.title")}</h2>
         <p className="text-muted" style={{ fontSize: 13 }}>
