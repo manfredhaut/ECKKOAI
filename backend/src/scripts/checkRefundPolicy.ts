@@ -13,6 +13,37 @@
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import type { Mutant } from "./mutants.js";
+
+export const MUTANTS: Mutant[] = [
+  {
+    guard: "estorno: rota que debita estorna",
+    name: "scripts.ts debita e não estorna",
+    kind: "obvio",
+    file: "backend/src/routes/scripts.ts",
+    find: `      await refundCredit({
+        tenantId: req.tenantId,
+        creditType: "script",
+        relatedScriptGenerationId: generationRows[0].id,
+      });
+`,
+    replace: "",
+    expect: "chama debitCredit() mas nunca refundCredit()",
+  },
+  {
+    guard: "estorno: motivo no CHECK do banco",
+    name: "migration deixa de admitir reason = refund",
+    kind: "esperto",
+    file: "backend/src/db/migrations/035_credit_ledger_refund_reason.sql",
+    // O arquivo continua existindo, com nome de estorno e comentários sobre
+    // estorno. Só o CHECK muda. Uma guarda que verificasse a existência da
+    // migration, ou procurasse "refund" no texto, passaria — e todo estorno
+    // explodiria em tempo de execução, no caminho de erro.
+    find: "'grant', 'refund'));",
+    replace: "'grant', 'reembolso'));",
+    expect: "nenhuma migration admite reason = 'refund'",
+  },
+];
 
 export interface RefundCheckResult {
   failures: string[];

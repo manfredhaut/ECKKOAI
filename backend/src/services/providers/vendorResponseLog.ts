@@ -60,14 +60,53 @@ const REDACTED = "***REDACTED***";
  */
 const ELIDE_KEY_PATTERN = /^(audio_base64|audio|alignment|normalized_alignment)$/i;
 
+/**
+ * Teto de bytes por campo, INDEPENDENTE do nome.
+ *
+ * A lista de nomes acima é suposição: nenhum daqueles campos foi observado numa
+ * resposta real do ElevenLabs — foram tirados da documentação. Se o vendor
+ * chamar o áudio de outra coisa, ou se um fornecedor novo entrar, a elisão por
+ * nome não pega nada e o log volta a engolir payload. Esta é a retaguarda que
+ * não depende de acertar o nome.
+ *
+ * 2048 bytes, escolhido a partir de dado e não de gosto: o maior campo legítimo
+ * já observado numa resposta real é a URL assinada da HeyGen, com **519
+ * caracteres** (`data.video_url`; a thumbnail tem 519). O teto dá quase quatro
+ * vezes essa folga, o que cobre também uma mensagem de erro longa em texto — e
+ * ainda assim corta três ordens de grandeza abaixo de um mp3 em base64
+ * (~64.000 caracteres para 3 segundos de fala).
+ *
+ * Errar para o lado de elidir é barato: sobra o tipo, o tamanho e o caminho do
+ * campo, que é o que se usa para diagnosticar. Errar para o outro lado enche o
+ * log de conteúdo que ninguém lê e que às vezes nem deveria ser retido.
+ */
+const MAX_FIELD_BYTES = 2048;
+
 /** Descreve um valor volumoso sem registrar o conteúdo. */
-function elide(value: unknown): string {
-  if (typeof value === "string") return `<elidido: string de ${value.length} chars>`;
-  if (Array.isArray(value)) return `<elidido: array de ${value.length} itens>`;
+function elide(value: unknown, motivo: "nome" | "tamanho" = "nome"): string {
+  const por = motivo === "tamanho" ? " por tamanho" : "";
+  if (typeof value === "string") return `<elidido${por}: string de ${value.length} chars>`;
+  if (Array.isArray(value)) return `<elidido${por}: array de ${value.length} itens>`;
   if (value && typeof value === "object") {
-    return `<elidido: objeto{${Object.keys(value as object).join(", ")}}>`;
+    return `<elidido${por}: objeto{${Object.keys(value as object).join(", ")}}>`;
   }
-  return `<elidido: ${typeof value}>`;
+  return `<elidido${por}: ${typeof value}>`;
+}
+
+/**
+ * Tamanho serializado de um valor, para decidir a elisão por tamanho.
+ *
+ * Nunca lança: um valor com referência circular ou não serializável não pode
+ * derrubar o log que existe para observar a falha. Quando não dá para medir,
+ * trata como grande — errar para o lado de elidir é o lado barato.
+ */
+function serializedBytes(value: unknown): number {
+  try {
+    const json = JSON.stringify(value);
+    return json === undefined ? 0 : Buffer.byteLength(json, "utf8");
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
 }
 
 /**
@@ -81,6 +120,9 @@ function maskSecrets(value: unknown): unknown {
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       if (SECRET_KEY_PATTERN.test(k)) out[k] = REDACTED;
       else if (ELIDE_KEY_PATTERN.test(k)) out[k] = elide(v);
+      // Retaguarda por TAMANHO: pega o campo volumoso cujo nome não está na
+      // lista — que é o caso provável, já que a lista é suposição.
+      else if (serializedBytes(v) > MAX_FIELD_BYTES) out[k] = elide(v, "tamanho");
       else out[k] = maskSecrets(v);
     }
     return out;

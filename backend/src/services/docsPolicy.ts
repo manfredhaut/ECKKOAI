@@ -52,7 +52,10 @@ export const DENY_TERMS: readonly string[] = [
   "admin_copilot",
   "avatar_trainings",
   "script_generations",
-  "schema_migrations",
+  // `schema_migrations` saiu no bloco GUARDAS-1 (achado G): nenhuma migration
+  // deste projeto cria essa tabela, então o termo não podia aparecer em doc
+  // nenhum. Termo impossível de casar infla a contagem da deny-list sem
+  // proteger nada — e a contagem é o que se lê de relance no resumo.
 
   // --- internal hosts, ports and infrastructure -------------------------
   "postgres:5432",

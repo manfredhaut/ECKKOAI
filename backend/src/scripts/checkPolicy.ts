@@ -20,8 +20,13 @@ import { checkProviderPolicy } from "./checkProviderPolicy.js";
 import { checkPlatformKeyPolicy } from "./checkPlatformKeyPolicy.js";
 import { checkRefundPolicy } from "./checkRefundPolicy.js";
 import { checkPollPolicy } from "./checkPollPolicy.js";
-import { checkAvatarTrainingGate, checkLiveBudgetPolicy } from "./checkLiveBudgetPolicy.js";
+import {
+  checkAvatarTrainingGate,
+  checkLiveBudgetCallers,
+  checkLiveBudgetPolicy,
+} from "./checkLiveBudgetPolicy.js";
 import { checkVendorLogPolicy } from "./checkVendorLogPolicy.js";
+import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
   DENY_TERMS,
@@ -31,6 +36,104 @@ import {
   SIZE_LIMITS,
   UNLIMITED_CLAIM_PATTERN,
 } from "../services/docsPolicy.js";
+
+/**
+ * Mutantes das asserções que vivem NESTE arquivo (docs, planos, duração,
+ * sanitização de erro, probe). As demais guardas declaram os seus no próprio
+ * módulo — ver scripts/mutants.ts para o contrato.
+ */
+export const MUTANTS: Mutant[] = [
+  {
+    guard: "classificação de docs",
+    name: "doc novo sem classificação",
+    kind: "obvio",
+    file: "backend/src/services/docsManifest.ts",
+    find: `  "screens/painel.md": "tenant",`,
+    replace: "",
+    expect: "não está em DOCS_MANIFEST nem em DOCS_EXCLUDED",
+  },
+  {
+    guard: "deny-list",
+    name: "termo proibido entra em doc de tenant",
+    kind: "obvio",
+    file: "docs/screens/painel.md",
+    find: "# Painel",
+    replace: "# Painel\n\nA tabela credit_ledger guarda o histórico.",
+    expect: "contém o termo proibido",
+  },
+  {
+    guard: "deny-list",
+    name: "doc de nível admin promovido a tenant",
+    kind: "esperto",
+    file: "backend/src/services/docsManifest.ts",
+    // Nenhum texto muda, nenhum termo novo é escrito. Só a EXPOSIÇÃO de um
+    // arquivo que já contém metade da deny-list. É o modo de falha real:
+    // reclassificar é uma linha, e o conteúdo perigoso já estava escrito.
+    find: `  "setup.md": "admin",`,
+    replace: `  "setup.md": "tenant",`,
+    expect: "contém o termo proibido",
+  },
+  {
+    guard: "promessa falsa",
+    name: "afirmação BYOK volta ao FAQ",
+    kind: "obvio",
+    file: "docs/faq.md",
+    find: "# Perguntas frequentes",
+    replace: "# Perguntas frequentes\n\nO modelo é BYOK.",
+    expect: "promessa falsa",
+  },
+  {
+    guard: "planos: limite citado bate com a tabela",
+    name: "doc promete limite que nenhum plano tem",
+    kind: "obvio",
+    file: "docs/faq.md",
+    find: "# Perguntas frequentes",
+    replace: "# Perguntas frequentes\n\nO plano inclui 999 vídeos por mês.",
+    expect: "mas nenhum plano tem videoLimitPerMonth = 999",
+  },
+  {
+    guard: "planos: nada é ilimitado",
+    name: "doc promete recurso ilimitado",
+    kind: "obvio",
+    file: "docs/faq.md",
+    find: "# Perguntas frequentes",
+    replace: "# Perguntas frequentes\n\nAvatares ilimitados.",
+    expect: "nenhum plano é ilimitado",
+  },
+  {
+    guard: "tamanho do prompt",
+    name: "teto de tamanho estourado",
+    kind: "obvio",
+    file: "backend/src/services/docsPolicy.ts",
+    find: "  public: 4_000,",
+    replace: "  public: 10,",
+    expect: "acima do teto de",
+  },
+  {
+    guard: "duração: alvo derivado",
+    name: "alvo de palavras deixa de derivar do wpm",
+    kind: "esperto",
+    file: "backend/src/services/script/scriptDuration.ts",
+    // A função continua existindo e continua devolvendo um número plausível
+    // para 30 s. Só deixa de ser DERIVADA — e o sintoma seria um vídeo com a
+    // duração errada, visível só depois de gastar cota de três fornecedores.
+    find: "  return Math.round((seconds / 60) * SCRIPT_DURATION.wordsPerMinute);",
+    replace: "  return seconds > 0 ? 70 : 70;",
+    expect: "não é o dobro de targetWords(30)",
+  },
+  {
+    guard: "erro de vendor sanitizado",
+    name: "mensagem ao cliente volta a citar o fornecedor",
+    kind: "esperto",
+    file: "backend/src/services/providers/vendorError.ts",
+    // A sanitização continua existindo e continua sendo chamada nos oito
+    // pontos. Só o TEXTO volta a nomear o vendor — que é o vazamento que o
+    // bloco 4 corrigiu, e nenhuma contagem de chamadas perceberia.
+    find: `  avatar: "de vídeo",`,
+    replace: `  avatar: "do HeyGen",`,
+    expect: "cita o fornecedor",
+  },
+];
 
 const AUDIENCES: DocAudience[] = ["public", "tenant", "admin"];
 const RANK: Record<DocAudience, number> = { public: 0, tenant: 1, admin: 2 };
@@ -153,6 +256,7 @@ async function main(): Promise<void> {
     fail("planos", "a tabela plans está vazia — não há fonte de verdade contra a qual conferir os docs.");
   }
 
+  let citacoesConferidas = 0;
   for (const file of Object.keys(DOCS_MANIFEST)) {
     // A missing file is already reported by section 2. Skipping it here keeps
     // that violation readable instead of letting the read throw and abort the
@@ -162,6 +266,7 @@ async function main(): Promise<void> {
 
     for (const { regex, field } of PLAN_LIMIT_PATTERNS) {
       for (const match of content.matchAll(regex)) {
+        citacoesConferidas += 1;
         const quoted = Number(match[1]);
         const valid = plans.map((p) => p[field]);
         if (!valid.includes(quoted)) {
@@ -181,7 +286,30 @@ async function main(): Promise<void> {
       );
     }
   }
-  note(`planos conferidos contra a tabela: ${plans.map((p) => p.id).join(", ")}`);
+  // Universo de inspeção ZERO reprova.
+  //
+  // Esta asserção lia como cobertura sólida — "planos conferidos contra a
+  // tabela: free, pro, business" — mas os planos eram só o que ela CARREGOU. O
+  // que ela conferiu foram zero citações, porque nenhum doc cita limite na
+  // forma que PLAN_LIMIT_PATTERNS reconhece. Nunca comparou um número sequer
+  // com a tabela, e o resumo não deixava isso aparecer.
+  //
+  // A regra vale além deste caso: uma guarda que não encontra nada para
+  // inspecionar não está aprovando, está cega. É um sinal fraco (não pega a
+  // guarda que olha a coisa errada — para isso existe o arnês de mutação), mas
+  // custa pouco e pega uma classe própria de defeito.
+  if (citacoesConferidas === 0) {
+    fail(
+      "planos",
+      "nenhuma citação de limite de plano foi encontrada nos docs — a asserção passou sem comparar " +
+        "número nenhum com a tabela. Ou a documentação deixou de citar limites (e aí esta guarda não " +
+        "protege mais nada), ou passou a citá-los numa forma que PLAN_LIMIT_PATTERNS não reconhece " +
+        "(e aí ela é ainda pior: dá cobertura aparente a um texto que nunca é conferido).",
+    );
+  }
+  note(
+    `planos: ${citacoesConferidas} citação(ões) de limite conferida(s) contra a tabela (${plans.map((p) => p.id).join(", ")})`,
+  );
 
   // --- 6b. script duration is derived, not hardcoded ----------------------
   await checkScriptDuration();
@@ -232,6 +360,11 @@ async function main(): Promise<void> {
   const budgetResult = checkLiveBudgetPolicy();
   budgetResult.failures.forEach((f) => failures.push(f));
   budgetResult.notes.forEach((n) => note(n));
+
+  // --- 13b. quem precisa consumir o teto continua consumindo -------------
+  const budgetCallers = await checkLiveBudgetCallers(process.env.REPO_ROOT ?? "/repo");
+  budgetCallers.failures.forEach((f) => failures.push(f));
+  budgetCallers.notes.forEach((n) => note(n));
 
   // --- 14. portão de avatar em treino -----------------------------------
   const gateResult = await checkAvatarTrainingGate(process.env.REPO_ROOT ?? "/repo");
@@ -617,7 +750,16 @@ async function checkProbeSemantics(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error("checkPolicy falhou de forma inesperada:", err);
-  process.exit(1);
-});
+// Só executa quando é o módulo invocado, e não quando alguém o importa.
+//
+// Sem esta guarda, importar este arquivo para ler a lista de MUTANTS rodava o
+// gate inteiro como efeito colateral — o coletor devolvia JSON seguido do
+// relatório do check, e o arnês engasgava. Um módulo que age ao ser importado
+// é uma armadilha para o próximo que precisar de qualquer coisa dele.
+const invocadoDiretamente = process.argv[1]?.replace(/\\/g, "/").endsWith("scripts/checkPolicy.ts");
+if (invocadoDiretamente) {
+  main().catch((err) => {
+    console.error("checkPolicy falhou de forma inesperada:", err);
+    process.exit(1);
+  });
+}

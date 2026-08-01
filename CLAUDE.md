@@ -1371,6 +1371,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **GUARDAS-1** | **`npm run check:mutants`: 38 mutantes provam que cada guarda reprova de verdade. D, C, E, B, G consertados + 1 achado novo (teto testado sem quem o chama). Ver abaixo.** |
 | 08-01 | **LIVE-2** | **Voz entra no LOG-1 (sem bytes de áudio); `provider_usage` grava duração real e pedida lado a lado; guarda nova de registro de resposta. Ver abaixo.** |
 | 08-01 | **LIVE-1** | **Uma geração live com avatar existente: vídeo em ~54 s por US$ 0,15; quota reconciliada (60/dólar); formato real 1280×720 16:9 25 fps; 3 lacunas novas. Ambiente desarmado de volta para `fixture`.** |
 | 08-01 | **DEMO-4** | **Teto de sessão explica o que consumiu; avatar em treino é esperado e barra a geração. Ver abaixo.** |
@@ -1499,6 +1500,91 @@ nível, e histórico da conversa. Um modelo não revela o que nunca recebeu; a
 regra nos prompts cobre o resto, que é o operador colando a chave no chat.
 
 ---
+
+### Bloco GUARDAS-1 — arnês de mutação: guarda só vale se reprovar (CONCLUÍDO)
+
+**A frase que resume o bloco: contagem de ocorrências não detecta guarda
+inerte.** A `checkVendorLogPolicy` casava TREZE funções e era inerte. O número
+alto era o próprio disfarce.
+
+**`npm run check:mutants`** ([tools/run-mutants.mjs](tools/run-mutants.mjs)).
+Cada guarda declara MUTANTES junto de si; o arnês aplica um, roda o gate,
+exige saída 1 **com a mensagem daquela guarda**, reverte e confere
+`git status` vazio. **38 mutantes, 38 com o comportamento esperado.**
+
+Três decisões que não são decoração:
+
+- **`expect` obrigatório.** Sem ele, mutante que quebra a compilação faz o
+  gate sair 1 pelo `tsc` e a guarda é dada como ativa sem ter opinado.
+  *Aconteceu:* cinco mutantes da primeira rodada reprovavam por `tsc`, e o
+  arnês corretamente recusou aquilo como prova.
+- **`expectGreen`.** Guarda que reprova qualquer coisa passaria em todos os
+  mutantes sem distinguir nada.
+- **Reversão em `finally` + `git status` após CADA mutante.** Reversão falha
+  aborta tudo na hora, em vez de empilhar defeitos.
+
+**Dois mutantes por guarda: um óbvio e um esperto.** O esperto desloca a
+verdade sem mexer na superfície inspecionada — é o único que pega guarda que
+verifica a proposição errada. Os dois do LIVE-2 estão congelados aqui.
+
+**O que o arnês achou, e a auditoria manual A–G não tinha achado:**
+
+**`consumeLiveGeneration` era testada, mas ninguém verificava quem a chama.**
+Removi a chamada de `cloneVoice` e o gate ficou verde: o contador seguia
+perfeito, a mensagem seguia dizendo que o teto conta voz e vídeo juntas —
+verdade sobre o mecanismo, mentira sobre o sistema. Em live, libera uma
+chamada tarifada que a trava deveria barrar. **Testar o mecanismo não é testar
+quem o usa**, e nenhuma leitura de código tinha visto isso.
+
+**Consertados neste bloco** (cada um só conta como feito porque o mutante
+correspondente passou a reprovar):
+
+- **D — `isFixtureMode`.** Reescrita com corpo por **chaves balanceadas** (o
+  slice "até o próximo export" fazia uma função pura de 5 linhas engolir 378) e
+  **análise transitiva** de quem alcança a rede (`pollVideoJob` e
+  `checkAvatarConnection` eram ignoradas justamente por delegarem numa linha).
+  Passou a exigir o **padrão** `if (isFixtureMode()) return`, não a menção:
+  `if (isFixtureMode() && false)` menciona e não desvia. Conferidos: 7 → **8**,
+  e agora são os certos.
+- **C — a nota que afirmava o não verificado.** `PLAINTEXT_ALLOWED` era
+  decorativa (só checava existência de arquivo) e a inspeção olhava apenas
+  `routes/`. A nota dizia "leitura em claro só em 2 módulos declarados", e o
+  número **estava errado**: `providers/platformKeys.ts` resolve chave e nunca
+  era olhado. Agora varre `backend/src` inteiro (22 rotas + 77 arquivos) e a
+  allowlist tem os 3 leitores reais, com motivo.
+- **E — flags por caminho não vigiado.** `setGalleryFlag` e `key: "..."`
+  entraram no padrão. Referências: 1 → **3** (eram dois dos três usos reais
+  passando fora do radar).
+- **B e G** — `readStoredValue` saiu de `PLAINTEXT_MARKERS` (função privada,
+  impossível de casar) e `schema_migrations` saiu da deny-list (tabela que não
+  existe aqui). Deny-list: 42 → 41 termos, todos possíveis.
+- **Universo-zero reprova.** A asserção de planos dizia "conferidos contra a
+  tabela: free, pro, business" tendo conferido **zero citações** — nenhum doc
+  citava limite na forma reconhecida. Agora reprova se não encontrar nada, e o
+  FAQ passou a documentar os limites reais: **9 citações conferidas**.
+
+**A elisão do LOG-1 ganhou retaguarda por TAMANHO** (`MAX_FIELD_BYTES = 2048`),
+independente de nome de campo — a lista de nomes é suposição, nenhum daqueles
+campos foi visto numa resposta real. O teto vem de medição: o maior campo
+legítimo já observado tem **519 caracteres** (URL assinada da HeyGen).
+*Medido com nome desconhecido e corpo grande:* 102.892 → **860 bytes**.
+
+**Três armadilhas que o próprio bloco pisou, e valem mais que o resultado:**
+
+1. A guarda de flags **acusou o próprio mutante declarado** (a string vive em
+   `backend/src`, que ela varre). Terceira vez que uma guarda deste projeto
+   tropeça no texto escrito para descrevê-la.
+2. `checkPolicy.ts` **rodava o gate inteiro ao ser importado**, então o coletor
+   devolvia JSON grudado num relatório. Módulo que age ao ser importado é
+   armadilha para o próximo que precisar de qualquer coisa dele.
+3. Seis mutantes casaram **0x** porque o working copy vem em **CRLF** e os
+   `find` são escritos com `\n`. Falso alarme de "mutante desatualizado" em
+   guarda saudável ensina a ignorar o arnês.
+
+**O que ficou sem verificação:** as guardas cobertas são as que têm mutante —
+38 mutantes sobre ~28 asserções. As asserções sem mutante estão nomeadas na
+tabela do relatório do bloco; as principais são as de tamanho de prompt e as de
+manifesto de docs, que dependem de estado de disco mais do que de código.
 
 ### Bloco LIVE-2 — a voz entra no log e o consumo passa a ser medido (CONCLUÍDO)
 

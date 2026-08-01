@@ -15,6 +15,31 @@
  * alguém reorganizar o parser.
  */
 import { isFixtureMode } from "../services/providers/providerMode.js";
+import type { Mutant } from "./mutants.js";
+
+export const MUTANTS: Mutant[] = [
+  {
+    guard: "poll: concluído sem artefato falha na hora",
+    name: "volta a tratar concluído-sem-URL como processando",
+    kind: "obvio",
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: `  if (status === "completed" && !videoUrl) {\n    return { status: "error", errorMessage: contractMismatch("heygen.pollVideo", "data.video_url", data) };\n  }`,
+    replace: "",
+    expect: `"completed SEM video_url" devolveu "processing"`,
+  },
+  {
+    guard: "poll: mensagem não induz a estorno",
+    name: "mensagem perde a menção a estorno",
+    kind: "esperto",
+    file: "backend/src/services/providers/vendorResponseLog.ts",
+    // O caminho continua falhando na hora — só a mensagem deixa de dizer que
+    // NÃO é erro de geração. Uma guarda que só checasse o status "error"
+    // passaria, e quem lesse o alerta estornaria no susto.
+    find: "O trabalho foi feito e provavelmente cobrado — isto NÃO é um erro de geração e NÃO gera estorno. ",
+    replace: "Falhou. ",
+    expect: "não nomeia o campo ausente nem diz que",
+  },
+];
 
 export interface PollCheckResult {
   failures: string[];

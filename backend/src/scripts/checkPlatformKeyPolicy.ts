@@ -19,6 +19,7 @@
  */
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import type { Mutant } from "./mutants.js";
 import { encrypt } from "../services/crypto.js";
 import {
   PLATFORM_CREDENTIALS,
@@ -32,12 +33,74 @@ export interface PlatformKeyCheckResult {
   notes: string[];
 }
 
+export const MUTANTS: Mutant[] = [
+  {
+    guard: "chaves: serializador não vaza",
+    name: "serializador devolve a chave em claro",
+    kind: "obvio",
+    file: "backend/src/services/platformCredentialStore.ts",
+    // Vaza o TEXTO CIFRADO por um campo que já existe e parece inofensivo —
+    // nenhum campo novo, nenhuma assinatura alterada. Cifrado ainda é material
+    // de chave, e é assim que um vazamento chegaria: por conveniência de tela.
+    find: "    lastFour: source === \"panel\" && row ? row.last_four : null,",
+    replace: "    lastFour: source === \"panel\" && row ? row.encrypted_key : null,",
+    expect: "devolveu o TEXTO CIFRADO",
+  },
+  {
+    guard: "chaves: rota nunca vê valor em claro",
+    name: "rota passa a resolver a chave",
+    kind: "obvio",
+    file: "backend/src/routes/adminPlatformCredentials.ts",
+    find: `import { listPlatformCredentials, setPlatformKey } from "../services/platformCredentialStore.js";`,
+    replace: `import { listPlatformCredentials, setPlatformKey, resolvePlatformKey } from "../services/platformCredentialStore.js";\nvoid resolvePlatformKey;`,
+    expect: `menciona "resolvePlatformKey"`,
+  },
+  {
+    guard: "chaves: probe é somente leitura",
+    name: "probe do HeyGen apontado para endpoint de geração",
+    kind: "esperto",
+    file: "backend/src/services/providers/platformKeyProbe.ts",
+    // O probe continua fazendo UMA chamada, continua na allowlist, continua
+    // com cara de validação. Só o endpoint muda — e validar passaria a gerar.
+    find: `  heygen: "https://api.heygen.com/v2/user/remaining_quota",`,
+    replace: `  heygen: "https://api.heygen.com/v2/video/generate",`,
+    expect: "contém o caminho",
+  },
+  {
+    guard: "chaves: variáveis distintas",
+    name: "duas credenciais na mesma variável de ambiente",
+    kind: "esperto",
+    file: "backend/src/services/platformCredentials.ts",
+    // Nenhuma credencial some do registro; a tela continua mostrando cinco.
+    // Só duas passam a ler a MESMA variável, e uma vira retaguarda silenciosa
+    // da outra.
+    find: `envVar: "PLATFORM_EMBEDDING_API_KEY"`,
+    replace: `envVar: "PLATFORM_GOOGLE_API_KEY"`,
+    expect: "apontam para a mesma variável",
+  },
+];
+
 const ROUTES_DIR = "backend/src/routes";
 
-/** Só estes módulos podem ver uma chave de plataforma em claro. */
+/**
+ * Só estes módulos podem ver uma chave de plataforma em claro.
+ *
+ * Até o bloco GUARDAS-1 esta lista era decorativa: ela só era usada para
+ * conferir se os arquivos existiam, e a inspeção olhava apenas `routes/`. A
+ * nota impressa dizia "leitura em claro só em 2 módulos declarados" — uma
+ * afirmação que a guarda não sustentava, e que estava ERRADA: um terceiro
+ * módulo (`providers/platformKeys.ts`) resolve chave e nunca era olhado.
+ * Agora a lista é aplicada contra `backend/src` inteiro, e a nota só diz o que
+ * foi de fato verificado.
+ */
 const PLAINTEXT_ALLOWED = [
   "backend/src/services/platformCredentialStore.ts",
   "backend/src/services/platformCredentialValidation.ts",
+  // Decide QUAL chave paga cada caminho de IA (plataforma ou tenant), então
+  // precisa resolver o valor para entregá-lo a quem vai chamar o fornecedor.
+  // É o terceiro leitor legítimo, e estava fora da lista sem que nada
+  // acusasse.
+  "backend/src/services/providers/platformKeys.ts",
 ];
 
 /**
@@ -53,7 +116,12 @@ const PLAINTEXT_ALLOWED = [
  * O que se cobra no lugar é a tabela: SQL cru contra `platform_credentials`
  * num arquivo de rota é o desvio real, porque contorna o store.
  */
-const PLAINTEXT_MARKERS = ["resolvePlatformKey", "readStoredValue", "platform_credentials"];
+//
+// `readStoredValue` saiu no bloco GUARDAS-1 (achado B da auditoria): é uma
+// função PRIVADA de platformCredentialStore.ts, sem `export`. Nenhum arquivo
+// de fora consegue chamá-la, com ou sem má-fé, então o marcador não podia
+// casar nunca — ocupava um terço da lista aparentando cobertura.
+const PLAINTEXT_MARKERS = ["resolvePlatformKey", "platform_credentials"];
 
 /** Endpoints de geração. Nenhum deles pode ser alcançável pelo probe. */
 const GENERATION_ENDPOINTS = [
@@ -157,6 +225,35 @@ async function checkRoutesNeverSeePlaintext(
     return;
   }
 
+  // Varre TODO o backend/src, e não só as rotas: uma chave em claro num
+  // service alcançável por rota vaza igual, e foi assim que platformKeys.ts
+  // ficou três blocos fora do radar.
+  const todos = await collectTsFiles(path.join(repoRoot, "backend/src"));
+  let inspecionadosFora = 0;
+  for (const full of todos) {
+    const rel = path.relative(repoRoot, full).replace(/\\/g, "/");
+    if (PLAINTEXT_ALLOWED.includes(rel)) continue;
+    // Arquivos que citam os marcadores como DADO, não como uso: os
+    // verificadores (mutantes) e a política de documentação (que lista
+    // `platform_credentials` justamente para PROIBIR que apareça em doc).
+    // Acusá-los seria acusar quem protege — a mesma armadilha que já derrubou
+    // esta guarda duas vezes com comentários.
+    if (/^backend\/src\/scripts\//.test(rel)) continue;
+    if (rel === "backend/src/services/docsPolicy.ts") continue;
+
+    const content = stripComments(await readFile(full, "utf-8"));
+    inspecionadosFora += 1;
+    for (const marker of PLAINTEXT_MARKERS) {
+      if (content.includes(marker)) {
+        failures.push(
+          `chaves de plataforma: ${rel} menciona "${marker}" e NÃO está na allowlist de leitura em claro. ` +
+            "Quem resolve chave de plataforma precisa estar declarado em PLAINTEXT_ALLOWED, com o motivo — " +
+            "senão o conjunto de quem pode ler cresce sem ninguém decidir.",
+        );
+      }
+    }
+  }
+
   let inspected = 0;
   for (const name of entries) {
     const rel = `${ROUTES_DIR}/${name}`;
@@ -189,9 +286,30 @@ async function checkRoutesNeverSeePlaintext(
     }
   }
 
+  // A nota diz o que foi VERIFICADO, e não o que se gostaria que fosse
+  // verdade. A versão anterior afirmava "leitura em claro só em 2 módulos
+  // declarados" sem nunca ter olhado fora de routes/ — e o número estava
+  // errado.
   notes.push(
-    `chaves de plataforma: ${inspected} arquivo(s) de rota inspecionado(s); leitura em claro só em ${PLAINTEXT_ALLOWED.length} módulo(s) declarado(s)`,
+    `chaves de plataforma: ${inspected} rota(s) + ${inspecionadosFora} arquivo(s) de backend/src inspecionado(s); ` +
+      `leitura em claro confinada aos ${PLAINTEXT_ALLOWED.length} módulo(s) da allowlist`,
   );
+}
+
+async function collectTsFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...(await collectTsFiles(full)));
+    else if (entry.name.endsWith(".ts")) out.push(full);
+  }
+  return out;
 }
 
 /**

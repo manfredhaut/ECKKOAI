@@ -15,6 +15,7 @@
  */
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import type { Mutant } from "./mutants.js";
 import { FEATURE_FLAG_KEYS } from "../services/featureFlags.js";
 import { readProviderMode } from "../services/providers/providerMode.js";
 import {
@@ -28,6 +29,69 @@ export interface ProviderCheckResult {
   failures: string[];
   notes: string[];
 }
+
+export const MUTANTS: Mutant[] = [
+  // --- 1. modo de provedor ------------------------------------------------
+  {
+    guard: "provedor: fixture em produção",
+    name: "fixture com NODE_ENV=production",
+    kind: "obvio",
+    env: { PROVIDER_MODE: "fixture", NODE_ENV: "production" },
+    expect: "PROVIDER_MODE=fixture com NODE_ENV=production",
+  },
+  {
+    guard: "provedor: live sem autorização",
+    name: "live com a frase de confirmação errada",
+    kind: "esperto",
+    // A variável EXISTE e tem valor — só não é o valor exato. Uma guarda que
+    // testasse "está definida?" em vez de "vale exatamente isto?" passaria.
+    env: { PROVIDER_MODE: "live", PROVIDER_LIVE_CONFIRM: "sim" },
+    expect: "PROVIDER_MODE=live sem",
+  },
+  // --- 2. caminho de vendor respeita o modo --------------------------------
+  {
+    guard: "provedor: vendor respeita modo",
+    name: "generateVideo deixa de consultar isFixtureMode",
+    kind: "obvio",
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: "  if (isFixtureMode()) return generateVideoFixture(input);",
+    replace: "",
+    expect: "generateVideo() alcança um fornecedor tarifado sem desviar para fixture",
+  },
+  {
+    guard: "provedor: vendor respeita modo",
+    name: "cloneVoice consulta o modo e ignora o resultado",
+    kind: "esperto",
+    file: "backend/src/services/providers/voiceProvider.ts",
+    // A CHAMADA continua lá — a superfície que a guarda inspeciona não muda.
+    // Só o efeito some. Uma guarda que procura o texto `isFixtureMode(` passa.
+    find: "  if (isFixtureMode()) return cloneVoiceFixture();",
+    replace: "  if (isFixtureMode() && false) return cloneVoiceFixture();",
+    expect: "cloneVoice() alcança um fornecedor tarifado sem desviar",
+  },
+  // --- 3. registro de feature flags ---------------------------------------
+  {
+    guard: "flags: referência existe no registro",
+    name: "flag inexistente referenciada",
+    kind: "obvio",
+    file: "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx",
+    find: `useFeature("removable_background")`,
+    replace: `useFeature("removable_backgroundX")`,
+    expect: `referencia a flag "removable_backgroundX"`,
+  },
+  {
+    guard: "flags: referência existe no registro",
+    name: "flag lida por caminho que a guarda não olha",
+    kind: "esperto",
+    file: "frontend/src/dev/galleryFetch.ts",
+    // A chave literal existe fora dos helpers reconhecidos pelo regex. Se a
+    // flag for renomeada no registro, ESTE uso quebra em silêncio e a guarda
+    // não vê — é o buraco real desta guarda, não uma hipótese.
+    find: `key: "removable_background"`,
+    replace: `key: "removable_background_renomeada"`,
+    expect: "removable_background_renomeada",
+  },
+];
 
 /**
  * Arquivos que falam com HeyGen/ElevenLabs. Toda função exportada por eles
@@ -116,56 +180,129 @@ async function checkVendorCallsRespectMode(
       failures.push(`provedor: não consegui ler ${rel} para verificar o modo.`);
       continue;
     }
-
-    const bodies = splitExportedFunctions(content);
-    if (bodies.length === 0) {
-      failures.push(`provedor: nenhuma função exportada encontrada em ${rel} — o verificador ficou cego.`);
+    if (!METERED_VENDOR_HOSTS.some((h) => content.includes(h))) {
+      failures.push(
+        `provedor: ${rel} não menciona nenhum host tarifado (${METERED_VENDOR_HOSTS.join(", ")}) — ` +
+          "ou o módulo mudou de endereço, ou o verificador está olhando o arquivo errado.",
+      );
       continue;
     }
 
-    for (const fn of bodies) {
-      // Só interessa quem realmente pode gastar cota: função exportada que
-      // (direta ou indiretamente) leva a um host tarifado.
-      const reachesVendor =
-        METERED_VENDOR_HOSTS.some((h) => content.includes(h)) && /\bfetch\(|[A-Za-z]+(Heygen|Did|Elevenlabs|ElevenLabs)\(/.test(fn.body);
-      if (!reachesVendor) continue;
+    const funcs = splitFunctions(content);
+    if (funcs.length === 0) {
+      failures.push(`provedor: nenhuma função encontrada em ${rel} — o verificador ficou cego.`);
+      continue;
+    }
+
+    const reachesNetwork = functionsReachingNetwork(funcs);
+
+    for (const fn of funcs) {
+      // Só as EXPORTADAS: é nelas que o desvio para fixture tem de estar,
+      // porque são a fronteira do módulo. As privadas fazem o fetch e são
+      // levadas em conta pela análise transitiva acima.
+      if (!fn.exported || !reachesNetwork.has(fn.name)) continue;
 
       checkedExports += 1;
-      if (!fn.body.includes("isFixtureMode(")) {
+
+      // O PADRÃO, não a menção. Mencionar `isFixtureMode(` não prova nada:
+      // `if (isFixtureMode() && false) return ...` menciona e não desvia. O
+      // arnês de mutação provou exatamente isso — a versão anterior desta
+      // guarda passava verde com esse mutante aplicado.
+      if (!/if\s*\(\s*isFixtureMode\(\s*\)\s*\)\s*(return|\{)/.test(fn.body)) {
         failures.push(
-          `provedor: ${rel} → ${fn.name}() pode chamar um fornecedor tarifado sem consultar ` +
-            "isFixtureMode(). Todo caminho que gasta cota precisa respeitar PROVIDER_MODE.",
+          `provedor: ${rel} → ${fn.name}() alcança um fornecedor tarifado sem desviar para fixture. ` +
+            "O padrão exigido é `if (isFixtureMode()) return ...` como PRIMEIRA decisão da função — " +
+            "mencionar isFixtureMode() sem desviar (por exemplo dentro de uma condição composta) " +
+            "deixa a chamada real acontecer em modo de simulação.",
         );
       }
     }
   }
 
   if (checkedExports > 0) {
-    notes.push(`provedor: ${checkedExports} caminho(s) de vendor conferido(s) — todos respeitam PROVIDER_MODE`);
+    notes.push(`provedor: ${checkedExports} caminho(s) de vendor conferido(s) — todos desviam para fixture`);
+  } else {
+    failures.push(
+      "provedor: nenhuma função exportada alcança a rede nos módulos de vendor — " +
+        "o verificador deixou de casar com o código e passaria verde sem inspecionar nada.",
+    );
   }
 }
 
-interface ExportedFunction {
+interface ParsedFunction {
   name: string;
   body: string;
+  exported: boolean;
 }
 
 /**
- * Fatia o arquivo em funções exportadas. Cada bloco vai do `export ...
- * function nome(` até a próxima declaração exportada — suficiente para
- * perguntar "esta função menciona isFixtureMode?".
+ * Quais funções alcançam a rede, direta ou transitivamente.
+ *
+ * A versão anterior desta guarda usava uma heurística por regex no corpo, e
+ * errava nos DOIS sentidos: `normalizeAvatarStatus` — cinco linhas, sem rede —
+ * era dada como conferida porque seu trecho ia até o próximo export e engolia
+ * todos os helpers do arquivo; enquanto `pollVideoJob` e
+ * `checkAvatarConnection`, que falam com o fornecedor de verdade, eram
+ * IGNORADAS porque delegam numa linha e não casavam o padrão. Uma guarda que
+ * confere a função errada e pula as certas tem número alto e valor zero.
  */
-function splitExportedFunctions(content: string): ExportedFunction[] {
-  const re = /export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(/g;
-  const starts: { name: string; index: number }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
-    starts.push({ name: m[1], index: m.index });
+function functionsReachingNetwork(funcs: ParsedFunction[]): Set<string> {
+  const direct = new Set<string>();
+  const calls = new Map<string, string[]>();
+
+  for (const fn of funcs) {
+    if (/\bfetch\(/.test(fn.body)) direct.add(fn.name);
+    const chamados = [...fn.body.matchAll(/\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)]
+      .map((m) => m[1])
+      .filter((n) => n !== fn.name);
+    calls.set(fn.name, chamados);
   }
-  return starts.map((s, i) => ({
-    name: s.name,
-    body: content.slice(s.index, i + 1 < starts.length ? starts[i + 1].index : content.length),
-  }));
+
+  // Ponto fixo: propaga "alcança rede" pelas chamadas até estabilizar.
+  const reaches = new Set(direct);
+  let mudou = true;
+  while (mudou) {
+    mudou = false;
+    for (const fn of funcs) {
+      if (reaches.has(fn.name)) continue;
+      if ((calls.get(fn.name) ?? []).some((c) => reaches.has(c))) {
+        reaches.add(fn.name);
+        mudou = true;
+      }
+    }
+  }
+  return reaches;
+}
+
+/**
+ * Fatia o arquivo em funções, com o corpo REAL delimitado por chaves
+ * balanceadas — e não "até a próxima declaração", que era o que fazia o corpo
+ * de uma função pura engolir os helpers seguintes.
+ */
+function splitFunctions(content: string): ParsedFunction[] {
+  const re = /(export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(/g;
+  const out: ParsedFunction[] = [];
+  let m: RegExpExecArray | null;
+
+  while ((m = re.exec(content)) !== null) {
+    const abre = content.indexOf("{", m.index + m[0].length);
+    if (abre < 0) continue;
+
+    let profundidade = 0;
+    let fim = abre;
+    for (let i = abre; i < content.length; i += 1) {
+      if (content[i] === "{") profundidade += 1;
+      else if (content[i] === "}") {
+        profundidade -= 1;
+        if (profundidade === 0) {
+          fim = i;
+          break;
+        }
+      }
+    }
+    out.push({ name: m[2], body: content.slice(abre, fim + 1), exported: Boolean(m[1]) });
+  }
+  return out;
 }
 
 // --------------------------------------------------------------- 3 -------
@@ -185,13 +322,26 @@ async function checkFlagReferences(
   // versão a lista trazia `useFeatureFlag`, que não existe — o hook chama-se
   // `useFeature` —, então a asserção passava sem inspecionar nada. Uma
   // guarda que não casa com nada é pior que nenhuma: parece cobertura.
-  const refRe = /(?:isFeatureEnabled|useFeature|featureFlag|FEATURE_FLAGS)\s*[(\[.]?\s*["'`]([a-zA-Z0-9_]+)["'`]/g;
+  //
+  // `setGalleryFlag` e a forma `key: "..."` entraram no bloco GUARDAS-1: o
+  // arnês de mutação renomeou a chave em `dev/galleryFetch.ts` e esta guarda
+  // não viu. Eram DOIS dos três usos reais da flag no projeto passando fora do
+  // radar — um rename no registro os quebraria em silêncio, que é exatamente o
+  // defeito que ela existe para pegar.
+  const refRe =
+    /(?:isFeatureEnabled|useFeature|featureFlag|FEATURE_FLAGS|setGalleryFlag|\bkey:)\s*[(\[.]?\s*["'`]([a-zA-Z0-9_]+)["'`]/g;
 
   let references = 0;
   for (const file of files) {
     // O próprio registro e a migration que o semeia definem as chaves; não
     // são referências a verificar.
     if (file.endsWith("featureFlags.ts") || file.endsWith("featureFlagStore.ts")) continue;
+    // Os módulos de guarda declaram MUTANTES, que por construção contêm
+    // referências a flags inexistentes — é esse o defeito que eles injetam.
+    // Sem esta exclusão a guarda acusa o próprio teste que a exercita, que é
+    // a mesma armadilha já registrada duas vezes aqui: guarda tropeçando no
+    // texto escrito para descrevê-la.
+    if (/[\\/]scripts[\\/]check[A-Za-z]*\.ts$/.test(file)) continue;
 
     let content: string;
     try {

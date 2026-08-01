@@ -18,6 +18,7 @@
  */
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import type { Mutant } from "./mutants.js";
 import {
   LOGIN_RATE_LIMIT_DEFAULTS,
   describeLoginRateLimit,
@@ -29,6 +30,74 @@ export interface EnvironmentCheckResult {
   failures: string[];
   notes: string[];
 }
+
+export const MUTANTS: Mutant[] = [
+  // --- compose: restart e healthcheck --------------------------------------
+  {
+    guard: "ambiente: restart policy",
+    name: "traefik perde a política de restart",
+    kind: "obvio",
+    file: "docker-compose.yml",
+    find: "    # restart.\n    restart: unless-stopped\n    ports:",
+    replace: "    # restart.\n    ports:",
+    expect: 'serviço "traefik" está sem política de restart',
+  },
+  {
+    guard: "ambiente: restart policy",
+    name: "restart presente, mas com o valor que anula tudo",
+    kind: "esperto",
+    file: "docker-compose.yml",
+    // A CHAVE continua lá. Uma guarda que só perguntasse "existe restart?"
+    // passaria verde num serviço que nunca reinicia.
+    find: "  backend:\n    build:\n      context: ./backend\n    restart: unless-stopped",
+    replace: "  backend:\n    build:\n      context: ./backend\n    restart: no\n    x-nota: mutante",
+    expect: 'serviço "backend" tem restart: no',
+  },
+  {
+    guard: "ambiente: healthcheck",
+    name: "backend perde o healthcheck",
+    kind: "obvio",
+    file: "docker-compose.yml",
+    find: "    healthcheck:\n      test: [\"CMD-SHELL\", \"node -e \\\"fetch('http://127.0.0.1:'",
+    replace: "    x-healthcheck-desativado:\n      test: [\"CMD-SHELL\", \"node -e \\\"fetch('http://127.0.0.1:'",
+    expect: 'serviço "backend" está sem healthcheck',
+  },
+  // --- credencial de desenvolvimento ---------------------------------------
+  {
+    guard: "acesso: autofill em produção",
+    name: "DEV_AUTOFILL=1 com NODE_ENV=production",
+    kind: "obvio",
+    env: { DEV_AUTOFILL: "1", NODE_ENV: "production" },
+    expect: "DEV_AUTOFILL=1 com NODE_ENV=production",
+  },
+  {
+    guard: "acesso: galeria em produção",
+    name: "DEV_GALLERY=1 com NODE_ENV=production",
+    kind: "obvio",
+    env: { DEV_GALLERY: "1", NODE_ENV: "production" },
+    expect: "DEV_GALLERY=1 com NODE_ENV=production",
+  },
+  {
+    guard: "acesso: limiter de login",
+    name: "limiter afrouxado em produção",
+    kind: "obvio",
+    env: { LOGIN_RATE_LIMIT_MAX: "999", NODE_ENV: "production" },
+    expect: "limiter de login afrouxado",
+  },
+  {
+    guard: "acesso: limiter de login",
+    name: "limiter com valor que vira NaN",
+    kind: "esperto",
+    // A variável está DEFINIDA e parece configurada. Se o parser não tratasse
+    // o inválido, o limite viraria NaN e toda comparação seria falsa — o
+    // limiter desligado em silêncio, com a configuração parecendo presente.
+    // Aqui o esperado é o INVERSO: a guarda deve continuar VERDE, porque a
+    // política cai no default. Ver `expectGreen`.
+    env: { LOGIN_RATE_LIMIT_MAX: "abc" },
+    expect: "limiter de login 5 tentativas",
+    expectGreen: true,
+  },
+];
 
 /** Serviços que precisam existir e estar protegidos. */
 const REQUIRED_SERVICES = ["traefik", "postgres", "backend", "frontend"] as const;

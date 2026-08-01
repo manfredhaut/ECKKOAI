@@ -32,3 +32,10 @@ cadastro é só completar o nome da empresa em "Minha Assinatura".
 **Em quais idiomas o app funciona?**
 Português (pt-BR) e inglês (en), alternáveis pelos botões no topo de qualquer
 tela.
+
+**Quantos vídeos posso gerar por mês?**
+Depende do plano. O Free inclui 2 vídeos por mês, 10 roteiros por mês e
+1 avatar por mês. O Pro sobe para 20 vídeos por mês, 60 roteiros por mês e
+5 avatares por mês, e o Business para 50 vídeos por mês, 200 roteiros por mês
+e 20 avatares por mês. Todo plano tem teto — quando o limite do mês acaba, dá
+para esperar a renovação ou comprar créditos avulsos em "Minha Assinatura".

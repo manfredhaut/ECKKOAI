@@ -18,6 +18,50 @@
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import type { Mutant } from "./mutants.js";
+
+/**
+ * Os dois "espertos" aqui são os defeitos REAIS que esta guarda teve, e é por
+ * isso que eles estão congelados: os dois passaram verde quando descobertos.
+ */
+export const MUTANTS: Mutant[] = [
+  {
+    guard: "log de vendor",
+    name: "função com fetch deixa de registrar",
+    kind: "obvio",
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: `const data = await fetchJson(res, "HeyGen", "heygen.uploadAsset");`,
+    replace: `const data = (await res.json()) as any;`,
+    expect: "heygenUploadAsset() chama fetch() sem registrar",
+  },
+  {
+    guard: "log de vendor",
+    name: "helper esvaziado, chamada intacta",
+    kind: "esperto",
+    file: "backend/src/services/providers/voiceProvider.ts",
+    find: `  logVendorResponse({ context, vendor: "ElevenLabs", status: res.status, res, rawBody });\n`,
+    replace: "",
+    expect: "é aceito como prova de registro, mas ele mesmo não chama",
+  },
+  {
+    guard: "log de vendor",
+    name: "elisão esvaziada, palavra viva no comentário",
+    kind: "esperto",
+    file: "backend/src/services/providers/vendorResponseLog.ts",
+    find: `const ELIDE_KEY_PATTERN = /^(audio_base64|audio|alignment|normalized_alignment)$/i;`,
+    replace: `const ELIDE_KEY_PATTERN = /^(nada_a_elidir)$/i;`,
+    expect: `ELIDE_KEY_PATTERN não cobre mais "audio_base64"`,
+  },
+  {
+    guard: "log de vendor",
+    name: "teto de bytes por campo desativado",
+    kind: "esperto",
+    file: "backend/src/services/providers/vendorResponseLog.ts",
+    find: "const MAX_FIELD_BYTES = 2048;",
+    replace: "const MAX_FIELD_BYTES = Number.POSITIVE_INFINITY;",
+    expect: "MAX_FIELD_BYTES",
+  },
+];
 
 export interface VendorLogCheckResult {
   failures: string[];
@@ -161,6 +205,25 @@ export async function checkVendorLogPolicy(repoRoot: string): Promise<VendorLogC
           "Uma fala de 3 segundos são ~50 KB de base64 por geração indo para o log, onde ninguém consegue " +
           "lê-los e onde não deveriam estar.",
       );
+    }
+    // A retaguarda por tamanho é o que protege quando a lista de nomes erra —
+    // e a lista É suposição, nenhum daqueles campos foi visto numa resposta
+    // real. Um teto infinito desliga a retaguarda sem apagar uma linha sequer.
+    const tetoConst = /const\s+MAX_FIELD_BYTES\s*=\s*(.+)/.exec(src);
+    if (!tetoConst) {
+      failures.push(
+        `log de vendor: ${logModule} não define mais MAX_FIELD_BYTES. Sem teto por tamanho, a elisão ` +
+          "depende de acertar o NOME do campo — e os nomes de hoje são suposição tirada da documentação.",
+      );
+    } else {
+      const valor = Number(tetoConst[1].replace(/[^0-9_]/g, "").replace(/_/g, ""));
+      if (!Number.isFinite(valor) || valor <= 0 || valor > 16_384) {
+        failures.push(
+          `log de vendor: MAX_FIELD_BYTES = ${tetoConst[1].trim()} não protege nada. O maior campo ` +
+            "legítimo observado numa resposta real tem 519 caracteres; um teto ausente, infinito ou " +
+            "grande demais deixa payload inteiro entrar no log.",
+        );
+      }
     }
     if (!/logVendorBinaryResponse/.test(src)) {
       failures.push(

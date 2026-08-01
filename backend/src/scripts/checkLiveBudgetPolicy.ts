@@ -11,6 +11,7 @@
  * A verificação exercita o contador REAL e lê a mensagem REAL. Testar a
  * mensagem importa tanto quanto testar o número: o número já estava certo.
  */
+import type { Mutant } from "./mutants.js";
 import {
   LiveBudgetExhaustedError,
   consumeLiveGeneration,
@@ -21,6 +22,105 @@ import {
 export interface LiveBudgetCheckResult {
   failures: string[];
   notes: string[];
+}
+
+export const MUTANTS: Mutant[] = [
+  {
+    guard: "teto: mensagem explica o consumo",
+    name: "mensagem deixa de nomear o que consumiu",
+    kind: "obvio",
+    file: "backend/src/services/providers/liveGuard.ts",
+    find: "`O que consumiu o teto, em ordem: ${consumedBy.length > 0 ? consumedBy.join(\" → \") : \"(nada registrado nesta sessão)\"}. ` +",
+    replace: "",
+    expect: "a mensagem não diz que a CLONAGEM DE VOZ consumiu a cota",
+  },
+  {
+    guard: "teto: conta voz e vídeo juntas",
+    name: "voz deixa de consumir o teto",
+    kind: "esperto",
+    file: "backend/src/services/providers/voiceProvider.ts",
+    // O teto continua existindo, com o mesmo default, e a geração de vídeo
+    // continua respeitando-o. Só a VOZ sai da conta — que é exatamente a
+    // confusão que este bloco existe para impedir, e o número por si só
+    // (1/1) continuaria parecendo certo.
+    find: `  const budget = consumeLiveGeneration("clonagem de voz");`,
+    replace: `  const budget = { allowed: true, used: 0, max: 1 };`,
+    expect: "teto",
+  },
+  {
+    guard: "portão de treino",
+    name: "portão removido",
+    kind: "obvio",
+    file: "backend/src/routes/videos.ts",
+    find: `if (avatar.provider_status === "processing") {`,
+    replace: "if (false) {",
+    expect: "não barra mais avatar com provider_status",
+  },
+  {
+    guard: "portão de treino",
+    name: "portão presente, comparando com valor que nunca ocorre",
+    kind: "esperto",
+    file: "backend/src/routes/videos.ts",
+    // A condição continua lá, com a mesma forma. Só o valor comparado muda
+    // para um que o normalizador nunca produz, então nada é barrado.
+    find: `if (avatar.provider_status === "processing") {`,
+    replace: `if (avatar.provider_status === "unknown") {`,
+    expect: "não barra mais avatar com provider_status",
+  },
+];
+
+/**
+ * Quem PRECISA consumir o teto, e como se reconhece isso no fonte.
+ *
+ * Existe porque o arnês de mutação flagrou o buraco: as asserções abaixo
+ * exercitam `consumeLiveGeneration` diretamente, então continuavam verdes
+ * quando `cloneVoice` deixava de chamá-la. O contador seguia perfeito e o
+ * sistema, desprotegido — e a mensagem continuava afirmando que o teto conta
+ * voz e vídeo juntas.
+ */
+const CHAMADORES_DO_TETO: { file: string; fn: string; operacao: string }[] = [
+  {
+    file: "backend/src/services/providers/voiceProvider.ts",
+    fn: "cloneVoice",
+    operacao: "clonagem de voz",
+  },
+  {
+    file: "backend/src/services/providers/avatarProvider.ts",
+    fn: "generateVideo",
+    operacao: "geração de vídeo",
+  },
+];
+
+export async function checkLiveBudgetCallers(repoRoot: string): Promise<LiveBudgetCheckResult> {
+  const { readFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const failures: string[] = [];
+  const notes: string[] = [];
+
+  for (const alvo of CHAMADORES_DO_TETO) {
+    let source: string;
+    try {
+      source = await readFile(path.join(repoRoot, alvo.file), "utf-8");
+    } catch {
+      failures.push(`teto: não consegui ler ${alvo.file} — verificador cego é pior que reprovar.`);
+      continue;
+    }
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+    const chamada = new RegExp(`consumeLiveGeneration\\(\\s*["'\`]${alvo.operacao}["'\`]`);
+    if (!chamada.test(code)) {
+      failures.push(
+        `teto: ${alvo.file} → ${alvo.fn}() não consome mais o teto com a operação "${alvo.operacao}". ` +
+          "O contador continuaria correto e a mensagem continuaria dizendo que o teto conta voz e vídeo " +
+          "juntas — verdade sobre o mecanismo, mentira sobre o sistema. Em live isso libera uma chamada " +
+          "tarifada que a trava deveria ter barrado.",
+      );
+    }
+  }
+
+  notes.push(
+    `teto: ${CHAMADORES_DO_TETO.length} caminho(s) tarifado(s) confirmado(s) consumindo o teto (${CHAMADORES_DO_TETO.map((c) => c.operacao).join(", ")})`,
+  );
+  return { failures, notes };
 }
 
 export function checkLiveBudgetPolicy(): LiveBudgetCheckResult {
@@ -74,6 +174,13 @@ export function checkLiveBudgetPolicy(): LiveBudgetCheckResult {
     notes.push(
       "teto: com limite 1, a voz consome e o vídeo é recusado — e a mensagem nomeia a voz, o dono do limite e a saída",
     );
+
+    // Provado pelo arnês de mutação (bloco GUARDAS-1): tudo acima exercita
+    // `consumeLiveGeneration` DIRETAMENTE, e por isso continuava verde quando
+    // `cloneVoice` deixava de chamá-la. A mensagem seguia dizendo que o teto
+    // conta voz e vídeo juntas — verdade sobre o contador, mentira sobre o
+    // sistema. Testar o mecanismo não é testar quem o usa.
+    void 0;
   } finally {
     // Deixar o contador sujo faria a próxima operação do processo ser recusada
     // sem motivo. O check não pode mudar o estado do que ele verifica.
