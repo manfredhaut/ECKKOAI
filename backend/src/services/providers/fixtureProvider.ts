@@ -32,6 +32,21 @@ export const FIXTURE_VIDEO_FILE = "simulated-video.mp4";
 export const FIXTURE_AUDIO_FILE = "simulated-speech.mp3";
 
 /**
+ * Duração real dos artefatos de fixture, em segundos, conferida com `ffprobe`.
+ *
+ * Existe para que a simulação declare a duração do que entrega, como a HeyGen
+ * faz (`data.duration`, medido no LIVE-1). Sem isso, o caminho da duração real
+ * só seria exercitável gastando dinheiro — e o defeito que ele corrige é
+ * justamente de medição de custo.
+ *
+ * Constante, e não leitura do arquivo: extrair duração de um mp4 exigiria um
+ * parser, e o número muda apenas quando alguém regenera a fixture com ffmpeg.
+ * Se a fixture for trocada, este valor tem de ser trocado junto.
+ */
+export const FIXTURE_VIDEO_DURATION_SECONDS = 5;
+export const FIXTURE_AUDIO_DURATION_SECONDS = 3;
+
+/**
  * Estado dos jobs simulados, em memória.
  *
  * Em memória de propósito: um job simulado não deve sobreviver a um
@@ -74,7 +89,15 @@ export function trainAvatarFixture(): TrainAvatarResult {
 export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoResult {
   const providerJobId = `fixture-${randomUUID()}`;
   jobs.set(providerJobId, { tenantId: input.tenantId, startedAt: Date.now() });
-  return { providerJobId };
+  // Em simulação a síntese não acontece (generateVideo devolve antes de
+  // requireAudio), então a duração do áudio é a da fixture de voz. Vai como
+  // `tts_timestamps` porque é o papel que ela cumpre no fluxo: a retaguarda
+  // usada quando o fornecedor não declara duração.
+  return {
+    providerJobId,
+    audioDurationSeconds: FIXTURE_AUDIO_DURATION_SECONDS,
+    audioDurationSource: "tts_timestamps",
+  };
 }
 
 export async function pollVideoJobFixture(jobId: string): Promise<PollResult> {
@@ -97,7 +120,10 @@ export async function pollVideoJobFixture(jobId: string): Promise<PollResult> {
   const buffer = await readFixture(FIXTURE_VIDEO_FILE);
   const outputUrl = await saveUpload(job.tenantId, buffer, "simulado.mp4");
   jobs.delete(jobId);
-  return { status: "ready", outputUrl };
+  // A duração vai junto, como a HeyGen faz: é a do arquivo realmente entregue,
+  // não a que foi pedida na tela. É o que torna o caminho da duração real
+  // exercitável sem gastar cota.
+  return { status: "ready", outputUrl, durationSeconds: FIXTURE_VIDEO_DURATION_SECONDS };
 }
 
 export function checkAvatarConnectionFixture(): void {

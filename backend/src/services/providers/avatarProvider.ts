@@ -77,16 +77,47 @@ export interface GenerateVideoInput {
   audioTreatmentTargetLufs: number;
 }
 
+/**
+ * De onde saiu a duração usada para medir consumo.
+ *
+ * `vendor_response` é o fornecedor dizendo quanto durou o que ele entregou —
+ * a única fonte que não é nossa. `tts_timestamps` é a duração medida pelo
+ * ElevenLabs no áudio que MANDAMOS, boa mas indireta (o vídeo pode ter
+ * silêncio de sobra nas pontas). `requested` é o que o cliente pediu na tela:
+ * não é medição de nada, e é o que estava sendo gravado como se fosse.
+ */
+export type DurationSource = "vendor_response" | "tts_timestamps" | "requested";
+
 export interface GenerateVideoResult {
   providerJobId: string;
+  /** Duração do áudio sintetizado, quando pôde ser determinada. */
+  audioDurationSeconds?: number | null;
+  audioDurationSource?: DurationSource | null;
 }
 
 export type PollResult =
   | { status: "processing" }
-  | { status: "ready"; outputUrl: string }
+  | {
+      status: "ready";
+      outputUrl: string;
+      /**
+       * Duração que o FORNECEDOR declarou para o vídeo pronto. Medido no
+       * LIVE-1: a HeyGen devolve `data.duration` (3,36506 para um vídeo que o
+       * ffprobe mediu em 3,360) — ou seja, é confiável e é a melhor fonte
+       * disponível. Fica opcional porque não se sabe se a D-ID devolve algo
+       * equivalente.
+       */
+      durationSeconds?: number | null;
+    }
   | { status: "error"; errorMessage: string };
 
-async function requireAudio(input: GenerateVideoInput): Promise<Buffer> {
+interface SynthesizedAudio {
+  buffer: Buffer;
+  durationSeconds: number | null;
+  source: DurationSource | null;
+}
+
+async function requireAudio(input: GenerateVideoInput): Promise<SynthesizedAudio> {
   if (!input.elevenLabsApiKey || !input.voiceId) {
     throw new AvatarProviderError(
       "No cloned voice available — connect ElevenLabs in Settings and finish avatar setup with a reference recording before generating a video.",
@@ -116,10 +147,21 @@ async function requireAudio(input: GenerateVideoInput): Promise<Buffer> {
     actualSource: synthesized.source,
   });
 
-  return processVoiceAudio(input.tenantId, synthesized.audio, {
+  const buffer = await processVoiceAudio(input.tenantId, synthesized.audio, {
     enabled: input.audioTreatmentEnabled,
     targetLufs: input.audioTreatmentTargetLufs,
   });
+
+  // A duração sobe junto com o áudio porque quem registra o consumo é o laço
+  // de polling, noutra requisição — sem carregá-la até lá, a fonte (b) do
+  // LIVE-2 seria inalcançável e sobraria só o que o fornecedor quisesse dizer.
+  return {
+    buffer,
+    durationSeconds: synthesized.durationSeconds,
+    // `source` do ElevenLabs distingue medição de estimativa por bitrate;
+    // só a medição por timestamps vale como fonte de consumo.
+    source: synthesized.source === "elevenlabs_timestamps" ? "tts_timestamps" : null,
+  };
 }
 
 /**
@@ -250,7 +292,7 @@ async function pollAvatarStatusHeygen(apiKey: string, avatarId: string): Promise
 
 async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateVideoResult> {
   const audio = await requireAudio(input);
-  const audioAssetId = await heygenUploadAsset(input.apiKey, audio, "audio/mpeg");
+  const audioAssetId = await heygenUploadAsset(input.apiKey, audio.buffer, "audio/mpeg");
 
   let res: Response;
   try {
@@ -272,7 +314,11 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
   if (!videoId) {
     throw new AvatarProviderError(unexpectedShapeMessage("heygen.createVideo", "data.video_id", data));
   }
-  return { providerJobId: videoId };
+  return {
+    providerJobId: videoId,
+    audioDurationSeconds: audio.durationSeconds,
+    audioDurationSource: audio.source,
+  };
 }
 
 async function pollHeygenVideo(apiKey: string, jobId: string): Promise<PollResult> {
@@ -301,7 +347,18 @@ async function pollHeygenVideo(apiKey: string, jobId: string): Promise<PollResul
     return { status: "error", errorMessage: contractMismatch("heygen.pollVideo", "data.video_url", data) };
   }
 
-  if (status === "completed" && videoUrl) return { status: "ready", outputUrl: videoUrl };
+  if (status === "completed" && videoUrl) {
+    // Medido no LIVE-1: `data.duration` = 3,36506 num vídeo que o ffprobe deu
+    // 3,360. É a duração do que foi REALMENTE entregue, e é a fonte preferida
+    // para medir consumo — o `duration_seconds` da requisição é só o que o
+    // cliente escolheu na tela.
+    const vendorDuration = Number(data?.data?.duration ?? data?.duration);
+    return {
+      status: "ready",
+      outputUrl: videoUrl,
+      durationSeconds: Number.isFinite(vendorDuration) && vendorDuration > 0 ? vendorDuration : null,
+    };
+  }
   if (status === "failed" || status === "error") {
     return { status: "error", errorMessage: data?.data?.error?.message ?? `HeyGen job failed: ${JSON.stringify(data)}` };
   }
@@ -316,10 +373,11 @@ async function checkHeygenConnection(apiKey: string): Promise<void> {
     logProviderNetworkError("avatarProvider.heygen", err);
     throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
   }
-  if (!res.ok) {
-    const body = await res.text();
-    throw new AvatarProviderError(`HeyGen API error (${res.status}): ${body}`);
-  }
+  // Passa por fetchJson como as demais: testar a chave é uma chamada ao
+  // fornecedor como qualquer outra, e era a única do arquivo sem registro de
+  // resposta. Quando ela falha, o corpo é justamente o que diz se o problema é
+  // a chave, a cota ou o endpoint.
+  await fetchJson(res, "HeyGen", "heygen.remainingQuota");
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +426,7 @@ async function trainAvatarDid(apiKey: string, photoBuffer: Buffer): Promise<Trai
 
 async function generateVideoDid(input: GenerateVideoInput): Promise<GenerateVideoResult> {
   const audio = await requireAudio(input);
-  const audioUrl = await didUpload(input.apiKey, audio, "script.mp3", "audio/mpeg", "audios");
+  const audioUrl = await didUpload(input.apiKey, audio.buffer, "script.mp3", "audio/mpeg", "audios");
 
   let res: Response;
   try {
@@ -387,7 +445,11 @@ async function generateVideoDid(input: GenerateVideoInput): Promise<GenerateVide
   const data = await fetchJson(res, "D-ID", "did.createTalk");
   const talkId = data?.id;
   if (!talkId) throw new AvatarProviderError(unexpectedShapeMessage("did.createTalk", "id", data));
-  return { providerJobId: talkId };
+  return {
+    providerJobId: talkId,
+    audioDurationSeconds: audio.durationSeconds,
+    audioDurationSource: audio.source,
+  };
 }
 
 async function pollDidTalk(apiKey: string, jobId: string): Promise<PollResult> {
@@ -405,7 +467,18 @@ async function pollDidTalk(apiKey: string, jobId: string): Promise<PollResult> {
   if (data?.status === "done" && !data?.result_url) {
     return { status: "error", errorMessage: contractMismatch("did.pollTalk", "result_url", data) };
   }
-  if (data?.status === "done" && data?.result_url) return { status: "ready", outputUrl: data.result_url };
+  if (data?.status === "done" && data?.result_url) {
+    // NÃO VERIFICADO: nenhuma resposta real da D-ID foi observada, então não se
+    // sabe se ela declara duração nem sob que nome. `duration` é o palpite
+    // natural; quando não vier, sobra a fonte (b) — que é o comportamento
+    // correto, e não uma falha.
+    const vendorDuration = Number(data?.duration);
+    return {
+      status: "ready",
+      outputUrl: data.result_url,
+      durationSeconds: Number.isFinite(vendorDuration) && vendorDuration > 0 ? vendorDuration : null,
+    };
+  }
   if (data?.status === "error" || data?.status === "rejected") {
     return { status: "error", errorMessage: data?.error?.description ?? `D-ID talk failed: ${JSON.stringify(data)}` };
   }
@@ -420,10 +493,7 @@ async function checkDidConnection(apiKey: string): Promise<void> {
     logProviderNetworkError("avatarProvider.did", err);
     throw new AvatarProviderError(`Could not reach D-ID API: ${describeNetworkError(err)}`);
   }
-  if (!res.ok) {
-    const body = await res.text();
-    throw new AvatarProviderError(`D-ID API error (${res.status}): ${body}`);
-  }
+  await fetchJson(res, "D-ID", "did.credits");
 }
 
 // ---------------------------------------------------------------------------

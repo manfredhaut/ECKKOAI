@@ -3,6 +3,7 @@
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { isFixtureMode } from "./providerMode.js";
 import { consumeLiveGeneration, LiveBudgetExhaustedError } from "./liveGuard.js";
+import { logVendorBinaryResponse, logVendorResponse } from "./vendorResponseLog.js";
 import {
   checkVoiceConnectionFixture,
   cloneVoiceFixture,
@@ -12,6 +13,33 @@ const ELEVENLABS_ADD_VOICE_URL = "https://api.elevenlabs.io/v1/voices/add";
 const ELEVENLABS_VOICES_URL = "https://api.elevenlabs.io/v1/voices";
 
 export class VoiceProviderError extends Error {}
+
+/**
+ * Lê o corpo como texto, REGISTRA e só então interpreta — o mesmo contrato do
+ * `fetchJson()` do avatarProvider, e pela mesma razão.
+ *
+ * Até o bloco LIVE-2 este arquivo fazia `res.json()` direto, então nenhuma
+ * resposta do ElevenLabs jamais foi registrada. Medido na passada live: a
+ * geração gravou 50 caracteres de voz em `provider_usage` e produziu ZERO
+ * eventos `vendor_response` de voz. Os dois caminhos que gastam dinheiro no
+ * ElevenLabs eram exatamente os que não deixavam rastro do que o fornecedor
+ * respondeu — o oposto do que o LOG-1 foi construído para garantir.
+ */
+async function readVoiceJson(res: Response, context: string): Promise<any> {
+  const rawBody = await res.text();
+  logVendorResponse({ context, vendor: "ElevenLabs", status: res.status, res, rawBody });
+
+  if (!res.ok) {
+    throw new VoiceProviderError(`ElevenLabs API error (${res.status}): ${rawBody}`);
+  }
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    throw new VoiceProviderError(
+      `${context}: ElevenLabs respondeu ${res.status} com corpo que não é JSON: ${rawBody}`,
+    );
+  }
+}
 
 export interface CloneVoiceInput {
   apiKey: string;
@@ -50,12 +78,7 @@ export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResu
     throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
   }
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new VoiceProviderError(`ElevenLabs API error (${res.status}): ${body}`);
-  }
-
-  const data = (await res.json()) as { voice_id?: string };
+  const data = (await readVoiceJson(res, "elevenlabs.cloneVoice")) as { voice_id?: string };
   if (!data.voice_id) throw new VoiceProviderError("ElevenLabs API returned no voice_id");
   return { voiceId: data.voice_id };
 }
@@ -75,10 +98,7 @@ export async function checkElevenLabsConnection(apiKey: string): Promise<void> {
     logProviderNetworkError("voiceProvider.checkElevenLabsConnection", err);
     throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
   }
-  if (!res.ok) {
-    const body = await res.text();
-    throw new VoiceProviderError(`ElevenLabs API error (${res.status}): ${body}`);
-  }
+  await readVoiceJson(res, "elevenlabs.listVoices");
 }
 
 export interface SynthesizedSpeech {
@@ -124,12 +144,31 @@ export async function synthesizeSpeech(
     throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
   }
 
+  // Registrado nos DOIS desfechos: um 4xx aqui não é erro fatal (o endpoint
+  // com timestamps pode simplesmente não estar liberado para o plano), e é
+  // justamente esse corpo que explica por que caímos no fallback.
+  const rawTimestamps = await res.text();
+  logVendorResponse({
+    context: "elevenlabs.synthesizeWithTimestamps",
+    vendor: "ElevenLabs",
+    status: res.status,
+    res,
+    rawBody: rawTimestamps,
+  });
+
   if (res.ok) {
-    const data = (await res.json()) as {
+    let data: {
       audio_base64?: string;
       alignment?: { character_end_times_seconds?: number[] };
       normalized_alignment?: { character_end_times_seconds?: number[] };
     };
+    try {
+      data = JSON.parse(rawTimestamps);
+    } catch {
+      throw new VoiceProviderError(
+        `elevenlabs.synthesizeWithTimestamps: ElevenLabs respondeu ${res.status} com corpo que não é JSON.`,
+      );
+    }
     if (data.audio_base64) {
       const ends =
         data.alignment?.character_end_times_seconds ??
@@ -158,11 +197,29 @@ export async function synthesizeSpeech(
     throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
   }
   if (!plain.ok) {
+    // Falhou: o corpo é texto de erro, e vai INTEIRO para o log — aqui não há
+    // áudio nenhum a proteger, e é o corpo que diz o motivo.
     const body = await plain.text();
+    logVendorResponse({
+      context: "elevenlabs.synthesizePlain",
+      vendor: "ElevenLabs",
+      status: plain.status,
+      res: plain,
+      rawBody: body,
+    });
     throw new VoiceProviderError(`ElevenLabs API error (${plain.status}): ${body}`);
   }
 
   const audio = Buffer.from(await plain.arrayBuffer());
+  // Deu certo: o corpo É o mp3. Só tamanho e tipo vão ao log — ver
+  // logVendorBinaryResponse.
+  logVendorBinaryResponse({
+    context: "elevenlabs.synthesizePlain",
+    vendor: "ElevenLabs",
+    status: plain.status,
+    res: plain,
+    byteLength: audio.length,
+  });
   return {
     audio,
     durationSeconds: Number(((audio.length * 8) / DEFAULT_MP3_BITRATE_BPS).toFixed(2)),

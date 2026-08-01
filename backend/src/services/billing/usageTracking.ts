@@ -3,13 +3,26 @@ import { pool } from "../../db/pool.js";
 export type MeteredProvider = "avatar" | "voice" | "script";
 export type MeteredUnitType = "seconds" | "characters" | "tokens_in" | "tokens_out";
 
+/** Ver DurationSource em avatarProvider.ts — mesmo vocabulário, sem acoplar. */
+export type UnitSource = "vendor_response" | "tts_timestamps" | "requested";
+
 export interface RecordUsageInput {
   tenantId: string;
   videoId?: string | null;
   provider: MeteredProvider;
   vendor: string;
   unitType: MeteredUnitType;
+  /** O que de fato foi consumido — medido, quando há como medir. */
   unitCount: number;
+  /**
+   * O que o cliente PEDIU, quando difere do consumido. Guardado ao lado, e
+   * nunca no lugar: sem os dois números não há como responder o quanto a
+   * estimativa erra, que é a pergunta aberta sobre provider_cost_rates.
+   * Medido no LIVE-1: pedido 15 s, real 3,372 s.
+   */
+  requestedUnitCount?: number | null;
+  /** De onde veio `unitCount`. Sem isso, medido e estimado ficam iguais. */
+  unitSource?: UnitSource | null;
 }
 
 // Writes one row to provider_usage (see migration 023) per billable
@@ -43,8 +56,9 @@ export async function recordProviderUsage(input: RecordUsageInput): Promise<void
 
     await pool.query(
       `INSERT INTO provider_usage
-         (tenant_id, video_id, provider, vendor, unit_type, unit_count, rate_snapshot_cents_per_unit, estimated_cost_cents)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         (tenant_id, video_id, provider, vendor, unit_type, unit_count,
+          requested_unit_count, unit_source, rate_snapshot_cents_per_unit, estimated_cost_cents)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         input.tenantId,
         input.videoId ?? null,
@@ -52,6 +66,8 @@ export async function recordProviderUsage(input: RecordUsageInput): Promise<void
         input.vendor,
         input.unitType,
         input.unitCount,
+        input.requestedUnitCount ?? null,
+        input.unitSource ?? null,
         rate,
         estimatedCostCents,
       ],

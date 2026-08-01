@@ -44,13 +44,44 @@ const SECRET_KEY_PATTERN = /(api[_-]?key|secret|password|authorization|access[_-
 
 const REDACTED = "***REDACTED***";
 
-/** Substitui valores de chaves sensíveis, preservando a forma do objeto. */
+/**
+ * Chaves cujo valor é VOLUMOSO e não tem valor diagnóstico nenhum em claro.
+ *
+ * Existe por causa do ElevenLabs: `audio_base64` traz o mp3 inteiro dentro do
+ * JSON, e uma fala de 3 segundos já são ~50 KB de base64. Registrar isso não é
+ * só desperdício de disco — é um log que ninguém consegue ler, onde o campo
+ * que importa fica soterrado, e é exatamente o oposto do que o LOG-1 existe
+ * para fazer. O que se preserva é o que responde as perguntas reais: veio
+ * áudio? quantos bytes? Os bytes em si não dizem nada a quem depura.
+ *
+ * `alignment`/`normalized_alignment` entram pelo mesmo motivo de volume: são
+ * arrays com um timestamp POR CARACTERE. O valor deles é lido pelo código
+ * (é a fonte da duração real), não pelo humano que lê o log.
+ */
+const ELIDE_KEY_PATTERN = /^(audio_base64|audio|alignment|normalized_alignment)$/i;
+
+/** Descreve um valor volumoso sem registrar o conteúdo. */
+function elide(value: unknown): string {
+  if (typeof value === "string") return `<elidido: string de ${value.length} chars>`;
+  if (Array.isArray(value)) return `<elidido: array de ${value.length} itens>`;
+  if (value && typeof value === "object") {
+    return `<elidido: objeto{${Object.keys(value as object).join(", ")}}>`;
+  }
+  return `<elidido: ${typeof value}>`;
+}
+
+/**
+ * Substitui valores de chaves sensíveis e elide os volumosos, preservando a
+ * forma do objeto.
+ */
 function maskSecrets(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(maskSecrets);
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = SECRET_KEY_PATTERN.test(k) ? REDACTED : maskSecrets(v);
+      if (SECRET_KEY_PATTERN.test(k)) out[k] = REDACTED;
+      else if (ELIDE_KEY_PATTERN.test(k)) out[k] = elide(v);
+      else out[k] = maskSecrets(v);
     }
     return out;
   }
@@ -191,6 +222,48 @@ export function logVendorResponse(input: {
     );
   } catch (err) {
     console.error("logVendorResponse falhou (seguindo mesmo assim)", err);
+  }
+}
+
+/**
+ * Registra uma resposta cujo corpo é BINÁRIO — áudio, vídeo, imagem.
+ *
+ * Existe porque o endpoint simples de text-to-speech do ElevenLabs devolve o
+ * mp3 cru, sem envelope JSON. Passar isso por `logVendorResponse` gravaria os
+ * bytes do áudio no log, que é justamente o que não pode acontecer: o log
+ * viraria ilegível, cresceria em megabytes por geração, e ainda por cima
+ * guardaria a voz do cliente em texto de log — um dado que não temos motivo
+ * para reter e que ninguém consegue usar para depurar.
+ *
+ * O que se registra é o que responde às perguntas de diagnóstico: chegou algo?
+ * quantos bytes? de que tipo? com que status? O conteúdo, nunca.
+ */
+export function logVendorBinaryResponse(input: {
+  context: string;
+  vendor: string;
+  status: number;
+  res: Response;
+  byteLength: number;
+}): void {
+  try {
+    console.log(
+      JSON.stringify({
+        event: "vendor_response",
+        context: input.context,
+        vendor: input.vendor,
+        status: input.status,
+        ok: input.res.ok,
+        headers: safeHeaders(input.res),
+        bodyBytes: input.byteLength,
+        bodyForm: "binario",
+        // Sem campo `body`: não há o que registrar de um corpo binário além do
+        // que já está acima. Um resumo textual aqui só daria a impressão de
+        // que o conteúdo foi inspecionado.
+        body: `<binário não registrado: ${input.byteLength} bytes>`,
+      }),
+    );
+  } catch (err) {
+    console.error("logVendorBinaryResponse falhou (seguindo mesmo assim)", err);
   }
 }
 

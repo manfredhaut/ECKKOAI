@@ -21,6 +21,7 @@ import { checkPlatformKeyPolicy } from "./checkPlatformKeyPolicy.js";
 import { checkRefundPolicy } from "./checkRefundPolicy.js";
 import { checkPollPolicy } from "./checkPollPolicy.js";
 import { checkAvatarTrainingGate, checkLiveBudgetPolicy } from "./checkLiveBudgetPolicy.js";
+import { checkVendorLogPolicy } from "./checkVendorLogPolicy.js";
 import {
   DENY_ENFORCED_FOR,
   DENY_TERMS,
@@ -236,6 +237,11 @@ async function main(): Promise<void> {
   const gateResult = await checkAvatarTrainingGate(process.env.REPO_ROOT ?? "/repo");
   gateResult.failures.forEach((f) => failures.push(f));
   gateResult.notes.forEach((n) => note(n));
+
+  // --- 15. toda chamada a fornecedor registra a resposta bruta ------------
+  const vendorLogResult = await checkVendorLogPolicy(process.env.REPO_ROOT ?? "/repo");
+  vendorLogResult.failures.forEach((f) => failures.push(f));
+  vendorLogResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

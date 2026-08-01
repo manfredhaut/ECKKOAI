@@ -58,17 +58,42 @@ function pollJob(
           result.outputUrl,
         ]);
         await createNotification(tenantId, "video_ready", "Your video is ready.");
-        // duration_seconds is the requested length, not a value the vendor
-        // confirms back — the closest available proxy for billed seconds
-        // (see CLAUDE.md / billing plan, Fase 1: neither HeyGen nor D-ID's
-        // poll response is parsed for an actual rendered duration today).
+
+        // Duração REAL, com a fonte declarada. A ordem importa e não é
+        // arbitrária:
+        //
+        //  (a) o que o FORNECEDOR declarou para o vídeo pronto. É a única
+        //      fonte que não é nossa, e foi medida no LIVE-1: a HeyGen manda
+        //      `data.duration` = 3,36506 num vídeo que o ffprobe deu 3,360.
+        //  (b) a duração do áudio, medida pelo ElevenLabs nos timestamps.
+        //      Boa, mas indireta — o vídeo pode ter sobra nas pontas.
+        //  (c) o que o cliente pediu na tela. Não mede nada, e era o que
+        //      estava sendo gravado como se medisse: pedimos 15 s para um
+        //      vídeo de 3,372 s, e a tabela registrou 15.
+        //
+        // O pedido continua gravado ao lado, sempre. Sem os dois números não
+        // há como saber o quanto a estimativa erra.
+        const audio = await pool.query<{ audio_duration_seconds: string | null; audio_duration_source: string | null }>(
+          "SELECT audio_duration_seconds, audio_duration_source FROM videos WHERE id = $1",
+          [videoId],
+        );
+        const audioSeconds = audio.rows[0]?.audio_duration_seconds;
+        const measured =
+          result.durationSeconds != null
+            ? { count: result.durationSeconds, source: "vendor_response" as const }
+            : audioSeconds != null
+              ? { count: Number(audioSeconds), source: "tts_timestamps" as const }
+              : { count: durationSeconds, source: "requested" as const };
+
         await recordProviderUsage({
           tenantId,
           videoId,
           provider: "avatar",
           vendor,
           unitType: "seconds",
-          unitCount: durationSeconds,
+          unitCount: measured.count,
+          requestedUnitCount: durationSeconds,
+          unitSource: measured.source,
         });
       } else if (result.status === "error") {
         clearInterval(interval);
@@ -240,7 +265,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      const { providerJobId } = await generateVideo({
+      const { providerJobId, audioDurationSeconds, audioDurationSource } = await generateVideo({
         apiKey: avatarCredential.apiKey,
         vendor: avatarCredential.vendor as AvatarVendor,
         providerAvatarId: avatar.provider_avatar_id,
@@ -251,7 +276,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         audioTreatmentEnabled: avatar.audio_treatment_enabled,
         audioTreatmentTargetLufs: Number(avatar.audio_treatment_target_lufs),
       });
-      await pool.query("UPDATE videos SET provider_job_id = $2 WHERE id = $1", [video.id, providerJobId]);
+      // A duração do áudio é gravada AGORA porque só agora ela é conhecida: o
+      // registro de consumo acontece no laço de polling, noutra requisição.
+      await pool.query(
+        "UPDATE videos SET provider_job_id = $2, audio_duration_seconds = $3, audio_duration_source = $4 WHERE id = $1",
+        [video.id, providerJobId, audioDurationSeconds ?? null, audioDurationSource ?? null],
+      );
       pollJob(
         video.id,
         req.tenantId,

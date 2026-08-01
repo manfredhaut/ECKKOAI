@@ -832,12 +832,20 @@ apareceria em live ou numa conversa com cliente.
    e é registrado no log de duração, mas **não** é o que vai para
    `provider_usage`. NÃO corrigido.
 
-**Três lacunas novas, medidas na passada live do LIVE-1 (2026-08-01), todas
-registradas e NENHUMA corrigida:**
+**Três lacunas novas, medidas na passada live do LIVE-1 (2026-08-01). As duas
+primeiras foram FECHADAS no LIVE-2; a terceira continua aberta:**
 
-1. **`provider_usage` grava a duração PEDIDA, não a real.** Ver o parágrafo
-   acima. Toda tela de custo por segundo herda o erro.
-2. **O LOG-1 não cobre o ElevenLabs.** A captura de resposta bruta vive em
+1. ~~**`provider_usage` grava a duração PEDIDA, não a real.**~~ **Fechada no
+   LIVE-2.** `unit_count` passou a ser a duração real, com `unit_source`
+   dizendo de onde veio e `requested_unit_count` guardando o pedido ao lado —
+   nunca no lugar, senão não haveria como medir o erro da estimativa. Ordem:
+   `vendor_response` (a HeyGen manda `data.duration`) → `tts_timestamps` (o
+   ElevenLabs mede o áudio) → `requested` (último recurso, e declarado como
+   tal). Migration `037`; linhas antigas ficaram marcadas `requested`.
+2. ~~**O LOG-1 não cobre o ElevenLabs.**~~ **Fechada no LIVE-2** — ver o bloco
+   próprio no fim. O texto abaixo fica como registro do que era.
+
+   A captura de resposta bruta vivia em
    `fetchJson()`, que é do `avatarProvider` — cobre as 4 chamadas HeyGen e as
    3 D-ID. `voiceProvider.ts` faz `fetch` direto e **nunca** chama
    `logVendorResponse`. Medido: a passada live registrou `voice/elevenlabs/
@@ -1363,6 +1371,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **LIVE-2** | **Voz entra no LOG-1 (sem bytes de áudio); `provider_usage` grava duração real e pedida lado a lado; guarda nova de registro de resposta. Ver abaixo.** |
 | 08-01 | **LIVE-1** | **Uma geração live com avatar existente: vídeo em ~54 s por US$ 0,15; quota reconciliada (60/dólar); formato real 1280×720 16:9 25 fps; 3 lacunas novas. Ambiente desarmado de volta para `fixture`.** |
 | 08-01 | **DEMO-4** | **Teto de sessão explica o que consumiu; avatar em treino é esperado e barra a geração. Ver abaixo.** |
 | 08-01 | **DEMO-3** | **Primeira passada live: custo real medido, teto de imagem por rota, teto de sessão deixa de se disfarçar de falha do fornecedor. Ver abaixo.** |
@@ -1490,6 +1499,64 @@ nível, e histórico da conversa. Um modelo não revela o que nunca recebeu; a
 regra nos prompts cobre o resto, que é o operador colando a chave no chat.
 
 ---
+
+### Bloco LIVE-2 — a voz entra no log e o consumo passa a ser medido (CONCLUÍDO)
+
+**1. `voiceProvider` registra a resposta bruta.** Ganhou `readVoiceJson()`, com
+o mesmo contrato do `fetchJson()` do avatarProvider: texto → log → parse.
+Cobre `cloneVoice`, `checkElevenLabsConnection` e os dois ramos de
+`synthesizeSpeech`. De passagem, `checkHeygenConnection` e `checkDidConnection`
+também passaram a registrar — eram as únicas do avatarProvider que ainda liam
+o corpo à mão.
+
+**O guardrail que define o desenho: áudio nunca vai para o log.**
+`audio_base64`, `audio`, `alignment` e `normalized_alignment` são **elididos**
+— o log guarda a forma e o tamanho, nunca o conteúdo. E o endpoint simples de
+TTS devolve mp3 cru, sem envelope JSON, então existe `logVendorBinaryResponse`,
+que registra status, cabeçalhos e bytes e **não** tem campo de corpo.
+
+*Medido, com `fetch` substituído (zero rede):* corpo real de **64.403 bytes**
+→ registro de **322 bytes**. A clonagem: **251 bytes**, com `api_key` saindo
+como `***REDACTED***`. Sem a elisão seriam ~64 KB **por geração**, num log que
+ninguém conseguiria ler.
+
+**2. `provider_usage` mede o que foi consumido.** Ver a lacuna 1 acima para a
+ordem das fontes e a migration. *Medido em fixture:* `real=5, pedida=15,
+unit_source=vendor_response` — 5 s é a duração real da fixture de vídeo, 15 s é
+o que foi pedido na tela.
+
+**3. Guarda nova** ([checkVendorLogPolicy.ts](backend/src/scripts/checkVendorLogPolicy.ts)):
+função que chama `fetch(` num módulo de vendor sem registrar a resposta
+reprova o build. Casa **13 funções** hoje — exportadas e privadas, porque é nas
+privadas que o `fetch` mora.
+
+**Ela nasceu com o defeito que existe para impedir, e isso é o registro mais
+útil deste bloco.** Ao provar que reprovava:
+
+- **Primeira tentativa: passou verde.** A guarda exigia que quem faz `fetch`
+  chamasse um helper (`readVoiceJson(`), mas não olhava o helper. Esvaziei o
+  log de dentro dele e nada acusou — treze funções descobertas de uma vez, sem
+  nenhuma delas mudar. Corrigido com uma checagem própria dos helpers.
+- **Segunda tentativa: passou verde de novo.** A verificação do guardrail
+  procurava `audio_base64` no arquivo inteiro, e a palavra continuava **no
+  comentário** que explica a elisão. Guarda satisfeita por comentário é pior
+  que guarda nenhuma, porque a prova de que ela funciona também passa.
+  Corrigido: comentários removidos antes de procurar, e a busca ancorada na
+  constante.
+
+Só depois disso as três provas reprovaram de verdade (saída 1) e o verde
+voltou ao restaurar: helper sem log, `ELIDE_KEY_PATTERN` esvaziada, e
+`heygenUploadAsset` trocando `fetchJson` por `res.json()`.
+
+**A moral, para a auditoria de guardas que continua pendente:** uma guarda só
+vale depois de vista reprovando. Duas de três verificações deste bloco nasceram
+inertes, e ambas *pareciam* corretas na leitura.
+
+**O que este bloco NÃO provou:** que o ElevenLabs real produz a forma de
+resposta simulada aqui (`audio_base64` + `alignment.character_end_times_seconds`)
+— nenhuma resposta real de voz foi observada até hoje, porque o LOG-1 não a
+cobria; e que a D-ID declara duração (`data.duration` é palpite, e quando não
+vier cai na fonte (b), como projetado).
 
 ## 9. Notas sobre alternância de conta
 
