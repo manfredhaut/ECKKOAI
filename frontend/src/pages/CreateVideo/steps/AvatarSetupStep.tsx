@@ -10,6 +10,7 @@ import { BACKGROUND_OPTIONS, DEFAULT_BACKGROUND_ID } from "../virtualBackground/
 import { DEFAULT_QUALITY } from "../imageQuality/applyQualityTreatment";
 import type { QualityOptions } from "../imageQuality/applyQualityTreatment";
 import { useFeature } from "../../../features/FeatureFlagContext";
+import { MAX_REFERENCE_VIDEO_BYTES, formatBytes, formatDuration } from "../../../uploadLimits";
 
 export function AvatarSetupStep({
   selectedAvatarId,
@@ -146,8 +147,26 @@ export function AvatarSetupStep({
     if (stream) recorder.start(stream);
   }
 
+  /**
+   * Recusa antes de enviar. Não substitui a checagem do servidor — que
+   * continua sendo a autoridade — mas evita subir dezenas de megabytes para
+   * receber um 413 no fim, que numa conexão ruim é a diferença entre um aviso
+   * imediato e vários minutos perdidos.
+   */
+  function rejectIfTooLarge(size: number): boolean {
+    if (size <= MAX_REFERENCE_VIDEO_BYTES) return false;
+    setActionError(
+      t("createVideo.avatarSetup.fileTooLarge", {
+        size: formatBytes(size),
+        max: formatBytes(MAX_REFERENCE_VIDEO_BYTES),
+      }),
+    );
+    return true;
+  }
+
   async function handleUploadRecording() {
     if (!draftAvatar || !recorder.recordedBlob) return;
+    if (rejectIfTooLarge(recorder.recordedBlob.size)) return;
     // Este é o passo que dispara treino de avatar e clonagem de voz — os
     // dois fornecedores externos ao mesmo tempo, e o ponto mais provável de
     // falha do fluxo inteiro.
@@ -164,6 +183,10 @@ export function AvatarSetupStep({
   async function handleReferenceFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !draftAvatar) return;
+    if (rejectIfTooLarge(file.size)) {
+      e.target.value = "";
+      return;
+    }
     await guard(async () => {
       const updated = await api.upload<Avatar>(
         `/avatars/${draftAvatar.id}/reference-video`,
@@ -545,6 +568,38 @@ export function AvatarSetupStep({
                     onChange={handleReferenceFileChange}
                   />
                 </div>
+              )}
+
+              {/* Contador durante a gravação. Um limite que só aparece no
+                  instante em que corta é indistinguível de um defeito. */}
+              {recorder.isRecording && (
+                <p style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>
+                  {t("createVideo.avatarSetup.recordingCounter", {
+                    elapsed: formatDuration(recorder.elapsedSeconds),
+                    max: formatDuration(recorder.maxSeconds),
+                    remaining: recorder.remainingSeconds,
+                  })}
+                </p>
+              )}
+
+              {/* Tamanho SEMPRE que houver gravação, não só quando estoura:
+                  é o número que explica um envio lento e o único jeito de
+                  comparar com o teto antes de tentar. */}
+              {recorder.recordedBlob && !draftAvatar.reference_video_url && (
+                <p
+                  className={recorder.isOverSizeLimit ? "alert-error" : "text-muted"}
+                  style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}
+                >
+                  {recorder.isOverSizeLimit
+                    ? t("createVideo.avatarSetup.recordingTooLarge", {
+                        size: formatBytes(recorder.recordedBlob.size),
+                        max: formatBytes(MAX_REFERENCE_VIDEO_BYTES),
+                      })
+                    : t("createVideo.avatarSetup.recordingSize", {
+                        size: formatBytes(recorder.recordedBlob.size),
+                        max: formatBytes(MAX_REFERENCE_VIDEO_BYTES),
+                      })}
+                </p>
               )}
 
               <div className="card-title" style={{ marginTop: 20 }}>

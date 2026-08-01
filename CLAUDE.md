@@ -1255,6 +1255,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **DEMO-2** | **Teto de upload do vídeo de referência: 100 MB só nessa rota, erro legível, validação no cliente e cap de gravação. Ver abaixo.** |
 | 08-01 | **DEMO-1** | **Caminho principal do MVP validado ponta a ponta em fixture; validação de artefato de vídeo; `preflight:live`. Ver abaixo.** |
 
 ---
@@ -1499,3 +1500,78 @@ exercita:
   dos dois ramos o HeyGen usa, não se sabe.
 - **Captura por câmera**, em qualquer passo. Bloqueada em toda sessão
   registrada. Só o usuário consegue validar.
+
+---
+
+### Bloco DEMO-2 — teto de upload do vídeo de referência (CONCLUÍDO)
+
+**Sintoma:** gravar pela câmera falhava com `413 request file too large` em
+`POST /avatars/:id/reference-video`.
+
+**Os três tetos, medidos antes de mudar qualquer coisa:**
+
+| Onde | Valor | Observação |
+|---|---|---|
+| `bodyLimit` do Fastify | **1.048.576 B (1 MiB)** | padrão do Fastify 4, nunca sobrescrito |
+| `fileSize` do `@fastify/multipart` | **1 MiB, herdado** | `index.js:52` faz `options.limits?.fileSize \|\| fastify.initialConfig.bodyLimit`, e `app.register(multipart)` sobe sem opções |
+| Traefik | **nenhum** | não há `buffering` nem `maxRequestBodyBytes` em `traefik/` |
+
+Era o segundo. Uma gravação de webcam passa de 1 MiB em poucos segundos.
+
+**O teto sobe SÓ nesta rota**, via `req.file({ limits: { fileSize } })` — não
+no registro do plugin. Subir globalmente valeria também para documentos e
+imagens de referência, que não precisam de nada perto disso, e um teto alto
+onde não é necessário é superfície de ataque de graça: qualquer rota de upload
+viraria um jeito barato de encher disco e memória. Valor em
+`REFERENCE_VIDEO_MAX_BYTES`, padrão 100 MB
+([uploadLimits.ts](backend/src/services/uploadLimits.ts)).
+
+**O estouro é tratado em DOIS pontos**, porque `@fastify/multipart` pode
+lançar tanto em `req.file()` quanto em `toBuffer()` (`index.js:379`, quando o
+stream já foi truncado). Tratar só o primeiro deixaria o caso comum — arquivo
+grande que começa a chegar normalmente — cair como 500.
+
+**Erro legível.** A frase crua não permite decidir nada: não diz quanto foi
+enviado nem quanto cabe, então quem recebe não sabe se corta 5 s ou 5 min.
+*Medido:* `413 {"error":"file_too_large","message":"O envio tem 105,8 MB e o
+limite é 100,0 MB. Grave um trecho mais curto ou envie um arquivo menor."}`.
+O `sentBytes` vem do `Content-Length` e inclui o cabeçalho multipart — é o
+tamanho do ENVIO, alguns bytes acima do arquivo; inventar precisão que não
+temos seria pior.
+
+**Validação no cliente, antes de enviar.** *Medido no navegador:* arquivo de
+105 MB entregue ao input → erro na tela com tamanho e limite, e **zero**
+requisições a `reference-video` (só polling de notificação). Não substitui o
+servidor, que continua sendo a autoridade — evita subir dezenas de MB para
+receber 413 no fim.
+
+**Cap de duração: 120 s, não 60 s.** O número foi escolhido pelo que os
+fornecedores precisam para dar qualidade, não por conforto: amostra curta
+piora perceptivelmente a clonagem de voz, e a qualidade melhora até cerca de
+1–2 min de fala limpa, estabilizando depois. A ~2,6 Mbps isso dá ~39 MB, com
+folga dentro dos 100 MB. Configurável em `MAX_RECORDING_SECONDS`.
+**Estes números vêm da orientação publicada dos fornecedores, não de medição
+nossa** — nenhum avatar deste projeto foi treinado com durações diferentes
+para comparar.
+
+O bitrate passou a ser declarado (2,5 Mbps vídeo / 128 kbps áudio). Não é
+compressão, é previsibilidade: o padrão do navegador varia muito por
+dispositivo, e com ele variando não dá para prometer que a duração máxima cabe
+no teto de tamanho.
+
+**Contador visível durante a gravação**, com parada automática no teto. Um
+limite que só aparece no instante em que corta é indistinguível de um defeito.
+
+**O que NÃO pôde ser verificado:** o contador e a parada automática **na UI
+real**. O botão de gravar depende de `camera.ready`, e a câmera é bloqueada em
+toda automação registrada. Verificado o que dá: as opções de bitrate são
+aceitas pelo `MediaRecorder` (uma opção errada lançaria) e a mecânica de parar
+por tempo produz blob — provado com `canvas.captureStream()`, que é um
+`MediaStream` real sem câmera. **A fiação hook↔UI é dedução, não medição.**
+
+**Achado colateral, NÃO corrigido:** uma falha do provedor **consome o crédito
+mesmo assim**. `debitCredit()` roda antes de `trainAvatar()`, e não há
+estorno — durante este bloco, um treino que falhou por falta de foto zerou o
+crédito de avatar do tenant e o teste seguinte levou `403`. Em live isso
+significa perder crédito pago por um erro que não chegou a gastar cota do
+fornecedor.

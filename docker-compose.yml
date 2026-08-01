@@ -126,6 +126,8 @@ services:
       TRAEFIK_HTTP_PORT: ${TRAEFIK_HTTP_PORT:-8090}
       BASE_DOMAIN: ${BASE_DOMAIN}
       WHATSAPP_NUMBER: ${WHATSAPP_NUMBER:-}
+      REFERENCE_VIDEO_MAX_BYTES: ${REFERENCE_VIDEO_MAX_BYTES:-}
+      MAX_RECORDING_SECONDS: ${MAX_RECORDING_SECONDS:-}
       # Preenchimento automático dos formulários de login em desenvolvimento.
       # Só tem efeito com DEV_AUTOFILL=1; os valores entram no bundle via
       # `define` do Vite (nunca literais no fonte) e npm run check reprova o

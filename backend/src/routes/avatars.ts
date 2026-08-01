@@ -7,6 +7,7 @@ import type { Avatar } from "../types.js";
 import { trainAvatar } from "../services/providers/avatarProvider.js";
 import { cloneVoice, VoiceProviderError } from "../services/providers/voiceProvider.js";
 import { getCredential } from "../services/credentialLookup.js";
+import { referenceVideoMaxBytes, tooLargeMessage } from "../services/uploadLimits.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import { saveUpload, readUpload } from "../services/storage.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
@@ -142,8 +143,40 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     "/avatars/:id/reference-video",
     { preHandler: requireActiveTenant },
     async (req, reply) => {
-    const file = await req.file();
-    if (!file) return reply.code(400).send({ error: "No file uploaded" });
+    // Teto SÓ desta rota. O padrão global do multipart (1 MiB, herdado do
+    // bodyLimit do Fastify) continua valendo em todas as outras — ver
+    // services/uploadLimits.ts para por que não sobe globalmente.
+    const maxBytes = referenceVideoMaxBytes();
+
+    // O estouro pode aparecer em DOIS lugares: ao pegar o arquivo e ao
+    // materializá-lo (@fastify/multipart index.js:379 lança em toBuffer()
+    // quando o stream foi truncado). Tratar só o primeiro deixaria o caso
+    // comum — arquivo grande que começa a chegar normalmente — cair como 500.
+    let file: Awaited<ReturnType<typeof req.file>>;
+    let buffer: Buffer;
+    try {
+      file = await req.file({ limits: { fileSize: maxBytes } });
+      if (!file) return reply.code(400).send({ error: "No file uploaded" });
+      buffer = await file.toBuffer();
+    } catch (err) {
+      // A mensagem crua ("request file too large, please check multipart
+      // config") não permite decidir nada: não diz quanto foi enviado nem
+      // quanto cabe, então quem recebe não sabe se corta 5 s ou 5 min.
+      if ((err as { code?: string })?.code === "FST_REQ_FILE_TOO_LARGE") {
+        const declared = Number(req.headers["content-length"]);
+        const sent = Number.isFinite(declared) && declared > 0 ? declared : null;
+        console.error(
+          JSON.stringify({ event: "upload_too_large", route: "avatars.referenceVideo", sent, maxBytes }),
+        );
+        return reply.code(413).send({
+          error: "file_too_large",
+          message: tooLargeMessage(sent, maxBytes),
+          maxBytes,
+          sentBytes: sent,
+        });
+      }
+      throw err;
+    }
 
     const { rows: existing } = await pool.query<Avatar>(
       "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
@@ -159,7 +192,7 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const buffer = await file.toBuffer();
+    // `buffer` já foi materializado acima, junto do tratamento de tamanho.
     const url = await saveUpload(req.tenantId, buffer, file.filename);
 
     // avatar_trainings keeps recording one row per attempt — now pure

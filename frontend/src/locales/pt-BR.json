@@ -513,7 +513,11 @@
         "targetLufsHelp": "Mais alto (perto de -6) soa mais impactante; mais baixo (perto de -24) soa mais natural. -16 LUFS é um padrão comum pra streaming."
       },
       "orUploadPhoto": "Ou enviar foto de arquivo",
-      "uploadPhotoHint": "Aceita várias de uma vez; elas preenchem os espaços na ordem em que forem enviadas."
+      "uploadPhotoHint": "Aceita várias de uma vez; elas preenchem os espaços na ordem em que forem enviadas.",
+      "recordingCounter": "Gravando {{elapsed}} de {{max}} — para sozinho em {{remaining}}s.",
+      "recordingSize": "Gravação: {{size}} (limite {{max}}).",
+      "recordingTooLarge": "Gravação de {{size}} passa do limite de {{max}}. Grave um trecho mais curto.",
+      "fileTooLarge": "O arquivo tem {{size}} e o limite é {{max}}. Grave um trecho mais curto ou envie um arquivo menor."
     },
     "script": {
       "title": "Roteiro",

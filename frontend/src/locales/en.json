@@ -513,7 +513,11 @@
         "targetLufsHelp": "Louder (closer to -6) reads punchier; quieter (closer to -24) reads more natural. -16 LUFS is a common streaming-friendly default."
       },
       "orUploadPhoto": "Or upload a photo file",
-      "uploadPhotoHint": "You can pick several at once; they fill the slots in the order they are sent."
+      "uploadPhotoHint": "You can pick several at once; they fill the slots in the order they are sent.",
+      "recordingCounter": "Recording {{elapsed}} of {{max}} — stops on its own in {{remaining}}s.",
+      "recordingSize": "Recording: {{size}} (limit {{max}}).",
+      "recordingTooLarge": "A {{size}} recording is over the {{max}} limit. Record a shorter take.",
+      "fileTooLarge": "The file is {{size}} and the limit is {{max}}. Record a shorter take or upload a smaller file."
     },
     "script": {
       "title": "Script",
