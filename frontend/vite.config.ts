@@ -15,6 +15,7 @@ const whatsappNumber = process.env.WHATSAPP_NUMBER ?? "";
 // autoridade; o cliente só evita subir 90 MB para receber 413 no fim.
 const maxReferenceVideoBytes = Number(process.env.REFERENCE_VIDEO_MAX_BYTES) || 100 * 1024 * 1024;
 const maxRecordingSeconds = Number(process.env.MAX_RECORDING_SECONDS) || 120;
+const maxImageBytes = Number(process.env.IMAGE_UPLOAD_MAX_BYTES) || 25 * 1024 * 1024;
 
 // Preenchimento automático das telas de login em desenvolvimento.
 //
@@ -42,6 +43,7 @@ export default defineConfig({
     __WHATSAPP_NUMBER__: JSON.stringify(whatsappNumber),
     __MAX_REFERENCE_VIDEO_BYTES__: JSON.stringify(maxReferenceVideoBytes),
     __MAX_RECORDING_SECONDS__: JSON.stringify(maxRecordingSeconds),
+    __MAX_IMAGE_BYTES__: JSON.stringify(maxImageBytes),
     __DEV_AUTOFILL__: JSON.stringify(devAutofill),
     __DEV_GALLERY__: JSON.stringify(devGallery),
     __DEV_ADMIN_EMAIL__: JSON.stringify(devCred("DEV_ADMIN_EMAIL")),

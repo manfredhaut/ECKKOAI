@@ -117,3 +117,36 @@ export function assertLiveModeAuthorized(
     }),
   );
 }
+
+/**
+ * Teto de gerações tarifadas da sessão atingido.
+ *
+ * Classe PRÓPRIA, e não um erro de provedor, por uma razão medida na primeira
+ * passada live: o teto é NOSSO — uma trava de segurança que criamos — e estava
+ * sendo empacotado como falha de fornecedor. O cliente via "Não foi possível
+ * concluir a operação no serviço de vídeo", que manda procurar problema na
+ * HeyGen quando a HeyGen sequer foi chamada. O sanitizador de erro de vendor
+ * existe para não vazar corpo de resposta de terceiro; aplicá-lo a uma
+ * mensagem nossa só apaga a única informação útil.
+ *
+ * O contexto que faltava: o teto é compartilhado entre clonagem de voz e
+ * geração de vídeo. Com o padrão de 1, configurar um avatar (que clona voz)
+ * consome a cota inteira, e o vídeo seguinte é recusado — sem que nada na
+ * tela ligasse uma coisa à outra.
+ */
+export class LiveBudgetExhaustedError extends Error {
+  constructor(
+    public readonly used: number,
+    public readonly max: number,
+    public readonly operation: string,
+  ) {
+    super(
+      `Teto de gerações tarifadas desta sessão atingido (${used}/${max}) ao tentar "${operation}". ` +
+        "Este limite é DESTE aplicativo, não do fornecedor — nenhuma chamada foi feita e nada foi cobrado. " +
+        `O teto é compartilhado entre clonagem de voz e geração de vídeo, então configurar um avatar já consome ${used === max ? "a cota" : "parte dela"}. ` +
+        `Para seguir: suba ${LIVE_LIMIT_ENV} (um fluxo completo de avatar + vídeo precisa de pelo menos 2) e recrie o container, ` +
+        "ou reinicie o backend para zerar a contagem da sessão.",
+    );
+    this.name = "LiveBudgetExhaustedError";
+  }
+}

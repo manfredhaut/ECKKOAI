@@ -13,6 +13,7 @@ import { probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.
 import { ARTIFACT_INVALID_MESSAGE, InvalidArtifactError, validateVideoArtifact } from "../services/videoArtifact.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
+import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -256,6 +257,22 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         creditType: "video",
         relatedVideoId: video.id,
       });
+
+      // Teto NOSSO, não falha do fornecedor: nenhuma chamada saiu e nada foi
+      // cobrado. Tratado ANTES do sanitizador de erro de vendor, porque ele
+      // apagaria a única informação útil — que o limite é local, que é
+      // compartilhado com a clonagem de voz, e como subi-lo. Foi assim que a
+      // primeira passada live terminou em "Não foi possível concluir a
+      // operação no serviço de vídeo", mandando procurar defeito na HeyGen
+      // quando a HeyGen nem chegou a ser chamada.
+      if (err instanceof LiveBudgetExhaustedError) {
+        const { rows: barrado } = await pool.query<Video>(
+          "UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 RETURNING *",
+          [video.id, err.message],
+        );
+        console.error(JSON.stringify({ event: "live_budget_exhausted", context: "videos.create", used: err.used, max: err.max }));
+        return reply.code(429).send({ error: "live_budget_exhausted", message: err.message, video: barrado[0] });
+      }
       const { message } = toClientVendorError("avatar", "videos.create", err);
       const { rows: errored } = await pool.query<Video>(
         "UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 RETURNING *",

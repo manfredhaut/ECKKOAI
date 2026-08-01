@@ -50,6 +50,21 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       SESSION_SECRET: ${SESSION_SECRET}
       BASE_DOMAIN: ${BASE_DOMAIN}
+      # Modo dos provedores tarifados e as duas travas de gasto real.
+      # Defaults seguros: sem nada no .env, o container sobe em simulação, sem
+      # autorização para gastar e com teto de uma geração. Ver
+      # services/providers/providerMode.ts e liveGuard.ts.
+      #
+      # PROVIDER_LIVE_CONFIRM fica VAZIO de propósito: em live o servidor não
+      # sobe sem a frase exata, e é essa recusa que impede um .env copiado de
+      # virar gasto acidental.
+      PROVIDER_MODE: ${PROVIDER_MODE:-fixture}
+      PROVIDER_LIVE_CONFIRM: ${PROVIDER_LIVE_CONFIRM:-}
+      PROVIDER_LIVE_MAX_GENERATIONS: ${PROVIDER_LIVE_MAX_GENERATIONS:-1}
+      # Teto das rotas de imagem (cenário, traje, fotos do rosto). Vazio = 25 MB.
+      # Repassado aos DOIS serviços para que cliente e servidor concordem por
+      # construção — o servidor continua sendo a autoridade.
+      IMAGE_UPLOAD_MAX_BYTES: ${IMAGE_UPLOAD_MAX_BYTES:-}
       # As cinco chaves da plataforma. Só a primeira era repassada até aqui —
       # as outras estavam documentadas no .env.example e no CLAUDE.md, mas
       # nunca chegavam ao container: preenchê-las no .env não teria efeito
@@ -128,6 +143,7 @@ services:
       WHATSAPP_NUMBER: ${WHATSAPP_NUMBER:-}
       REFERENCE_VIDEO_MAX_BYTES: ${REFERENCE_VIDEO_MAX_BYTES:-}
       MAX_RECORDING_SECONDS: ${MAX_RECORDING_SECONDS:-}
+      IMAGE_UPLOAD_MAX_BYTES: ${IMAGE_UPLOAD_MAX_BYTES:-}
       # Preenchimento automático dos formulários de login em desenvolvimento.
       # Só tem efeito com DEV_AUTOFILL=1; os valores entram no bundle via
       # `define` do Vite (nunca literais no fonte) e npm run check reprova o

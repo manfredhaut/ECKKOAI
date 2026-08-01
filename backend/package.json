@@ -12,7 +12,8 @@
     "check": "tsc -p tsconfig.json --noEmit && tsx src/scripts/checkPolicy.ts",
     "check:policy": "tsx src/scripts/checkPolicy.ts",
     "dev:seed-access": "tsx scripts/seedDevAccess.ts",
-    "preflight:live": "tsx src/scripts/preflightLive.ts"
+    "preflight:live": "tsx src/scripts/preflightLive.ts",
+    "dev:grant-credits": "tsx scripts/grantDevCredits.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",

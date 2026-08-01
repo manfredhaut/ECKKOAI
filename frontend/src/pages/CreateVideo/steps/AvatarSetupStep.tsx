@@ -10,7 +10,7 @@ import { BACKGROUND_OPTIONS, DEFAULT_BACKGROUND_ID } from "../virtualBackground/
 import { DEFAULT_QUALITY } from "../imageQuality/applyQualityTreatment";
 import type { QualityOptions } from "../imageQuality/applyQualityTreatment";
 import { useFeature } from "../../../features/FeatureFlagContext";
-import { MAX_REFERENCE_VIDEO_BYTES, formatBytes, formatDuration } from "../../../uploadLimits";
+import { MAX_IMAGE_BYTES, MAX_REFERENCE_VIDEO_BYTES, formatBytes, formatDuration } from "../../../uploadLimits";
 
 export function AvatarSetupStep({
   selectedAvatarId,
@@ -130,6 +130,11 @@ export function AvatarSetupStep({
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0 || !draftAvatar) return;
     const remaining = PHOTO_SLOTS.length - draftAvatar.photo_urls.length;
+    const grande = files.slice(0, remaining).find((f) => f.size > MAX_IMAGE_BYTES);
+    if (grande && rejectImageIfTooLarge(grande.size)) {
+      e.target.value = "";
+      return;
+    }
     await guard(async () => {
       let latest = draftAvatar;
       for (const file of files.slice(0, remaining)) {
@@ -159,6 +164,18 @@ export function AvatarSetupStep({
       t("createVideo.avatarSetup.fileTooLarge", {
         size: formatBytes(size),
         max: formatBytes(MAX_REFERENCE_VIDEO_BYTES),
+      }),
+    );
+    return true;
+  }
+
+  /** Mesma cortesia do vídeo, com o teto e a orientação de IMAGEM. */
+  function rejectImageIfTooLarge(size: number): boolean {
+    if (size <= MAX_IMAGE_BYTES) return false;
+    setActionError(
+      t("createVideo.avatarSetup.imageTooLarge", {
+        size: formatBytes(size),
+        max: formatBytes(MAX_IMAGE_BYTES),
       }),
     );
     return true;
@@ -337,7 +354,6 @@ export function AvatarSetupStep({
             <div>
               <div className="card-title">{t("createVideo.avatarSetup.cameraPreview")}</div>
               {camera.error && <p style={{ color: "var(--color-tertiary)" }}>{camera.error}</p>}
-              {actionError && <div className="alert alert-error">{actionError}</div>}
               {/* Hidden source the segmenter/canvas read frames from — the
                   canvas below is what the user actually sees and what gets
                   captured/recorded, since it already reflects the current
@@ -489,6 +505,16 @@ export function AvatarSetupStep({
               )}
             </div>
             <div>
+              {/* O erro fica NESTA coluna, e não na da câmera, porque é aqui
+                  que ficam as ações que falham — enviar foto e enviar o vídeo
+                  de referência. "Créditos esgotados" aparecia do outro lado da
+                  tela, longe do botão que o produziu. */}
+              {actionError && (
+                <div className="alert alert-error" style={{ marginBottom: 12 }}>
+                  {actionError}
+                </div>
+              )}
+
               <div className="card-title">
                 {t("createVideo.avatarSetup.facePhotos", { count: draftAvatar.photo_urls.length })}
               </div>

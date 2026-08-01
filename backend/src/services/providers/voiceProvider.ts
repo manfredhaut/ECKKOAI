@@ -2,7 +2,7 @@
 // see vendorCatalog.ts.
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { isFixtureMode } from "./providerMode.js";
-import { consumeLiveGeneration } from "./liveGuard.js";
+import { consumeLiveGeneration, LiveBudgetExhaustedError } from "./liveGuard.js";
 import {
   checkVoiceConnectionFixture,
   cloneVoiceFixture,
@@ -32,9 +32,7 @@ export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResu
   if (isFixtureMode()) return cloneVoiceFixture();
   const budget = consumeLiveGeneration();
   if (!budget.allowed) {
-    throw new VoiceProviderError(
-      `Teto de gerações tarifadas desta sessão atingido (${budget.used}/${budget.max}).`,
-    );
+    throw new LiveBudgetExhaustedError(budget.used, budget.max, "clonar voz");
   }
   const form = new FormData();
   form.set("name", input.name);

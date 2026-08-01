@@ -1,3 +1,6 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
+import type { MultipartFile } from "@fastify/multipart";
+
 /**
  * Teto de tamanho do vídeo/áudio de referência do avatar.
  *
@@ -36,6 +39,28 @@ export function referenceVideoMaxBytes(env: NodeJS.ProcessEnv = process.env): nu
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_MAX_BYTES;
 }
 
+const DEFAULT_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Teto das rotas que recebem IMAGEM: cenário, traje, fotos do rosto e imagens
+ * de referência.
+ *
+ * 25 MB não é generosidade — é o tamanho de uma foto de celular moderno. Um
+ * iPhone em HEIC/JPEG de 48 MP passa de 10 MB sem esforço, e o padrão herdado
+ * de 1 MiB recusava praticamente qualquer foto tirada na hora. Foi o defeito
+ * (A) medido na primeira passada live: o DEMO-2 subiu o teto só na rota do
+ * vídeo de referência, e as de imagem ficaram para trás.
+ *
+ * Continua MUITO abaixo do teto de vídeo (100 MB), porque imagem que passa de
+ * 25 MB quase certamente não é foto de rosto — é engano ou abuso.
+ */
+export function imageUploadMaxBytes(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.IMAGE_UPLOAD_MAX_BYTES;
+  if (!raw) return DEFAULT_IMAGE_MAX_BYTES;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_IMAGE_MAX_BYTES;
+}
+
 /** "38,4 MB" — para ler numa tela, não para calcular. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -56,13 +81,19 @@ export function formatBytes(bytes: number): string {
  * A diferença é irrelevante para a decisão de quem lê, e inventar precisão
  * que não temos seria pior.
  */
-export function tooLargeMessage(sentBytes: number | null, maxBytes: number): string {
+export type UploadKind = "video" | "image";
+
+export function tooLargeMessage(
+  sentBytes: number | null,
+  maxBytes: number,
+  kind: UploadKind = "video",
+): string {
   const limite = formatBytes(maxBytes);
   const tamanho =
     sentBytes === null
       ? `O arquivo passa do limite de ${limite}.`
       : `O envio tem ${formatBytes(sentBytes)} e o limite é ${limite}.`;
-  return `${tamanho} ${HOW_TO_FIT}`;
+  return `${tamanho} ${HOW_TO_FIT[kind]}`;
 }
 
 /**
@@ -76,9 +107,16 @@ export function tooLargeMessage(sentBytes: number | null, maxBytes: number): str
  *
  * A ordem das duas frases importa: resolução primeiro, duração depois.
  */
-const HOW_TO_FIT =
-  "Grave em 1080p em vez de 4K — costuma resolver sozinho, sem encurtar o vídeo. " +
-  "Se ainda passar, grave um trecho mais curto.";
+const HOW_TO_FIT: Record<UploadKind, string> = {
+  video:
+    "Grave em 1080p em vez de 4K — costuma resolver sozinho, sem encurtar o vídeo. " +
+    "Se ainda passar, grave um trecho mais curto.",
+  // Para imagem a alavanca é outra: não há duração a cortar, e a causa quase
+  // sempre é mandar o arquivo original da câmera em resolução máxima.
+  image:
+    "Reduza a resolução da imagem antes de enviar, ou use uma cópia comprimida " +
+    "em vez do arquivo original da câmera.",
+};
 
 /**
  * Duração recomendada de gravação, em segundos.
@@ -103,3 +141,50 @@ const HOW_TO_FIT =
  * para comparar. Se algum dia isso for medido, este é o lugar de corrigir.
  */
 export const RECOMMENDED_RECORDING_SECONDS = 120;
+
+/**
+ * Lê o arquivo de um multipart com teto próprio da rota, e responde 413 legível
+ * quando estoura.
+ *
+ * Existe como helper para que as cinco rotas de upload NÃO tenham cinco cópias
+ * do mesmo `try/catch`. A duplicação já cobrou seu preço: o DEMO-2 corrigiu a
+ * rota do vídeo de referência e as outras quatro continuaram em 1 MiB sem que
+ * nada acusasse — e as mensagens teriam divergido na primeira vez que alguém
+ * editasse uma delas.
+ *
+ * Devolve `null` quando já respondeu (413 ou 400). O chamador faz
+ * `if (!up) return reply;` e segue.
+ */
+export async function takeUpload(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  options: { maxBytes: number; route: string; kind?: UploadKind },
+): Promise<{ file: MultipartFile; buffer: Buffer } | null> {
+  const { maxBytes, route, kind = "video" } = options;
+  try {
+    // O estouro pode aparecer em DOIS lugares: ao pegar o arquivo e ao
+    // materializá-lo (@fastify/multipart index.js:379 lança em toBuffer()
+    // quando o stream já foi truncado). Tratar só o primeiro deixaria o caso
+    // comum — arquivo grande que começa a chegar normalmente — cair como 500.
+    const file = await req.file({ limits: { fileSize: maxBytes } });
+    if (!file) {
+      await reply.code(400).send({ error: "no_file", message: "Nenhum arquivo foi enviado." });
+      return null;
+    }
+    const buffer = await file.toBuffer();
+    return { file, buffer };
+  } catch (err) {
+    if ((err as { code?: string })?.code !== "FST_REQ_FILE_TOO_LARGE") throw err;
+
+    const declared = Number(req.headers["content-length"]);
+    const sent = Number.isFinite(declared) && declared > 0 ? declared : null;
+    console.error(JSON.stringify({ event: "upload_too_large", route, sent, maxBytes }));
+    await reply.code(413).send({
+      error: "file_too_large",
+      message: tooLargeMessage(sent, maxBytes, kind),
+      maxBytes,
+      sentBytes: sent,
+    });
+    return null;
+  }
+}

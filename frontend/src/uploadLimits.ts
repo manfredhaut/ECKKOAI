@@ -8,8 +8,16 @@
 // garantia. Nunca troque a validação do servidor por esta.
 declare const __MAX_REFERENCE_VIDEO_BYTES__: number;
 declare const __MAX_RECORDING_SECONDS__: number;
+declare const __MAX_IMAGE_BYTES__: number;
 
 export const MAX_REFERENCE_VIDEO_BYTES = __MAX_REFERENCE_VIDEO_BYTES__;
+
+/**
+ * Teto das rotas de IMAGEM (cenário, traje, fotos do rosto, imagens de
+ * referência). Bem menor que o de vídeo: 25 MB cobre foto de celular moderno,
+ * e o que passa disso quase certamente não é foto de rosto.
+ */
+export const MAX_IMAGE_BYTES = __MAX_IMAGE_BYTES__;
 
 /**
  * Teto de duração da gravação pela câmera.

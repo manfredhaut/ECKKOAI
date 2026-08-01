@@ -22,3 +22,9 @@ previews/
 # screenshot no repositório o incha sem retorno, e elas se desatualizam a
 # cada mudança de UI.
 .gallery-shots/
+
+# Despejos de log de sessão (docker compose logs > arquivo). Ficam no disco
+# para diagnóstico, nunca no repositório: são grandes, efêmeros e podem
+# conter corpo de resposta de fornecedor.
+*.log
+ultimas.txt

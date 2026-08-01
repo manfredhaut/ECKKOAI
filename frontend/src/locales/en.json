@@ -518,7 +518,8 @@
       "recordingSize": "Recording: {{size}} (limit {{max}}).",
       "recordingTooLarge": "A {{size}} recording is over the {{max}} limit. Record at 1080p instead of 4K, or record a shorter take.",
       "fileTooLarge": "The file is {{size}} and the limit is {{max}}. Record at 1080p instead of 4K — that usually fixes it without shortening the video. If it still exceeds, record a shorter take.",
-      "referenceGuidance": "HeyGen works best with 1080p at 30fps and 2 to 5 minutes of continuous speech. 30 seconds already works, with simpler results."
+      "referenceGuidance": "HeyGen works best with 1080p at 30fps and 2 to 5 minutes of continuous speech. 30 seconds already works, with simpler results.",
+      "imageTooLarge": "The image is {{size}} and the limit is {{max}}. Reduce the image resolution before uploading, or use a compressed copy instead of the camera original."
     },
     "script": {
       "title": "Script",

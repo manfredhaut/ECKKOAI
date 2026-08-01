@@ -518,7 +518,8 @@
       "recordingSize": "Gravação: {{size}} (limite {{max}}).",
       "recordingTooLarge": "Gravação de {{size}} passa do limite de {{max}}. Grave em 1080p em vez de 4K, ou grave um trecho mais curto.",
       "fileTooLarge": "O arquivo tem {{size}} e o limite é {{max}}. Grave em 1080p em vez de 4K — costuma resolver sozinho, sem encurtar o vídeo. Se ainda passar, grave um trecho mais curto.",
-      "referenceGuidance": "A HeyGen trabalha melhor com 1080p a 30fps e 2 a 5 minutos de fala contínua. 30 segundos já funcionam, com resultado mais simples."
+      "referenceGuidance": "A HeyGen trabalha melhor com 1080p a 30fps e 2 a 5 minutos de fala contínua. 30 segundos já funcionam, com resultado mais simples.",
+      "imageTooLarge": "A imagem tem {{size}} e o limite é {{max}}. Reduza a resolução da imagem antes de enviar, ou use uma cópia comprimida em vez do arquivo original da câmera."
     },
     "script": {
       "title": "Roteiro",

@@ -18,7 +18,7 @@ import {
 } from "../script/scriptDuration.js";
 import type { AvatarVendor } from "./vendorCatalog.js";
 import { isFixtureMode } from "./providerMode.js";
-import { consumeLiveGeneration } from "./liveGuard.js";
+import { consumeLiveGeneration, LiveBudgetExhaustedError } from "./liveGuard.js";
 import {
   checkAvatarConnectionFixture,
   generateVideoFixture,
@@ -383,10 +383,7 @@ export async function generateVideo(input: GenerateVideoInput): Promise<Generate
   // declaração de intenção no boot impediria.
   const budget = consumeLiveGeneration();
   if (!budget.allowed) {
-    throw new AvatarProviderError(
-      `Teto de gerações tarifadas desta sessão atingido (${budget.used}/${budget.max}). ` +
-        "Reinicie o servidor ou aumente PROVIDER_LIVE_MAX_GENERATIONS conscientemente.",
-    );
+    throw new LiveBudgetExhaustedError(budget.used, budget.max, "gerar vídeo");
   }
   return input.vendor === "did" ? generateVideoDid(input) : generateVideoHeygen(input);
 }

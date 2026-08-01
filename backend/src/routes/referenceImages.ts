@@ -5,6 +5,7 @@ import { pool } from "../db/pool.js";
 import { config } from "../config.js";
 import type { ReferenceImage } from "../types.js";
 import { saveUpload } from "../services/storage.js";
+import { imageUploadMaxBytes, takeUpload } from "../services/uploadLimits.js";
 
 export async function referenceImageRoutes(app: FastifyInstance): Promise<void> {
   app.get("/reference-images", async (req) => {
@@ -16,13 +17,17 @@ export async function referenceImageRoutes(app: FastifyInstance): Promise<void> 
   });
 
   app.post("/reference-images", async (req, reply) => {
-    const file = await req.file();
-    if (!file) return reply.code(400).send({ error: "No file uploaded" });
+    const up = await takeUpload(req, reply, {
+      maxBytes: imageUploadMaxBytes(),
+      route: "referenceImages.create",
+      kind: "image",
+    });
+    if (!up) return reply;
 
-    const url = await saveUpload(req.tenantId, await file.toBuffer(), file.filename);
+    const url = await saveUpload(req.tenantId, up.buffer, up.file.filename);
     const { rows } = await pool.query<ReferenceImage>(
       `INSERT INTO reference_images (tenant_id, filename, file_url) VALUES ($1, $2, $3) RETURNING *`,
-      [req.tenantId, file.filename, url],
+      [req.tenantId, up.file.filename, url],
     );
     return reply.code(201).send(rows[0]);
   });

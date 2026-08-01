@@ -1312,6 +1312,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **DEMO-3** | **Primeira passada live: custo real medido, teto de imagem por rota, teto de sessão deixa de se disfarçar de falha do fornecedor. Ver abaixo.** |
 | 08-01 | **LOG-1 / POLL-1** | **Resposta bruta do fornecedor no log antes de interpretar; "concluído sem artefato" falha na hora em vez de virar timeout.** |
 | 08-01 | **ESTORNO-1** | **Crédito volta quando o fornecedor recusa, nos 3 caminhos. Linha própria no ledger, idempotente. Ver abaixo.** |
 | 08-01 | **DEMO-2** | **Teto de upload do vídeo de referência: 100 MB só nessa rota, erro legível, validação no cliente e cap de gravação. Ver abaixo.** |
@@ -1763,3 +1764,90 @@ menção a estorno da mensagem.
 
 `PROVIDER_MODE` é trocado e restaurado em `finally`, e a guarda **verifica que
 voltou** — deixar o processo do check em live seria um efeito colateral caro.
+
+---
+
+### Bloco DEMO-3 — o que a primeira passada live ensinou (CONCLUÍDO)
+
+**A medição que mais importa: um avatar custa ~US$ 1,00 de verdade.** Carteira
+HeyGen **16,50 → 15,50** por UM `photo_avatar`. Isso é dinheiro observado, não
+estimativa.
+
+**A tabela `provider_cost_rates` NÃO corresponde a isso.** Ela cobra vídeo por
+`duration_seconds` *pedido* e voz por `script.length`, e **não tem linha nenhuma
+para criação de avatar** — o custo que realmente apareceu na fatura. Ou seja: o
+único custo medido até hoje é o único que a tabela não modela. Toda tela de
+custo continua sendo estimativa sobre estimativa, agora com prova de que a
+ordem de grandeza real existe e não passa por lá.
+
+**O `// ASSUMPTION` de `data.avatar_item.id` está CONFIRMADO.** A resposta real:
+
+```
+data.avatar_item = { id, avatar_type: "photo_avatar", status: "processing",
+                     group_id, supported_api_engines: ["avatar_iv","avatar_iii"], ... }
+```
+
+Três achados de graça, que só o LOG-1 tornou possíveis:
+1. **`supported_api_engines` existe** — este avatar aceita `avatar_iv` e
+   `avatar_iii`. A pergunta do bloco MOTOR-1 ("existe campo de motor?") tem
+   resposta: o fornecedor DECLARA os motores por avatar. Continuamos sem
+   enviar nenhum na geração.
+2. **`status: "processing"`** — o avatar não fica pronto na hora. Nada no
+   código espera por isso.
+3. `avatar_type: "photo_avatar"` confirma o tipo criado.
+
+**Os três defeitos medidos:**
+
+**(A) Teto de upload por rota.** O DEMO-2 subiu o limite só na rota do vídeo de
+referência; as outras quatro continuaram no padrão herdado de 1 MiB. `POST
+/uploads` (cenário e traje do passo 3) recusava qualquer foto de celular.
+Corrigido com um teto de **25 MB para as três rotas de imagem** — tamanho de
+foto de celular moderno, e ainda bem abaixo dos 100 MB de vídeo.
+
+O `try/catch` virou um helper único (`takeUpload` em `uploadLimits.ts`), porque
+a duplicação foi exatamente o que deixou quatro rotas para trás. A orientação
+da recusa agora é por tipo: vídeo manda baixar de 4K para 1080p, imagem manda
+reduzir resolução — a alavanca é diferente e a errada custa uma regravação.
+
+**`POST /documents` continua em 1 MiB, de propósito** (fora do escopo do
+bloco): um PDF acima disso é comum, e essa rota vai falhar do mesmo jeito.
+
+**(B) Gate de crédito.** O crédito de avatar zerou porque a criação live
+consumiu o único que havia — comportamento correto, mensagem no lugar errado:
+aparecia na coluna da câmera, do outro lado da tela do botão que falhou. Agora
+fica na coluna das ações. E `GenerateStep` tinha `try/finally` **sem `catch`**:
+um 403 virava promise rejeitada sem dono e a tela não dizia nada.
+
+Recarregar crédito de dev agora tem caminho próprio:
+```bash
+docker compose exec backend npm run dev:grant-credits -- --slug dev-c77a5b --avatar 2
+```
+Ele escreve saldo **e** linha de ledger na mesma transação. `UPDATE` manual
+escreve só o saldo, e os dois divergem em silêncio — **já aconteceu**: as
+limpezas de teste do DEMO-1 e do ESTORNO-1 deixaram o avatar do tenant de dev
+com ledger somando 1 e saldo 0. O script detecta e AVISA da divergência, sem
+corrigir: decidir qual dos dois está certo não é decisão de script.
+
+**(C) A causa não era o fornecedor.** O passo 5 falhou com "Não foi possível
+concluir a operação no serviço de vídeo" — e **a HeyGen nunca foi chamada**. O
+log mostra exatamente 2 requisições no dia (`uploadAsset`, `createAvatar`),
+nenhuma para `/v3/videos`.
+
+A causa é o **nosso** teto de sessão: `PROVIDER_LIVE_MAX_GENERATIONS=1`,
+compartilhado entre clonagem de voz e geração de vídeo. Configurar o avatar
+clonou a voz e consumiu a cota inteira; o vídeo seguinte foi recusado por nós
+mesmos, e o sanitizador de erro de vendor transformou isso numa frase que
+manda procurar defeito na HeyGen.
+
+Agora é `LiveBudgetExhaustedError`, classe própria, tratada ANTES do
+sanitizador: diz que o limite é local, que nada foi cobrado, que é
+compartilhado com a voz, e que **um fluxo completo precisa de pelo menos 2**.
+No caminho do avatar a mensagem diz também que o treino deu certo e só a voz
+faltou — senão o operador refaz um treino que já custou US$ 1.
+
+**Nada a recuperar do vídeo que falhou:** ele nunca foi gerado nem cobrado. O
+avatar live (`provider_avatar_id` + `voice_id`) está no banco e é utilizável.
+
+**Gotcha de log, medido:** `docker compose logs > arquivo.log` no PowerShell
+grava em **UTF-16LE**, e `grep` não acha nada dentro. Use
+`docker compose logs | Out-File -Encoding utf8`, ou converta antes de ler.
