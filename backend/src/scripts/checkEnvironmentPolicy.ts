@@ -42,7 +42,10 @@ const SECRET_ENV_VARS = ["DEV_ADMIN_PASSWORD", "DEV_TENANT_PASSWORD"] as const;
  * transformaria o check num scanner de dependência, que é outro problema.
  */
 const SOURCE_ROOTS = ["backend/src", "backend/scripts", "frontend/src", "tools"];
-const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".json", ".sh", ".yml", ".yaml", ".md"]);
+// `.mjs` entrou junto com tools/set-key.mjs: um arquivo que manipula chaves
+// ficaria fora da varredura de credencial literal só por causa da extensão,
+// que é exatamente o tipo de buraco que a guarda existe para não ter.
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs", ".jsx", ".json", ".sh", ".yml", ".yaml", ".md"]);
 
 export async function checkEnvironmentPolicy(repoRoot: string): Promise<EnvironmentCheckResult> {
   const failures: string[] = [];
