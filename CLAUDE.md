@@ -612,6 +612,17 @@ docker compose exec backend npm run preflight:live
 Não chama fornecedor nenhum e termina numa linha só: `PRONTO PARA LIVE` ou o
 que falta. Hoje falta só `PROVIDER_LIVE_CONFIRM`.
 
+**Frente aberta — upload de celular não cabe no desenho atual.** O teto de
+100 MB e o `toBuffer()` do upload de referência foram dimensionados para
+webcam. Um celular grava em 1080p (ou 4K) com bitrate bem maior: **2 minutos
+em 1080p já passam dos 100 MB**, e o modo *completo* da decisão nº 9 pede 5.
+Subir o teto sozinho não resolve — `toBuffer()` materializa o arquivo inteiro
+em memória, então 300 MB de upload viram 300 MB de heap, e dois envios
+simultâneos derrubam o processo. O caminho é **streaming direto para disco**
+(`file.file` é um stream; gravar com `pipeline()` e só então validar), o que
+muda também a validação de artefato, que hoje assume buffer. **Registrado, não
+feito** — é reescrita do caminho de upload, não ajuste de constante.
+
 **Também em aberto, do PENDENCIAS-1:** as Partes 3 e 4 nunca foram feitas (a
 Parte 5 teve a origem dos `.mp4` de 16 bytes resolvida no DEMO-1, e a validação
 de artefato no download foi construída lá; sobrou decidir se os 2 arquivos
@@ -713,6 +724,20 @@ o próprio comentário que a explicava).
    decidida e **não construída**. O código segue 100% BYOK.
 7. **Créditos são "use ou perca"** — o grant mensal reseta o saldo, não
    acumula.
+8. **O débito fica ANTES da chamada ao fornecedor, e a falha estorna.**
+   Debitar depois eliminaria o estorno, mas abriria corrida: duas requisições
+   simultâneas passariam as duas pela verificação de saldo e as duas gastariam
+   cota. Prefere-se cobrar e devolver a arriscar gastar o que não existe. A
+   fronteira do estorno está em `services/billing/creditGate.ts` e vale a pena
+   ler antes de mexer: **estorna quando a chamada ao fornecedor lançou; não
+   estorna nada depois de o fornecedor aceitar o trabalho.**
+9. **Qualidade de treino do avatar será escolha do TENANT**, em dois modos:
+   *rápido* (~30 s de amostra, resultado mais simples) e *completo* (2–5 min,
+   melhor resultado). **NÃO implementado** — registrado aqui para não virar
+   improviso na hora. Hoje existe só o cap único de `MAX_RECORDING_SECONDS`
+   (120 s) e uma linha de orientação na tela. Quando for construído, os dois
+   modos precisam de tetos de tamanho diferentes: 5 min em 1080p não cabe nos
+   100 MB atuais.
 
 ### Pendências com dono
 
@@ -1255,6 +1280,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **ESTORNO-1** | **Crédito volta quando o fornecedor recusa, nos 3 caminhos. Linha própria no ledger, idempotente. Ver abaixo.** |
 | 08-01 | **DEMO-2** | **Teto de upload do vídeo de referência: 100 MB só nessa rota, erro legível, validação no cliente e cap de gravação. Ver abaixo.** |
 | 08-01 | **DEMO-1** | **Caminho principal do MVP validado ponta a ponta em fixture; validação de artefato de vídeo; `preflight:live`. Ver abaixo.** |
 
@@ -1575,3 +1601,83 @@ estorno — durante este bloco, um treino que falhou por falta de foto zerou o
 crédito de avatar do tenant e o teste seguinte levou `403`. Em live isso
 significa perder crédito pago por um erro que não chegou a gastar cota do
 fornecedor.
+
+---
+
+### Bloco ESTORNO-1 — crédito não morre por falha do fornecedor (CONCLUÍDO)
+
+**O defeito, achado no DEMO-2:** `debitCredit()` roda antes da chamada ao
+fornecedor e não havia estorno. Um treino recusado por falta de foto zerou o
+crédito de avatar do tenant, e a tentativa seguinte levou `403`. Em live é
+crédito pago perdido por um erro que nem chegou a gastar cota.
+
+**Mapa dos débitos (levantado antes de mexer):**
+
+| Caminho | Onde debita | Defeito? |
+|---|---|---|
+| Avatar (`avatars.ts`) | antes de `trainAvatar()` | **sim** |
+| Roteiro (`scripts.ts`) | antes de `generateScript()` | **sim** |
+| Vídeo (`videos.ts`) | antes de `generateVideo()` | **sim** |
+| Clone de voz (`avatars.ts`) | não tem débito próprio | n/a — viaja no crédito de avatar |
+
+**Estava nos TRÊS**, não só no avatar. Os três seguiam o mesmo padrão: debita,
+chama o fornecedor num `try`, e o `catch` só devolvia erro ao cliente.
+
+**O débito continua onde estava.** Movê-lo para depois da chamada eliminaria o
+estorno, mas abriria corrida: duas requisições simultâneas passariam as duas
+pela verificação de saldo e as duas gastariam cota. Cobrar e devolver é melhor
+que arriscar gastar o que não existe.
+
+**ONDE ESTÁ A LINHA DO QUE NÃO ESTORNA** — a decisão que mais importa aqui:
+
+- **Estorna:** a chamada ao fornecedor lançou. Nada produzido, nenhuma cota
+  externa gasta.
+- **NÃO estorna:** qualquer falha depois de o fornecedor aceitar o trabalho.
+  No vídeo, o corte é exato: assim que `generateVideo()` devolve
+  `providerJobId`, o job está enfileirado lá. Falha de polling, artefato
+  inválido (bloco DEMO-1) e download quebrado **não** estornam — o fornecedor
+  renderizou e a cota dele foi gasta. Devolver aí transformaria problema de
+  entrega em crédito grátis.
+- **Caso de fronteira que já existe:** em `avatars.ts` o treino pode ter
+  SUCESSO e a clonagem de voz falhar em seguida. **Não estorna:** o crédito de
+  avatar pagou o treino, e o treino aconteceu. Está comentado no código, no
+  `catch` da voz.
+
+**Linha própria no ledger** (`reason = 'refund'`, migration `035`), nunca um
+`consumption` positivo. O débito é preservado: sem os dois movimentos, um
+relatório de consumo mostraria zero — verdadeiro no saldo e mentiroso sobre o
+que aconteceu, já que a tentativa existiu e falhou.
+
+**Idempotência em duas camadas.** A aplicação checa depois do `FOR UPDATE`
+(mesmo padrão de `grantPurchasedCredit`), e três **índices únicos parciais**
+cobrem o que o lock não cobre: caminho novo que esqueça de checar, e o dia em
+que houver mais de uma réplica. Crédito devolvido duas vezes é dinheiro criado
+do nada — o tipo de erro de que ninguém reclama, e que só aparece na
+conciliação. Chamada sem referência é **recusada** (`no_reference`) em vez de
+adivinhar: sem chave de idempotência, um estorno que pode repetir é pior que
+nenhum.
+
+*Medido, no caminho HTTP real:* saldo 1 → falha do fornecedor → saldo **1**,
+com `−1 consumption` e `+1 refund` na mesma tentativa. Segundo estorno da
+mesma tentativa → `{"refunded":false,"reason":"already_refunded"}`, saldo
+inalterado, **1** linha de estorno. `INSERT` duplicado direto no banco →
+recusado pelo índice único. Caminho de sucesso → saldo 1 → **0**, com apenas
+`−1 consumption` e nenhum estorno.
+
+**Duas guardas novas em `npm run check`, ambas provadas reprovando:** rota que
+chama `debitCredit()` sem `refundCredit()` (removi o estorno de `scripts.ts` e
+o build reprovou), e ausência do motivo `'refund'` no CHECK das migrations —
+sem ele, todo estorno explodiria em tempo de execução, no caminho de erro, que
+é o menos exercitado. A guarda também reprova se **nenhuma** rota debitar,
+para não passar verde por ter deixado de casar com o código.
+
+**Recusa de upload que orienta.** A mensagem dizia tamanho e limite, o que
+deixa a pessoa adivinhando qual alavanca puxar — e a mais provável de tentarem
+primeiro (regravar mais curto) costuma ser a errada, porque o problema quase
+sempre é a câmera em 4K. Agora manda baixar para 1080p primeiro, e encurtar só
+se ainda passar. **Cliente e servidor com a frase idêntica** (medido nos dois).
+
+**Orientação antes de gravar**, na tela de configuração: 1080p a 30fps, 2 a 5
+minutos para melhor resultado, 30 segundos já funcionam. É texto, não
+validação — nada bloqueia o envio. Dizer isso depois, na recusa por tamanho ou
+num avatar de qualidade ruim, custa uma regravação inteira.

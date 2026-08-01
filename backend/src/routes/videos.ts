@@ -7,7 +7,7 @@ import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { createNotification } from "../services/notifications.js";
 import { recordProviderUsage } from "../services/billing/usageTracking.js";
-import { debitCredit } from "../services/billing/creditGate.js";
+import { debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.js";
 import { ARTIFACT_INVALID_MESSAGE, InvalidArtifactError, validateVideoArtifact } from "../services/videoArtifact.js";
@@ -245,6 +245,17 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         duration_seconds,
       );
     } catch (err) {
+      // O job nunca foi aceito pelo fornecedor — nada foi renderizado, nenhuma
+      // cota gasta. Este é o ÚLTIMO ponto do fluxo de vídeo em que o estorno
+      // vale: assim que `generateVideo()` devolve um `providerJobId`, o
+      // trabalho está enfileirado lá e a cota é consumida, então falha de
+      // polling, artefato inválido ou download quebrado NÃO estornam (ver
+      // pollJob acima e services/billing/creditGate.ts).
+      await refundCredit({
+        tenantId: req.tenantId,
+        creditType: "video",
+        relatedVideoId: video.id,
+      });
       const { message } = toClientVendorError("avatar", "videos.create", err);
       const { rows: errored } = await pool.query<Video>(
         "UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 RETURNING *",

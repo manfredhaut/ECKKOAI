@@ -58,14 +58,27 @@ export function formatBytes(bytes: number): string {
  */
 export function tooLargeMessage(sentBytes: number | null, maxBytes: number): string {
   const limite = formatBytes(maxBytes);
-  if (sentBytes === null) {
-    return `O arquivo passa do limite de ${limite}. Grave um trecho mais curto ou envie um arquivo menor.`;
-  }
-  return (
-    `O envio tem ${formatBytes(sentBytes)} e o limite é ${limite}. ` +
-    "Grave um trecho mais curto ou envie um arquivo menor."
-  );
+  const tamanho =
+    sentBytes === null
+      ? `O arquivo passa do limite de ${limite}.`
+      : `O envio tem ${formatBytes(sentBytes)} e o limite é ${limite}.`;
+  return `${tamanho} ${HOW_TO_FIT}`;
 }
+
+/**
+ * O que fazer a respeito — a parte que transforma uma recusa em instrução.
+ *
+ * Dizer só o tamanho e o limite deixa a pessoa adivinhando qual das duas
+ * alavancas puxar, e a mais provável de tentarem primeiro (regravar tudo mais
+ * curto) costuma ser a errada: quase sempre o problema é a câmera em 4K, e
+ * baixar a resolução resolve sem sacrificar a duração — que é justamente o que
+ * os fornecedores precisam para treinar bem.
+ *
+ * A ordem das duas frases importa: resolução primeiro, duração depois.
+ */
+const HOW_TO_FIT =
+  "Grave em 1080p em vez de 4K — costuma resolver sozinho, sem encurtar o vídeo. " +
+  "Se ainda passar, grave um trecho mais curto.";
 
 /**
  * Duração recomendada de gravação, em segundos.

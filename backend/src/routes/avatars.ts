@@ -11,7 +11,7 @@ import { referenceVideoMaxBytes, tooLargeMessage } from "../services/uploadLimit
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import { saveUpload, readUpload } from "../services/storage.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
-import { debitCredit } from "../services/billing/creditGate.js";
+import { debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { sendAttachment, contentTypeForExtension } from "../services/downloadProxy.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 
@@ -224,6 +224,15 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         photoUrls: existing[0].photo_urls,
       }));
     } catch (err) {
+      // O fornecedor recusou: nada foi treinado, nenhuma cota externa foi
+      // gasta. Cobrar por isso seria cobrar por um erro que não produziu nada
+      // — e foi exatamente o que aconteceu no bloco DEMO-2, quando um treino
+      // recusado por falta de foto zerou o crédito do tenant.
+      await refundCredit({
+        tenantId: req.tenantId,
+        creditType: "avatar",
+        relatedAvatarTrainingId: trainingRows[0].id,
+      });
       const { failure, message } = toClientVendorError("avatar", "avatars.train", err);
       return reply.code(vendorErrorStatus(failure)).send({ error: "avatar_provider_error", message });
     }
@@ -254,6 +263,10 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         );
         return withVoice[0];
       } catch (err) {
+        // NÃO estorna, de propósito: o treino do avatar acima teve SUCESSO, e
+        // é isso que o crédito de avatar paga. O fornecedor de avatar fez o
+        // trabalho e gastou cota; a voz não tem crédito próprio. Devolver aqui
+        // daria de graça um treino que já foi pago ao fornecedor.
         const { failure, message } = toClientVendorError("voice", "avatars.cloneVoice", err);
         return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
       }

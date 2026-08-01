@@ -516,8 +516,9 @@
       "uploadPhotoHint": "You can pick several at once; they fill the slots in the order they are sent.",
       "recordingCounter": "Recording {{elapsed}} of {{max}} — stops on its own in {{remaining}}s.",
       "recordingSize": "Recording: {{size}} (limit {{max}}).",
-      "recordingTooLarge": "A {{size}} recording is over the {{max}} limit. Record a shorter take.",
-      "fileTooLarge": "The file is {{size}} and the limit is {{max}}. Record a shorter take or upload a smaller file."
+      "recordingTooLarge": "A {{size}} recording is over the {{max}} limit. Record at 1080p instead of 4K, or record a shorter take.",
+      "fileTooLarge": "The file is {{size}} and the limit is {{max}}. Record at 1080p instead of 4K — that usually fixes it without shortening the video. If it still exceeds, record a shorter take.",
+      "referenceGuidance": "HeyGen works best with 1080p at 30fps and 2 to 5 minutes of continuous speech. 30 seconds already works, with simpler results."
     },
     "script": {
       "title": "Script",

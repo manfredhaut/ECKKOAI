@@ -4,7 +4,7 @@ import { getCredential } from "../services/credentialLookup.js";
 import { generateScript, ScriptProviderError } from "../services/providers/scriptProvider.js";
 import type { ScriptVendor } from "../services/providers/vendorCatalog.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
-import { debitCredit } from "../services/billing/creditGate.js";
+import { debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 
 export async function scriptRoutes(app: FastifyInstance): Promise<void> {
@@ -50,6 +50,14 @@ export async function scriptRoutes(app: FastifyInstance): Promise<void> {
         targetSeconds: req.body.targetSeconds,
       });
     } catch (err) {
+      // Mesma regra do avatar: o fornecedor recusou, não há roteiro, o crédito
+      // volta. Vale para qualquer erro daqui, não só ScriptProviderError — um
+      // erro inesperado também não entregou roteiro nenhum.
+      await refundCredit({
+        tenantId: req.tenantId,
+        creditType: "script",
+        relatedScriptGenerationId: generationRows[0].id,
+      });
       if (err instanceof ScriptProviderError) {
         const { failure, message } = toClientVendorError("script", "scripts.generate", err);
         return reply.code(vendorErrorStatus(failure)).send({ error: "script_provider_error", message });

@@ -18,6 +18,7 @@ import { DOCS_EXCLUDED, DOCS_MANIFEST, type DocAudience } from "../services/docs
 import { checkEnvironmentPolicy } from "./checkEnvironmentPolicy.js";
 import { checkProviderPolicy } from "./checkProviderPolicy.js";
 import { checkPlatformKeyPolicy } from "./checkPlatformKeyPolicy.js";
+import { checkRefundPolicy } from "./checkRefundPolicy.js";
 import {
   DENY_ENFORCED_FOR,
   DENY_TERMS,
@@ -213,6 +214,11 @@ async function main(): Promise<void> {
   const platformKeyResult = await checkPlatformKeyPolicy(process.env.REPO_ROOT ?? "/repo");
   platformKeyResult.failures.forEach((f) => failures.push(f));
   platformKeyResult.notes.forEach((n) => note(n));
+
+  // --- 11. crédito volta quando o fornecedor recusa ----------------------
+  const refundResult = await checkRefundPolicy(process.env.REPO_ROOT ?? "/repo");
+  refundResult.failures.forEach((f) => failures.push(f));
+  refundResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

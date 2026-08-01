@@ -158,3 +158,119 @@ export async function grantPurchasedCredit(
     client.release();
   }
 }
+
+export interface RefundCreditInput {
+  tenantId: string;
+  creditType: CreditType;
+  amount?: number;
+  /**
+   * A tentativa que falhou. Exatamente UM destes é obrigatório: é a chave de
+   * idempotência — sem ela não há como distinguir "estornar de novo" de
+   * "estornar outra tentativa".
+   */
+  relatedVideoId?: string | null;
+  relatedScriptGenerationId?: string | null;
+  relatedAvatarTrainingId?: string | null;
+}
+
+export type RefundCreditResult =
+  | { refunded: true; balance: number }
+  | { refunded: false; reason: "already_refunded" | "no_reference" };
+
+/**
+ * Devolve o crédito de uma tentativa que o fornecedor RECUSOU.
+ *
+ * ---------------------------------------------------------------------------
+ * ONDE ESTÁ A LINHA — leia antes de chamar isto em um lugar novo
+ *
+ * Estorna: a chamada ao fornecedor lançou. Nada foi produzido, nenhuma cota
+ * externa foi consumida, e o cliente ficou sem nada. Cobrar por isso é cobrar
+ * por um erro nosso ou uma indisponibilidade deles.
+ *
+ * NÃO estorna: qualquer falha DEPOIS de o fornecedor aceitar o trabalho. Se o
+ * job de vídeo foi enfileirado e o polling falha, se o artefato chega
+ * truncado, se o download quebra — o fornecedor renderizou, a cota dele foi
+ * gasta, e o dinheiro já saiu. Devolver crédito aí transformaria um problema
+ * de entrega em crédito grátis, e o incentivo seria exatamente o errado.
+ *
+ * Caso de fronteira que já existe no código: em `avatars.ts`, o treino do
+ * avatar pode ter SUCESSO e a clonagem de voz falhar em seguida. Não estorna:
+ * o crédito de avatar pagou o treino, e o treino aconteceu. A voz não tem
+ * crédito próprio (ver o mapa no CLAUDE.md, bloco ESTORNO-1).
+ * ---------------------------------------------------------------------------
+ *
+ * O débito continua ANTES da chamada, de propósito. Debitar depois eliminaria
+ * o estorno, mas abriria uma corrida: duas requisições simultâneas passariam
+ * as duas pela verificação de saldo e as duas chamariam o fornecedor. Prefere-
+ * se cobrar e devolver a arriscar gastar cota que não existe.
+ *
+ * Idempotente por tentativa: o `INSERT` do estorno é protegido por um índice
+ * único parcial (migration 035), e a checagem abaixo roda depois do
+ * `FOR UPDATE` — mesmo padrão de `grantPurchasedCredit()`, para que duas
+ * chamadas concorrentes serializem no lock em vez de passarem as duas.
+ */
+export async function refundCredit(input: RefundCreditInput): Promise<RefundCreditResult> {
+  const amount = input.amount ?? 1;
+  const references = [
+    ["related_video_id", input.relatedVideoId],
+    ["related_script_generation_id", input.relatedScriptGenerationId],
+    ["related_avatar_training_id", input.relatedAvatarTrainingId],
+  ].filter(([, value]) => value) as [string, string][];
+
+  // Sem referência não há chave de idempotência, e um estorno que pode repetir
+  // é pior que nenhum: cria dinheiro. Recusa em vez de adivinhar.
+  if (references.length !== 1) return { refunded: false, reason: "no_reference" };
+  const [column, value] = references[0];
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { rows: balanceRows } = await client.query<{ balance: number }>(
+      "SELECT balance FROM tenant_credits WHERE tenant_id = $1 AND credit_type = $2 FOR UPDATE",
+      [input.tenantId, input.creditType],
+    );
+
+    const { rows: existing } = await client.query(
+      `SELECT 1 FROM credit_ledger WHERE reason = 'refund' AND ${column} = $1`,
+      [value],
+    );
+    if (existing[0]) {
+      await client.query("ROLLBACK");
+      return { refunded: false, reason: "already_refunded" };
+    }
+
+    const { rows: updated } = await client.query<{ balance: number }>(
+      `UPDATE tenant_credits SET balance = balance + $3, updated_at = now()
+       WHERE tenant_id = $1 AND credit_type = $2
+       RETURNING balance`,
+      [input.tenantId, input.creditType, amount],
+    );
+    // Linha de tenant_credits ausente é o mesmo caso defensivo de
+    // debitCredit(): sem linha não houve débito, então não há o que devolver.
+    if (!updated[0]) {
+      await client.query("ROLLBACK");
+      return { refunded: false, reason: "no_reference" };
+    }
+
+    // `simulated` pela mesma regra do débito: lido do modo, nunca recebido do
+    // chamador. Um estorno simulado precisa aparecer ao lado do débito
+    // simulado, senão as duas listas do painel deixam de bater.
+    const simulated = isFixtureMode() && (input.creditType === "video" || input.creditType === "avatar");
+
+    await client.query(
+      `INSERT INTO credit_ledger
+         (tenant_id, credit_type, delta, reason, simulated, ${column})
+       VALUES ($1, $2, $3, 'refund', $4, $5)`,
+      [input.tenantId, input.creditType, amount, simulated, value],
+    );
+
+    await client.query("COMMIT");
+    return { refunded: true, balance: updated[0].balance };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}

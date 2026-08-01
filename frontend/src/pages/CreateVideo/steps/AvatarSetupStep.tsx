@@ -539,6 +539,16 @@ export function AvatarSetupStep({
               <div className="card-title" style={{ marginTop: 20 }}>
                 {t("createVideo.avatarSetup.referenceVideoTitle")}
               </div>
+              {/* O que o fornecedor espera, ANTES de gravar. É texto, não
+                  validação: nada aqui bloqueia o envio. Dizer depois — na
+                  recusa por tamanho, ou pior, num avatar de qualidade ruim —
+                  custa uma regravação inteira. */}
+              {!draftAvatar.reference_video_url && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 8 }}>
+                  {t("createVideo.avatarSetup.referenceGuidance")}
+                </p>
+              )}
+
               {draftAvatar.reference_video_url ? (
                 <p className="text-muted">{t("createVideo.avatarSetup.referenceSaved")}</p>
               ) : (
