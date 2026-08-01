@@ -9,7 +9,8 @@ import { createNotification } from "../services/notifications.js";
 import { recordProviderUsage } from "../services/billing/usageTracking.js";
 import { debitCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
-import { proxyRemoteAttachment } from "../services/downloadProxy.js";
+import { probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.js";
+import { ARTIFACT_INVALID_MESSAGE, InvalidArtifactError, validateVideoArtifact } from "../services/videoArtifact.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
 
@@ -31,6 +32,26 @@ function pollJob(
       const result = await pollVideoJob(vendor, apiKey, jobId);
       if (result.status === "ready") {
         clearInterval(interval);
+
+        // "Pronto" segundo o fornecedor não é o mesmo que "há um vídeo ali".
+        // Um artefato vazio ou truncado marcado como `ready` é o pior
+        // desfecho possível: a biblioteca lista, o selo diz pronto, o
+        // download entrega — e só o cliente descobre, longe de qualquer log.
+        // Falhar aqui é ruidoso e recuperável; deixar passar não é.
+        const artifact = await probeArtifact(result.outputUrl);
+        const check = validateVideoArtifact(artifact.head, artifact.totalBytes);
+        if (!check.ok) {
+          console.error(
+            `[videos] artefato recusado para o vídeo ${videoId}: ${check.reason} (url=${result.outputUrl})`,
+          );
+          await pool.query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1", [
+            videoId,
+            ARTIFACT_INVALID_MESSAGE,
+          ]);
+          await createNotification(tenantId, "video_error", ARTIFACT_INVALID_MESSAGE);
+          return;
+        }
+
         await pool.query("UPDATE videos SET status = 'ready', output_url = $2 WHERE id = $1", [
           videoId,
           result.outputUrl,
@@ -116,9 +137,17 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      await proxyRemoteAttachment(reply, video.output_url, `video-${video.id}${ext}`);
+      // Valida antes de entregar, mesmo que o polling já tenha validado ao
+      // marcar `ready`: o arquivo pode ter expirado, sido substituído ou
+      // truncado no meio do caminho desde então, e entregar um arquivo
+      // quebrado é pior que recusar o download.
+      await proxyRemoteAttachment(reply, video.output_url, `video-${video.id}${ext}`, { validate: true });
       return reply;
     } catch (err) {
+      if (err instanceof InvalidArtifactError) {
+        console.error(JSON.stringify({ event: "artifact_rejected", context: "videos.download", videoId: video.id, detail: err.detail }));
+        return reply.code(422).send({ error: "invalid_artifact", message: err.message });
+      }
       console.error(JSON.stringify({ event: "download_failed", context: "videos.download", detail: err instanceof Error ? err.message : String(err) }));
       return reply.code(502).send({ error: "download_failed", message: "Não foi possível baixar o vídeo agora. Tente novamente." });
     }

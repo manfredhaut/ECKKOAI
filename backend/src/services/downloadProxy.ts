@@ -7,6 +7,7 @@
 import type { FastifyReply } from "fastify";
 import { Readable } from "node:stream";
 import { config } from "../config.js";
+import { InvalidArtifactError, validateVideoArtifact } from "./videoArtifact.js";
 
 const EXTENSION_CONTENT_TYPES: Record<string, string> = {
   ".mp4": "video/mp4",
@@ -53,20 +54,65 @@ function absoluteUrl(url: string): string {
   return new URL(url, `http://127.0.0.1:${config.port}`).toString();
 }
 
-// Fetches url on the server and streams it straight through to the client,
-// so the browser never navigates to (or even sees) the upstream origin.
+// Fetches url on the server and hands it to the client, so the browser never
+// navigates to (or even sees) the upstream origin.
+//
+// `validate` liga a checagem de integridade (services/videoArtifact.ts) e, com
+// ela, o arquivo passa a ser BUFERIZADO antes de sair. A troca é deliberada:
+// em streaming só dá para inspecionar o começo, e o modo de falha que importa
+// — transferência que morre no meio — produz justamente um começo válido com
+// um fim faltando. A única forma de garantir "os bytes que entrego são os
+// bytes que validei" é ter o arquivo inteiro antes de mandar o primeiro.
+//
+// O custo é memória proporcional ao arquivo. Aceitável na escala deste
+// produto (o maior vídeo real medido tem 2,6 MB) e pago só no download, que
+// não é caminho quente. Se um dia houver vídeo de centenas de MB, isto precisa
+// virar validação em disco, não voltar a ser streaming cego.
 export async function proxyRemoteAttachment(
   reply: FastifyReply,
   url: string,
   filename: string,
+  options: { validate?: boolean } = {},
 ): Promise<void> {
   const upstream = await fetch(absoluteUrl(url));
   if (!upstream.ok || !upstream.body) {
     throw new Error(`Upstream returned ${upstream.status}`);
   }
-  reply.header("Content-Type", upstream.headers.get("content-type") ?? "application/octet-stream");
+  const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
+
+  if (options.validate) {
+    const body = Buffer.from(await upstream.arrayBuffer());
+    const check = validateVideoArtifact(body, body.length);
+    if (!check.ok) throw new InvalidArtifactError(check.reason ?? "artefato inválido");
+    sendAttachment(reply, body, filename, contentType);
+    return;
+  }
+
+  reply.header("Content-Type", contentType);
   reply.header("Content-Disposition", `attachment; filename="${filename}"`);
   const contentLength = upstream.headers.get("content-length");
   if (contentLength) reply.header("Content-Length", contentLength);
   reply.send(Readable.fromWeb(upstream.body as import("node:stream/web").ReadableStream));
+}
+
+/**
+ * Lê só o suficiente para validar um artefato remoto, sem baixá-lo inteiro.
+ *
+ * Usa `Range` para pedir os primeiros quilobytes: a resposta 206 traz o
+ * tamanho total em `Content-Range`, então uma requisição responde às duas
+ * perguntas. Servidor que ignora `Range` devolve 200 com o corpo completo, e
+ * aí o tamanho vem do próprio buffer — o caminho continua correto, só deixa
+ * de ser barato.
+ */
+export async function probeArtifact(url: string): Promise<{ head: Buffer; totalBytes: number }> {
+  const res = await fetch(absoluteUrl(url), { headers: { Range: "bytes=0-65535" } });
+  if (!res.ok) throw new Error(`Upstream returned ${res.status}`);
+
+  const head = Buffer.from(await res.arrayBuffer());
+
+  if (res.status === 206) {
+    const total = Number(res.headers.get("content-range")?.split("/")[1]);
+    if (Number.isFinite(total) && total > 0) return { head, totalBytes: total };
+  }
+  return { head, totalBytes: head.length };
 }

@@ -503,10 +503,14 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-01 — Bloco CHAVES-2: as chaves da plataforma
-passaram a viver cifradas no banco, com tela no painel admin, resolução por
+**Última atualização:** 2026-08-01 — Bloco DEMO-1: o caminho principal do MVP
+(foto → avatar → voz → vídeo → download) foi percorrido inteiro no navegador em
+modo fixture, com **zero chamadas a fornecedor**. Corrigido o defeito que
+impedia criar avatar sem câmera, adicionada validação de artefato de vídeo em
+dois pontos, e criado `npm run preflight:live`. Antes dele, o Bloco CHAVES-2:
+chaves da plataforma cifradas no banco, com tela no admin, resolução por
 requisição (banco vence `.env`, invertível por `PLATFORM_KEYS_FORCE_ENV=1`) e
-nenhuma rota que devolva valor em claro. Ver a seção própria no fim do arquivo.
+nenhuma rota que devolva valor em claro. Ver as seções próprias no fim.
 
 **Este arquivo foi condensado nesta data**: o histórico cronológico virou uma
 tabela de uma linha por bloco (seção 8), e o que ainda vale como regra está nas
@@ -599,7 +603,19 @@ recuperação vetorial** — nenhuma query usa `<=>`, `document_chunks` só rece
 **onde guardar** a chave — o slot `embedding` no painel admin, validável — mas
 guardar não é usar: `embeddingProvider.ts` continua sem consumi-la.)
 
-**Também em aberto, do PENDENCIAS-1:** as Partes 3, 4 e 5 nunca foram feitas.
+**Antes de trocar o ambiente para `live`, rode:**
+
+```bash
+docker compose exec backend npm run preflight:live
+```
+
+Não chama fornecedor nenhum e termina numa linha só: `PRONTO PARA LIVE` ou o
+que falta. Hoje falta só `PROVIDER_LIVE_CONFIRM`.
+
+**Também em aberto, do PENDENCIAS-1:** as Partes 3 e 4 nunca foram feitas (a
+Parte 5 teve a origem dos `.mp4` de 16 bytes resolvida no DEMO-1, e a validação
+de artefato no download foi construída lá; sobrou decidir se os 2 arquivos
+órfãos são apagados).
 A mais importante é a **Parte 3 — auditoria das guardas existentes**: levantar
 quais guardas antigas passam verde sem inspecionar nada. Essa classe de defeito
 já apareceu três vezes (a flag no VIDEO-0, a de credencial que só pegou por
@@ -1239,6 +1255,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **DEMO-1** | **Caminho principal do MVP validado ponta a ponta em fixture; validação de artefato de vídeo; `preflight:live`. Ver abaixo.** |
 
 ---
 
@@ -1366,3 +1383,119 @@ Este projeto é trabalhado alternando entre duas contas do Claude Code (pessoal
 e manfred@smartinovat.com) para evitar travar em limites de uso. O histórico de
 conversa NÃO é compartilhado nativamente entre contas — por isso este arquivo é
 a fonte de verdade sobre o estado do projeto, não a conversa em si.
+
+---
+
+### Bloco DEMO-1 — caminho principal do MVP, ponta a ponta (CONCLUÍDO)
+
+Objetivo: foto → avatar → voz clonada → vídeo → download, funcionando de
+verdade, **sem gastar um centavo**. Rodado inteiro em `PROVIDER_MODE=fixture`.
+**Zero chamadas a HeyGen, ElevenLabs, Gemini ou Anthropic** — confirmado por
+`read_network_requests` no navegador e por varredura do log do backend.
+
+**1. Validação de artefato de vídeo**
+([videoArtifact.ts](backend/src/services/videoArtifact.ts)). Dois critérios,
+e os dois são necessários: piso de **100 KB** e assinatura **`ftyp` nos bytes
+4..8**. Tamanho sozinho aceita uma página de erro HTML de 200 KB; assinatura
+sozinha aceita um mp4 truncado nos primeiros quilobytes — o modo de falha real,
+porque uma transferência interrompida produz um prefixo VÁLIDO, não lixo.
+
+Aplicada em **dois** pontos: ao marcar o vídeo como `ready` (artefato inválido
+vira `error`, **nunca** `ready`) e no download. O do download **bufferiza** o
+arquivo antes de enviar — em streaming só dá para inspecionar o começo, e a
+única forma de garantir "os bytes que entrego são os bytes que validei" é ter o
+arquivo inteiro antes de mandar o primeiro. Custo: memória proporcional ao
+arquivo (o maior vídeo real medido tem 2,6 MB). Se um dia houver vídeo de
+centenas de MB, isto precisa virar validação em disco — **não** voltar a ser
+streaming cego.
+
+*Provado reprovando, no caminho HTTP real:* vídeo apontando para um arquivo
+truncado em 50 KB → **HTTP 422** com frase em pt-BR, detalhe técnico só no log
+(`artifact_rejected`); o mesmo vídeo íntegro → **200**, 203.567 bytes,
+`ffprobe` confirma h264+aac. Também testado em tabela: 16 bytes, truncado em
+50 KB, HTML de 200 KB, exatamente no piso, e um byte abaixo — todos com o
+veredito correto.
+
+**2. A fixture era menor que o próprio piso.** `simulated-video.mp4` tinha
+49,4 KB — um mp4 legítimo, mas que a regra nova recusaria. Regenerada com
+ffmpeg para **198,8 KB** (h264 640×360 5 s + aac). Fixture é versionada e
+copiada pelo Dockerfile: trocá-la exige `docker compose build backend`.
+
+**3. `.mp4` órfãos de 16 bytes — origem RESOLVIDA.** São 2, ambos em
+`uploads/4bbed629-…/`, e contêm literalmente o texto `fake video bytes`. O
+tenant dono **não existe mais**, e nenhuma linha de `avatars` ou `videos` os
+referencia: são resto de teste de uma sessão antiga. **Não foram apagados** —
+decisão do usuário. Isso fecha a metade "origem" da Parte 5 do PENDENCIAS-1.
+
+**4. Achado mais sério do bloco: não havia como enviar foto de arquivo.**
+Concluir o passo 1 exige **3 fotos**; o botão "Capturar" depende de
+`camera.ready`; e não existia alternativa nenhuma — enquanto o vídeo de
+referência, logo abaixo, sempre teve o seu "ou envie um arquivo". A assimetria
+não era intencional. **Numa máquina sem câmera, criar avatar era impossível** —
+e a câmera é bloqueada em toda automação registrada deste projeto.
+
+Corrigido em [AvatarSetupStep.tsx](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx):
+botão "Ou enviar foto de arquivo", múltipla seleção, envio **em sequência**
+porque o backend ANEXA a `photo_urls` (não grava por índice) e paralelizar
+deixaria a ordem à mercê de qual requisição chega primeiro. Fica fora dos
+slots, e não dentro de cada um, para não prometer escolha de posição que o
+backend não oferece.
+
+**5. Passada completa dos 5 passos, medida no navegador.** Fotos por upload
+(3/3) → vídeo de referência → treino + clonagem de voz (`fixture-avatar-…` e
+`fixture-voice-…`, `simulated=t`) → avatar selecionável no passo 3 → roteiro
+digitado → cenário e traje por prompt → 30 s → geração. Resultado: vídeo
+`ready` com o aviso **SIMULADO** na tela, player renderizando, e download
+**200 / 203.567 bytes / `ftyp` válido**.
+
+*Ledger conferido:* `video −1 consumption simulated=t` e
+`avatar −1 consumption simulated=t`. **Marcado como simulado, não como consumo
+real** — que é o ponto do `credit_ledger.simulated`.
+
+*De passagem, ficou verificado por olho o que o VIDEO-0 deixou cego:* o bloco
+de fundo virtual aparece inerte **com o motivo** ("depende de teste ainda não
+realizado com a HeyGen"), sem seletor.
+
+**6. `npm run preflight:live`**
+([preflightLive.ts](backend/src/scripts/preflightLive.ts)) — verifica e
+imprime, **sem chamar fornecedor nenhum**. Um preflight que gasta cota é uma
+contradição: a carteira comporta cerca de um vídeo, e "o preflight consumiu a
+geração da demo" seria o pior desfecho. Também **não imprime valor de chave
+nem os 4 últimos** — na véspera de uma apresentação, esta saída é exatamente o
+tipo de coisa que acaba colada num chat ou fotografada numa tela compartilhada.
+
+A validação de download é verificada **exercitando a função**, não lendo uma
+flag: uma flag diria "ligada" mesmo com a lógica esvaziada.
+
+*Erro que a primeira versão cometeu e vale registrar:* ela **bloqueava** por
+falta das chaves de plataforma de HeyGen/ElevenLabs, logo acima de uma linha
+dizendo que quem paga a geração é a credencial do TENANT. As duas não podiam
+ser verdade juntas. Agora as chaves de plataforma são informativas e o que
+bloqueia é a credencial do tenant existir. **Reprovar por algo que live não
+precisa é pior que não verificar: ensina a ignorar o preflight.**
+
+Saída atual: `FALTA PARA LIVE: PROVIDER_LIVE_CONFIRM` (sai 1). Tudo o mais
+verde — credenciais de tenant conectadas, teto de 1 geração, validação ativa,
+34 migrations, `/api/health` 200.
+
+### O que NÃO pôde ser provado sem live (DEMO-1)
+
+Nada disto é dúvida sobre o código; é o que fixture, por definição, não
+exercita:
+
+- **Que a HeyGen aceita nossas fotos e produz um avatar utilizável.**
+  `trainAvatarFixture()` ignora `photo_urls` — em fixture, três retângulos
+  coloridos "treinam" tão bem quanto um rosto. Só live diz se o formato, a
+  resolução e o enquadramento servem.
+- **Os contratos `// ASSUMPTION`** (Basic auth da D-ID, `avatar_item.id` da
+  HeyGen) continuam sem confirmação formal.
+- **Que a voz clonada sai parecida.** `cloneVoiceFixture()` devolve um id; não
+  há áudio a julgar.
+- **Que o artefato real passa na validação nova.** O vídeo real de 2,6 MB já
+  medido passaria com folga, mas isso é dedução a partir do tamanho — nenhum
+  arquivo vindo do HeyGen atravessou o validador ainda.
+- **Que o `Range` do CDN do vendor funciona como esperado.** `probeArtifact()`
+  tem retaguarda para 200 (baixa inteiro), então o caminho está coberto; qual
+  dos dois ramos o HeyGen usa, não se sabe.
+- **Captura por câmera**, em qualquer passo. Bloqueada em toda sessão
+  registrada. Só o usuário consegue validar.

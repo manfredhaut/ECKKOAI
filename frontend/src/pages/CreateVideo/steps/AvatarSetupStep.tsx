@@ -48,6 +48,7 @@ export function AvatarSetupStep({
   const camera = useCamera();
   const recorder = useMediaRecorderCapture();
   const referenceFileInput = useRef<HTMLInputElement | null>(null);
+  const photoFileInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     refreshAvatars();
@@ -111,6 +112,33 @@ export function AvatarSetupStep({
       const updated = await api.upload<Avatar>(`/avatars/${draftAvatar.id}/photos`, blob, "photo.jpg");
       setDraftAvatar(updated);
     });
+  }
+
+  // Enviar foto de arquivo, em vez de capturar pela câmera.
+  //
+  // Sem este caminho o passo inteiro trava numa máquina sem câmera: concluir
+  // exige 3 fotos, o botão "Capturar" depende de `camera.ready`, e não havia
+  // alternativa nenhuma — enquanto o vídeo de referência logo abaixo sempre
+  // teve o seu "ou enviar arquivo". A assimetria não era intencional.
+  //
+  // Aceita várias de uma vez e envia em sequência, porque o backend ANEXA ao
+  // final de `photo_urls` (não grava por índice): mandar em paralelo deixaria
+  // a ordem à mercê de qual requisição chega primeiro, e a ordem é o que
+  // define em qual posição cada foto aparece.
+  async function handlePhotoFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0 || !draftAvatar) return;
+    const remaining = PHOTO_SLOTS.length - draftAvatar.photo_urls.length;
+    await guard(async () => {
+      let latest = draftAvatar;
+      for (const file of files.slice(0, remaining)) {
+        latest = await api.upload<Avatar>(`/avatars/${latest.id}/photos`, file, file.name);
+      }
+      setDraftAvatar(latest);
+    });
+    // Permite reenviar o mesmo arquivo depois de um erro: sem isto, escolher
+    // o mesmo nome não dispara `change` de novo.
+    e.target.value = "";
   }
 
   function handleStartRecording() {
@@ -461,6 +489,29 @@ export function AvatarSetupStep({
                   </div>
                 ))}
               </div>
+
+              {/* Fora dos slots, e não dentro de cada um, porque o backend
+                  anexa ao fim da lista: um botão por slot prometeria escolher
+                  a posição, e a foto cairia na primeira vaga livre de
+                  qualquer jeito. */}
+              {draftAvatar.photo_urls.length < PHOTO_SLOTS.length && (
+                <div style={{ marginTop: 8 }}>
+                  <button className="btn btn-ghost" onClick={() => photoFileInput.current?.click()}>
+                    {t("createVideo.avatarSetup.orUploadPhoto")}
+                  </button>
+                  <input
+                    ref={photoFileInput}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    hidden
+                    onChange={handlePhotoFileChange}
+                  />
+                  <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+                    {t("createVideo.avatarSetup.uploadPhotoHint")}
+                  </p>
+                </div>
+              )}
 
               <div className="card-title" style={{ marginTop: 20 }}>
                 {t("createVideo.avatarSetup.referenceVideoTitle")}

@@ -511,7 +511,9 @@
         "disabled": "Disabled",
         "targetLufsLabel": "Target loudness",
         "targetLufsHelp": "Louder (closer to -6) reads punchier; quieter (closer to -24) reads more natural. -16 LUFS is a common streaming-friendly default."
-      }
+      },
+      "orUploadPhoto": "Or upload a photo file",
+      "uploadPhotoHint": "You can pick several at once; they fill the slots in the order they are sent."
     },
     "script": {
       "title": "Script",
