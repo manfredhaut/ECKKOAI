@@ -29,6 +29,22 @@ export const FEATURE_FLAGS = {
     reason: "depende de teste ainda não realizado com a HeyGen",
     defaultEnabled: false,
   },
+  explicit_avatar_engine: {
+    label: "Motor de avatar explícito",
+    /**
+     * Desligada porque a peça central é DEDUZIDA: que os valores de
+     * `supported_api_engines` (medidos na resposta de criação do avatar) são o
+     * mesmo vocabulário do campo `engine.type` de `POST /v3/videos`. Os nomes
+     * batem e a leitura é a natural, mas a documentação não amarra os dois, e
+     * nenhuma geração nossa jamais enviou `engine` — um valor recusado ali
+     * derruba a geração, que é o caminho caro.
+     *
+     * Desligada NÃO significa parada: a seleção roda e é gravada em todo
+     * vídeo, com a razão `flag_off`. O dado é colhido sem arriscar a geração.
+     */
+    reason: "a leitura do motor declarado pelo avatar ainda não foi confirmada numa geração real",
+    defaultEnabled: false,
+  },
 } as const;
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS;

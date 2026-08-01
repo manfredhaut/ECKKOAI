@@ -26,6 +26,7 @@ import {
   checkLiveBudgetPolicy,
 } from "./checkLiveBudgetPolicy.js";
 import { checkVendorLogPolicy } from "./checkVendorLogPolicy.js";
+import { checkVideoFormatPolicy } from "./checkVideoFormatPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -375,6 +376,11 @@ async function main(): Promise<void> {
   const vendorLogResult = await checkVendorLogPolicy(process.env.REPO_ROOT ?? "/repo");
   vendorLogResult.failures.forEach((f) => failures.push(f));
   vendorLogResult.notes.forEach((n) => note(n));
+
+  // --- 16. nenhuma geração vai ao fornecedor sem formato explícito --------
+  const formatResult = await checkVideoFormatPolicy(process.env.REPO_ROOT ?? "/repo");
+  formatResult.failures.forEach((f) => failures.push(f));
+  formatResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

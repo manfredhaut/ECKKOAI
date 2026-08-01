@@ -10,6 +10,8 @@ export interface Avatar {
   voice_id: string | null;
   provider_avatar_id: string | null;
   provider_status: "ready" | "processing" | "unknown" | null;
+  /** `supported_api_engines` declarado na criação. NULL = não declarou. */
+  provider_engines: string[] | null;
   audio_treatment_enabled: boolean;
   audio_treatment_target_lufs: number;
   created_at: string;
@@ -30,6 +32,14 @@ export interface Video {
   provider_job_id: string | null;
   provider_vendor: string | null;
   error_message: string | null;
+  /** Plataforma escolhida no passo "Publicação" e o formato derivado dela. */
+  publish_platform: string | null;
+  aspect_ratio: string | null;
+  resolution: string | null;
+  /** Motor ENVIADO ao fornecedor; NULL quando nenhum foi enviado. */
+  provider_engine: string | null;
+  /** Por que este motor — gravado inclusive quando nenhum foi enviado. */
+  provider_engine_reason: string | null;
   created_at: string;
 }
 

@@ -14,6 +14,8 @@ import { ARTIFACT_INVALID_MESSAGE, InvalidArtifactError, validateVideoArtifact }
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
+import { resolveVideoFormat, type VideoFormat } from "../services/providers/videoFormat.js";
+import { isFeatureEnabled } from "../services/featureFlagStore.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -25,6 +27,8 @@ function pollJob(
   vendor: AvatarVendor,
   jobId: string,
   durationSeconds: number,
+  format: VideoFormat,
+  engine: string | null,
 ): void {
   let attempts = 0;
   const interval = setInterval(async () => {
@@ -94,6 +98,13 @@ function pollJob(
           unitCount: measured.count,
           requestedUnitCount: durationSeconds,
           unitSource: measured.source,
+          // Formato e motor entram no registro de consumo, e não só na linha
+          // do vídeo: é o que permitirá responder "9:16 custa mais que 16:9?"
+          // sem depender de um join que deixa de funcionar quando o consumo
+          // não tem vídeo associado — a voz já não tem.
+          aspectRatio: format.aspectRatio,
+          resolution: format.resolution,
+          providerEngine: engine,
         });
       } else if (result.status === "error") {
         clearInterval(interval);
@@ -188,6 +199,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       scenario_prompt: string | null;
       outfit_prompt: string | null;
       duration_seconds: number;
+      publish_platform?: string | null;
     };
   }>("/videos", { preHandler: requireActiveTenant }, async (req, reply) => {
     const {
@@ -198,7 +210,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       scenario_prompt: scenarioPrompt,
       outfit_prompt: outfitPrompt,
       duration_seconds,
+      publish_platform: publishPlatform,
     } = req.body;
+
+    // Plataforma → formato, SEMPRE, e antes de qualquer outra coisa. Corpo sem
+    // plataforma cai no padrão declarado (YouTube/16:9, que é o que a conta já
+    // entregava por omissão) em vez de deixar o campo vazio: o objetivo do
+    // bloco é que nenhuma geração chegue ao fornecedor sem formato, e um
+    // cliente antigo que não manda o campo não pode ser a exceção.
+    const format = resolveVideoFormat(publishPlatform);
 
     if (!avatar_id) {
       return reply.code(400).send({ error: "avatar_id is required to generate a video" });
@@ -238,9 +258,28 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     const voiceCredential = await getCredential(req.tenantId, "voice");
 
     const { rows } = await pool.query<Video>(
-      `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10) RETURNING *`,
-      [req.tenantId, avatar_id, script, scenario, outfit, scenarioPrompt, outfitPrompt, duration_seconds, avatarCredential.vendor, isFixtureMode()],
+      `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated,
+                           publish_platform, aspect_ratio, resolution)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13) RETURNING *`,
+      [
+        req.tenantId,
+        avatar_id,
+        script,
+        scenario,
+        outfit,
+        scenarioPrompt,
+        outfitPrompt,
+        duration_seconds,
+        avatarCredential.vendor,
+        isFixtureMode(),
+        // O formato é gravado ANTES da chamada ao fornecedor, junto da linha
+        // que nasce `queued`. Se a geração falhar, o que o cliente pediu
+        // continua registrado — e "qual formato foi pedido no vídeo que
+        // falhou?" é justamente uma pergunta de diagnóstico.
+        format.platform,
+        format.aspectRatio,
+        format.resolution,
+      ],
     );
     const video = rows[0];
 
@@ -265,7 +304,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      const { providerJobId, audioDurationSeconds, audioDurationSource } = await generateVideo({
+      const { providerJobId, audioDurationSeconds, audioDurationSource, engine, engineReason } = await generateVideo({
         apiKey: avatarCredential.apiKey,
         vendor: avatarCredential.vendor as AvatarVendor,
         providerAvatarId: avatar.provider_avatar_id,
@@ -275,12 +314,29 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         tenantId: req.tenantId,
         audioTreatmentEnabled: avatar.audio_treatment_enabled,
         audioTreatmentTargetLufs: Number(avatar.audio_treatment_target_lufs),
+        format,
+        supportedEngines: avatar.provider_engines ?? null,
+        // A flag é lida AQUI, e não dentro do provider: `avatarProvider.ts` não
+        // fala com o banco, e é essa ausência de I/O que permite exercitá-lo
+        // com `fetch` substituído e mais nada.
+        engineEnabled: await isFeatureEnabled("explicit_avatar_engine"),
       });
       // A duração do áudio é gravada AGORA porque só agora ela é conhecida: o
-      // registro de consumo acontece no laço de polling, noutra requisição.
+      // registro de consumo acontece no laço de polling, noutra requisição. O
+      // motor entra junto pelo mesmo motivo — e a RAZÃO é gravada mesmo quando
+      // nenhum motor foi enviado, que é o estado normal com a flag desligada.
       await pool.query(
-        "UPDATE videos SET provider_job_id = $2, audio_duration_seconds = $3, audio_duration_source = $4 WHERE id = $1",
-        [video.id, providerJobId, audioDurationSeconds ?? null, audioDurationSource ?? null],
+        `UPDATE videos SET provider_job_id = $2, audio_duration_seconds = $3, audio_duration_source = $4,
+                           provider_engine = $5, provider_engine_reason = $6
+         WHERE id = $1`,
+        [
+          video.id,
+          providerJobId,
+          audioDurationSeconds ?? null,
+          audioDurationSource ?? null,
+          engine ?? null,
+          engineReason ?? null,
+        ],
       );
       pollJob(
         video.id,
@@ -289,6 +345,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         avatarCredential.vendor as AvatarVendor,
         providerJobId,
         duration_seconds,
+        format,
+        engine ?? null,
       );
     } catch (err) {
       // O job nunca foi aceito pelo fornecedor — nada foi renderizado, nenhuma

@@ -5,7 +5,9 @@ import { AvatarSetupStep } from "./steps/AvatarSetupStep";
 import { ScriptStep } from "./steps/ScriptStep";
 import { ChooseAssetsStep } from "./steps/ChooseAssetsStep";
 import { DurationStep } from "./steps/DurationStep";
+import { PublishStep } from "./steps/PublishStep";
 import { GenerateStep } from "./steps/GenerateStep";
+import { DEFAULT_PUBLISH_PLATFORM } from "./publishPlatforms";
 import type { AssetDefaults, WizardState } from "./types";
 
 export function CreateVideoPage() {
@@ -15,6 +17,10 @@ export function CreateVideoPage() {
     t("createVideo.steps.script"),
     t("createVideo.steps.assets"),
     t("createVideo.steps.duration"),
+    // "Publicação" vem depois de duração e antes de gerar: é a última decisão
+    // que muda o arquivo produzido, e a proporção só faz sentido escolher com
+    // o conteúdo já definido.
+    t("createVideo.steps.publish"),
     t("createVideo.steps.generate"),
   ];
   const [step, setStep] = useState(0);
@@ -32,6 +38,7 @@ export function CreateVideoPage() {
     scenarioPrompt: "",
     outfitPrompt: "",
     durationSeconds: 30,
+    publishPlatform: DEFAULT_PUBLISH_PLATFORM,
   });
 
   function goNext() {
@@ -55,7 +62,10 @@ export function CreateVideoPage() {
     (step === 0 && wizard.avatarId !== null) ||
     (step === 1 && wizard.script.trim().length > 0) ||
     step === 2 ||
-    step === 3;
+    step === 3 ||
+    // Publicação sempre tem uma plataforma escolhida (nasce no padrão), então
+    // não há como travar aqui.
+    step === 4;
 
   return (
     <>
@@ -105,7 +115,13 @@ export function CreateVideoPage() {
           onChange={(durationSeconds) => setWizard((w) => ({ ...w, durationSeconds }))}
         />
       )}
-      {step === 4 && <GenerateStep wizard={wizard} />}
+      {step === 4 && (
+        <PublishStep
+          platform={wizard.publishPlatform}
+          onChange={(publishPlatform) => setWizard((w) => ({ ...w, publishPlatform }))}
+        />
+      )}
+      {step === 5 && <GenerateStep wizard={wizard} />}
 
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
         {step > 0 && (

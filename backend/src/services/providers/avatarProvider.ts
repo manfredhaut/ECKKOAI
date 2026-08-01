@@ -19,6 +19,8 @@ import {
 import type { AvatarVendor } from "./vendorCatalog.js";
 import { isFixtureMode } from "./providerMode.js";
 import { consumeLiveGeneration, LiveBudgetExhaustedError } from "./liveGuard.js";
+import { vendorAcceptsFormat, type VideoFormat } from "./videoFormat.js";
+import { readSupportedEngines, selectEngine, type EngineReason, type HeygenEngine } from "./videoEngine.js";
 import {
   checkAvatarConnectionFixture,
   generateVideoFixture,
@@ -48,6 +50,12 @@ export type AvatarProviderStatus = "ready" | "processing" | "unknown";
 export interface TrainAvatarResult {
   providerAvatarId: string;
   status: AvatarProviderStatus;
+  /**
+   * `supported_api_engines` como o fornecedor declarou. NULL = não declarou.
+   * Medido: a HeyGen manda `["avatar_iv","avatar_iii"]` na criação, e o campo
+   * vinha sendo descartado junto com o resto do corpo.
+   */
+  supportedEngines?: string[] | null;
 }
 
 /**
@@ -75,6 +83,24 @@ export interface GenerateVideoInput {
   tenantId: string;
   audioTreatmentEnabled: boolean;
   audioTreatmentTargetLufs: number;
+  /**
+   * Formato do vídeo, derivado da plataforma de publicação. OBRIGATÓRIO, e
+   * deliberadamente sem valor padrão aqui: um campo opcional reabriria a
+   * omissão que este bloco existe para fechar. Quem chama resolve a plataforma
+   * antes, em `videoFormat.ts`, cuja função de resolução nunca devolve
+   * indefinido.
+   */
+  format: VideoFormat;
+  /** O que o avatar declarou aceitar como motor. NULL = não declarou. */
+  supportedEngines?: string[] | null;
+  /**
+   * A flag `explicit_avatar_engine` está ligada?
+   *
+   * Chega resolvida de fora porque ler flag é I/O de banco, e este módulo não
+   * fala com o banco — é o que permite exercitá-lo inteiro com `fetch`
+   * substituído e mais nada, como a guarda de formato faz.
+   */
+  engineEnabled: boolean;
 }
 
 /**
@@ -93,6 +119,18 @@ export interface GenerateVideoResult {
   /** Duração do áudio sintetizado, quando pôde ser determinada. */
   audioDurationSeconds?: number | null;
   audioDurationSource?: DurationSource | null;
+  /**
+   * Motor efetivamente ENVIADO ao fornecedor. `null` quando não foi enviado —
+   * o estado normal enquanto a flag estiver desligada, e sempre no caso da
+   * D-ID.
+   */
+  engine?: HeygenEngine | null;
+  /**
+   * Por que este motor (ou por que nenhum). Gravado SEMPRE, inclusive quando
+   * `engine` é nulo: o valor deste registro está em saber o que teria sido
+   * escolhido antes de arriscar enviá-lo.
+   */
+  engineReason?: EngineReason | "flag_off" | "vendor_unsupported" | null;
 }
 
 export type PollResult =
@@ -253,6 +291,11 @@ async function trainAvatarHeygen(apiKey: string, photoBuffer: Buffer): Promise<T
   return {
     providerAvatarId: avatarId,
     status: normalizeAvatarStatus(data?.data?.avatar_item?.status),
+    // Medido: vem `["avatar_iv","avatar_iii"]`. O fornecedor diz, por avatar,
+    // quais motores aquele avatar aceita — e até este bloco isso era
+    // descartado com o resto do corpo. Guardar agora é o que torna a escolha
+    // de motor possível sem uma chamada extra depois.
+    supportedEngines: readSupportedEngines(data?.data?.avatar_item?.supported_api_engines),
   };
 }
 
@@ -290,20 +333,54 @@ async function pollAvatarStatusHeygen(apiKey: string, avatarId: string): Promise
   }
 }
 
+/**
+ * Monta o corpo de `POST /v3/videos`.
+ *
+ * Separado da chamada de propósito: é esta função que a guarda de formato
+ * exercita, e um payload montado dentro do `fetch` só seria inspecionável
+ * interceptando a rede. O formato vai SEMPRE — não há ramo em que
+ * `aspect_ratio` ou `resolution` fiquem de fora, porque a omissão é justamente
+ * o defeito corrigido aqui.
+ */
+export function buildHeygenVideoPayload(
+  input: Pick<GenerateVideoInput, "providerAvatarId" | "format" | "supportedEngines" | "engineEnabled">,
+  audioAssetId: string,
+): { body: Record<string, unknown>; engine: HeygenEngine | null; engineReason: EngineReason | "flag_off" } {
+  const selection = selectEngine(input.supportedEngines);
+
+  const body: Record<string, unknown> = {
+    type: "avatar",
+    avatar_id: input.providerAvatarId,
+    audio_asset_id: audioAssetId,
+    // Os dois campos que faltavam. Sem eles, o vídeo saía no padrão da conta —
+    // 1280×720 16:9 na passada medida — e o cliente que escolheu Reels recebia
+    // horizontal sem que nada no sistema soubesse que havia uma escolha.
+    aspect_ratio: input.format.aspectRatio,
+    resolution: input.format.resolution,
+  };
+
+  // O motor é a parte DEDUZIDA (ver videoEngine.ts): a ligação entre
+  // `supported_api_engines` e `engine.type` é leitura nossa, não contrato
+  // declarado. A seleção acontece de qualquer forma e é registrada de qualquer
+  // forma; só o envio depende da flag.
+  if (!input.engineEnabled) {
+    return { body, engine: null, engineReason: "flag_off" };
+  }
+  body.engine = { type: selection.engine };
+  return { body, engine: selection.engine, engineReason: selection.reason };
+}
+
 async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateVideoResult> {
   const audio = await requireAudio(input);
   const audioAssetId = await heygenUploadAsset(input.apiKey, audio.buffer, "audio/mpeg");
+  const { body, engine, engineReason } = buildHeygenVideoPayload(input, audioAssetId);
 
   let res: Response;
   try {
     res = await fetch(`${HEYGEN_BASE}/v3/videos`, {
       method: "POST",
       headers: { "x-api-key": input.apiKey, "content-type": "application/json" },
-      body: JSON.stringify({
-        type: "avatar",
-        avatar_id: input.providerAvatarId,
-        audio_asset_id: audioAssetId,
-      }),
+      body: JSON.stringify(body),
     });
   } catch (err) {
     logProviderNetworkError("avatarProvider.heygen", err);
@@ -318,6 +395,8 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
     providerJobId: videoId,
     audioDurationSeconds: audio.durationSeconds,
     audioDurationSource: audio.source,
+    engine,
+    engineReason,
   };
 }
 
@@ -449,6 +528,8 @@ async function generateVideoDid(input: GenerateVideoInput): Promise<GenerateVide
     providerJobId: talkId,
     audioDurationSeconds: audio.durationSeconds,
     audioDurationSource: audio.source,
+    engine: null,
+    engineReason: "vendor_unsupported",
   };
 }
 
@@ -556,6 +637,21 @@ export async function waitForAvatarReady(
 }
 
 export async function generateVideo(input: GenerateVideoInput): Promise<GenerateVideoResult> {
+  // Vendor que não aceita formato não é motivo para recusar a geração — é
+  // motivo para deixar registrado que a escolha do cliente não vai ser honrada.
+  // Barrar aqui tiraria a D-ID do ar por causa de um recurso que ela nunca
+  // teve; ficar calado devolveria um vídeo na proporção errada sem que nada no
+  // sistema soubesse por quê.
+  if (!vendorAcceptsFormat(input.vendor)) {
+    console.warn(
+      JSON.stringify({
+        event: "video_format_not_applied",
+        vendor: input.vendor,
+        requested: input.format,
+        consequence: "o vendor decide a geometria; a proporção pedida fica gravada mas não é enviada",
+      }),
+    );
+  }
   if (isFixtureMode()) return generateVideoFixture(input);
 
   // Teto por sessão: protege contra o laço que dispara N vezes, que nenhuma

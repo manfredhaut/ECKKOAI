@@ -57,6 +57,10 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
         scenario_prompt: wizard.scenarioPrompt || null,
         outfit_prompt: wizard.outfitPrompt || null,
         duration_seconds: wizard.durationSeconds,
+        // Vai SEMPRE. O servidor tem padrão para corpo sem este campo, mas
+        // depender do padrão dele aqui reproduziria, um andar acima, a mesma
+        // omissão que o bloco tirou do payload do fornecedor.
+        publish_platform: wizard.publishPlatform,
       });
       setVideo(created);
       pollRef.current = window.setInterval(async () => {

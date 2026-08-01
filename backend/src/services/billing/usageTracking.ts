@@ -23,6 +23,17 @@ export interface RecordUsageInput {
   requestedUnitCount?: number | null;
   /** De onde veio `unitCount`. Sem isso, medido e estimado ficam iguais. */
   unitSource?: UnitSource | null;
+  /**
+   * Formato pedido e motor usado, quando o consumo é de geração de vídeo.
+   *
+   * Opcionais porque nem todo consumo tem geometria: a voz mede caracteres e
+   * não tem proporção nenhuma. Preencher com um valor de fachada ali faria a
+   * conciliação futura acreditar que houve formato onde não há.
+   */
+  aspectRatio?: string | null;
+  resolution?: string | null;
+  /** `null` = nenhum motor foi enviado ao fornecedor. Ver videoEngine.ts. */
+  providerEngine?: string | null;
 }
 
 // Writes one row to provider_usage (see migration 023) per billable
@@ -57,8 +68,9 @@ export async function recordProviderUsage(input: RecordUsageInput): Promise<void
     await pool.query(
       `INSERT INTO provider_usage
          (tenant_id, video_id, provider, vendor, unit_type, unit_count,
-          requested_unit_count, unit_source, rate_snapshot_cents_per_unit, estimated_cost_cents)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          requested_unit_count, unit_source, rate_snapshot_cents_per_unit, estimated_cost_cents,
+          aspect_ratio, resolution, provider_engine)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         input.tenantId,
         input.videoId ?? null,
@@ -70,6 +82,9 @@ export async function recordProviderUsage(input: RecordUsageInput): Promise<void
         input.unitSource ?? null,
         rate,
         estimatedCostCents,
+        input.aspectRatio ?? null,
+        input.resolution ?? null,
+        input.providerEngine ?? null,
       ],
     );
   } catch (err) {

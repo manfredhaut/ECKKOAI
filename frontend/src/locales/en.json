@@ -436,6 +436,7 @@
       "script": "Script",
       "assets": "Assets",
       "duration": "Duration",
+      "publish": "Publishing",
       "generate": "Generate"
     },
     "avatarSetup": {
@@ -552,6 +553,17 @@
     },
     "duration": {
       "title": "Duration"
+    },
+    "publish": {
+      "title": "Where will this video be published",
+      "subtitle": "The video's aspect ratio comes from the destination you pick.",
+      "platforms": {
+        "youtube": "YouTube",
+        "reels_tiktok": "Reels, TikTok and Shorts",
+        "instagram_feed": "Instagram feed",
+        "linkedin": "LinkedIn"
+      },
+      "notVerified": "The chosen aspect ratio is sent to the video service on every generation. So far only the landscape format has been checked against a real video — the others have not been through an actual generation yet."
     },
     "generate": {
       "title": "Generate & review",

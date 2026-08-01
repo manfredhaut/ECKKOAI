@@ -203,8 +203,12 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
 
     let providerAvatarId: string;
     let providerStatus: AvatarProviderStatus;
+    // Motores que o fornecedor declara para ESTE avatar. Só a resposta de
+    // criação os traz; perder este momento significaria uma chamada extra
+    // depois, ou nunca saber.
+    let supportedEngines: string[] | null = null;
     try {
-      ({ providerAvatarId, status: providerStatus } = await trainAvatar({
+      ({ providerAvatarId, status: providerStatus, supportedEngines = null } = await trainAvatar({
         apiKey: avatarCredential.apiKey,
         vendor: avatarCredential.vendor as "heygen" | "did",
         photoUrls: existing[0].photo_urls,
@@ -241,9 +245,18 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
 
     const { rows: trained } = await pool.query<Avatar>(
       `UPDATE avatars SET reference_video_url = $3, provider_avatar_id = $4, provider = $5, simulated = $6,
-                          provider_status = $7
+                          provider_status = $7, provider_engines = $8
        WHERE id = $1 AND tenant_id = $2 RETURNING *`,
-      [req.params.id, req.tenantId, url, providerAvatarId, avatarCredential.vendor, isFixtureMode(), providerStatus],
+      [
+        req.params.id,
+        req.tenantId,
+        url,
+        providerAvatarId,
+        avatarCredential.vendor,
+        isFixtureMode(),
+        providerStatus,
+        supportedEngines,
+      ],
     );
 
     const voiceCredential = await getCredential(req.tenantId, "voice");

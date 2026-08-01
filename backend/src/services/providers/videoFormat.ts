@@ -1,0 +1,142 @@
+/**
+ * Formato do vídeo gerado: proporção e resolução, derivadas da PLATAFORMA de
+ * publicação escolhida pelo cliente.
+ *
+ * Por que isto existe: até este bloco, `POST /v3/videos` levava três campos —
+ * `type`, `avatar_id`, `audio_asset_id` — e mais nada. O vídeo saía 1280×720
+ * 16:9 porque esse é o padrão da conta na HeyGen, não porque alguém tivesse
+ * escolhido. "Padrão do fornecedor" é uma decisão de produto tomada por
+ * omissão, e ela vinha sendo tomada por um terceiro que não sabe onde o vídeo
+ * vai ser publicado.
+ *
+ * A escolha do cliente é a PLATAFORMA, não a proporção. Ninguém abre a
+ * ferramenta querendo "9:16" — quer publicar no Reels. A proporção é
+ * consequência, e mantê-la como consequência é o que impede a tela de virar um
+ * formulário de especificação técnica.
+ *
+ * FONTE ÚNICA. O frontend espelha este catálogo em `publishPlatforms.ts` (mesmo
+ * padrão de `vendorCatalog.ts`), e `npm run check` reprova o build se os dois
+ * divergirem — duas listas de plataformas que discordam produziriam uma tela
+ * oferecendo um destino que o servidor recusa.
+ */
+
+/**
+ * Proporções que a HeyGen documenta para `POST /v3/videos`.
+ *
+ * DOCUMENTADO pelo fornecedor (doc pública, duas fontes concordantes), NUNCA
+ * exercitado por nós: nenhuma geração enviou `aspect_ratio` até hoje. O
+ * fornecedor também documenta `5:4` e `auto`; ficaram de fora porque nenhuma
+ * plataforma do catálogo pede — oferecer um valor que ninguém escolhe só
+ * aumenta a superfície do que teria de ser verificado em live.
+ */
+export const HEYGEN_ASPECT_RATIOS = ["16:9", "9:16", "4:5", "1:1"] as const;
+export type AspectRatio = (typeof HEYGEN_ASPECT_RATIOS)[number];
+
+/**
+ * Resoluções que a HeyGen documenta. Também DOCUMENTADO e não exercitado.
+ */
+export const HEYGEN_RESOLUTIONS = ["720p", "1080p", "4k"] as const;
+export type VideoResolution = (typeof HEYGEN_RESOLUTIONS)[number];
+
+/**
+ * Resolução usada em todas as plataformas, por ora: 720p.
+ *
+ * Não é preguiça, é o único ponto de custo MEDIDO. A passada live do LIVE-1
+ * saiu em 1280×720 (o servidor escolheu, já que não mandamos nada) e custou
+ * ~US$ 0,045 por segundo. Subir para 1080p mudaria o custo por um fator que
+ * ninguém mediu, num saldo que comporta poucas gerações. Explicitar o que já
+ * era o comportamento observado mantém o custo no ponto conhecido e ainda
+ * assim tira a decisão das mãos do fornecedor.
+ *
+ * Quando houver medição de 1080p, isto vira campo por plataforma — a estrutura
+ * já comporta, cada entrada declara a sua.
+ */
+const MEASURED_RESOLUTION: VideoResolution = "720p";
+
+export interface PublishPlatform {
+  id: string;
+  /** Rótulo em pt-BR; a UI traduz pelo id, este é a retaguarda. */
+  label: string;
+  aspectRatio: AspectRatio;
+  resolution: VideoResolution;
+}
+
+/**
+ * Plataformas de publicação oferecidas ao cliente.
+ *
+ * A lista é curta de propósito: cada entrada é uma proporção que teria de ser
+ * conferida em live, e prometer seis destinos verificando um seria pior que
+ * oferecer quatro.
+ */
+export const PUBLISH_PLATFORMS = [
+  { id: "youtube", label: "YouTube (horizontal)", aspectRatio: "16:9", resolution: MEASURED_RESOLUTION },
+  { id: "reels_tiktok", label: "Reels, TikTok e Shorts (vertical)", aspectRatio: "9:16", resolution: MEASURED_RESOLUTION },
+  { id: "instagram_feed", label: "Feed do Instagram (retrato)", aspectRatio: "4:5", resolution: MEASURED_RESOLUTION },
+  { id: "linkedin", label: "LinkedIn e feed quadrado", aspectRatio: "1:1", resolution: MEASURED_RESOLUTION },
+] as const satisfies readonly PublishPlatform[];
+
+export type PublishPlatformId = (typeof PUBLISH_PLATFORMS)[number]["id"];
+
+/**
+ * Padrão quando o cliente não escolheu.
+ *
+ * É o YouTube (16:9) porque é exatamente o que a conta já entregava por
+ * omissão — o padrão novo reproduz o comportamento antigo, e assim a mudança
+ * de formato só acontece quando alguém decide, nunca por atualizar o código.
+ */
+export const DEFAULT_PUBLISH_PLATFORM: PublishPlatformId = "youtube";
+
+export interface VideoFormat {
+  platform: PublishPlatformId;
+  aspectRatio: AspectRatio;
+  resolution: VideoResolution;
+}
+
+export function isPublishPlatform(value: unknown): value is PublishPlatformId {
+  return PUBLISH_PLATFORMS.some((p) => p.id === value);
+}
+
+/**
+ * Plataforma → formato. NUNCA devolve indefinido.
+ *
+ * Entrada desconhecida cai no padrão em vez de propagar `undefined`: um formato
+ * ausente lá na frente vira omissão no payload, que é exatamente o defeito que
+ * este arquivo existe para eliminar. Uma plataforma que sumiu do catálogo tem
+ * de degradar para uma escolha declarada, não para "o fornecedor decide".
+ */
+export function resolveVideoFormat(platform: unknown): VideoFormat {
+  const id = isPublishPlatform(platform) ? platform : DEFAULT_PUBLISH_PLATFORM;
+  const entry = PUBLISH_PLATFORMS.find((p) => p.id === id)!;
+  return { platform: entry.id, aspectRatio: entry.aspectRatio, resolution: entry.resolution };
+}
+
+/**
+ * Um vendor de avatar aceita formato explícito?
+ *
+ * Registro obrigatório, no mesmo espírito do de feature flags: quem acrescentar
+ * um vendor tem de DECIDIR sobre formato, e a decisão fica escrita com o
+ * motivo. Sem isso, um vendor novo herdaria em silêncio o defeito que este
+ * bloco corrige — o fornecedor escolhendo a proporção sozinho.
+ *
+ * `npm run check` reprova o build se um vendor do catálogo não estiver aqui.
+ */
+export const VENDOR_FORMAT_SUPPORT = {
+  heygen: {
+    supported: true,
+    reason:
+      "POST /v3/videos documenta `aspect_ratio` e `resolution`; os dois vão em toda geração. " +
+      "DOCUMENTADO pelo fornecedor, ainda NÃO confirmado por resposta real — nenhuma geração live enviou formato.",
+  },
+  did: {
+    supported: false,
+    reason:
+      "Não há campo de proporção documentado em POST /talks: a geometria da D-ID sai da imagem de origem. " +
+      "Nenhuma resposta real da D-ID foi observada em nenhuma sessão, então inventar um campo seria pior " +
+      "que declarar a limitação — a proporção pedida pelo cliente é gravada mesmo assim, e fica visível " +
+      "que o vendor não a honrou.",
+  },
+} as const;
+
+export function vendorAcceptsFormat(vendor: string): boolean {
+  return VENDOR_FORMAT_SUPPORT[vendor as keyof typeof VENDOR_FORMAT_SUPPORT]?.supported === true;
+}

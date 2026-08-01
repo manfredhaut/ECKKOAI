@@ -22,14 +22,48 @@ import { fileURLToPath } from "node:url";
 import { saveUpload } from "../storage.js";
 import type { AvatarProviderStatus, GenerateVideoInput, GenerateVideoResult, PollResult, TrainAvatarResult } from "./avatarProvider.js";
 import type { CloneVoiceResult, SynthesizedSpeech } from "./voiceProvider.js";
+import { HEYGEN_ASPECT_RATIOS, type AspectRatio } from "./videoFormat.js";
+import { selectEngine } from "./videoEngine.js";
 
 /** Quanto tempo o job simulado passa em `processing` antes de concluir. */
 const SIMULATED_JOB_DURATION_MS = 12_000;
 
-const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
+/**
+ * Diretório de onde as fixtures são lidas EM EXECUÇÃO.
+ *
+ * Exportado para que a guarda de formato confira exatamente este caminho, e não
+ * uma reconstrução dele a partir da raiz do repositório. A diferença não é
+ * teórica: o bind mount de `/repo` traz só `backend/src` e `backend/scripts`, e
+ * as fixtures chegam ao container pelo `COPY` do Dockerfile. Conferir a raiz do
+ * repositório acusaria ausência onde não há, e — pior — deixaria passar o
+ * defeito do VIDEO-0, em que o Dockerfile não copiava as fixtures e a simulação
+ * quebrava no meio do job.
+ */
+export const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
+const fixturesDir = FIXTURES_DIR;
 
-export const FIXTURE_VIDEO_FILE = "simulated-video.mp4";
 export const FIXTURE_AUDIO_FILE = "simulated-speech.mp3";
+
+/**
+ * Uma fixture de vídeo POR PROPORÇÃO.
+ *
+ * O motivo é a regra deste arquivo levada a sério: uma simulação que devolve
+ * sempre 640×360 não prova nada sobre formato. Pior — ela passa verde
+ * exatamente no caminho que o bloco de formato existe para verificar, e um
+ * modo fixture que sempre aprova é falso verde, o defeito de que este projeto
+ * já tem histórico. Com uma fixture por proporção, pedir 9:16 e receber um
+ * arquivo horizontal vira uma diferença observável sem gastar cota.
+ *
+ * Geradas com ffmpeg e VERSIONADAS (proporção conferida com `ffprobe`):
+ *   16:9 → 640×360   ·   9:16 → 360×640   ·   4:5 → 512×640   ·   1:1 → 512×512
+ * Todas com 5 s, h264 + aac, e acima do piso de 100 KB de `videoArtifact.ts`.
+ */
+export const FIXTURE_VIDEO_FILES: Record<AspectRatio, string> = {
+  "16:9": "simulated-video-16x9.mp4",
+  "9:16": "simulated-video-9x16.mp4",
+  "4:5": "simulated-video-4x5.mp4",
+  "1:1": "simulated-video-1x1.mp4",
+};
 
 /**
  * Duração real dos artefatos de fixture, em segundos, conferida com `ffprobe`.
@@ -58,6 +92,13 @@ export const FIXTURE_AUDIO_DURATION_SECONDS = 3;
 interface SimulatedJob {
   tenantId: string;
   startedAt: number;
+  /**
+   * A proporção PEDIDA no payload. Guardada porque é o polling que materializa
+   * o arquivo, noutra requisição — sem carregá-la até lá, a simulação teria de
+   * escolher uma proporção sozinha, que é o comportamento que o bloco de
+   * formato acabou de tirar do fornecedor.
+   */
+  aspectRatio: AspectRatio;
 }
 const jobs = new Map<string, SimulatedJob>();
 
@@ -77,18 +118,54 @@ async function readFixture(name: string): Promise<Buffer> {
   }
 }
 
+/**
+ * Proporção → arquivo. Proporção fora do catálogo cai em 16:9 e AVISA.
+ *
+ * Falhar aqui derrubaria o job simulado por causa de um arquivo faltando, o que
+ * transformaria um buraco no catálogo de fixtures numa falha que parece de
+ * geração. Cair calado seria pior ainda: a simulação entregaria horizontal
+ * para quem pediu vertical e passaria por correta — exatamente o falso verde
+ * que a divisão por proporção existe para eliminar.
+ */
+function fixtureFileFor(aspectRatio: AspectRatio): string {
+  const file = FIXTURE_VIDEO_FILES[aspectRatio];
+  if (file) return file;
+  console.warn(
+    JSON.stringify({
+      event: "fixture_aspect_ratio_missing",
+      requested: aspectRatio,
+      known: HEYGEN_ASPECT_RATIOS,
+      consequence: "entregando 16:9 — a simulação NÃO honrou a proporção pedida",
+    }),
+  );
+  return FIXTURE_VIDEO_FILES["16:9"];
+}
+
 // --------------------------------------------------------------- avatar ---
 
 export function trainAvatarFixture(): TrainAvatarResult {
   // Caminho normal da simulação: avatar já nasce pronto.
   // Prefixo explícito: um id de avatar simulado nunca deve ser confundido
   // com um id real do vendor ao ler o banco depois.
-  return { providerAvatarId: `fixture-avatar-${randomUUID()}`, status: "ready" };
+  return {
+    providerAvatarId: `fixture-avatar-${randomUUID()}`,
+    status: "ready",
+    // Os mesmos motores que a HeyGen declarou no avatar real medido. Devolver
+    // `null` aqui faria toda geração simulada cair na razão
+    // "default_no_declaration", e o caminho da seleção a partir de declaração
+    // — o normal em live — nunca seria exercitado.
+    supportedEngines: ["avatar_iv", "avatar_iii"],
+  };
 }
 
 export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoResult {
   const providerJobId = `fixture-${randomUUID()}`;
-  jobs.set(providerJobId, { tenantId: input.tenantId, startedAt: Date.now() });
+  jobs.set(providerJobId, {
+    tenantId: input.tenantId,
+    startedAt: Date.now(),
+    aspectRatio: input.format.aspectRatio,
+  });
+  const selection = selectEngine(input.supportedEngines);
   // Em simulação a síntese não acontece (generateVideo devolve antes de
   // requireAudio), então a duração do áudio é a da fixture de voz. Vai como
   // `tts_timestamps` porque é o papel que ela cumpre no fluxo: a retaguarda
@@ -97,6 +174,11 @@ export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoRe
     providerJobId,
     audioDurationSeconds: FIXTURE_AUDIO_DURATION_SECONDS,
     audioDurationSource: "tts_timestamps",
+    // A simulação decide o motor pela MESMA função do caminho real, e respeita
+    // a mesma flag. Devolver um valor fixo faria a seleção só existir em live,
+    // que é onde ela não pode ser depurada.
+    engine: input.engineEnabled ? selection.engine : null,
+    engineReason: input.engineEnabled ? selection.reason : "flag_off",
   };
 }
 
@@ -116,8 +198,10 @@ export async function pollVideoJobFixture(jobId: string): Promise<PollResult> {
   }
 
   // Concluído: materializa o arquivo no storage do tenant, como um vendor
-  // real faria ao publicar o resultado.
-  const buffer = await readFixture(FIXTURE_VIDEO_FILE);
+  // real faria ao publicar o resultado — e na proporção que o payload pediu,
+  // não numa proporção fixa. É o que impede a simulação de aprovar um caminho
+  // de formato que nunca funcionou.
+  const buffer = await readFixture(fixtureFileFor(job.aspectRatio));
   const outputUrl = await saveUpload(job.tenantId, buffer, "simulado.mp4");
   jobs.delete(jobId);
   // A duração vai junto, como a HeyGen faz: é a do arquivo realmente entregue,

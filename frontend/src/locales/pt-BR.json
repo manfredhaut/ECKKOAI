@@ -436,6 +436,7 @@
       "script": "Roteiro",
       "assets": "Recursos",
       "duration": "Duração",
+      "publish": "Publicação",
       "generate": "Gerar"
     },
     "avatarSetup": {
@@ -552,6 +553,17 @@
     },
     "duration": {
       "title": "Duração"
+    },
+    "publish": {
+      "title": "Onde este vídeo vai ser publicado",
+      "subtitle": "A proporção do vídeo é definida pelo destino escolhido.",
+      "platforms": {
+        "youtube": "YouTube",
+        "reels_tiktok": "Reels, TikTok e Shorts",
+        "instagram_feed": "Feed do Instagram",
+        "linkedin": "LinkedIn"
+      },
+      "notVerified": "A proporção escolhida é enviada ao serviço de vídeo em toda geração. Até agora só o formato horizontal foi conferido em um vídeo real — os demais ainda não passaram por uma geração de verdade."
     },
     "generate": {
       "title": "Gerar e revisar",

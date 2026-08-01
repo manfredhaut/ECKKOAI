@@ -503,7 +503,15 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-01 — Bloco LIVE-1: **uma** geração live real,
+**Última atualização:** 2026-08-01 — Bloco FORMATO-1: o payload de geração
+passou a levar `aspect_ratio` e `resolution` SEMPRE, derivados da plataforma
+escolhida num passo novo ("Publicação", 5 de 6). O motor é selecionado a partir
+do `supported_api_engines` declarado pelo avatar, gravado sempre e **enviado só
+atrás de flag desligada** — a ligação entre os dois campos é dedução, não
+contrato. Quatro fixtures por proporção, guarda nova (41 mutantes no total).
+Ambiente em fixture do começo ao fim, zero chamadas a fornecedor. **Nada disso
+foi confirmado em live** — ver a lista própria de pendências. Antes dele, o
+Bloco LIVE-1: **uma** geração live real,
 de ponta a ponta, com o avatar que já existia. Saiu vídeo utilizável em ~54 s,
 custo medido de US$ 0,15, e o `ffprobe` do arquivo baixado deu 1280×720 16:9
 25 fps. A unidade de `remaining_quota` foi reconciliada (60 por dólar). Três
@@ -793,16 +801,13 @@ o próprio comentário que a explicava).
 três têm a mesma natureza: algo que se supõe verdade e não é, e que só
 apareceria em live ou numa conversa com cliente.
 
-1. **"Derivação de formatos" é hoje INEXEQUÍVEL, e não só não-implementada.**
-   O payload de `POST /v3/videos` tem três campos —
-   `{ type, avatar_id, audio_asset_id }` ([avatarProvider.ts:195](backend/src/services/providers/avatarProvider.ts:195)).
-   **Não mandamos `dimension` nem `aspect_ratio`**, então nunca escolhemos
-   9:16, 1:1 ou qualquer outro: o vídeo sai no que a HeyGen decidir por
-   padrão. Derivar formatos não é acrescentar uma tela — exige primeiro
-   passar a controlar a proporção na geração, e depois descobrir se um mesmo
-   avatar rende bem em vertical. *(O usuário se refere a isto como "Decisão
-   6"; essa numeração vem do planejamento dele, não deste arquivo — não
-   existe decisão 6 sobre formatos aqui.)*
+1. ~~**"Derivação de formatos" é hoje INEXEQUÍVEL.**~~ **Metade FECHADA no
+   FORMATO-1.** O payload passou a levar `aspect_ratio` e `resolution`
+   sempre, derivados da plataforma escolhida no passo "Publicação" — ver o
+   bloco próprio no fim. O que continua aberto é a outra metade, e ela só
+   fecha em live: **se 9:16 sai vertical de verdade**, e se um mesmo avatar
+   rende bem fora do horizontal. *(O usuário se refere a isto como "Decisão
+   6"; essa numeração vem do planejamento dele, não deste arquivo.)*
 2. **A UI exige 3 fotos e o provider usa só a primeira.**
    `AvatarSetupStep` bloqueia "Concluir configuração" com menos de 3
    (`photo_urls.length < 3`), e `trainAvatar()` faz
@@ -1160,8 +1165,13 @@ POST do domínio raiz) e para o modal de acesso administrativo.
   watch não recarregava de forma confiável através do bind mount.
 - **`vite.config.ts`, `package.json`, `Dockerfile` e o entrypoint NÃO estão
   no bind mount.** Mexer em qualquer um deles exige
-  `docker compose build <serviço>`; um `restart` não basta e o sintoma é a
-  mudança simplesmente não existir.
+  `docker compose build <serviço>`; um `restart` não basta. **O sintoma pode
+  ser MUITO pior que "a mudança não existir": se um `define` novo do
+  `vite.config.ts` for usado pelo código do bind mount, a app inteira quebra
+  em branco** — console limpo, Vite dizendo `ready`, healthcheck verde.
+  Aconteceu com `__MAX_IMAGE_BYTES__` (ver FORMATO-1). Para diagnosticar,
+  importe o entrypoint à mão no console: `import('/src/main.tsx').catch(e =>
+  e.message)` — é onde o erro real aparece.
 - **`docker compose restart` NÃO recarrega variável de ambiente.** Para
   `.env` novo é preciso `docker compose up -d <serviço>`, que recria o
   container.
@@ -1371,6 +1381,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-01 | **FORMATO-1** | **Formato explícito no payload, derivado da plataforma; motor selecionado e registrado atrás de flag; 4 fixtures por proporção; guarda nova (41 mutantes no total). Ver abaixo.** |
 | 08-01 | **GUARDAS-1** | **`npm run check:mutants`: 38 mutantes provam que cada guarda reprova de verdade. D, C, E, B, G consertados + 1 achado novo (teto testado sem quem o chama). Ver abaixo.** |
 | 08-01 | **LIVE-2** | **Voz entra no LOG-1 (sem bytes de áudio); `provider_usage` grava duração real e pedida lado a lado; guarda nova de registro de resposta. Ver abaixo.** |
 | 08-01 | **LIVE-1** | **Uma geração live com avatar existente: vídeo em ~54 s por US$ 0,15; quota reconciliada (60/dólar); formato real 1280×720 16:9 25 fps; 3 lacunas novas. Ambiente desarmado de volta para `fixture`.** |
@@ -1585,6 +1596,129 @@ legítimo já observado tem **519 caracteres** (URL assinada da HeyGen).
 38 mutantes sobre ~28 asserções. As asserções sem mutante estão nomeadas na
 tabela do relatório do bloco; as principais são as de tamanho de prompt e as de
 manifesto de docs, que dependem de estado de disco mais do que de código.
+
+### Bloco FORMATO-1 — o fornecedor deixa de escolher a proporção (CONCLUÍDO)
+
+**A frase do bloco: escolher por omissão é escolher mesmo assim.** O vídeo do
+LIVE-1 saiu 1280×720 16:9 porque esse é o padrão da conta na HeyGen — ninguém
+decidiu, e a decisão coube a quem não sabe onde o vídeo vai ser publicado.
+
+**O que foi LEVANTADO antes de implementar** (a separação importa mais que o
+código):
+
+| Campo | Estado | Origem |
+|---|---|---|
+| `aspect_ratio`: `16:9 \| 9:16 \| 4:5 \| 5:4 \| 1:1 \| auto`, default `16:9` | **DOCUMENTADO**, nunca exercitado | doc pública, 2 fontes concordantes |
+| `resolution`: `720p \| 1080p \| 4k` | **DOCUMENTADO**, nunca exercitado | idem |
+| `engine: { type: avatar_v \| avatar_iv \| avatar_iii }`, default `avatar_iv` | **DOCUMENTADO**, nunca exercitado | idem |
+| `avatar_item.supported_api_engines = ["avatar_iv","avatar_iii"]` | **MEDIDO** | log bruto de `heygen.createAvatar`, 200, 434 bytes |
+| `supported_api_engines` ↔ `engine.type` são o mesmo vocabulário | **DEDUZIDO** | os nomes batem; a doc **não** amarra os dois |
+
+**Achado do levantamento, que muda o diagnóstico:** nenhuma resposta da HeyGen
+declara geometria. Nem a criação (`{output_format, status, video_id}`) nem o
+polling (`duration`, `video_url`, `thumbnail_url`, …). Tudo que se sabe sobre
+o formato do que foi entregue veio do `ffprobe` de UM arquivo baixado — não há
+como conferir formato pela resposta, só pelo artefato.
+
+**1. Formato SEMPRE explícito, derivado da plataforma.** A escolha oferecida é
+a PLATAFORMA, não a proporção: ninguém abre a ferramenta querendo "9:16", quer
+publicar no Reels. Passo "Publicação" (5 de 6), quatro destinos, cada um com o
+quadrinho desenhado **na proporção real** — "4:5" e "1:1" são indistinguíveis
+para quem não pensa em número o dia todo.
+
+Catálogo único em [videoFormat.ts](backend/src/services/providers/videoFormat.ts),
+espelhado no frontend, **com o espelho conferido pelo gate**: duas listas que
+discordam produzem o pior defeito possível aqui — a tela oferece um destino, o
+servidor cai no padrão, e o cliente recebe horizontal sem erro em lugar nenhum.
+
+**A resolução vai em 720p, e não 1080p, porque 720p é o único ponto de custo
+MEDIDO** (~US$ 0,045/s no LIVE-1). Explicitar o que já era o comportamento
+observado tira a decisão do fornecedor sem mexer no custo. Corpo sem plataforma
+cai no padrão declarado (YouTube/16:9): um cliente antigo não pode ser a
+exceção que reabre a omissão.
+
+**2. Motor: decidido e gravado sempre, enviado só atrás de flag.** A peça
+central é DEDUZIDA (ver tabela), e um valor recusado em `engine` derruba a
+geração — o caminho caro. Então a seleção roda e é gravada em todo vídeo, com
+a razão (`declared_preference`, `default_no_declaration`, `flag_off`, …), e só
+o **envio** depende de `explicit_avatar_engine`, **desligada**. O dado é
+colhido sem arriscar nada.
+
+`avatars.provider_engines` passou a guardar o que o fornecedor declara —
+o campo vinha em toda criação e era descartado com o corpo.
+
+**3. A fixture acompanha.** Quatro fixtures versionadas, uma por proporção
+(16:9 → 640×360, 9:16 → 360×640, 4:5 → 512×640, 1:1 → 512×512), e o job
+simulado entrega **a que o payload pediu**. Uma simulação que devolvesse sempre
+640×360 aprovaria justamente o caminho que este bloco verifica — falso verde.
+
+*Medido pela rota real de download, com `ffprobe` no arquivo baixado:*
+`reels_tiktok` → **360×640 9:16**; `youtube` → **640×360 16:9**. E o payload
+montado pelo caminho real nas **8** combinações: `aspect_ratio` e `resolution`
+presentes em todas, `engine` só com a flag ligada.
+
+**4. Guarda nova** ([checkVideoFormatPolicy.ts](backend/src/scripts/checkVideoFormatPolicy.ts)),
+com **6 asserções**. A principal exercita a MONTAGEM real do payload, uma vez
+por plataforma — **casa 4 montagens** (uma por plataforma do catálogo), mais
+4 fixtures, 2 vendors, 5 formas de declaração de motor e 4 entradas do espelho
+do frontend. Casar texto no arquivo passaria a aprovar no dia em que alguém
+movesse a montagem de lugar, que é a reorganização que faz um campo se perder.
+
+**O mutante esperto não tira o campo:** faz toda plataforma resolver para 16:9.
+O payload continua completo, a superfície inspecionada não muda, e o produto
+volta ao comportamento anterior — agora **com aparência de decisão**. Só a
+asserção sobre proporções DISTINTAS pega isso. `check:mutants`: **41/41**.
+
+**Duas coisas que a própria execução ensinou:**
+
+1. **A guarda de fixtures acusou ausência onde não havia.** Ela conferia
+   `<repoRoot>/backend/fixtures`, e o bind mount de `/repo` traz só
+   `backend/src` e `backend/scripts` — as fixtures chegam pelo `COPY` do
+   Dockerfile. Corrigido conferindo `FIXTURES_DIR`, **o mesmo caminho que o
+   job simulado lê em execução**, o que de quebra torna a guarda capaz de
+   pegar o defeito do VIDEO-0 (Dockerfile sem copiar a pasta).
+2. **O arnês recusou o mutante esperto por `expect` errado**, não por guarda
+   inerte: a mensagem diz "as 4 plataformas do catálogo", e o `expect` dizia
+   "todas as plataformas". Vale registrar porque o `expect` agora é o núcleo
+   da frase, **sem a contagem** — prendê-lo ao número faria uma quinta
+   plataforma transformar guarda saudável em mutante AMBÍGUO, que é como se
+   aprende a ignorar o arnês.
+
+**ACHADO DE AMBIENTE, PRÉ-EXISTENTE E SÉRIO.** A imagem do frontend era
+anterior ao commit `97cd8d1`, que acrescentou `__MAX_IMAGE_BYTES__` ao
+`vite.config.ts` — arquivo **fora do bind mount**. Resultado: **a app inteira
+quebrava em branco**, com o console limpo, o Vite reportando `ready` e o
+healthcheck verde. O erro real (`__MAX_IMAGE_BYTES__ is not defined`) só
+aparece ao importar `/src/main.tsx` à mão pelo console. Resolvido com
+`docker compose build frontend`. O gotcha do bind mount já estava registrado;
+**o sintoma não estava** — e "tela em branco sem erro nenhum" não aponta para
+configuração de build.
+
+### O que SÓ A GERAÇÃO LIVE pode fechar (FORMATO-1)
+
+Nada disto está verificado, e nenhuma linha do código ou da UI afirma que
+está:
+
+- **Se 9:16 sai vertical de verdade.** É a pergunta central do bloco e a
+  única que importa para o produto. Tudo que existe hoje é: o campo vai no
+  payload (medido), a doc diz que ele é aceito (documentado), e a simulação
+  honra a proporção (medido — mas a simulação somos nós).
+- **Se a HeyGen aceita `aspect_ratio`/`resolution` neste payload.** A doc
+  descreve os campos; nenhuma requisição nossa jamais os enviou. Um campo
+  recusado derruba a geração inteira.
+- **Se `engine: { type }` é aceito, e se `supported_api_engines` é mesmo o
+  vocabulário dele.** É a dedução central, e a razão de o envio estar atrás de
+  flag desligada.
+- **Se um mesmo avatar rende bem fora do horizontal.** O avatar foi treinado
+  com uma foto; nada garante enquadramento utilizável em 9:16 ou 1:1.
+- **O custo por proporção e por resolução.** `provider_usage` já grava
+  `aspect_ratio`, `resolution` e `provider_engine`, mas todas as linhas de
+  hoje são de simulação. "9:16 custa mais que 16:9?" continua sem resposta.
+- **Se 1080p e 4k valem a pena.** Só 720p tem custo medido, e é por isso que
+  as quatro plataformas o usam.
+- **O que a D-ID faz com a proporção.** Declarada como `supported: false` (a
+  geometria sai da imagem de origem), e **nenhuma resposta real da D-ID foi
+  observada em nenhuma sessão** — a declaração é leitura de doc, não medição.
 
 ### Bloco LIVE-2 — a voz entra no log e o consumo passa a ser medido (CONCLUÍDO)
 
