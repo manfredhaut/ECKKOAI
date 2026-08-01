@@ -9,6 +9,7 @@ import { synthesizeSpeech } from "./voiceProvider.js";
 import { processVoiceAudio } from "../audioProcessing.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { recordProviderUsage } from "../billing/usageTracking.js";
+import { logVendorResponse, unexpectedShapeMessage } from "./vendorResponseLog.js";
 import {
   countWords,
   estimateSeconds,
@@ -94,12 +95,30 @@ async function requireAudio(input: GenerateVideoInput): Promise<Buffer> {
   });
 }
 
-async function fetchJson(res: Response, providerLabel: string): Promise<any> {
+/**
+ * `context` identifica QUAL chamada produziu a resposta ("heygen.createAvatar"
+ * etc.). Sem ele, quatro corpos parecidos no log ficam indistinguíveis, e o
+ * log existe justamente para ser lido depois do fato.
+ *
+ * O corpo é lido como texto UMA vez e registrado bruto antes de qualquer
+ * interpretação — inclusive antes de saber se é JSON válido. Trocar `res.json()`
+ * por texto+parse também melhora o caso de HTML/504 vindo de um proxy: em vez
+ * de um erro de sintaxe sem contexto, o corpo real aparece no erro e no log.
+ */
+async function fetchJson(res: Response, providerLabel: string, context: string): Promise<any> {
+  const rawBody = await res.text();
+  logVendorResponse({ context, vendor: providerLabel, status: res.status, res, rawBody });
+
   if (!res.ok) {
-    const body = await res.text();
-    throw new AvatarProviderError(`${providerLabel} API error (${res.status}): ${body}`);
+    throw new AvatarProviderError(`${providerLabel} API error (${res.status}): ${rawBody}`);
   }
-  return res.json();
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    throw new AvatarProviderError(
+      `${context}: ${providerLabel} respondeu ${res.status} com corpo que não é JSON: ${rawBody}`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -123,9 +142,11 @@ async function heygenUploadAsset(apiKey: string, buffer: Buffer, mimeType: strin
     logProviderNetworkError("avatarProvider.heygen", err);
     throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
   }
-  const data = await fetchJson(res, "HeyGen");
+  const data = await fetchJson(res, "HeyGen", "heygen.uploadAsset");
   const assetId = data?.data?.asset_id;
-  if (!assetId) throw new AvatarProviderError(`HeyGen asset upload returned no asset_id: ${JSON.stringify(data)}`);
+  if (!assetId) {
+    throw new AvatarProviderError(unexpectedShapeMessage("heygen.uploadAsset", "data.asset_id", data));
+  }
   return assetId;
 }
 
@@ -147,10 +168,17 @@ async function trainAvatarHeygen(apiKey: string, photoBuffer: Buffer): Promise<T
     logProviderNetworkError("avatarProvider.heygen", err);
     throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
   }
-  const data = await fetchJson(res, "HeyGen");
-  // ASSUMPTION: avatar_item.id is the "look" id usable as avatar_id in video generation.
+  const data = await fetchJson(res, "HeyGen", "heygen.createAvatar");
+  // ASSUMPTION: avatar_item.id is the "look" id usable as avatar_id in video
+  // generation. NUNCA confirmada contra resposta real, e é o contrato mais caro
+  // deste arquivo: quando ele falha, a HeyGen já cobrou pela criação, e o id —
+  // única coisa que torna aquele avatar utilizável — se perderia junto com o
+  // corpo descartado. Por isso o corpo inteiro vai para o log ANTES desta
+  // linha, e o erro abaixo nomeia as chaves que realmente vieram.
   const avatarId = data?.data?.avatar_item?.id;
-  if (!avatarId) throw new AvatarProviderError(`HeyGen avatar creation returned no id: ${JSON.stringify(data)}`);
+  if (!avatarId) {
+    throw new AvatarProviderError(unexpectedShapeMessage("heygen.createAvatar", "data.avatar_item.id", data));
+  }
   return { providerAvatarId: avatarId };
 }
 
@@ -173,9 +201,11 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
     logProviderNetworkError("avatarProvider.heygen", err);
     throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
   }
-  const data = await fetchJson(res, "HeyGen");
+  const data = await fetchJson(res, "HeyGen", "heygen.createVideo");
   const videoId = data?.data?.video_id;
-  if (!videoId) throw new AvatarProviderError(`HeyGen video creation returned no video_id: ${JSON.stringify(data)}`);
+  if (!videoId) {
+    throw new AvatarProviderError(unexpectedShapeMessage("heygen.createVideo", "data.video_id", data));
+  }
   return { providerJobId: videoId };
 }
 
@@ -189,9 +219,27 @@ async function pollHeygenVideo(apiKey: string, jobId: string): Promise<PollResul
     logProviderNetworkError("avatarProvider.heygen", err);
     throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
   }
-  const data = await fetchJson(res, "HeyGen");
+  const data = await fetchJson(res, "HeyGen", "heygen.pollVideo");
   const status: string | undefined = data?.data?.status ?? data?.status;
   const videoUrl: string | undefined = data?.data?.video_url ?? data?.video_url;
+
+  // ARMADILHA CONHECIDA, deliberadamente NÃO corrigida neste bloco (escopo:
+  // só logging). Quando o fornecedor diz "completed" mas não manda a URL, o
+  // `return` de "processing" lá embaixo assume o caso: o job fica em polling
+  // até estourar o teto de ~7,5 min e vira "demorou mais que o esperado" —
+  // uma mensagem que aponta para o lado errado, já que o vídeo FICOU pronto e
+  // foi cobrado. Aqui isso passa a gritar no log com as chaves que vieram, que
+  // é o que permite reconhecer o caso em vez de perseguir um timeout fantasma.
+  if (status === "completed" && !videoUrl) {
+    console.error(
+      JSON.stringify({
+        event: "vendor_contract_mismatch",
+        context: "heygen.pollVideo",
+        detail: unexpectedShapeMessage("heygen.pollVideo", "data.video_url", data),
+      }),
+    );
+  }
+
   if (status === "completed" && videoUrl) return { status: "ready", outputUrl: videoUrl };
   if (status === "failed" || status === "error") {
     return { status: "error", errorMessage: data?.data?.error?.message ?? `HeyGen job failed: ${JSON.stringify(data)}` };
@@ -242,9 +290,9 @@ async function didUpload(apiKey: string, buffer: Buffer, filename: string, mimeT
     logProviderNetworkError("avatarProvider.did", err);
     throw new AvatarProviderError(`Could not reach D-ID API: ${describeNetworkError(err)}`);
   }
-  const data = await fetchJson(res, "D-ID");
+  const data = await fetchJson(res, "D-ID", `did.upload.${kind}`);
   const url = data?.url;
-  if (!url) throw new AvatarProviderError(`D-ID ${kind} upload returned no url: ${JSON.stringify(data)}`);
+  if (!url) throw new AvatarProviderError(unexpectedShapeMessage(`did.upload.${kind}`, "url", data));
   return url;
 }
 
@@ -273,9 +321,9 @@ async function generateVideoDid(input: GenerateVideoInput): Promise<GenerateVide
     logProviderNetworkError("avatarProvider.did", err);
     throw new AvatarProviderError(`Could not reach D-ID API: ${describeNetworkError(err)}`);
   }
-  const data = await fetchJson(res, "D-ID");
+  const data = await fetchJson(res, "D-ID", "did.createTalk");
   const talkId = data?.id;
-  if (!talkId) throw new AvatarProviderError(`D-ID talk creation returned no id: ${JSON.stringify(data)}`);
+  if (!talkId) throw new AvatarProviderError(unexpectedShapeMessage("did.createTalk", "id", data));
   return { providerJobId: talkId };
 }
 
@@ -289,7 +337,18 @@ async function pollDidTalk(apiKey: string, jobId: string): Promise<PollResult> {
     logProviderNetworkError("avatarProvider.did", err);
     throw new AvatarProviderError(`Could not reach D-ID API: ${describeNetworkError(err)}`);
   }
-  const data = await fetchJson(res, "D-ID");
+  const data = await fetchJson(res, "D-ID", "did.pollTalk");
+  // Mesma armadilha registrada no poll da HeyGen: "done" sem URL cai no
+  // "processing" e vira timeout, apontando para o lado errado.
+  if (data?.status === "done" && !data?.result_url) {
+    console.error(
+      JSON.stringify({
+        event: "vendor_contract_mismatch",
+        context: "did.pollTalk",
+        detail: unexpectedShapeMessage("did.pollTalk", "result_url", data),
+      }),
+    );
+  }
   if (data?.status === "done" && data?.result_url) return { status: "ready", outputUrl: data.result_url };
   if (data?.status === "error" || data?.status === "rejected") {
     return { status: "error", errorMessage: data?.error?.description ?? `D-ID talk failed: ${JSON.stringify(data)}` };
