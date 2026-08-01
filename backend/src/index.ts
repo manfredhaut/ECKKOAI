@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { assertLiveModeAuthorized } from "./services/providers/liveGuard.js";
 import { runMigrations } from "./db/migrate.js";
 import { buildApp } from "./app.js";
 import { runMonthlyGrantSweep } from "./services/billing/monthlyGrant.js";
@@ -32,6 +33,11 @@ function startMonthlyGrantScheduler(): void {
 }
 
 async function main() {
+  // Antes de qualquer coisa: em live, sem autorização explícita, o servidor
+  // não sobe. Lançar aqui faz o processo sair com código != 0, que o
+  // entrypoint propaga ao PID 1 — ver docker-entrypoint.sh.
+  assertLiveModeAuthorized(config.providerMode);
+
   await runMigrations();
 
   const app = await buildApp();

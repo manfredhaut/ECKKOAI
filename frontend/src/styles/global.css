@@ -1290,3 +1290,77 @@ th {
   font-weight: 600;
   color: var(--color-text);
 }
+
+/* --- Galeria de desenvolvimento (/dev/steps) ----------------------------
+   Marca no mesmo espírito do selo SIMULADO: impossível confundir esta tela
+   com o app real, mesmo numa captura fora de contexto. */
+.gallery-root {
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.gallery-bar {
+  padding: 16px 24px;
+  border-bottom: 3px solid var(--color-secondary);
+  background: color-mix(in srgb, var(--color-secondary) 10%, transparent);
+}
+
+.gallery-mark {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 5px;
+  background: var(--color-secondary);
+  color: var(--color-secondary-text);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.gallery-sub {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  max-width: 720px;
+}
+
+.gallery-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.gallery-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gallery-chip {
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gallery-chip--on {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-text);
+}
+
+.gallery-stats {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gallery-stage {
+  padding: 28px 24px;
+  max-width: 960px;
+}

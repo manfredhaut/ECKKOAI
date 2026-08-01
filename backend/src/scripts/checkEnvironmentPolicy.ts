@@ -197,6 +197,14 @@ async function checkNoLiteralCredentials(
 ): Promise<void> {
   const isProduction = (process.env.NODE_ENV ?? "development") === "production";
 
+  if (process.env.DEV_GALLERY === "1" && isProduction) {
+    failures.push(
+      "acesso: DEV_GALLERY=1 com NODE_ENV=production. A galeria de passos (/dev/steps) " +
+        "monta componentes com estado falso e uma rede falsa; em produção a rota não pode " +
+        "sequer existir — o caminho certo é 404, não uma tela vazia que esconde código vivo.",
+    );
+  }
+
   if (process.env.DEV_AUTOFILL === "1" && isProduction) {
     failures.push(
       "acesso: DEV_AUTOFILL=1 com NODE_ENV=production. O preenchimento automático " +

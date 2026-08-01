@@ -23,6 +23,10 @@ const whatsappNumber = process.env.WHATSAPP_NUMBER ?? "";
 // aparecer como erro em vez de virar um silêncio conveniente.
 const isProduction = process.env.NODE_ENV === "production";
 const devAutofill = process.env.DEV_AUTOFILL === "1" && !isProduction;
+// Galeria de passos (/dev/steps). Mesmo padrão do autofill: opt-in
+// explícito e impossível em produção — lá a rota não deve existir, e "não
+// existir" significa 404, não uma tela vazia.
+const devGallery = process.env.DEV_GALLERY === "1" && !isProduction;
 const devCred = (name: string) => (devAutofill ? (process.env[name] ?? "") : "");
 
 export default defineConfig({
@@ -31,6 +35,7 @@ export default defineConfig({
     __BASE_DOMAIN__: JSON.stringify(baseDomain),
     __WHATSAPP_NUMBER__: JSON.stringify(whatsappNumber),
     __DEV_AUTOFILL__: JSON.stringify(devAutofill),
+    __DEV_GALLERY__: JSON.stringify(devGallery),
     __DEV_ADMIN_EMAIL__: JSON.stringify(devCred("DEV_ADMIN_EMAIL")),
     __DEV_ADMIN_PASSWORD__: JSON.stringify(devCred("DEV_ADMIN_PASSWORD")),
     __DEV_TENANT_EMAIL__: JSON.stringify(devCred("DEV_TENANT_EMAIL")),

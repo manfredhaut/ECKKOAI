@@ -17,3 +17,8 @@ uploads/*
 # previews/ holds throwaway static mockups from design-preview sessions.
 graphify-out/
 previews/
+
+# Capturas da galeria de desenvolvimento (/dev/steps). Ficam fora do git:
+# screenshot no repositório o incha sem retorno, e elas se desatualizam a
+# cada mudança de UI.
+.gallery-shots/

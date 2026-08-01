@@ -117,6 +117,7 @@ services:
       # `define` do Vite (nunca literais no fonte) e npm run check reprova o
       # build se a flag estiver ligada com NODE_ENV=production.
       DEV_AUTOFILL: ${DEV_AUTOFILL:-}
+      DEV_GALLERY: ${DEV_GALLERY:-}
       DEV_ADMIN_EMAIL: ${DEV_ADMIN_EMAIL:-}
       DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-}
       DEV_TENANT_EMAIL: ${DEV_TENANT_EMAIL:-}

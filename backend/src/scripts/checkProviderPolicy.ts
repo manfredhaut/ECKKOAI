@@ -17,6 +17,12 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { FEATURE_FLAG_KEYS } from "../services/featureFlags.js";
 import { readProviderMode } from "../services/providers/providerMode.js";
+import {
+  LIVE_CONFIRM_ENV,
+  LIVE_CONFIRM_VALUE,
+  isLiveAuthorized,
+  readLiveMaxGenerations,
+} from "../services/providers/liveGuard.js";
 
 export interface ProviderCheckResult {
   failures: string[];
@@ -63,7 +69,25 @@ function checkFixtureNotInProduction(failures: string[], notes: string[]): void 
     );
     return;
   }
-  notes.push(`provedor: PROVIDER_MODE=${mode}${mode === "fixture" ? " (simulação — nunca em produção)" : ""}`);
+  // A proteção precisa valer nos DOIS sentidos. Impedir fixture em produção
+  // sem impedir live sem autorização deixaria o acidente mais provável — e
+  // mais caro — completamente desprotegido: trocar uma palavra no .env
+  // libera chamada real numa carteira que comporta cerca de um vídeo.
+  if (mode === "live" && !isLiveAuthorized()) {
+    failures.push(
+      `provedor: PROVIDER_MODE=live sem ${LIVE_CONFIRM_ENV}="${LIVE_CONFIRM_VALUE}". ` +
+        "Em live cada geração consome cota paga; a intenção precisa ser declarada, " +
+        "não herdada de um .env copiado.",
+    );
+    return;
+  }
+
+  notes.push(
+    `provedor: PROVIDER_MODE=${mode}` +
+      (mode === "fixture"
+        ? " (simulação — nunca em produção)"
+        : ` (AUTORIZADO, teto de ${readLiveMaxGenerations()} geração(ões) por sessão)`),
+  );
 }
 
 // --------------------------------------------------------------- 2 -------

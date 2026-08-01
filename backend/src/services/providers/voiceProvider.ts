@@ -2,6 +2,7 @@
 // see vendorCatalog.ts.
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { isFixtureMode } from "./providerMode.js";
+import { consumeLiveGeneration } from "./liveGuard.js";
 import {
   checkVoiceConnectionFixture,
   cloneVoiceFixture,
@@ -29,6 +30,12 @@ export interface CloneVoiceResult {
 // se alguma deixar de consultar.
 export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResult> {
   if (isFixtureMode()) return cloneVoiceFixture();
+  const budget = consumeLiveGeneration();
+  if (!budget.allowed) {
+    throw new VoiceProviderError(
+      `Teto de gerações tarifadas desta sessão atingido (${budget.used}/${budget.max}).`,
+    );
+  }
   const form = new FormData();
   form.set("name", input.name);
   form.set("files", new Blob([new Uint8Array(input.fileBuffer)], { type: input.mimeType }), input.filename);

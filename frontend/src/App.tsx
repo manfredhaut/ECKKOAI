@@ -8,6 +8,8 @@ import { AppShell } from "./components/layout/AppShell";
 import { CopilotProvider } from "./copilot/CopilotContext";
 import { FeatureFlagProvider } from "./features/FeatureFlagContext";
 import { isRootDomain } from "./publicConfig";
+import { DEV_GALLERY } from "./dev/devGallery";
+import { StepGallery } from "./dev/StepGallery";
 import { LandingPage } from "./pages/Landing/LandingPage";
 import { LoginPage } from "./pages/Login/LoginPage";
 import { SignupPage } from "./pages/Signup/SignupPage";
@@ -30,6 +32,11 @@ export function App() {
     <AuthProvider>
       <Routes>
         {showLanding && <Route path="/" element={<LandingPage />} />}
+        {/* Galeria de desenvolvimento. A rota só é REGISTRADA quando a flag
+            está ligada — em produção ela não existe, então o catch-all
+            devolve 404 em vez de uma tela vazia. Uma rota que responde 200
+            com nada esconde que o caminho continua vivo. */}
+        {DEV_GALLERY && <Route path="/dev/steps" element={<StepGallery />} />}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route

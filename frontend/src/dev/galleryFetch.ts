@@ -1,0 +1,182 @@
+/**
+ * Rede falsa da galeria de passos.
+ *
+ * A galeria monta os componentes REAIS, e esses componentes chamam a API
+ * por dentro (`api.get("/avatars")`, `api.post("/videos")`, …). Sem
+ * interceptação, abrir a galeria criaria avatar, debitaria crédito e — em
+ * modo live — chamaria fornecedor. A galeria precisa desenhar, não
+ * executar.
+ *
+ * Por que interceptar `window.fetch` em vez de injetar um cliente falso por
+ * props: injetar exigiria mudar a assinatura dos cinco passos só para
+ * poder olhá-los, e um componente que precisa ser adaptado para caber na
+ * galeria deixa de ser o componente que roda em produção. O objetivo é o
+ * contrário — se o passo mudar, a galeria muda junto.
+ *
+ * O interceptor NÃO tem caminho de escape: qualquer requisição que não
+ * case com uma resposta conhecida é **bloqueada** e contabilizada, nunca
+ * repassada adiante. É isso que permite afirmar "a galeria não fez nenhuma
+ * chamada" com um número em vez de uma promessa.
+ */
+import type { Avatar, Video } from "../types";
+
+export interface InterceptStats {
+  /** Requisições atendidas com dado falso. */
+  served: number;
+  /** Requisições sem resposta conhecida — bloqueadas, não repassadas. */
+  blocked: number;
+  /** Nenhuma requisição jamais sai daqui; existe para o relatório ser verificável. */
+  escaped: number;
+  log: { method: string; url: string; outcome: "served" | "blocked" }[];
+}
+
+export const interceptStats: InterceptStats = { served: 0, blocked: 0, escaped: 0, log: [] };
+
+const FAKE_AVATAR: Avatar = {
+  id: "gallery-avatar-1",
+  name: "Mário (exemplo)",
+  provider: "heygen",
+  photo_urls: [],
+  reference_video_url: "/uploads/exemplo/referencia.mp4",
+  voice_id: "gallery-voice-1",
+  provider_avatar_id: "gallery-provider-avatar-1",
+  audio_treatment_enabled: true,
+  audio_treatment_target_lufs: "-16",
+  simulated: true,
+  created_at: new Date().toISOString(),
+};
+
+const FAKE_VIDEOS: Video[] = [
+  {
+    id: "gallery-video-1",
+    avatar_id: FAKE_AVATAR.id,
+    script: "Roteiro de exemplo para a galeria de passos.",
+    scenario: null,
+    outfit: null,
+    scenario_prompt: null,
+    outfit_prompt: null,
+    duration_seconds: 30,
+    status: "ready",
+    output_url: "/uploads/exemplo/video.mp4",
+    error_message: null,
+    simulated: true,
+    created_at: new Date().toISOString(),
+  },
+];
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Respostas conhecidas, por método + caminho. */
+function respond(method: string, path: string): Response | null {
+  if (method === "GET" && path.endsWith("/avatars")) return json([FAKE_AVATAR]);
+  if (method === "GET" && path.endsWith("/videos")) return json(FAKE_VIDEOS);
+  if (method === "GET" && path.includes("/feature-flags")) {
+    return json({ flags: currentFlags, providerMode: "fixture" });
+  }
+  if (method === "GET" && path.includes("/notifications")) return json({ unread: 0, items: [] });
+  if (method === "GET" && path.includes("/jobs")) return json([]);
+  if (method === "GET" && path.includes("/documents")) return json([]);
+  if (method === "GET" && path.includes("/reference-images")) return json([]);
+  // Admin: a galeria monta o painel real, então precisa responder o que ele
+  // pede. Nada disso toca o servidor.
+  if (method === "GET" && path.includes("/admin/me")) {
+    return json({ id: "gallery-admin", email: "admin@exemplo", name: "Admin (galeria)" });
+  }
+  if (method === "GET" && path.endsWith("/admin/tenants")) {
+    // Shape de AdminTenantSummary (camelCase) — a primeira versão deste
+    // mock usava snake_case e derrubava o painel com "reading 'length'".
+    return json([
+      {
+        id: "t1",
+        name: "Acme",
+        slug: "acme",
+        planId: "free",
+        status: "active",
+        createdAt: new Date().toISOString(),
+        connectedProviders: ["avatar", "voice"],
+      },
+    ]);
+  }
+  if (method === "GET" && path.includes("/admin/feature-flags")) {
+    return json({ flags: currentFlags, providerMode: "fixture" });
+  }
+  if (method === "GET" && path.includes("/credit-usage")) {
+    return json({
+      real: [{ creditType: "script", consumed: 3, entries: 3 }, { creditType: "video", consumed: 1, entries: 1 }],
+      simulated: [{ creditType: "video", consumed: 3, entries: 3 }],
+      providerMode: "fixture",
+    });
+  }
+  if (method === "GET" && path.includes("/admin/plans")) return json([]);
+  if (method === "GET" && path.includes("/admin/cost-rates")) return json([]);
+
+  if (method === "GET" && path.includes("/auth/me")) {
+    return json({ user: { id: "gallery-user", email: "galeria@exemplo" }, tenant: { id: "t", name: "Galeria", slug: "galeria" } });
+  }
+
+  // POST /avatars — usado pelo passo 1 para entrar no modo de captura, que
+  // é o que expõe o bloco de fundo virtual sem precisar de câmera.
+  if (method === "POST" && path.endsWith("/avatars")) return json(FAKE_AVATAR, 201);
+
+  return null;
+}
+
+/**
+ * Estado das flags que a galeria devolve. Trocável em tempo de execução
+ * para que o mesmo componente possa ser visto com a flag ligada e
+ * desligada, sem rebuild — que é justamente a verificação que ficou cega
+ * no bloco anterior.
+ */
+export let currentFlags: { key: string; label: string; enabled: boolean; reason: string }[] = [
+  {
+    key: "removable_background",
+    label: "Fundo removível",
+    enabled: false,
+    reason: "depende de teste ainda não realizado com a HeyGen",
+  },
+];
+
+export function setGalleryFlag(key: string, enabled: boolean): void {
+  currentFlags = currentFlags.map((f) => (f.key === key ? { ...f, enabled } : f));
+}
+
+let installed = false;
+
+export function installGalleryFetch(): void {
+  if (installed) return;
+  installed = true;
+
+  const realFetch = window.fetch.bind(window);
+  // `realFetch` fica capturado mas deliberadamente NUNCA é chamado. Está
+  // aqui só para deixar explícito, na leitura, que a escolha de não
+  // repassar é intencional e não um esquecimento.
+  void realFetch;
+
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+
+    const path = url.startsWith("http") ? new URL(url).pathname : url;
+    const known = respond(method, path);
+
+    if (known) {
+      interceptStats.served += 1;
+      interceptStats.log.push({ method, url: path, outcome: "served" });
+      return known;
+    }
+
+    interceptStats.blocked += 1;
+    interceptStats.log.push({ method, url: path, outcome: "blocked" });
+    // 503 em vez de deixar passar: o componente exibe seu estado de erro,
+    // que também é algo que se quer poder olhar na galeria.
+    return json({ error: "gallery_blocked", message: "A galeria não executa chamadas." }, 503);
+  };
+
+  // Exposto para inspeção externa (as capturas conferem estes números).
+  (window as unknown as { __galleryStats: InterceptStats }).__galleryStats = interceptStats;
+}

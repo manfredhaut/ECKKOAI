@@ -481,7 +481,10 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-07-31 — Bloco VIDEO-0: modo fixture (geração
+**Última atualização:** 2026-07-31 — Bloco PENDENCIAS-1 (parcial, cortado no
+ponto previsto): galeria de passos em `/dev/steps` e proteção da carteira
+contra `live` acidental. **Partes 3, 4 e 5 do bloco NÃO foram feitas** — ver
+a seção própria. Antes dele, Bloco VIDEO-0: modo fixture (geração
 simulada ponta a ponta, sem rede), registro de feature flags e separação
 das três chaves de plataforma. Antes dele, Bloco ACESSO-FINAL: o backend agora
 morre de verdade quando o bootstrap falha (e volta sozinho), os 4 serviços
@@ -681,6 +684,68 @@ lido. Falta nas duas pontas.
   chave — inútil para identificar qual chave está lá.
 - **Header quebra abaixo de ~500px.**
 - Nenhum destes bloqueia a demo pelo caminho ensaiado.
+
+### Bloco PENDENCIAS-1 — galeria e carteira (PARCIAL: partes 1 e 2)
+
+**Galeria de passos em `/dev/steps`** ([StepGallery.tsx](frontend/src/dev/StepGallery.tsx)),
+só com `DEV_GALLERY=1`; em produção a rota **não é registrada**, então cai
+no 404 em vez de virar tela vazia — uma rota que responde 200 com nada
+esconde que o caminho continua vivo. `npm run check` reprova a flag ligada
+com `NODE_ENV=production` (provado).
+
+A galeria monta os **componentes reais** dos 5 passos, mais Conteúdo e o
+Painel admin — nenhuma cópia. Cópia envelhece sozinha e passa a mostrar uma
+tela que não existe mais, o que é pior que não ter galeria.
+
+**Inércia, com número em vez de promessa:** `installGalleryFetch()`
+substitui `window.fetch` por um interceptor sem caminho de escape —
+requisição desconhecida é bloqueada, nunca repassada. Os contadores ficam na
+própria tela. *Medido na captura:* `served: 11, blocked: 8, escaped: 0`, e o
+Chrome registrou **0 requisições a hosts externos**.
+
+**O item que estava cego no VIDEO-0 foi fechado:** o bloco de fundo aparece
+**sem câmera**, porque quem o revela é o estado `draftAvatar`, não a câmera.
+*Medido:* flag desligada → bloco inerte com o motivo ("depende de teste
+ainda não realizado com a HeyGen"), sem seletor; flag ligada → seletor
+presente, sem bloco de indisponibilidade.
+
+**Dois defeitos que a própria galeria expôs**, ambos de contexto faltando:
+`FieldHelpIcon` exige o `CopilotProvider` e o painel admin exige o
+`AdminCopilotProvider` — sem eles a árvore inteira caía. Daí saiu a correção
+mais útil do bloco: um **error boundary por painel**
+([GalleryBoundary.tsx](frontend/src/dev/GalleryBoundary.tsx)). Sem ele, um
+passo quebrado deixava TODAS as capturas em branco, um sintoma que mente
+mais que o defeito original.
+
+**Capturas** ficam em `.gallery-shots/`, **fora do git** (screenshot no
+repositório o incha e desatualiza a cada mudança de UI). Regeradas por um
+script puppeteer no scratchpad — efêmero, ver seção 5 para recriar.
+
+**Proteção da carteira (Parte 2).** A proteção só olhava para um lado:
+impedia `fixture` em produção, mas nada impedia `live` em desenvolvimento —
+e trocar uma palavra no `.env` liberava chamada real numa carteira que
+comporta cerca de um vídeo. Agora
+([liveGuard.ts](backend/src/services/providers/liveGuard.ts)):
+
+1. **Intenção explícita.** `live` exige `PROVIDER_LIVE_CONFIRM` com valor
+   exato. É uma frase, não `true`: o texto é metade da proteção, porque quem
+   digita aquilo leu o que estava digitando. *Medido:* sem ela o servidor
+   **não sobe** — `exit_code=1`, e o entrypoint propaga ao PID 1.
+2. **Teto por sessão**, default **1**, aplicado em `generateVideo` e
+   `cloneVoice`. Intenção protege do acidente de configuração; o teto
+   protege do laço que dispara dez vezes, que nenhuma declaração impediria.
+3. **Log inequívoco no boot**, nos dois modos — subir gastando dinheiro real
+   não pode ser indistinguível de subir em simulação na leitura do log.
+
+**O que NÃO foi feito deste bloco** (cortado no ponto que você previu):
+- **Parte 3 — auditoria das guardas existentes.** Nenhuma das guardas
+  antigas ganhou caso versionado de reprovação, e **não foi levantado quais
+  delas passam verde sem inspecionar nada**. Esta é a mais importante das
+  três que ficaram: é exatamente a classe de defeito que já apareceu duas
+  vezes (a de flags no VIDEO-0, e a de credencial que só pegou por acaso).
+- **Parte 4 — retaguarda BYOK visível e com remoção agendada.**
+- **Parte 5 — origem dos `.mp4` de 16 bytes e validação de artefato no
+  download.** Os arquivos continuam em `uploads/4bbed629/`.
 
 ### Bloco VIDEO-0 — modo fixture, feature flags e chaves (CONCLUÍDO)
 
