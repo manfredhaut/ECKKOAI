@@ -12,6 +12,7 @@
 // equipe o encontra. Nunca os dois no mesmo lugar.
 
 import { scrubSecretsFromText } from "./vendorResponseLog.js";
+import { logEvent } from "../log/safeLog.js";
 
 export type VendorKind = "script" | "voice" | "avatar";
 
@@ -75,10 +76,7 @@ export function toClientVendorError(
   err: unknown,
 ): { failure: VendorFailure; message: string } {
   const failure = classifyVendorFailure(err);
-  console.error(
-    JSON.stringify({
-      event: "vendor_error",
-      context,
+  logEvent("error", "vendor_error", { context,
       kind,
       failure,
       // Detalhe do fornecedor fica AQUI, no servidor, e só aqui — passado pela
@@ -95,8 +93,7 @@ export function toClientVendorError(
       // Um segredo mascarado num evento e legível no seguinte não está
       // mascarado.
       detail: scrubSecretsFromText(err instanceof Error ? err.message : String(err)),
-    }),
-  );
+    });
   return { failure, message: vendorErrorMessage(kind, failure) };
 }
 

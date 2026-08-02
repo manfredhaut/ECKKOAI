@@ -1,5 +1,6 @@
 import { pool } from "../../db/pool.js";
 import { getPlan } from "../../plans.js";
+import { logEvent } from "../log/safeLog.js";
 
 type CreditType = "video" | "script" | "avatar";
 type GrantOutcome = "granted" | "skipped" | "failed";
@@ -109,7 +110,7 @@ async function applyGrant(
     return "granted";
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
-    console.error(`Grant failed for tenant ${tenantId} / ${creditType}`, err);
+    logEvent("error", "monthly_grant_failed", { tenantId, creditType, detail: err });
     return "failed";
   } finally {
     client.release();

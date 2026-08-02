@@ -4,6 +4,7 @@ import { runMigrations } from "./db/migrate.js";
 import { buildApp } from "./app.js";
 import { runMonthlyGrantSweep } from "./services/billing/monthlyGrant.js";
 import { recordAuditLog } from "./services/auditLog.js";
+import { logEvent } from "./services/log/safeLog.js";
 
 const GRANT_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -26,7 +27,7 @@ function startMonthlyGrantScheduler(): void {
           after: result,
         }),
       )
-      .catch((err) => console.error("Scheduled monthly grant sweep failed", err));
+      .catch((err) => logEvent("error", "monthly_grant_sweep_failed", { detail: err }));
   };
   run();
   setInterval(run, GRANT_SWEEP_INTERVAL_MS);
@@ -46,6 +47,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  logEvent("error", "boot_failed", { detail: err });
   process.exit(1);
 });

@@ -10,6 +10,7 @@
 // to 60s or 90s means editing TARGET_SECONDS (or setting SCRIPT_TARGET_SECONDS
 // in the environment) and nothing else: the word target, the acceptance band
 // and the wording of the prompt all follow from it.
+import { logEvent } from "../log/safeLog.js";
 
 const envNumber = (name: string, fallback: number): number => {
   const raw = process.env[name];
@@ -196,12 +197,8 @@ export function logScriptDuration(entry: ScriptDurationLog): void {
       ? Number((entry.actualSeconds / entry.estimatedSeconds).toFixed(3))
       : null;
 
-  console.log(
-    JSON.stringify({
-      event: "script_duration",
-      ...entry,
+  logEvent("info", "script_duration", { ...entry,
       wordsPerMinute: SCRIPT_DURATION.wordsPerMinute,
       driftRatio,
-    }),
-  );
+    });
 }

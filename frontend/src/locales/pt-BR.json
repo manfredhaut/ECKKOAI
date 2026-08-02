@@ -231,7 +231,6 @@
     },
     "navTenants": "Tenants",
     "navApis": "APIs",
-    "navCostRates": "Taxas de custo",
     "navPlans": "Planos",
     "apis": {
       "title": "Integrações por tenant",
@@ -267,32 +266,23 @@
     },
     "usage": {
       "title": "Custo por provedor",
-      "estimatedBanner": "Estimativa — taxas ainda não conferidas contra o preço real do provedor. Não trate como custo real.",
-      "verifiedBanner": "Taxas conferidas — valores abaixo refletem as taxas confirmadas pelo admin.",
       "empty": "Nenhum uso registrado ainda.",
       "colProvider": "Provedor",
       "colVendor": "Vendor",
       "colUnitType": "Unidade",
       "colUnits": "Total de unidades",
-      "colCost": "Custo estimado",
-      "colVerified": "Conferido",
-      "total": "Total"
+      "colCost": "Custo (medido)",
+      "total": "Total",
+      "colAttempts": "Tentativas",
+      "failures": "{{n}} falha(s)",
+      "noMeasurement": "sem medição",
+      "excluded": "({{n}} linha(s) sem custo medido ficaram de fora)"
     },
     "unitType": {
       "seconds": "Segundos",
       "characters": "Caracteres",
       "tokens_in": "Tokens (entrada)",
       "tokens_out": "Tokens (saída)"
-    },
-    "costRates": {
-      "title": "Taxas de custo por provedor",
-      "subtitle": "Valores usados para estimar o custo real por chamada de provedor. Marque \"conferido\" só depois de validar contra o preço público de verdade do vendor.",
-      "colProvider": "Provedor",
-      "colVendor": "Vendor",
-      "colUnitType": "Unidade",
-      "colCostPerUnit": "Custo por unidade (centavos)",
-      "colVerified": "Conferido",
-      "save": "Salvar"
     },
     "navFeatures": "Recursos",
     "loadError": "Não foi possível carregar.",
@@ -553,6 +543,19 @@
     },
     "duration": {
       "title": "Duração"
+    },
+    "cost": {
+      "title": "Custo",
+      "estimated": "Estimativa ({{seconds}}s pedidos)",
+      "actual": "Custo real ({{seconds}}s entregues)",
+      "actualLabel": "Custo real",
+      "noneYet": "ainda não medido",
+      "notMeasured": "sem medição",
+      "vendorUnits": "{{units}} unidades de cota do fornecedor",
+      "difference": "Diferença",
+      "factor": "a estimativa foi {{factor}}× o custo real",
+      "failed": "A tentativa falhou: {{reason}}",
+      "simulated": "Geração simulada — nenhum valor foi cobrado. Os números mostram o que teria custado."
     },
     "publish": {
       "title": "Onde este vídeo vai ser publicado",

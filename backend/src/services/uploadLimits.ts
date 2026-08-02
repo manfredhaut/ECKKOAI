@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { MultipartFile } from "@fastify/multipart";
+import { logEvent } from "./log/safeLog.js";
 
 /**
  * Teto de tamanho do vídeo/áudio de referência do avatar.
@@ -178,7 +179,7 @@ export async function takeUpload(
 
     const declared = Number(req.headers["content-length"]);
     const sent = Number.isFinite(declared) && declared > 0 ? declared : null;
-    console.error(JSON.stringify({ event: "upload_too_large", route, sent, maxBytes }));
+    logEvent("error", "upload_too_large", { route, sent, maxBytes });
     await reply.code(413).send({
       error: "file_too_large",
       message: tooLargeMessage(sent, maxBytes, kind),

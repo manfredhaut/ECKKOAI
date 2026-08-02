@@ -27,6 +27,7 @@ import {
 } from "../services/platformCredentials.js";
 import { toPublicPlatformCredential } from "../services/platformCredentialStore.js";
 import { PROBE_ENDPOINTS } from "../services/providers/platformKeyProbe.js";
+import { billableEndpointPaths } from "../services/providers/endpointCatalog.js";
 
 export interface PlatformKeyCheckResult {
   failures: string[];
@@ -127,24 +128,21 @@ const PLAINTEXT_ALLOWED = [
 const PLAINTEXT_MARKERS = ["resolvePlatformKey", "platform_credentials"];
 
 /**
- * Endpoints de geração. Nenhum deles pode ser alcançável pelo probe.
+ * Endpoints tarifáveis. Nenhum deles pode ser alcançável pelo probe.
  *
- * `/v3/videos` e `/v3/avatars` entraram no bloco 3.5, e a ausência deles era um
- * buraco real: a lista conhecia só `/v2/video/generate`, que é o endpoint de
- * geração da v2 — e **o caminho de geração deste projeto é v3** desde sempre
- * (`avatarProvider.ts`). Um probe apontado para `api.heygen.com/v3/videos`
- * passava verde. Pior: `/v3/avatars` é o endpoint MAIS caro do projeto
- * (US$ 1,00 por avatar, medido no DEMO-3), contra US$ 0,15 de um vídeo curto.
+ * **DERIVADO do catálogo**, e não escrito à mão. A lista manual conhecia só
+ * `/v2/video/generate` — o endpoint de geração da **v2** — enquanto o caminho
+ * de geração deste projeto é v3 desde sempre. Um probe apontado para
+ * `/v3/videos` passava verde, e `/v3/avatars` (US$ 1,00 por chamada, medido)
+ * também. O defeito não foi esquecer uma linha: foi a lista NOMEAR o que
+ * conhece, e por isso envelhecer em silêncio a cada versão nova.
  *
- * Lição para quem acrescentar vendor ou versão: uma deny-list nomeia o que
- * conhece, e envelhece em silêncio quando o código migra de versão.
+ * As entradas abaixo do `...` são de fornecedores de TEXTO, que não estão no
+ * catálogo de vendors de mídia — ficam explícitas aqui porque o probe também
+ * valida chaves Google e Anthropic.
  */
 const GENERATION_ENDPOINTS = [
-  "/v2/video/generate",
-  "/v3/videos",
-  "/v3/avatars",
-  "/v2/text_to_speech",
-  "/v1/text-to-speech",
+  ...billableEndpointPaths(),
   "/generateContent",
   "/v1/messages",
   "/v2/avatar_group",

@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
 import { audienceAllows, DOCS_EXCLUDED, DOCS_MANIFEST, type DocAudience } from "./docsManifest.js";
+import { logEvent } from "./log/safeLog.js";
 
 // Documentation is fed to the copilots' system prompt from an explicit
 // allowlist (services/docsManifest.ts), never from a directory sweep. A file
@@ -50,16 +51,12 @@ async function reportManifestDrift(): Promise<void> {
     (key) => !(key in DOCS_MANIFEST) && !DOCS_EXCLUDED.includes(key),
   );
   if (unclassified.length > 0) {
-    console.warn(
-      `[docs] ${unclassified.length} markdown file(s) in docs/ are not in DOCS_MANIFEST and will not reach any copilot: ${unclassified.join(", ")}`,
-    );
+    logEvent("warn", "docs_unclassified", { count: unclassified.length, files: unclassified });
   }
 
   const missing = Object.keys(DOCS_MANIFEST).filter((key) => !onDisk.includes(key));
   if (missing.length > 0) {
-    console.warn(
-      `[docs] ${missing.length} manifest entr(ies) have no file on disk: ${missing.join(", ")}`,
-    );
+    logEvent("warn", "docs_manifest_missing_file", { count: missing.length, entries: missing });
   }
 }
 
@@ -80,7 +77,7 @@ async function buildDocsContent(viewer: DocAudience): Promise<string> {
     // the docs tree.
     const root = path.resolve(config.docsDir);
     if (absolutePath !== root && !absolutePath.startsWith(root + path.sep)) {
-      console.warn(`[docs] manifest entry escapes docs dir, skipped: ${relativePath}`);
+      logEvent("warn", "docs_entry_escapes_dir", { relativePath });
       continue;
     }
 
@@ -88,7 +85,7 @@ async function buildDocsContent(viewer: DocAudience): Promise<string> {
       const content = await readFile(absolutePath, "utf-8");
       sections.push(`## ${relativePath}\n\n${content}`);
     } catch {
-      console.warn(`[docs] manifest entry could not be read, skipped: ${relativePath}`);
+      logEvent("warn", "docs_entry_unreadable", { relativePath });
     }
   }
 

@@ -3,6 +3,7 @@
 // refused, timeout...) in err.cause, not err.message — err.message alone is
 // just the generic "fetch failed", which is useless for diagnosing why a
 // specific provider call didn't go through.
+import { logEvent } from "../log/safeLog.js";
 
 export function describeNetworkError(err: unknown): string {
   if (!(err instanceof Error)) return "Unknown error";
@@ -20,5 +21,5 @@ export function describeNetworkError(err: unknown): string {
 // (DNS/TLS/timeout), never request headers or the API key — never pass the
 // fetch() call's `init` object (headers/body) to this function.
 export function logProviderNetworkError(context: string, err: unknown): void {
-  console.error(`[${context}] network error calling provider API:`, err);
+  logEvent("error", "provider_network_error", { context, detail: err });
 }

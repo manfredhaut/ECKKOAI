@@ -503,7 +503,16 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-02 — Bloco PREVOO-1 (3.5), de verificação:
+**Última atualização:** 2026-08-02 — Bloco 4A (operacional): o custo REAL passou
+a aparecer na tela, derivado de uma constante única e medida (US$ 0,045/s em
+16:9/720p), com a estimativa ao lado e a diferença entre as duas; ausência de
+medição aparece como ausência, nunca como zero. A tabela de taxas manual —
+origem do desvio de 4,5× — foi **removida do banco**, junto com a tela que a
+editava. Toda saída de log passou a ter um sumidouro único que redige segredo
+por FORMA, e o freio de endpoints tarifáveis passou a DERIVAR de um catálogo.
+Os quatro desfechos de geração foram medidos e tabelados (item 6), sem
+correção — é decisão de produto. Antes dele, o Bloco PREVOO-1 (3.5), de
+verificação:
 confirmou que a geração usa **v3** (sem parada condicional), achou e corrigiu um
 vazamento de chave no evento `vendor_error`, mediu que o **teto de sessão não
 volta quando a geração falha** (registrado, NÃO corrigido — é decisão de
@@ -1387,6 +1396,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-02 | **4A — OPERACIONAL** | **Custo real na tela (constante única medida; estimativa e medição lado a lado); rastro da falha em provider_usage; redação no sumidouro do log; freio derivado de catálogo de endpoints; 4 desfechos medidos. Tabela de taxas manual REMOVIDA do banco. Ver abaixo.** |
 | 08-02 | **PREVOO-1 (3.5)** | **Verificação pré-live: geração confirmada em v3; corpo de erro vazava chave num 2º evento (corrigido); teto de sessão não volta em falha (medido, não corrigido); frescor da imagem do frontend; evidência por vendor; plano da passada live. 48 mutantes. Ver abaixo.** |
 | 08-01 | **FORMATO-1** | **Formato explícito no payload, derivado da plataforma; motor selecionado e registrado atrás de flag; 4 fixtures por proporção; guarda nova (41 mutantes no total). Ver abaixo.** |
 | 08-01 | **GUARDAS-1** | **`npm run check:mutants`: 38 mutantes provam que cada guarda reprova de verdade. D, C, E, B, G consertados + 1 achado novo (teto testado sem quem o chama). Ver abaixo.** |
@@ -1895,6 +1905,179 @@ mais que o resultado:
    scrub e é emitido *depois* da interpretação, então depender dele esvaziaria
    justamente a garantia que o LOG-1 existe para dar. Corrigido recortando o
    evento antes de procurar.
+
+### Bloco 4A — custo real na tela, e o que gasta sem ninguém ver (CONCLUÍDO)
+
+Ambiente em `fixture` do começo ao fim, `PROVIDER_LIVE_CONFIRM` vazia, **zero
+chamadas tarifadas**.
+
+**1. Custo tem UM número, e ele é medido.**
+[providerCost.ts](backend/src/services/billing/providerCost.ts) é o único lugar
+do sistema com número de custo de fornecedor:
+
+> **60 unidades por dólar · US$ 0,045 por segundo ENTREGUE**
+> Medido em 2026-08-01: carteira 15,50→15,35 USD e quota 930→921 numa geração
+> de 3,372 s (ffprobe). **Condições: HeyGen, 16:9, 720p.**
+
+O que existia antes eram **dois** números, e os dois erravam ao mesmo tempo: a
+taxa de `provider_cost_rates` (US$ 0,03/s, palpite) multiplicando a duração
+**pedida** (15 s) em vez da entregue (3,372 s). Daí os 4,5×.
+
+*Medido nas rotas reais, em fixture:* estimativa de 15 s → US$ 0,675; real de
+5 s → **US$ 0,225**; diferença **−US$ 0,45**, fator **3×**. O painel do tenant
+mostra os dois lados e a diferença; antes de gerar, mostra só a estimativa com
+a ressalva das condições de medição.
+
+**AUSÊNCIA nunca vira zero.** Consumo sem medição (voz, roteiro, D-ID) devolve
+`costUsd: null` com o motivo por extenso. *Medido no painel admin:* HeyGen com
+custo derivado, três linhas marcadas **AUSENTE**, total somando só o medido e
+declarando quantas linhas ficaram de fora.
+
+**O caminho antigo foi removido do BANCO, não só do código** (migration 039):
+`estimated_cost_cents` e `rate_snapshot_cents_per_unit` foram dropadas, a tabela
+`provider_cost_rates` foi dropada, e as rotas `/admin/cost-rates` e a tela que
+as editava saíram junto. Manter um editor de taxas ao lado de uma medição real
+seria manter uma segunda verdade sobre dinheiro — e é a primeira que errou.
+
+**Achado que só apareceu rodando:** as duas colunas eram `NOT NULL` sem default.
+Parar de escrevê-las sem removê-las fez **toda** escrita de consumo falhar — e
+falhar **em silêncio**, porque registrar consumo nunca lança. Três gerações não
+deixaram linha nenhuma. Telemetria que falha calada é pior que telemetria
+nenhuma: a ausência parece "nada aconteceu".
+
+**2. Rastro da falha.** `provider_usage` ganhou `outcome` e `failure_reason`.
+Uma tentativa recusada agora deixa linha com `unit_count = 0` — zero aqui é a
+verdade, nada foi entregue — e o motivo **sanitizado** (o corpo bruto continua
+só no log). Cobre os quatro pontos de falha: recusa na criação, erro no
+polling, artefato inválido e timeout. O do timeout só grava se o `UPDATE` de
+fato marcou erro, senão um vídeo que ficou pronto no último instante ganharia
+uma linha de falha ao lado da de sucesso.
+
+**3. ElevenLabs — a perna de custo, MEDIDA e corrigida no registro.**
+
+**O registro do PREVOO-1 estava errado.** Ele dizia que `synthesizeSpeech` faz
+"duas chamadas por geração, não uma". Faz **uma** no caminho feliz. A segunda é
+**fallback condicional**, e só acontece quando a primeira falha:
+
+| Cenário | Chamadas | Fonte da duração |
+|---|---|---|
+| `with-timestamps` 200 com áudio | **1** | `elevenlabs_timestamps` |
+| `with-timestamps` 401 (sem permissão no plano) | 2 | `bitrate_estimate` |
+| `with-timestamps` 200 **sem** `audio_base64` | 2 | `bitrate_estimate` |
+
+A medição anterior viu duas porque o `fetch` substituído devolvia 400 para
+tudo. **Não é duplicação — nada a remover.**
+
+**Correção da premissa do item:** a síntese **não** está fora do teto de
+sessão. Ela é alcançada só por `requireAudio` → `generateVideoHeygen`, que roda
+**depois** de `consumeLiveGeneration` em `generateVideo`. Está protegida
+indiretamente, e o único caminho para ela é esse (verificado por grep).
+
+**O cenário de cobrança dupla existe e não foi observado:** se a primeira
+chamada devolver 200 **com** áudio gerado mas **sem** `audio_base64` no corpo,
+o fornecedor cobrou e nós caímos no fallback, que cobra de novo. Depende de uma
+forma de resposta que nunca vimos. Registrado, não tratado.
+
+**4. Redação no SUMIDOURO.** Todo evento passa por
+[safeLog.ts](backend/src/services/log/safeLog.ts) — `logEvent()` é o único
+caminho de saída, e o gate reprova `console.*` direto em `backend/src` (18
+módulos convertidos; a única exceção é o próprio logger, cujos dois
+`console.error` de último recurso já são redigidos e roteá-los pelo `logEvent`
+criaria recursão no momento em que o log está quebrado).
+
+A redação casa por **FORMA**, não por nome de campo: `sk-…`, `AIza…`, `AQ.…`
+(o formato inesperado já registrado neste projeto), `xi-…`, `hg_…`, JWT,
+`Bearer …`, e o caso genérico de bloco opaco com 40+ caracteres. Percorre
+qualquer profundidade, inclusive `Error` (que não é enumerável — `{...err}`
+perderia justamente a `message` que carrega o corpo do fornecedor).
+
+*Medido, exercitando a função:* redige string solta, campo de objeto, **array
+dentro de objeto**, `err.message` de um `Error`, e par `chave=valor` com nome
+inocente — e **não** tarja texto legítimo (`"video 3ef8da68 pronto em 3.37s,
+formato 9:16, engine avatar_iv"` sai intacto). Uma redação que apaga o log
+inteiro é abandonada na primeira semana.
+
+**5. Freio DERIVADO do catálogo.**
+[endpointCatalog.ts](backend/src/services/providers/endpointCatalog.ts) lista
+**12 endpoints** de 3 fornecedores, cada um com `billable` e uma nota dizendo
+se o custo é medido ou suposto. A deny-list do probe deixou de ser escrita à
+mão: ela agora é `billableEndpointPaths()`. **8 tarifáveis.**
+
+O defeito que isso fecha não foi esquecer uma linha — foi a lista **nomear o
+que conhece**, e por isso envelhecer em silêncio a cada versão nova. O mutante
+esperto aponta o probe do ElevenLabs para `/v1/voices/add` (clonagem, tarifada):
+com a lista antiga isso passava, porque ela nunca teve endpoint de ElevenLabs.
+
+**6. Falha depois do aceite — MEDIDO, não corrigido.**
+
+| Desfecho | status | Crédito | Teto de sessão | `provider_usage` |
+|---|---|---|---|---|
+| **A. Aceite + sucesso** | `ready` | −1, sem estorno | consome 1 (live) | `success`, u=5 real, pedido=15 |
+| **B. Aceite + timeout** (~7,5 min) | `error` | −1, **sem estorno** | consome 1 (live) | `failed`, u=0 — **DEDUZIDO** |
+| **C. Aceite + erro no polling** | `error` | **−1, sem estorno** | consome 1 (live) | `failed`, u=0, pedido=15 |
+| **D. Recusa antes do aceite** | `error` | −1 **+1 estorno** | consome 1 (live) | `failed`, u=0, pedido=15 |
+
+A, C e D foram **medidos** por HTTP real em fixture. B é **DEDUZIDO** do
+código: 90 tentativas × 5 s inviabilizam a medição, e o caminho é o mesmo de C
+(`refundCredit()` só existe no `catch` de `generateVideo`, em
+[videos.ts:373](backend/src/routes/videos.ts:373); o laço de polling nunca
+estorna).
+
+A coluna do teto é **DEDUZIDA em todas as linhas**: em fixture o teto nunca é
+consumido. O comportamento em live foi medido no PREVOO-1 — consome e **não
+devolve**.
+
+**A linha que importa é a C: aceite seguido de falha NÃO estorna, e isso está
+certo.** O fornecedor renderizou e cobrou; devolver crédito ali faria o ledger
+divergir do dinheiro real. Um marcador de fixture novo (`-pollfail-`) tornou
+esse desfecho exercitável sem live — era o único que não acontecia sozinho.
+
+**Desfecho E, não listado porque não é falha de geração:** se o processo
+reiniciar entre a criação e o polling, o `setInterval` morre junto e o vídeo
+fica preso em `queued` para sempre, sem linha de falha. Registrado, não tratado.
+
+**Estado das guardas ao fim do bloco:** `npm run check` verde,
+`npm run check:mutants` **53/53**.
+
+**Um mutante mudou de SENTIDO, e o arnês foi quem mostrou.** O do PREVOO-1 que
+removia o scrub explícito de `vendorError.ts` reprovava — a chave vazava. Depois
+que `logEvent` virou o sumidouro único, o mesmo defeito deixou de vazar: a
+camada de baixo segura. Não é guarda ficando inerte; é a proposição deixando de
+ser falsificável **por ali**, porque a defesa passou a ter duas camadas. O
+mutante virou `expectGreen`, o que documenta a redundância e a **prova** a cada
+execução: se o sumidouro for enfraquecido, este contraponto quebra junto com o
+mutante da redação, e os dois apontam para o mesmo lugar.
+
+**E o `expect` errou o recorte pela terceira vez** (a mensagem diz "o número de
+custo 0.045 fora de providerCost.ts"; o `expect` dizia "número de custo fora
+de"). Prender o `expect` a um valor que pode mudar transforma guarda saudável em
+mutante AMBÍGUO — o recorte certo é a parte estável da frase.
+
+### Procedimento: ler o consumo do ElevenLabs (item 3.2)
+
+**Endpoint de leitura, NÃO tarifado:** `GET /v1/user/subscription`. Devolve
+`character_count` e `character_limit`. Rode **antes e depois** da passada; a
+diferença é o consumo real de voz — o número que nunca entrou em conta nenhuma.
+
+```bash
+curl -s -H "xi-api-key: $env:ELEVENLABS_KEY" https://api.elevenlabs.io/v1/user/subscription | Out-File -Encoding utf8 tts-antes.json
+```
+
+**Duas ressalvas que decidem se isso vai funcionar:**
+
+1. **A chave em uso NÃO tem a permissão `user_read`** (registrado desde o
+   DEMO-3), e sem ela este endpoint responde 401. Se responder 401, **não é
+   chave inválida** — é permissão faltando, e o diagnóstico errado aqui custa
+   tempo. Habilite `user_read` no painel do ElevenLabs, ou aceite que o
+   consumo de voz continua não medido.
+2. **`Out-File -Encoding utf8`, nunca `>`.** No PowerShell o `>` grava
+   UTF-16LE e nenhuma ferramenta de texto acha nada dentro depois.
+
+Para conferir só o essencial sem abrir o arquivo:
+
+```bash
+(Get-Content tts-antes.json | ConvertFrom-Json) | Select-Object character_count, character_limit
+```
 
 ### PLANO DA PASSADA LIVE (Bloco 5) — siga na ordem, sem improvisar
 

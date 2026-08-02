@@ -6,6 +6,7 @@ import { getStripe } from "../services/billing/stripeClient.js";
 import { grantPlanChangeTopUp } from "../services/billing/monthlyGrant.js";
 import { grantPurchasedCredit } from "../services/billing/creditGate.js";
 import { recordAuditLog } from "../services/auditLog.js";
+import { logEvent } from "../services/log/safeLog.js";
 
 // Subscription statuses that mean "payment isn't going through" — see
 // requireActiveTenant.ts / CLAUDE.md billing plan, Fase 3: suspension blocks
@@ -68,7 +69,7 @@ async function handleCreditPurchaseCompleted(session: Stripe.Checkout.Session): 
   if (creditType !== "video" && creditType !== "script" && creditType !== "avatar") return;
   if (!Number.isFinite(quantity) || quantity <= 0) return;
   if (!paymentIntentId) {
-    console.error(`credit_purchase checkout ${session.id} has no payment_intent — skipping grant`);
+    logEvent("error", "stripe_checkout_without_payment_intent", { sessionId: session.id });
     return;
   }
 
@@ -159,7 +160,7 @@ export async function stripeWebhookRoutes(app: FastifyInstance): Promise<void> {
               after: topUp,
             });
           } catch (err) {
-            console.error(`grantPlanChangeTopUp failed for tenant ${tenantId} after checkout`, err);
+            logEvent("error", "stripe_topup_failed", { tenantId, detail: err });
           }
         }
         break;

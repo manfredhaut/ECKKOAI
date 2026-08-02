@@ -24,6 +24,7 @@ import type { AvatarProviderStatus, GenerateVideoInput, GenerateVideoResult, Pol
 import type { CloneVoiceResult, SynthesizedSpeech } from "./voiceProvider.js";
 import { HEYGEN_ASPECT_RATIOS, type AspectRatio } from "./videoFormat.js";
 import { selectEngine } from "./videoEngine.js";
+import { logEvent } from "../log/safeLog.js";
 
 /** Quanto tempo o job simulado passa em `processing` antes de concluir. */
 const SIMULATED_JOB_DURATION_MS = 12_000;
@@ -153,14 +154,10 @@ async function readFixture(name: string): Promise<Buffer> {
 function fixtureFileFor(aspectRatio: AspectRatio): string {
   const file = FIXTURE_VIDEO_FILES[aspectRatio];
   if (file) return file;
-  console.warn(
-    JSON.stringify({
-      event: "fixture_aspect_ratio_missing",
-      requested: aspectRatio,
+  logEvent("warn", "fixture_aspect_ratio_missing", { requested: aspectRatio,
       known: HEYGEN_ASPECT_RATIOS,
       consequence: "entregando 16:9 — a simulação NÃO honrou a proporção pedida",
-    }),
-  );
+    });
   return FIXTURE_VIDEO_FILES["16:9"];
 }
 
@@ -206,6 +203,16 @@ export const FIXTURE_VENDOR_ERROR_BODY = JSON.stringify({
  */
 export const FIXTURE_FAIL_MARKER = "-fail-";
 
+/**
+ * Marcador que faz o fornecedor ACEITAR e depois falhar no polling.
+ *
+ * É o desfecho que mais importa medir, e o único que não acontece
+ * espontaneamente em simulação: o fornecedor aceitou o trabalho (logo, cobrou),
+ * e a falha é posterior. É exatamente a fronteira do ESTORNO-1 — estornar aqui
+ * faria o ledger divergir do dinheiro real.
+ */
+export const FIXTURE_POLL_FAIL_MARKER = "-pollfail-";
+
 export class FixtureVendorFailure extends Error {
   constructor() {
     super(`HeyGen API error (400): ${FIXTURE_VENDOR_ERROR_BODY}`);
@@ -221,7 +228,10 @@ export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoRe
     throw new FixtureVendorFailure();
   }
 
-  const providerJobId = `fixture-${randomUUID()}`;
+  // O marcador viaja no id do job para que o polling — que roda noutra
+  // requisição — saiba o desfecho sem precisar de estado compartilhado a mais.
+  const falharNoPolling = input.providerAvatarId.includes(FIXTURE_POLL_FAIL_MARKER);
+  const providerJobId = `fixture-${falharNoPolling ? "pollfail-" : ""}${randomUUID()}`;
   jobs.set(providerJobId, {
     tenantId: input.tenantId,
     startedAt: Date.now(),
@@ -257,6 +267,17 @@ export async function pollVideoJobFixture(jobId: string): Promise<PollResult> {
 
   if (Date.now() - job.startedAt < SIMULATED_JOB_DURATION_MS) {
     return { status: "processing" };
+  }
+
+  // Aceite seguido de falha. O trabalho já foi enfileirado no fornecedor —
+  // e é por isso que este caminho NÃO estorna, ao contrário da recusa.
+  if (jobId.includes(FIXTURE_POLL_FAIL_MARKER)) {
+    jobs.delete(jobId);
+    return {
+      status: "error",
+      errorMessage:
+        "HeyGen API error (500): {\"error\":{\"message\":\"internal error while rendering\"}}",
+    };
   }
 
   // Concluído: materializa o arquivo no storage do tenant, como um vendor

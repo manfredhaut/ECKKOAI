@@ -114,7 +114,6 @@ function respond(method: string, path: string): Response | null {
     });
   }
   if (method === "GET" && path.includes("/admin/plans")) return json([]);
-  if (method === "GET" && path.includes("/admin/cost-rates")) return json([]);
 
   if (method === "GET" && path.includes("/auth/me")) {
     return json({ user: { id: "gallery-user", email: "galeria@exemplo" }, tenant: { id: "t", name: "Galeria", slug: "galeria" } });
@@ -123,6 +122,32 @@ function respond(method: string, path: string): Response | null {
   // POST /avatars — usado pelo passo 1 para entrar no modo de captura, que
   // é o que expõe o bloco de fundo virtual sem precisar de câmera.
   if (method === "POST" && path.endsWith("/avatars")) return json(FAKE_AVATAR, 201);
+
+  // Custo: estimativa (antes de gerar) e medição (depois). Os dois com a
+  // MESMA forma, como no backend — a galeria precisa exercitar o painel real,
+  // e um formato próprio aqui esconderia justamente o caminho de renderização.
+  if (method === "GET" && path.includes("/video-cost-estimate")) {
+    return json({
+      requestedSeconds: 30,
+      estimate: { costUsd: 1.35, costUnknownReason: null },
+      actual: null,
+      difference: null,
+      failure: null,
+      basis: "Estimativa baseada em uma única medição real (2026-08-01), em 16:9 / 720p.",
+      simulated: true,
+    });
+  }
+  if (method === "GET" && /\/videos\/[^/]+\/cost$/.test(path)) {
+    return json({
+      requestedSeconds: 15,
+      estimate: { costUsd: 0.675, costUnknownReason: null },
+      actual: { seconds: 5, unitSource: "vendor_response", costUsd: 0.225, costUnknownReason: null, vendorUnits: 14 },
+      difference: { usd: -0.45, factor: 3 },
+      failure: null,
+      basis: "Estimativa baseada em uma única medição real (2026-08-01), em 16:9 / 720p.",
+      simulated: true,
+    });
+  }
 
   // Suporte a formato do provedor conectado. Alternável pelo mesmo controle de
   // flags da galeria: é o único jeito de VER o passo "Publicação" no estado em

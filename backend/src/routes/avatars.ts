@@ -16,6 +16,7 @@ import { debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { sendAttachment, contentTypeForExtension } from "../services/downloadProxy.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
+import { logEvent } from "../services/log/safeLog.js";
 
 export async function avatarRoutes(app: FastifyInstance): Promise<void> {
   app.get("/avatars", async (req) => {
@@ -60,7 +61,7 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       sendAttachment(reply, buffer, `avatar-reference-${avatar.id}${ext}`, contentTypeForExtension(ext));
       return reply;
     } catch (err) {
-      console.error(JSON.stringify({ event: "download_failed", context: "avatars.referenceVideo", detail: err instanceof Error ? err.message : String(err) }));
+      logEvent("error", "download_failed", { context: "avatars.referenceVideo", detail: err instanceof Error ? err.message : String(err) });
       return reply.code(502).send({ error: "download_failed", message: "Não foi possível baixar o arquivo agora. Tente novamente." });
     }
   });
@@ -280,7 +281,7 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         // que o avatar existe e só a voz ficou faltando — senão parece que
         // tudo falhou, e o operador refaz um treino que já foi pago.
         if (err instanceof LiveBudgetExhaustedError) {
-          console.error(JSON.stringify({ event: "live_budget_exhausted", context: "avatars.cloneVoice", used: err.used, max: err.max }));
+          logEvent("error", "live_budget_exhausted", { context: "avatars.cloneVoice", used: err.used, max: err.max });
           return reply.code(429).send({
             error: "live_budget_exhausted",
             message: `O avatar foi treinado com sucesso, mas a voz não foi clonada. ${err.message}`,

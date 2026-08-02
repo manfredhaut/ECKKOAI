@@ -6,7 +6,8 @@ import { generateVideo, pollVideoJob, AvatarProviderError } from "../services/pr
 import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { createNotification } from "../services/notifications.js";
-import { recordProviderUsage } from "../services/billing/usageTracking.js";
+import { recordFailedProviderUsage, recordProviderUsage } from "../services/billing/usageTracking.js";
+import { costBasisNote, costFor, estimateVideoCost } from "../services/billing/providerCost.js";
 import { debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.js";
@@ -16,6 +17,7 @@ import { isFixtureMode } from "../services/providers/providerMode.js";
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 import { resolveVideoFormat, vendorFormatSupport, type VideoFormat } from "../services/providers/videoFormat.js";
 import { isFeatureEnabled } from "../services/featureFlagStore.js";
+import { logEvent } from "../services/log/safeLog.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -46,14 +48,28 @@ function pollJob(
         const artifact = await probeArtifact(result.outputUrl);
         const check = validateVideoArtifact(artifact.head, artifact.totalBytes);
         if (!check.ok) {
-          console.error(
-            `[videos] artefato recusado para o vídeo ${videoId}: ${check.reason} (url=${result.outputUrl})`,
-          );
+          logEvent("error", "artifact_rejected", { context: "videos.poll", videoId, reason: check.reason, url: result.outputUrl });
           await pool.query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1", [
             videoId,
             ARTIFACT_INVALID_MESSAGE,
           ]);
           await createNotification(tenantId, "video_error", ARTIFACT_INVALID_MESSAGE);
+          // Falha DEPOIS do aceite: o fornecedor renderizou e cobrou, e nós é
+          // que não conseguimos usar o artefato. A linha registra a tentativa
+          // com custo zero do NOSSO lado — o que não é o mesmo que dizer que
+          // não custou ao fornecedor. É por isto que ela também não estorna
+          // (ver a fronteira do ESTORNO-1).
+          await recordFailedProviderUsage({
+            tenantId,
+            videoId,
+            provider: "avatar",
+            vendor,
+            unitType: "seconds",
+            requestedUnitCount: durationSeconds,
+            failureReason: ARTIFACT_INVALID_MESSAGE,
+            aspectRatio: format.aspectRatio,
+            resolution: format.resolution,
+          });
           return;
         }
 
@@ -114,6 +130,19 @@ function pollJob(
           pollMessage,
         ]);
         await createNotification(tenantId, "video_error", pollMessage);
+        await recordFailedProviderUsage({
+          tenantId,
+          videoId,
+          provider: "avatar",
+          vendor,
+          unitType: "seconds",
+          requestedUnitCount: durationSeconds,
+          // A mensagem SANITIZADA, nunca o corpo do fornecedor: esta coluna é
+          // lida por tela de admin, e o corpo bruto já está no log.
+          failureReason: pollMessage,
+          aspectRatio: format.aspectRatio,
+          resolution: format.resolution,
+        });
       } else if (attempts === 1) {
         await pool.query("UPDATE videos SET status = 'processing' WHERE id = $1", [videoId]);
       }
@@ -123,14 +152,44 @@ function pollJob(
       await pool
         .query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1", [videoId, message])
         .catch(() => {});
+      await recordFailedProviderUsage({
+        tenantId,
+        videoId,
+        provider: "avatar",
+        vendor,
+        unitType: "seconds",
+        requestedUnitCount: durationSeconds,
+        failureReason: message,
+        aspectRatio: format.aspectRatio,
+        resolution: format.resolution,
+      });
     }
     if (attempts >= MAX_POLL_ATTEMPTS) {
       clearInterval(interval);
-      await pool
-        .query("UPDATE videos SET status = 'error', error_message = 'O serviço de vídeo demorou mais que o esperado. Tente gerar novamente.' WHERE id = $1 AND status != 'ready'", [
+      const timeout = "O serviço de vídeo demorou mais que o esperado. Tente gerar novamente.";
+      const { rowCount } = await pool
+        .query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 AND status != 'ready'", [
           videoId,
+          timeout,
         ])
-        .catch(() => {});
+        .catch(() => ({ rowCount: 0 }));
+      // Só registra se o UPDATE de fato marcou erro. Sem o `rowCount`, um
+      // vídeo que ficou pronto no último instante ganharia uma linha de falha
+      // ao lado da de sucesso — e o pós-morte passaria a contar falhas que
+      // não aconteceram.
+      if (rowCount) {
+        await recordFailedProviderUsage({
+          tenantId,
+          videoId,
+          provider: "avatar",
+          vendor,
+          unitType: "seconds",
+          requestedUnitCount: durationSeconds,
+          failureReason: timeout,
+          aspectRatio: format.aspectRatio,
+          resolution: format.resolution,
+        });
+      }
     }
   }, POLL_INTERVAL_MS);
 }
@@ -151,12 +210,124 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     return vendorFormatSupport(credential?.vendor ?? null);
   });
 
+  /**
+   * Estimativa ANTES de existir vídeo, para o cliente ver o custo antes de
+   * mandar gerar.
+   *
+   * Devolve a MESMA forma de `/videos/:id/cost`, com `actual: null` — assim a
+   * tela tem um caminho só. Duas formas de resposta para a mesma pergunta
+   * produziriam dois caminhos de renderização, e é no segundo que a ausência
+   * de custo vira um zero por descuido.
+   *
+   * Rota fora de `/videos/...` de propósito: `/videos/cost-estimate` colidiria
+   * conceitualmente com `/videos/:id`, e depender da ordem de resolução do
+   * roteador para desempatar é o tipo de sutileza que quebra em silêncio.
+   */
+  app.get<{ Querystring: { seconds?: string } }>("/video-cost-estimate", async (req) => {
+    const seconds = Number(req.query.seconds);
+    const requestedSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+    const credential = await getCredential(req.tenantId, "avatar");
+    const estimate = estimateVideoCost(requestedSeconds, credential?.vendor ?? "heygen");
+
+    return {
+      requestedSeconds,
+      estimate: {
+        costUsd: estimate.known ? estimate.usd : null,
+        costUnknownReason: estimate.known ? null : estimate.explanation,
+      },
+      actual: null,
+      difference: null,
+      failure: null,
+      basis: costBasisNote(),
+      simulated: isFixtureMode(),
+    };
+  });
+
   app.get("/videos", async (req) => {
     const { rows } = await pool.query<Video>(
       "SELECT * FROM videos WHERE tenant_id = $1 ORDER BY created_at DESC",
       [req.tenantId],
     );
     return rows;
+  });
+
+  /**
+   * Custo de UM vídeo: a estimativa de antes e a medição de depois, lado a
+   * lado, com a diferença entre as duas.
+   *
+   * As duas juntas, e nunca só uma: a estimativa sozinha é o que produziu o
+   * erro de 4,5× sem que ninguém percebesse, e a medição sozinha esconderia o
+   * quanto a estimativa erra — que é a única forma de ela melhorar.
+   *
+   * `actual` é `null` enquanto não houver linha de consumo. **Null, e não
+   * zero**: um vídeo que ainda está gerando não custou nada ainda, e um vídeo
+   * que falhou não custou nada nunca; os dois são diferentes de "custou
+   * US$ 0,00", e a tela precisa poder dizer qual é qual.
+   */
+  app.get<{ Params: { id: string } }>("/videos/:id/cost", async (req, reply) => {
+    const { rows } = await pool.query<Video>(
+      "SELECT * FROM videos WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.tenantId],
+    );
+    const video = rows[0];
+    if (!video) return reply.code(404).send({ error: "Video not found" });
+
+    const vendor = video.provider_vendor ?? "heygen";
+    const estimate = estimateVideoCost(video.duration_seconds, vendor);
+
+    const { rows: usage } = await pool.query<{
+      unit_count: string;
+      requested_unit_count: string | null;
+      unit_source: string | null;
+      outcome: string;
+      failure_reason: string | null;
+    }>(
+      `SELECT unit_count, requested_unit_count, unit_source, outcome, failure_reason
+       FROM provider_usage
+       WHERE video_id = $1 AND tenant_id = $2 AND provider = 'avatar'
+       ORDER BY created_at DESC LIMIT 1`,
+      [video.id, req.tenantId],
+    );
+
+    const linha = usage[0];
+    const actual =
+      linha && linha.outcome === "success"
+        ? (() => {
+            const seconds = Number(linha.unit_count);
+            const cost = costFor({ provider: "avatar", vendor, unitType: "seconds", unitCount: seconds });
+            return {
+              seconds,
+              unitSource: linha.unit_source,
+              costUsd: cost.known ? cost.usd : null,
+              costUnknownReason: cost.known ? null : cost.explanation,
+              vendorUnits: cost.known ? cost.vendorUnits : null,
+            };
+          })()
+        : null;
+
+    return {
+      requestedSeconds: video.duration_seconds,
+      estimate: {
+        costUsd: estimate.known ? estimate.usd : null,
+        costUnknownReason: estimate.known ? null : estimate.explanation,
+      },
+      actual,
+      // A diferença só existe quando os dois lados existem. Calculá-la contra
+      // um `null` produziria um número que parece medida e é aritmética com
+      // ausência.
+      difference:
+        actual && actual.costUsd != null && estimate.known
+          ? {
+              usd: Number((actual.costUsd - estimate.usd).toFixed(4)),
+              factor: actual.costUsd > 0 ? Number((estimate.usd / actual.costUsd).toFixed(2)) : null,
+            }
+          : null,
+      // Presente mesmo quando não há consumo: é o que a tela mostra em vez de
+      // um traço mudo.
+      failure: linha && linha.outcome === "failed" ? { reason: linha.failure_reason } : null,
+      basis: costBasisNote(),
+      simulated: video.simulated,
+    };
   });
 
   app.get<{ Params: { id: string } }>("/videos/:id", async (req, reply) => {
@@ -197,10 +368,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       return reply;
     } catch (err) {
       if (err instanceof InvalidArtifactError) {
-        console.error(JSON.stringify({ event: "artifact_rejected", context: "videos.download", videoId: video.id, detail: err.detail }));
+        logEvent("error", "artifact_rejected", { context: "videos.download", videoId: video.id, detail: err.detail });
         return reply.code(422).send({ error: "invalid_artifact", message: err.message });
       }
-      console.error(JSON.stringify({ event: "download_failed", context: "videos.download", detail: err instanceof Error ? err.message : String(err) }));
+      logEvent("error", "download_failed", { context: "videos.download", detail: err instanceof Error ? err.message : String(err) });
       return reply.code(502).send({ error: "download_failed", message: "Não foi possível baixar o vídeo agora. Tente novamente." });
     }
   });
@@ -388,7 +559,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           "UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 RETURNING *",
           [video.id, err.message],
         );
-        console.error(JSON.stringify({ event: "live_budget_exhausted", context: "videos.create", used: err.used, max: err.max }));
+        logEvent("error", "live_budget_exhausted", { context: "videos.create", used: err.used, max: err.max });
         return reply.code(429).send({ error: "live_budget_exhausted", message: err.message, video: barrado[0] });
       }
       const { message } = toClientVendorError("avatar", "videos.create", err);
@@ -396,6 +567,22 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         "UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 RETURNING *",
         [video.id, message],
       );
+      // Recusa ANTES do aceite: nada foi renderizado e o crédito já foi
+      // estornado acima. A linha existe mesmo assim — sem ela, "cinco
+      // tentativas recusadas" e "nenhuma tentativa" ficam indistinguíveis
+      // depois que o stdout do container sumir, que é o primeiro
+      // `docker compose up -d`.
+      await recordFailedProviderUsage({
+        tenantId: req.tenantId,
+        videoId: video.id,
+        provider: "avatar",
+        vendor: avatarCredential.vendor,
+        unitType: "seconds",
+        requestedUnitCount: duration_seconds,
+        failureReason: message,
+        aspectRatio: format.aspectRatio,
+        resolution: format.resolution,
+      });
       return reply.code(201).send(errored[0]);
     }
 

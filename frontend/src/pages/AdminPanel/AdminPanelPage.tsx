@@ -16,7 +16,6 @@ import { Field } from "../../components/ui/Field";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { VENDORS_BY_PROVIDER } from "../Settings/providerVendors";
 import { AdminApisPanel } from "./AdminApisPanel";
-import { AdminCostRatesPanel } from "./AdminCostRatesPanel";
 import { AdminPlansPanel } from "./AdminPlansPanel";
 import { Copilot } from "../../components/copilot/Copilot";
 import { useAdminCopilot } from "../../adminCopilot/AdminCopilotContext";
@@ -184,8 +183,8 @@ function AdminTenantUsagePanel({ tenantId }: { tenantId: string }) {
         <p className="text-muted">{t("adminPanel.usage.empty")}</p>
       ) : (
         <>
-          <p className={usage.allRatesVerified ? "text-muted" : "text-muted"} style={{ fontSize: 13 }}>
-            {usage.allRatesVerified ? t("adminPanel.usage.verifiedBanner") : t("adminPanel.usage.estimatedBanner")}
+          <p className="text-muted" style={{ fontSize: 12 }}>
+            {usage.costBasis}
           </p>
           <table>
             <thead>
@@ -194,8 +193,8 @@ function AdminTenantUsagePanel({ tenantId }: { tenantId: string }) {
                 <th>{t("adminPanel.usage.colVendor")}</th>
                 <th>{t("adminPanel.usage.colUnitType")}</th>
                 <th>{t("adminPanel.usage.colUnits")}</th>
+                <th>{t("adminPanel.usage.colAttempts")}</th>
                 <th>{t("adminPanel.usage.colCost")}</th>
-                <th>{t("adminPanel.usage.colVerified")}</th>
               </tr>
             </thead>
             <tbody>
@@ -205,20 +204,33 @@ function AdminTenantUsagePanel({ tenantId }: { tenantId: string }) {
                   <td>{row.vendor}</td>
                   <td>{t(`adminPanel.unitType.${row.unitType}`)}</td>
                   <td>{row.totalUnits}</td>
-                  <td>{(row.totalEstimatedCostCents / 100).toFixed(2)}</td>
                   <td>
-                    <span className={`status-pill status-${row.verified ? "connected" : "disconnected"}`}>
-                      {row.verified ? t("common.yes") : t("common.no")}
-                    </span>
+                    {row.attempts}
+                    {row.failures > 0 && (
+                      <span className="text-muted"> ({t("adminPanel.usage.failures", { n: row.failures })})</span>
+                    )}
+                  </td>
+                  {/* AUSÊNCIA por extenso, nunca 0,00: um zero aqui seria lido
+                      como "de graça", e o que se quer dizer é "sem medição". */}
+                  <td title={row.costUnknownReason ?? undefined}>
+                    {row.costUsd != null
+                      ? `US$ ${row.costUsd.toFixed(4)}`
+                      : t("adminPanel.usage.noMeasurement")}
                   </td>
                 </tr>
               ))}
               <tr>
-                <td colSpan={4}>
+                <td colSpan={5}>
                   <strong>{t("adminPanel.usage.total")}</strong>
+                  {usage.linesWithoutCost > 0 && (
+                    <span className="text-muted">
+                      {" "}
+                      {t("adminPanel.usage.excluded", { n: usage.linesWithoutCost })}
+                    </span>
+                  )}
                 </td>
-                <td colSpan={2}>
-                  <strong>{(usage.totalEstimatedCostCents / 100).toFixed(2)}</strong>
+                <td>
+                  <strong>US$ {usage.totalCostUsd.toFixed(4)}</strong>
                 </td>
               </tr>
             </tbody>
@@ -341,7 +353,7 @@ function AdminTenantDetailPanel({
   );
 }
 
-type AdminView = "tenants" | "apis" | "costRates" | "plans" | "features";
+type AdminView = "tenants" | "apis" | "plans" | "features";
 
 // Same shape as AppShell's navItems (tenant app), except the admin panel
 // swaps panels in place instead of routing — so these are buttons driving
@@ -349,7 +361,6 @@ type AdminView = "tenants" | "apis" | "costRates" | "plans" | "features";
 const NAV_ITEMS: { id: AdminView; labelKey: string }[] = [
   { id: "tenants", labelKey: "adminPanel.navTenants" },
   { id: "apis", labelKey: "adminPanel.navApis" },
-  { id: "costRates", labelKey: "adminPanel.navCostRates" },
   { id: "plans", labelKey: "adminPanel.navPlans" },
   { id: "features", labelKey: "adminPanel.navFeatures" },
 ];
@@ -417,8 +428,6 @@ export function AdminPanelPage() {
 
           {view === "apis" ? (
         <AdminApisPanel tenants={tenants} />
-      ) : view === "costRates" ? (
-        <AdminCostRatesPanel />
       ) : view === "plans" ? (
         <AdminPlansPanel />
       ) : view === "features" ? (

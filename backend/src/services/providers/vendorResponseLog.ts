@@ -18,6 +18,7 @@
  * (tipo do conteúdo, id da requisição do lado do fornecedor, limites de taxa)
  * e nada mais.
  */
+import { logEvent, redactText } from "../log/safeLog.js";
 
 /** Cabeçalhos de resposta que valem log. Fora daqui, nada é registrado. */
 const HEADER_ALLOWLIST = [
@@ -208,7 +209,7 @@ export function contractMismatch(context: string, expectedPath: string, body: un
     `Forma recebida: ${describeShape(body)}. ` +
     "O corpo bruto completo está no log do servidor, no evento vendor_response.";
 
-  console.error(JSON.stringify({ event: "vendor_contract_mismatch", context, expectedPath, detail }));
+  logEvent("error", "vendor_contract_mismatch", { context, expectedPath, detail });
   return detail;
 }
 
@@ -248,10 +249,7 @@ export function logVendorResponse(input: {
       body = scrubSecretsFromText(input.rawBody);
       bodyForm = "texto";
     }
-    console.log(
-      JSON.stringify({
-        event: "vendor_response",
-        context: input.context,
+    logEvent("info", "vendor_response", { context: input.context,
         vendor: input.vendor,
         status: input.status,
         ok: input.res.ok,
@@ -260,10 +258,9 @@ export function logVendorResponse(input: {
         bodyForm,
         // Corpo INTEIRO, sem corte. Ver o cabeçalho deste arquivo.
         body,
-      }),
-    );
+      });
   } catch (err) {
-    console.error("logVendorResponse falhou (seguindo mesmo assim)", err);
+    console.error("logVendorResponse falhou (seguindo mesmo assim):", redactText(String(err)));
   }
 }
 
@@ -288,10 +285,7 @@ export function logVendorBinaryResponse(input: {
   byteLength: number;
 }): void {
   try {
-    console.log(
-      JSON.stringify({
-        event: "vendor_response",
-        context: input.context,
+    logEvent("info", "vendor_response", { context: input.context,
         vendor: input.vendor,
         status: input.status,
         ok: input.res.ok,
@@ -302,10 +296,9 @@ export function logVendorBinaryResponse(input: {
         // que já está acima. Um resumo textual aqui só daria a impressão de
         // que o conteúdo foi inspecionado.
         body: `<binário não registrado: ${input.byteLength} bytes>`,
-      }),
-    );
+      });
   } catch (err) {
-    console.error("logVendorBinaryResponse falhou (seguindo mesmo assim)", err);
+    console.error("logVendorBinaryResponse falhou (seguindo mesmo assim):", redactText(String(err)));
   }
 }
 
@@ -316,8 +309,12 @@ export function logVendorBinaryResponse(input: {
  * registrar nada — e é justamente o corpo não-JSON (um HTML de 502, um texto
  * de erro de proxy) que costuma explicar as falhas mais confusas.
  */
+/**
+ * Mantido como nome próprio por já ser usado em `vendorError.ts`, mas o corpo
+ * agora delega ao sumidouro: uma segunda implementação de "o que parece
+ * segredo" divergiria da primeira em silêncio, e a divergência só apareceria
+ * como um segredo que passou.
+ */
 export function scrubSecretsFromText(text: string): string {
-  return text
-    .replace(/(api[_-]?key|secret|password|authorization|token)("?\s*[:=]\s*"?)[^"\s,&}]+/gi, `$1$2${REDACTED}`)
-    .replace(/\b(sk-[A-Za-z0-9-]{8,}|AIza[A-Za-z0-9_-]{8,})\b/g, REDACTED);
+  return redactText(text);
 }

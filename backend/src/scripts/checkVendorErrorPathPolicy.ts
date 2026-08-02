@@ -74,18 +74,29 @@ export const MUTANTS: Mutant[] = [
     expect: "não chegou ao log",
   },
   {
-    guard: "erro de vendor: corpo vai ao log, mascarado",
-    name: "o detalhe volta ao log sem passar pela máscara",
+    guard: "erro de vendor: a defesa é em profundidade",
+    name: "a máscara do publicador some — o sumidouro tem de segurar sozinho",
     kind: "esperto",
     file: "backend/src/services/providers/vendorError.ts",
-    // O corpo continua indo ao log, o evento continua existindo, o campo
-    // continua se chamando `detail`, e o `vendor_response` continua mascarando
-    // o MESMO corpo alguns milissegundos antes. Só esta cópia volta a ser
-    // legível. Uma guarda que checasse "o corpo aparece no log?" passaria — e
-    // era exatamente este o estado do código antes desta verificação existir.
+    // CONTRAPONTO, e não reprovação. Ele mudou de sentido no bloco 4A, e o
+    // arnês foi quem mostrou isso: quando este mutante foi escrito, remover o
+    // scrub daqui vazava a chave, e a guarda reprovava. Depois que `logEvent`
+    // virou o sumidouro único — com redação por FORMA em qualquer
+    // profundidade —, o mesmo defeito deixou de vazar, porque a camada de
+    // baixo segura.
+    //
+    // Isso não é a guarda ficando inerte: é a proposição dela deixando de ser
+    // falsificável POR AQUI, porque a defesa passou a ter duas camadas. Manter
+    // o mutante como `expectGreen` documenta a redundância e a PROVA a cada
+    // execução — se um dia o sumidouro for enfraquecido, este contraponto
+    // quebra junto com o mutante da redação, e os dois apontam para o mesmo
+    // lugar. A camada de cima continua no código de propósito: ela custa uma
+    // chamada de função e cobre o caso de alguém publicar por um caminho novo
+    // antes de a guarda de log ser executada.
     find: "      detail: scrubSecretsFromText(err instanceof Error ? err.message : String(err)),",
     replace: "      detail: err instanceof Error ? err.message : String(err),",
-    expect: "em CLARO no evento",
+    expectGreen: true,
+    expect: "segredo mascarado nos dois eventos",
   },
 ];
 

@@ -15,6 +15,7 @@
  */
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import type { PlatformValidationKind } from "../platformCredentials.js";
+import { logEvent } from "../log/safeLog.js";
 
 /**
  * Todo endpoint que este módulo pode alcançar. Verificada por `npm run check`:
@@ -55,7 +56,7 @@ export async function probePlatformKey(kind: PlatformValidationKind, apiKey: str
  * um visitante anônimo. O status basta para agir; o corpo vai para o log.
  */
 function failure(vendor: string, status: number, body: string): ProbeResult {
-  console.error(`[platformKeyProbe] ${vendor} recusou a chave (${status}): ${body.slice(0, 500)}`);
+  logEvent("error", "platform_key_rejected", { vendor, status, body: body.slice(0, 500) });
   if (status === 401 || status === 403) {
     return { ok: false, detail: "A chave foi recusada pelo fornecedor (inválida, revogada ou sem permissão).", balance: null };
   }

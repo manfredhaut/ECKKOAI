@@ -231,7 +231,6 @@
     },
     "navTenants": "Tenants",
     "navApis": "APIs",
-    "navCostRates": "Cost rates",
     "navPlans": "Plans",
     "apis": {
       "title": "Integrations by tenant",
@@ -267,32 +266,23 @@
     },
     "usage": {
       "title": "Cost per provider",
-      "estimatedBanner": "Estimate — rates not yet verified against the provider's real pricing. Do not treat as actual cost.",
-      "verifiedBanner": "Verified rates — figures below reflect rates the admin has confirmed.",
       "empty": "No usage recorded yet.",
       "colProvider": "Provider",
       "colVendor": "Vendor",
       "colUnitType": "Unit",
       "colUnits": "Total units",
-      "colCost": "Estimated cost",
-      "colVerified": "Verified",
-      "total": "Total"
+      "colCost": "Cost (measured)",
+      "total": "Total",
+      "colAttempts": "Attempts",
+      "failures": "{{n}} failure(s)",
+      "noMeasurement": "no measurement",
+      "excluded": "({{n}} line(s) without measured cost were left out)"
     },
     "unitType": {
       "seconds": "Seconds",
       "characters": "Characters",
       "tokens_in": "Tokens (input)",
       "tokens_out": "Tokens (output)"
-    },
-    "costRates": {
-      "title": "Provider cost rates",
-      "subtitle": "Values used to estimate real cost per provider call. Only mark \"verified\" after confirming against the vendor's real public pricing.",
-      "colProvider": "Provider",
-      "colVendor": "Vendor",
-      "colUnitType": "Unit",
-      "colCostPerUnit": "Cost per unit (cents)",
-      "colVerified": "Verified",
-      "save": "Save"
     },
     "navFeatures": "Features",
     "loadError": "Could not load.",
@@ -553,6 +543,19 @@
     },
     "duration": {
       "title": "Duration"
+    },
+    "cost": {
+      "title": "Cost",
+      "estimated": "Estimate ({{seconds}}s requested)",
+      "actual": "Actual cost ({{seconds}}s delivered)",
+      "actualLabel": "Actual cost",
+      "noneYet": "not measured yet",
+      "notMeasured": "no measurement",
+      "vendorUnits": "{{units}} vendor quota units",
+      "difference": "Difference",
+      "factor": "the estimate was {{factor}}× the actual cost",
+      "failed": "The attempt failed: {{reason}}",
+      "simulated": "Simulated generation — nothing was charged. The numbers show what it would have cost."
     },
     "publish": {
       "title": "Where will this video be published",

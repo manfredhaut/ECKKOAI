@@ -44,6 +44,7 @@ import {
   lastFourOf,
   type PlatformCredentialId,
 } from "./platformCredentials.js";
+import { logEvent } from "./log/safeLog.js";
 
 export type PlatformKeySource = "panel" | "env";
 
@@ -146,9 +147,7 @@ async function readStoredValue(id: PlatformCredentialId): Promise<string | null>
   try {
     return decrypt(row.encrypted_key);
   } catch {
-    console.error(
-      `[platformCredentials] a chave "${id}" está gravada mas não decifra sob a ENCRYPTION_KEY atual — ignorando a linha.`,
-    );
+    logEvent("error", "platform_credential_undecryptable", { id });
     return null;
   }
 }

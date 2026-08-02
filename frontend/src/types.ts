@@ -127,34 +127,31 @@ export interface AdminTenantDetail {
   credentials: Credential[];
 }
 
-// Cost is always an ESTIMATE from a manually maintained rate card
-// (provider_cost_rates), never a number a vendor actually returned —
-// `verified`/`allRatesVerified` say whether an admin has confirmed the
-// underlying rate against real vendor pricing yet. See CLAUDE.md / billing
-// plan, Fase 1.
+// Custo DERIVADO da única medição real que existe (backend
+// billing/providerCost.ts), a partir das unidades consumidas. NÃO vem mais da
+// tabela de taxas mantida à mão, que produzia estimativa sobre a duração
+// PEDIDA a uma taxa palpite — errado nos dois fatores, 4,5x de desvio medido.
+//
+// `costUsd: null` significa AUSÊNCIA de medição, nunca zero. A tela precisa
+// mostrar a diferença: "custou nada" e "não sabemos" não são a mesma coisa.
 export interface TenantUsageBreakdownRow {
   provider: CredentialProviderId;
   vendor: string;
   unitType: "seconds" | "characters" | "tokens_in" | "tokens_out";
   totalUnits: number;
-  totalEstimatedCostCents: number;
-  verified: boolean;
+  attempts: number;
+  failures: number;
+  costUsd: number | null;
+  costUnknownReason: string | null;
 }
 
 export interface TenantUsage {
   breakdown: TenantUsageBreakdownRow[];
-  totalEstimatedCostCents: number;
-  allRatesVerified: boolean;
-}
-
-export interface CostRate {
-  id: string;
-  provider: CredentialProviderId;
-  vendor: string;
-  unitType: "seconds" | "characters" | "tokens_in" | "tokens_out";
-  costPerUnitCents: number;
-  verified: boolean;
-  updatedAt: string;
+  /** Soma APENAS das linhas com custo medido. */
+  totalCostUsd: number;
+  /** Quantas linhas ficaram de fora do total por não terem medição. */
+  linesWithoutCost: number;
+  costBasis: string;
 }
 
 export interface Subscription {

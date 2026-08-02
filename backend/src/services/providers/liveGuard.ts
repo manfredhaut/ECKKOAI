@@ -18,6 +18,7 @@
  *     acidente de configuração; o teto protege contra o laço que dispara
  *     dez vezes — que nenhuma declaração de intenção impediria.
  */
+import { logEvent } from "../log/safeLog.js";
 
 export const LIVE_CONFIRM_ENV = "PROVIDER_LIVE_CONFIRM";
 export const LIVE_LIMIT_ENV = "PROVIDER_LIVE_MAX_GENERATIONS";
@@ -108,9 +109,7 @@ export function assertLiveModeAuthorized(
   env: NodeJS.ProcessEnv = process.env,
 ): void {
   if (mode !== "live") {
-    console.log(
-      JSON.stringify({ event: "provider_mode", mode, billable: false, message: "Simulação: nenhuma chamada a fornecedor tarifado." }),
-    );
+    logEvent("info", "provider_mode", { mode, billable: false, message: "Simulação: nenhuma chamada a fornecedor tarifado." });
     return;
   }
 
@@ -123,17 +122,13 @@ export function assertLiveModeAuthorized(
   }
 
   const max = readLiveMaxGenerations(env);
-  console.warn(
-    JSON.stringify({
-      event: "provider_mode",
-      mode: "live",
+  logEvent("warn", "provider_mode", { mode: "live",
       billable: true,
       maxGenerationsThisSession: max,
       message:
         "MODO LIVE AUTORIZADO — chamadas a HeyGen/ElevenLabs vão gastar cota PAGA. " +
         `Teto desta sessão: ${max} geração(ões) tarifada(s).`,
-    }),
-  );
+    });
 }
 
 /**

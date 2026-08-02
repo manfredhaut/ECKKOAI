@@ -40,6 +40,8 @@ export interface Video {
   provider_engine: string | null;
   /** Por que este motor — gravado inclusive quando nenhum foi enviado. */
   provider_engine_reason: string | null;
+  /** Gerado em modo fixture? Fato da LINHA, não do ambiente (ver migration 032). */
+  simulated: boolean;
   created_at: string;
 }
 

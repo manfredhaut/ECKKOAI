@@ -28,6 +28,7 @@ import {
   trainAvatarFixture,
   waitForAvatarReadyFixture,
 } from "./fixtureProvider.js";
+import { logEvent } from "../log/safeLog.js";
 
 export class AvatarProviderError extends Error {}
 
@@ -321,14 +322,10 @@ async function pollAvatarStatusHeygen(apiKey: string, avatarId: string): Promise
     const data = await fetchJson(res, "HeyGen", "heygen.getAvatar");
     return normalizeAvatarStatus(data?.data?.avatar_item?.status ?? data?.data?.status ?? data?.status);
   } catch (err) {
-    console.error(
-      JSON.stringify({
-        event: "avatar_status_unreadable",
-        context: "heygen.getAvatar",
+    logEvent("error", "avatar_status_unreadable", { context: "heygen.getAvatar",
         detail: err instanceof Error ? err.message : String(err),
         consequence: "tratado como 'unknown', o que LIBERA a geração",
-      }),
-    );
+      });
     return "unknown";
   }
 }
@@ -643,14 +640,10 @@ export async function generateVideo(input: GenerateVideoInput): Promise<Generate
   // teve; ficar calado devolveria um vídeo na proporção errada sem que nada no
   // sistema soubesse por quê.
   if (!vendorAcceptsFormat(input.vendor)) {
-    console.warn(
-      JSON.stringify({
-        event: "video_format_not_applied",
-        vendor: input.vendor,
+    logEvent("warn", "video_format_not_applied", { vendor: input.vendor,
         requested: input.format,
         consequence: "o vendor decide a geometria; a proporção pedida fica gravada mas não é enviada",
-      }),
-    );
+      });
   }
   if (isFixtureMode()) return generateVideoFixture(input);
 

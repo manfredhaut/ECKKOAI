@@ -29,6 +29,7 @@ import { checkVendorLogPolicy } from "./checkVendorLogPolicy.js";
 import { checkVideoFormatPolicy } from "./checkVideoFormatPolicy.js";
 import { checkVendorErrorPathPolicy } from "./checkVendorErrorPathPolicy.js";
 import { checkImageFreshnessPolicy } from "./checkImageFreshnessPolicy.js";
+import { checkCostPolicy } from "./checkCostPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -393,6 +394,11 @@ async function main(): Promise<void> {
   const freshnessResult = await checkImageFreshnessPolicy(process.env.REPO_ROOT ?? "/repo");
   freshnessResult.failures.forEach((f) => failures.push(f));
   freshnessResult.notes.forEach((n) => note(n));
+
+  // --- 19. custo tem um número só; log tem um sumidouro só; freio deriva ---
+  const costResult = await checkCostPolicy(process.env.REPO_ROOT ?? "/repo");
+  costResult.failures.forEach((f) => failures.push(f));
+  costResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

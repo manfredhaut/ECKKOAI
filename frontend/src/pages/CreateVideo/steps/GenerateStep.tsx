@@ -5,6 +5,7 @@ import type { Avatar, Video } from "../../../types";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import type { WizardState } from "../types";
 import { SimulatedNotice } from "../../../features/SimulatedBadge";
+import { VideoCostPanel } from "../VideoCostPanel";
 
 const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   queued: 15,
@@ -100,6 +101,10 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
               {error}
             </p>
           )}
+          {/* Custo ANTES de gastar. A estimativa aparece ao lado do botão que
+              a torna real — mostrá-la só depois seria informar o preço depois
+              da compra. */}
+          <VideoCostPanel estimateSeconds={wizard.durationSeconds} />
         </>
       ) : (
         <>
@@ -141,6 +146,12 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
               {video.error_message || t("createVideo.generate.failed")}
             </p>
           )}
+
+          {/* Depois de gerar: estimativa e medição lado a lado, com a
+              diferença. `refreshKey` no status porque o custo real só existe
+              quando o polling registra o consumo — sem isso o painel ficaria
+              preso na leitura de quando o vídeo ainda estava na fila. */}
+          <VideoCostPanel videoId={video.id} refreshKey={video.status} />
         </>
       )}
     </div>

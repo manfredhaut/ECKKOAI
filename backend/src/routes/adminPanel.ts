@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
+import { costBasisNote, costFor } from "../services/billing/providerCost.js";
 import { decrypt, encrypt, maskKey } from "../services/crypto.js";
 import { recordAuditLog } from "../services/auditLog.js";
 import { defaultVendor, isValidVendor } from "../services/providers/vendorCatalog.js";
@@ -300,12 +301,18 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Cost per tenant, aggregated from provider_usage (see
-  // services/billing/usageTracking.ts). `verified` is false for a
-  // provider/vendor/unit_type row whenever provider_cost_rates.verified is
-  // false (or the rate has since been deleted) — the frontend must label
-  // the whole total as an ESTIMATE, not "real cost", unless every row
-  // rolled into it is verified. See CLAUDE.md / billing plan, Fase 1.
+  // Custo por tenant, agregado de provider_usage.
+  //
+  // O custo é DERIVADO da única medição real que existe
+  // (billing/providerCost.ts) — esta consulta NÃO lê `estimated_cost_cents`
+  // nem faz join com `provider_cost_rates`. Aquele caminho produzia a
+  // estimativa que errou 4,5×, por dois motivos ao mesmo tempo: taxa palpite
+  // e multiplicação sobre a duração pedida. Ver o comentário de
+  // recordProviderUsage.
+  //
+  // Consumo sem medição de custo aparece com `cost: null` e um motivo legível,
+  // NUNCA com zero: "custou nada" e "não sabemos" são afirmações diferentes, e
+  // só uma delas é verdadeira aqui.
   app.get<{ Params: { tenantId: string } }>("/admin/tenants/:tenantId/usage", async (req, reply) => {
     const tenant = await getTenantOr404(req.params.tenantId);
     if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
@@ -315,39 +322,49 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
       vendor: string;
       unit_type: string;
       total_units: string;
-      total_estimated_cost_cents: string;
-      verified: boolean;
+      attempts: string;
+      failures: string;
     }>(
       `SELECT u.provider, u.vendor, u.unit_type,
               sum(u.unit_count) AS total_units,
-              sum(u.estimated_cost_cents) AS total_estimated_cost_cents,
-              bool_and(coalesce(r.verified, false)) AS verified
+              count(*) AS attempts,
+              count(*) FILTER (WHERE u.outcome = 'failed') AS failures
        FROM provider_usage u
-       LEFT JOIN provider_cost_rates r
-         ON r.provider = u.provider AND r.vendor = u.vendor AND r.unit_type = u.unit_type
        WHERE u.tenant_id = $1
        GROUP BY u.provider, u.vendor, u.unit_type
        ORDER BY u.provider, u.vendor, u.unit_type`,
       [tenant.id],
     );
 
-    const breakdown = rows.map((r) => ({
-      provider: r.provider,
-      vendor: r.vendor,
-      unitType: r.unit_type,
-      totalUnits: Number(r.total_units),
-      totalEstimatedCostCents: Number(r.total_estimated_cost_cents),
-      verified: r.verified,
-    }));
+    const breakdown = rows.map((r) => {
+      const totalUnits = Number(r.total_units);
+      const cost = costFor({
+        provider: r.provider,
+        vendor: r.vendor,
+        unitType: r.unit_type,
+        unitCount: totalUnits,
+      });
+      return {
+        provider: r.provider,
+        vendor: r.vendor,
+        unitType: r.unit_type,
+        totalUnits,
+        attempts: Number(r.attempts),
+        failures: Number(r.failures),
+        costUsd: cost.known ? cost.usd : null,
+        costUnknownReason: cost.known ? null : cost.explanation,
+      };
+    });
 
+    const medidos = breakdown.filter((b) => b.costUsd !== null);
     return {
       breakdown,
-      totalEstimatedCostCents: breakdown.reduce((sum, b) => sum + b.totalEstimatedCostCents, 0),
-      // true only if there's usage AND every rate behind it is verified —
-      // an empty tenant (no usage yet) reports false on purpose, not true,
-      // so the UI never shows a bare "R$0,00 real" that could be mistaken
-      // for "nothing to verify" instead of "nothing recorded yet".
-      allRatesVerified: breakdown.length > 0 && breakdown.every((b) => b.verified),
+      // Soma só o que tem custo medido, e diz quantas linhas ficaram de fora.
+      // Somar ausências como zero produziria um total que parece completo e
+      // não é — exatamente o defeito que este bloco fechou.
+      totalCostUsd: medidos.reduce((sum, b) => sum + (b.costUsd ?? 0), 0),
+      linesWithoutCost: breakdown.length - medidos.length,
+      costBasis: costBasisNote(),
     };
   });
 
@@ -426,60 +443,10 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Admin-editable rate card (see migration 022/026). Not tenant-scoped —
-  // one global table shared by every tenant's cost estimate.
-  app.get("/admin/cost-rates", async () => {
-    const { rows } = await pool.query(
-      "SELECT * FROM provider_cost_rates ORDER BY provider, vendor, unit_type",
-    );
-    return rows.map((r) => ({
-      id: r.id,
-      provider: r.provider,
-      vendor: r.vendor,
-      unitType: r.unit_type,
-      costPerUnitCents: Number(r.cost_per_unit_cents),
-      verified: r.verified,
-      updatedAt: r.updated_at,
-    }));
-  });
-
-  app.put<{ Params: { id: string }; Body: { costPerUnitCents: number; verified: boolean } }>(
-    "/admin/cost-rates/:id",
-    async (req, reply) => {
-      const { rows: beforeRows } = await pool.query("SELECT * FROM provider_cost_rates WHERE id = $1", [
-        req.params.id,
-      ]);
-      const beforeRow = beforeRows[0];
-      if (!beforeRow) return reply.code(404).send({ error: "Cost rate not found" });
-
-      const { rows } = await pool.query(
-        `UPDATE provider_cost_rates
-         SET cost_per_unit_cents = $2, verified = $3, updated_at = now(), updated_by_admin_user_id = $4
-         WHERE id = $1
-         RETURNING *`,
-        [req.params.id, req.body.costPerUnitCents, req.body.verified, req.adminUserId],
-      );
-      const after = rows[0];
-
-      await recordAuditLog({
-        tenantId: null,
-        actorAdminUserId: req.adminUserId,
-        action: `cost_rate.${after.provider}.${after.vendor}.${after.unit_type}.update`,
-        before: { cost_per_unit_cents: beforeRow.cost_per_unit_cents, verified: beforeRow.verified },
-        after: { cost_per_unit_cents: after.cost_per_unit_cents, verified: after.verified },
-      });
-
-      return {
-        id: after.id,
-        provider: after.provider,
-        vendor: after.vendor,
-        unitType: after.unit_type,
-        costPerUnitCents: Number(after.cost_per_unit_cents),
-        verified: after.verified,
-        updatedAt: after.updated_at,
-      };
-    },
-  );
+  // A tela de taxas manuais foi REMOVIDA no bloco 4A junto com a tabela que
+  // ela editava. O custo passou a derivar da única medição real que existe
+  // (billing/providerCost.ts); um editor de taxas ao lado disso seria uma
+  // segunda verdade sobre dinheiro, e foi a primeira que errou 4,5x.
 
   // Plan management — the `plans` table (migration 020) is the source of
   // truth (see plans.ts); no hard delete, only `active: false` (see

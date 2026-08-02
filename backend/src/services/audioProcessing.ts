@@ -4,6 +4,7 @@ import { readFile, writeFile, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { saveUpload } from "./storage.js";
+import { logEvent } from "./log/safeLog.js";
 
 export interface AudioTreatmentOptions {
   enabled: boolean;
@@ -45,10 +46,10 @@ export async function processVoiceAudio(
   options: AudioTreatmentOptions,
 ): Promise<Buffer> {
   const rawUrl = await saveUpload(tenantId, buffer, `voice-raw-${Date.now()}.mp3`);
-  console.log(`[audioProcessing] raw synthesized speech saved at ${rawUrl}`);
+  logEvent("info", "audio_raw_saved", { url: rawUrl });
 
   if (!options.enabled) {
-    console.log("[audioProcessing] treatment disabled — using raw buffer unchanged");
+    logEvent("info", "audio_treatment_disabled", {});
     return buffer;
   }
 
@@ -77,7 +78,7 @@ export async function processVoiceAudio(
     const processed = await readFile(outputPath);
 
     const processedUrl = await saveUpload(tenantId, processed, `voice-processed-${Date.now()}.mp3`);
-    console.log(`[audioProcessing] processed speech saved at ${processedUrl}`);
+    logEvent("info", "audio_processed_saved", { url: processedUrl });
 
     return processed;
   } finally {
