@@ -163,6 +163,37 @@ async function main(): Promise<void> {
     record(false, true, "migrations", `não foi possível consultar: ${err instanceof Error ? err.message : err}`);
   }
 
+  // --- 4b. saldo de crédito bate com o ledger ----------------------------
+  // Verificação de DADOS, e por isso mora aqui e não no `npm run check`: o
+  // gate verifica código, e um banco de dev sujo deixaria o build vermelho
+  // para sempre — guarda que reprova sempre é abandonada. Aqui ela é um
+  // AVISO: informa antes de uma passada live, sem impedir nada.
+  try {
+    const { rows } = await pool.query<{ divergentes: string; detalhe: string | null }>(
+      `WITH somas AS (
+         SELECT tc.tenant_id, tc.credit_type, tc.balance,
+                COALESCE((SELECT SUM(cl.delta) FROM credit_ledger cl
+                          WHERE cl.tenant_id = tc.tenant_id AND cl.credit_type = tc.credit_type), 0) AS ledger
+         FROM tenant_credits tc
+       )
+       SELECT count(*)::text AS divergentes,
+              string_agg(credit_type || ' (saldo ' || balance || ' vs ledger ' || ledger || ')', ', ') AS detalhe
+       FROM somas WHERE balance <> ledger`,
+    );
+    const n = Number(rows[0].divergentes);
+    record(
+      n === 0,
+      false,
+      "reconciliação saldo × ledger",
+      n === 0
+        ? "todos os saldos batem com a soma do ledger"
+        : `${n} divergente(s): ${rows[0].detalhe}. Causa conhecida: UPDATE manual em tenant_credits ` +
+          "sem lançamento (blocos DEMO-1/ESTORNO-1). Use `npm run dev:grant-credits`, nunca UPDATE.",
+    );
+  } catch (err) {
+    record(false, false, "reconciliação saldo × ledger", `não foi possível consultar: ${err instanceof Error ? err.message : err}`);
+  }
+
   // --- 5. a própria API responde -----------------------------------------
   // Chamada à NOSSA origem, não a fornecedor.
   try {

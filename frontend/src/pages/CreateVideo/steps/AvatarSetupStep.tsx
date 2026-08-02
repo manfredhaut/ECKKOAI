@@ -278,6 +278,16 @@ export function AvatarSetupStep({
                   textAlign: "left",
                   cursor: "pointer",
                   borderColor: selectedAvatarId === a.id ? "var(--color-primary)" : undefined,
+                  // 1px de borda verde sobre fundo branco desaparece em
+                  // projetor — MEDIDO na Fase 0 do 5D (o card renderizava com
+                  // 0,8px efetivos). Três reforços independentes, porque
+                  // nenhum deles sozinho sobrevive a todo equipamento: borda
+                  // grossa, halo, e uma faixa lateral que não depende de
+                  // fidelidade de cor.
+                  borderWidth: selectedAvatarId === a.id ? 3 : undefined,
+                  boxShadow:
+                    selectedAvatarId === a.id ? "0 0 0 4px color-mix(in srgb, var(--color-primary) 30%, transparent)" : undefined,
+                  borderLeftWidth: selectedAvatarId === a.id ? 8 : undefined,
                 }}
                 onClick={() => onSelectAvatar(a.id)}
                 onKeyDown={(e) => {

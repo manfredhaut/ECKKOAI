@@ -503,7 +503,18 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-02 — Bloco TETO-1: a última decisão aberta que
+**Última atualização:** 2026-08-02 — Bloco 5D, fases 0 e 1. **O achado
+principal invalida uma garantia dos blocos anteriores: `PROVIDER_MODE=fixture`
+nunca cobriu os provedores de TEXTO** (`complete()` não consultava
+`isFixtureMode()`), então "zero chamadas tarifadas" valia por ninguém ter
+clicado em "Gerar com IA". Fechado, com uma guarda que **descobre** os clientes
+HTTP em vez de receber lista. O vídeo passou a ser reproduzível **dentro** do
+produto (Biblioteca + passo 6, mesmo componente, proporção respeitada), o custo
+apareceu no passo 4, e as telas que mentiam foram corrigidas. O ledger negativo
+foi **medido e não alterado** — a causa é `UPDATE` manual de blocos antigos, e
+qual dos dois números está certo não é decisão de script. As **Fases 2 a 5 (a
+passada live) NÃO foram iniciadas.** Antes dele, o Bloco TETO-1: a última
+decisão aberta que
 podia travar a passada live foi fechada. O teto de sessão **devolve o gasto**
 quando a chamada falha (mesma fronteira do estorno de crédito), e quem passou a
 barrar o laço é um **segundo contador, de tentativas**, que nunca volta. Com
@@ -1403,6 +1414,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-02 | **5D fases 0 e 1** | **Percurso dos 6 passos catalogado; fixture passa a valer para os provedores de TEXTO (não valia); vídeo reproduzível na Biblioteca; custo no passo 4; ledger negativo medido e NÃO alterado; telas que mentiam. 64 mutantes. Ver abaixo.** |
 | 08-02 | **TETO-1** | **A falha devolve o teto de GASTO; o laço passa a ser barrado por um contador de TENTATIVAS que não volta. Guarda nova com 3 asserções opostas; 56 mutantes. Ver abaixo.** |
 | 08-02 | **4A — OPERACIONAL** | **Custo real na tela (constante única medida; estimativa e medição lado a lado); rastro da falha em provider_usage; redação no sumidouro do log; freio derivado de catálogo de endpoints; 4 desfechos medidos. Tabela de taxas manual REMOVIDA do banco. Ver abaixo.** |
 | 08-02 | **PREVOO-1 (3.5)** | **Verificação pré-live: geração confirmada em v3; corpo de erro vazava chave num 2º evento (corrigido); teto de sessão não volta em falha (medido, não corrigido); frescor da imagem do frontend; evidência por vendor; plano da passada live. 48 mutantes. Ver abaixo.** |
@@ -2159,6 +2171,128 @@ o gate está instável, não que o teto parou de voltar. **As armadilhas já
 catalogadas aqui eram guardas que passavam VERDE sem inspecionar nada; esta
 reprovava e ainda assim não protegia.** O `expect` obrigatório do arnês foi o
 que separou os dois casos: sem ele, este mutante teria contado como prova.
+
+### Bloco 5D — "Criar vídeo" demonstrável (FASE 0 e FASE 1 CONCLUÍDAS)
+
+Ambiente em `fixture` do começo ao fim, `PROVIDER_LIVE_CONFIRM` vazia. Fase 0
+catalogou sem consertar; Fase 1 consertou escopo fechado. **As Fases 2 a 5
+(revalidação da tabela do dinheiro, preflight, geração live, conferência) NÃO
+foram iniciadas.**
+
+**O achado que invalida registro anterior: `PROVIDER_MODE=fixture` NUNCA
+cobriu os provedores de texto.** `complete()` em `providerRegistry.ts` — ponto
+único de saída para Anthropic, Gemini e OpenAI — não consultava
+`isFixtureMode()`. Ele atende **três** caminhos: o botão "Gerar com IA" do
+passo 2, o copiloto do tenant e o do admin. Toda afirmação de "zero chamadas
+tarifadas" dos blocos **3.5, 4A e 5D-Fase-0** valeu porque ninguém clicou ali
+— não porque houvesse trava. As afirmações continuam verdadeiras como
+medição; o que era falso é a garantia.
+
+**O defeito de FORMA é o do 4A item 5, um nível acima.** Lá a deny-list
+nomeava os endpoints que conhecia. Aqui `checkProviderPolicy` verificava o
+desvio a partir de `VENDOR_MODULES`, uma lista de **dois** arquivos escrita à
+mão — e o backend tem **dez** com saída de rede. Uma lista incompleta tem
+exatamente a mesma aparência de uma completa.
+
+*Varredura MEDIDA:* 101 arquivos `.ts`, **10 com saída de rede**, **2**
+consultavam o modo. Dos 8 restantes: 4 são ferramentas (`scripts/`), 3 são
+exceção legítima e 1 era o buraco.
+
+[checkNetworkEgressPolicy.ts](backend/src/scripts/checkNetworkEgressPolicy.ts)
+**descobre** em vez de receber lista: varre `backend/src` por qualquer cliente
+HTTP (fetch, axios, SDKs, `node:http`) e exige que cada arquivo ou desvie para
+fixture, ou esteja em `EXCECOES` **com motivo escrito**. As três exceções são
+`platformKeyProbe` (deliberado desde o CHAVES-2), `downloadProxy` (baixa
+artefato já pago) e `stripeClient` (tem mecanismo de teste próprio).
+
+O catálogo ganhou os três fornecedores de texto. **Gemini entra como
+tarifável mesmo no free tier**: a cota de ~20 req/dia é compartilhada com o
+copiloto, e gastá-la não tira dinheiro — tira a capacidade de demonstrar.
+Agora **16 endpoints, 6 fornecedores, 11 tarifáveis**, freio derivado.
+
+**Efeito colateral que valeu a pena registrar:** seis asserções do gate
+exercitavam `complete()` com `fetch` substituído para provar retentativa,
+corte e tratamento de erro. Com o desvio, elas paravam antes do `fetch`. Agora
+forçam `PROVIDER_MODE=live` localmente e restauram em `finally`, conferindo que
+voltou — mesmo padrão do `checkPollPolicy`.
+
+**O vídeo passou a existir dentro do produto.** Antes, o único player era o do
+passo 6, cujo estado vive em `useState`: sair de `/create` tornava o resultado
+inalcançável, e a Biblioteca listava onze vídeos com uma única ação, "Baixar".
+[VideoPlayer.tsx](frontend/src/features/VideoPlayer.tsx) é componente **único**
+usado nos dois lugares — duas implementações divergem, e a que divergir será a
+que mostra fixture sem aviso numa apresentação.
+
+*MEDIDO no navegador:* `readyState 4`, **360×640**, `aspect-ratio` computado
+**9/16**, aviso de simulação presente, download preservado, e "Ver na
+Biblioteca de vídeos →" no passo 6.
+
+**Custo no passo 4** (*MEDIDO*): 15s → US$ 0,675 · 30s → US$ 1,35 · 60s →
+US$ 2,70, atualizando ao trocar. Mesmo `VideoCostPanel` do passo 6.
+
+**O ledger negativo: medido, causa confirmada, dados NÃO alterados.**
+*MEDIDO:* 15 lançamentos somam **−2** com saldo **2**. **Nenhum caminho de
+código pode produzir isso** — `auth.ts` insere `balance = 0` (neutro), e
+`creditGate`/`monthlyGrant` gravam ledger na mesma transação, com a invariante
+declarada em comentário. A causa está documentada no próprio repositório, em
+`grantDevCredits.ts`: as limpezas de teste do **DEMO-1 e do ESTORNO-1** rodaram
+`UPDATE tenant_credits SET balance` sem lançamento.
+
+Os dados **não** foram alterados: a classe é inequívoca, mas *qual dos dois
+números está certo* não é — e o projeto já decidiu que isso não é decisão de
+script. A guarda ficou onde pega a **próxima** (no código: todo módulo que
+escreve saldo grava lançamento), e a conferência dos números foi para o
+`preflight:live` como **aviso**. No gate, um banco de dev sujo deixaria o build
+vermelho para sempre, e guarda que reprova sempre é abandonada.
+
+**Telas que mentiam:** "Rastreamento de custo em breve" virou **"Custo do mês
+US$ 4,50 · de 9 consumos medidos · 5 sem medição, fora do total"** — e o
+título mudou junto, porque o número é medido, não estimado. "Créditos
+restantes" mostra **2**. Mais: reticências antes do badge na Biblioteca, o
+`voice_id` do ElevenLabs trocado por rótulo legível, borda de seleção de 1px
+para 3px + faixa de 8px + halo, e a condição que falta ao lado do botão
+desabilitado.
+
+**Achado ao verificar:** a legenda do custo saiu com `5 sem medição}}}` na
+tela. **O i18next deste projeto não tem o plugin ICU**, então
+`{{x, select, …}}` não é interpolado e vai para a tela como texto cru. Use
+duas chaves e a condição no componente.
+
+**Guardas: `npm run check` verde, `check:mutants` 64/64** (eram 56).
+
+**Quatro mutantes nasceram errados, e os quatro repetem lições já catalogadas:**
+
+1. **`find: "export"` casava 4 vezes** — o arnês abortou por ambiguidade, e com
+   razão: um mutante que casa em vários pontos prova outra coisa a cada
+   execução.
+2. **Dois `expect` recortados como paráfrase do defeito**, não como núcleo da
+   frase emitida ("não desvia para fixture" contra "não consulta
+   `isFixtureMode()`"). **Quarta e quinta vez** que isso faz guarda saudável
+   aparecer como AMBÍGUA.
+3. **A guarda do aviso de simulação nasceu INERTE** — procurava
+   `SimulatedNotice` no arquivo, e removida a renderização o **import**
+   continuava lá e satisfazia a busca. O gate passou **verde** com o defeito
+   aplicado. Corrigida ancorando no uso em JSX (`<SimulatedNotice`). É a
+   **quinta vez** que uma guarda deste projeto casa a menção em vez do uso.
+4. **A guarda de egress acusou `api.cohere.ai`** — host que existe apenas
+   dentro do `replace` do mutante declarado no próprio arquivo. Quarta vez que
+   uma guarda tropeça no texto escrito para descrevê-la, e a primeira em que
+   esse texto era a prova de que ela funciona.
+
+### O que a Fase 0 catalogou e a Fase 1 NÃO consertou
+
+Fora de escopo por decisão explícita, registrado para não virar surpresa:
+miniatura na Biblioteca; persistência do wizard em F5 (o estado vive em
+`useState`); `/api/notifications/summary` chamado dezenas de vezes por
+passada; indicador que não distingue passo preenchido de pulado; e a aba
+**RAG**, que continua sem decisão tomada.
+
+Também continua valendo, do POLL-1: **a UI exige 3 fotos e o provider usa só a
+primeira**.
+
+**Limpeza:** os dois vídeos de teste saíram do banco. As FKs são `SET NULL`, e
+*MEDIDO:* a soma do ledger ficou **−3 antes e −3 depois**. **Dois `.mp4`
+ficaram órfãos** em `uploads/c77a5b8a-…/` e NÃO foram apagados.
 
 ### Procedimento: ler o consumo do ElevenLabs (item 3.2)
 

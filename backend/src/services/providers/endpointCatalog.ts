@@ -23,8 +23,17 @@
  */
 
 export interface VendorEndpoint {
-  /** Fornecedor, no vocabulário de vendorCatalog.ts. */
-  vendor: "heygen" | "did" | "elevenlabs";
+  /**
+   * Fornecedor, no vocabulário de vendorCatalog.ts.
+   *
+   * Os três de TEXTO entraram no bloco 5D-1, e a razão é o mesmo defeito de
+   * FORMA descrito acima, um nível acima: o catálogo tinha virado a fonte do
+   * freio, mas ele próprio era uma lista de FORNECEDORES escrita à mão — e
+   * nela não havia nenhum provedor de texto. Resultado: `POST /v1/messages`
+   * da Anthropic e o `generateContent` do Gemini eram, para toda trava deste
+   * projeto, endpoints que não existiam.
+   */
+  vendor: "heygen" | "did" | "elevenlabs" | "anthropic" | "gemini" | "openai";
   /** Caminho, com a versão. É o que o freio compara. */
   path: string;
   method: "GET" | "POST";
@@ -137,6 +146,43 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
     note:
       "leitura de consumo (character_count / character_limit). NÃO tarifado. Exige a permissão " +
       "`user_read`, que a chave em uso NÃO tem — ver o procedimento no CLAUDE.md.",
+  },
+  // ------------------------------------------------------- TEXTO (bloco 5D-1)
+  // Alcançados por `complete()` em providerRegistry.ts, que atende TRÊS
+  // caminhos: geração de roteiro (passo 2 do wizard), copiloto do tenant e
+  // copiloto público/admin. Antes deste bloco, nenhum deles passava por
+  // `isFixtureMode()` nem aparecia em trava alguma.
+  {
+    vendor: "anthropic",
+    path: "/v1/messages",
+    method: "POST",
+    billable: true,
+    note: "geração de texto; cobrada por token. Custo NÃO medido neste projeto.",
+  },
+  {
+    vendor: "gemini",
+    path: ":generateContent",
+    method: "POST",
+    // Tarifável mesmo no free tier, e é justamente ali que dói: a cota é de
+    // ~20 requisições/dia POR PROJETO, compartilhada com o copiloto. Gastar
+    // não tira dinheiro, tira a capacidade de demonstrar — e já custou a
+    // criação de um segundo projeto Google quando o teto foi batido.
+    billable: true,
+    note: "geração de texto. Free tier: ~20 req/dia por projeto, COMPARTILHADA com o copiloto.",
+  },
+  {
+    vendor: "gemini",
+    path: "/v1beta/models",
+    method: "GET",
+    billable: false,
+    note: "ListModels; valida a chave SEM consumir a cota de generateContent. É o que o painel usa.",
+  },
+  {
+    vendor: "openai",
+    path: "/chat/completions",
+    method: "POST",
+    billable: true,
+    note: "geração de texto; cobrada por token. Nenhuma chave OpenAI foi usada neste projeto até hoje.",
   },
 ];
 

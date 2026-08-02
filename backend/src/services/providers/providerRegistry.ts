@@ -8,6 +8,8 @@
 // don't belong in this registry.
 import { config } from "../../config.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
+import { completeFixture } from "./fixtureProvider.js";
+import { isFixtureMode } from "./providerMode.js";
 import type { ScriptVendor } from "./vendorCatalog.js";
 
 export class AiProviderError extends Error {}
@@ -234,6 +236,15 @@ export function resolveBaseUrl(vendor: ScriptVendor): string | null {
 }
 
 export async function complete(vendor: ScriptVendor, input: CompleteInput): Promise<CompleteResult> {
+  // Ponto ÚNICO de saída para os três provedores de texto, e por isso o único
+  // lugar onde a checagem de modo precisa existir: `complete()` atende geração
+  // de roteiro, copiloto do tenant e copiloto do admin. Antes do bloco 5D-1
+  // não havia checagem nenhuma aqui, e os três chamavam o fornecedor de
+  // verdade mesmo em fixture.
+  if (isFixtureMode()) {
+    const promptChars = input.messages.reduce((n, m) => n + m.content.length, 0);
+    return completeFixture(vendor, promptChars);
+  }
   const entry = REGISTRY[vendor];
   return entry.complete(resolveModel(vendor), resolveBaseUrl(vendor), input);
 }

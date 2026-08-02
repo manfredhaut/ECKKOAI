@@ -60,6 +60,11 @@ const FAKE_VIDEOS: Video[] = [
     status: "ready",
     output_url: "/uploads/exemplo/video.mp4",
     error_message: null,
+    // 9:16, e não 16:9: a galeria existe para expor o que a tela faz, e um
+    // vídeo horizontal desenharia certo mesmo se o player ignorasse a
+    // proporção. O vertical é o caso que falha visivelmente quando ela é
+    // esquecida.
+    aspect_ratio: "9:16",
     simulated: true,
     created_at: new Date().toISOString(),
   },

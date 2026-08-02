@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
 import type { Avatar, Video } from "../../../types";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import type { WizardState } from "../types";
-import { SimulatedNotice } from "../../../features/SimulatedBadge";
+import { VideoPlayer } from "../../../features/VideoPlayer";
 import { VideoCostPanel } from "../VideoCostPanel";
 
 const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
@@ -125,19 +126,17 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
 
           {video.status === "ready" && video.output_url && (
             <>
-              {/* Marca de simulação acima do player: quem olha o vídeo tem
-                  de ler isto antes, não depois. */}
-              <SimulatedNotice simulated={video.simulated} />
-              <video
-                src={video.output_url}
-                controls
-                style={{ width: "100%", maxWidth: 480, borderRadius: "var(--radius-card)" }}
-              />
-              <div style={{ marginTop: 12 }}>
-                <a className="btn btn-primary" href={`/api/videos/${video.id}/download`} download>
-                  {t("createVideo.generate.download")}
-                </a>
-              </div>
+              {/* Mesmo componente da Biblioteca: o aviso de simulação e o
+                  respeito à proporção precisam ser idênticos nos dois lugares.
+                  Duas implementações divergem, e a que divergir será a que
+                  mostra fixture sem aviso numa apresentação. */}
+              <VideoPlayer video={video} />
+              {/* O resultado vive em useState: sair desta tela o torna
+                  inalcançável. Sem este caminho, quem fecha o wizard não tem
+                  como descobrir que o vídeo continua no produto. */}
+              <p style={{ fontSize: 13, marginTop: 16, marginBottom: 0 }}>
+                <Link to="/content">{t("createVideo.generate.openLibrary")}</Link>
+              </p>
             </>
           )}
 

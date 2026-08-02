@@ -34,7 +34,29 @@ export interface Video {
   error_message: string | null;
   /** Gerado em PROVIDER_MODE=fixture — artefato de teste, não geração real. */
   simulated: boolean;
+  /**
+   * Proporção com que o vídeo foi pedido ao fornecedor (`16:9`, `9:16`, …).
+   *
+   * A coluna existe desde o bloco FORMATO-1 e `GET /videos` sempre a devolveu
+   * (`SELECT *`); o que faltava era o tipo declará-la, então nenhuma tela
+   * podia usá-la — e o player do passo 6 desenhava todo vídeo no mesmo quadro.
+   * `null` em vídeos anteriores ao FORMATO-1.
+   */
+  aspect_ratio: string | null;
   created_at: string;
+}
+
+/** Resposta de `GET /dashboard-summary` — saldo de crédito e custo do mês. */
+export interface DashboardSummary {
+  credits: { creditType: string; balance: number }[];
+  costThisMonth: {
+    /** `null` quando NENHUMA linha do mês tem medição. Zero afirmaria que saiu de graça. */
+    usd: number | null;
+    measuredLines: number;
+    unmeasuredLines: number;
+    basis: string;
+  };
+  simulated: boolean;
 }
 
 export type CredentialProviderId = "avatar" | "voice" | "script";

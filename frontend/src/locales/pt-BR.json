@@ -321,7 +321,7 @@
     "creditsNotConnected": "Ainda não conectado a um provedor de cobrança",
     "videosThisMonth": "Vídeos este mês",
     "videosThisMonthSub": "Em todos os avatares",
-    "estimatedCost": "Custo estimado",
+    "estimatedCost": "Custo do mês",
     "estimatedCostSub": "Rastreamento de custo em breve",
     "savedAvatars": "Avatares salvos",
     "savedAvatarsSub": "Prontos para reutilizar",
@@ -331,7 +331,12 @@
     "videosEmptyPrefix": "Nenhum vídeo ainda.",
     "videosEmptyLink": "Crie o primeiro",
     "avatarsEmptyPrefix": "Nenhum avatar salvo ainda.",
-    "avatarsEmptyLink": "Configure um"
+    "avatarsEmptyLink": "Configure um",
+    "creditsVideoSub": "créditos de vídeo disponíveis",
+    "creditsUnavailable": "saldo indisponível no momento",
+    "costNoneSub": "nenhum consumo com custo medido neste mês",
+    "costMeasuredPartial": "de {{measured}} consumo(s) medido(s) · {{unmeasured}} sem medição, fora do total",
+    "costMeasuredAll": "de {{measured}} consumo(s) medido(s) neste mês"
   },
   "content": {
     "title": "Conteúdo",
@@ -349,7 +354,10 @@
     "colDuration": "Duração",
     "colStatus": "Status",
     "retrain": "Retreinar",
-    "download": "Baixar"
+    "download": "Baixar",
+    "watch": "Assistir",
+    "hideVideo": "Ocultar",
+    "voiceCloned": "Voz clonada"
   },
   "settings": {
     "title": "Configurações",
@@ -576,7 +584,12 @@
       "submitting": "Enviando…",
       "download": "Baixar",
       "failed": "Falha na geração. Tente novamente.",
-      "avatarTraining": "O avatar ainda está em treino no fornecedor. Isso leva alguns minutos e acontece uma vez só, logo depois de criá-lo — atualize a página em instantes."
+      "avatarTraining": "O avatar ainda está em treino no fornecedor. Isso leva alguns minutos e acontece uma vez só, logo depois de criá-lo — atualize a página em instantes.",
+      "openLibrary": "Ver na Biblioteca de vídeos →"
+    },
+    "blocked": {
+      "selectAvatar": "Selecione um avatar acima para continuar.",
+      "writeScript": "Escreva o roteiro para continuar."
     }
   },
   "knowledge": {

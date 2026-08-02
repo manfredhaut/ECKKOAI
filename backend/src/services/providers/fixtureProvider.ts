@@ -316,6 +316,37 @@ export function checkVoiceConnectionFixture(): void {
   // Idem.
 }
 
+// ---------------------------------------------------------------- texto ---
+
+/**
+ * Resposta simulada dos provedores de TEXTO (Anthropic, Gemini, OpenAI).
+ *
+ * Entrou no bloco 5D-1. Até ele, `complete()` era o único caminho de saída de
+ * rede do projeto que ignorava o modo — de modo que o botão "Gerar com IA" do
+ * passo 2, o copiloto do tenant e o copiloto do admin chamavam o fornecedor de
+ * verdade mesmo com `PROVIDER_MODE=fixture`. Toda afirmação de "zero chamadas
+ * tarifadas" dos blocos anteriores dependia de ninguém ter clicado ali.
+ *
+ * O texto DIZ que é simulado, em vez de devolver um lorem ipsum plausível: uma
+ * resposta simulada que se passa por real é pior que nenhuma, porque leva a
+ * julgar a qualidade do modelo por algo que o modelo não escreveu. Pelo mesmo
+ * motivo ele nomeia o vendor que TERIA sido chamado — é o que permite conferir
+ * que a seleção de vendor está certa sem gastar cota para descobrir.
+ */
+export function completeFixture(vendor: string, promptChars: number): { text: string; usage: null } {
+  return {
+    text:
+      `[SIMULADO] Este texto não veio de um modelo de linguagem. O ambiente está em ` +
+      `PROVIDER_MODE=fixture, então a chamada a "${vendor}" não foi feita e nenhuma cota ` +
+      `foi consumida. O pedido tinha ${promptChars} caracteres. ` +
+      `Para gerar texto de verdade, use PROVIDER_MODE=live.`,
+    // `usage: null` de propósito: inventar contagem de tokens alimentaria as
+    // telas de custo com número que ninguém mediu, e a regra deste projeto é
+    // que ausência de medição nunca vire zero — muito menos um valor plausível.
+    usage: null,
+  };
+}
+
 /**
  * Avatares simulados que ainda estão "em treino".
  *

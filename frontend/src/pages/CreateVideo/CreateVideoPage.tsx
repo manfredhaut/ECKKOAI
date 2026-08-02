@@ -67,6 +67,22 @@ export function CreateVideoPage() {
     // não há como travar aqui.
     step === 4;
 
+  /**
+   * O que falta para poder avançar, em uma linha.
+   *
+   * Um botão cinza sem explicação obriga a adivinhar — e nos dois passos que
+   * travam a condição não é óbvia: no 1 dá para ter cinco avatares salvos e
+   * nenhum selecionado, e no 2 dá para ter digitado só espaços. `null` nos
+   * passos que nunca travam, para não inventar aviso onde não há bloqueio.
+   */
+  const blockedReason = canProceed
+    ? null
+    : step === 0
+      ? t("createVideo.blocked.selectAvatar")
+      : step === 1
+        ? t("createVideo.blocked.writeScript")
+        : null;
+
   return (
     <>
       <PageHeader title={t("createVideo.title")} subtitle={t("createVideo.subtitle")} />
@@ -86,9 +102,16 @@ export function CreateVideoPage() {
           defaults={defaults}
           onDefaultsChange={setDefaults}
           nextButton={
-            <button className="btn btn-primary" onClick={goNext} disabled={!canProceed}>
-              {t("common.next")}
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <button className="btn btn-primary" onClick={goNext} disabled={!canProceed}>
+                {t("common.next")}
+              </button>
+              {blockedReason && (
+                <span className="text-muted" style={{ fontSize: 13 }}>
+                  {blockedReason}
+                </span>
+              )}
+            </div>
           }
         />
       )}
@@ -133,6 +156,11 @@ export function CreateVideoPage() {
           <button className="btn btn-primary" onClick={goNext} disabled={!canProceed}>
             {t("common.next")}
           </button>
+        )}
+        {blockedReason && step > 0 && (
+          <span className="text-muted" style={{ fontSize: 13, alignSelf: "center" }}>
+            {blockedReason}
+          </span>
         )}
       </div>
     </>

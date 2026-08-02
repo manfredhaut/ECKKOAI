@@ -43,6 +43,44 @@ export const MUTANTS: Mutant[] = [
     replace: "'grant', 'reembolso'));",
     expect: "nenhuma migration admite reason = 'refund'",
   },
+  {
+    guard: "reconciliação: saldo escrito sem lançamento",
+    name: "módulo novo mexe no saldo sem gravar ledger",
+    kind: "obvio",
+    // Reproduz a causa MEDIDA da divergência do tenant de dev (bloco 5D-1):
+    // saldo alterado sem linha correspondente. Aqui num módulo de produto, que
+    // é onde isso deixaria de ser dado sujo de dev e viraria billing errado.
+    file: "backend/src/services/billing/creditPackages.ts",
+    // Âncora ÚNICA. A primeira versão usava `find: "export"`, que ocorre
+    // quatro vezes neste arquivo — o arnês abortou por substituição ambígua,
+    // e com razão: um mutante que casa em vários pontos muta um lugar
+    // imprevisível e prova outra coisa a cada execução.
+    find: "export interface CreditPackage {",
+    replace:
+      "export async function ajustaSaldo(c: { query: (s: string, v: unknown[]) => Promise<unknown> }) {\n" +
+      '  await c.query("UPDATE tenant_credits SET balance = balance + 1 WHERE tenant_id = $1", ["x"]);\n' +
+      "}\n\nexport interface CreditPackage {",
+    expect: "escreve em tenant_credits sem gravar credit_ledger",
+  },
+];
+
+/**
+ * Quem pode escrever `tenant_credits` sem gravar `credit_ledger`, e por quê.
+ *
+ * `tenant_credits.balance` é um CACHE do que o ledger conta — é o próprio
+ * `grantDevCredits.ts` que diz isso, e a invariante está declarada em
+ * `monthlyGrant.ts` ("delta reflects the real movement so sum(delta) over
+ * credit_ledger keeps matching tenant_credits.balance"). Mexer só no saldo faz
+ * os dois divergirem SEM ERRO NENHUM, e a divergência só aparece muito depois,
+ * numa conciliação, quando ninguém lembra por quê.
+ */
+const SALDO_SEM_LEDGER_PERMITIDO: { file: string; motivo: string }[] = [
+  {
+    file: "src/routes/auth.ts",
+    motivo:
+      "signup insere as três linhas com balance = 0. Zero é o valor neutro: não há movimento a " +
+      "registrar, e a soma do ledger (também 0) já fecha com o saldo desde o primeiro instante.",
+  },
 ];
 
 export interface RefundCheckResult {
@@ -106,10 +144,72 @@ export async function checkRefundPolicy(repoRoot: string): Promise<RefundCheckRe
   // tempo de execução — e só no caminho de falha, que é o menos exercitado.
   await checkRefundReasonMigrated(repoRoot, failures);
 
+  await checkSaldoSempreComLancamento(repoRoot, failures, notes);
+
   notes.push(
     `estorno: ${debiting} rota(s) debitam crédito; todas com estorno na falha do fornecedor`,
   );
   return { failures, notes };
+}
+
+/**
+ * Todo módulo que escreve `tenant_credits` grava `credit_ledger` junto.
+ *
+ * Esta é a metade do item 4 do bloco 5D-1 que dá para verificar no gate. A
+ * outra — os NÚMEROS baterem — é estado de banco, e não pertence a um gate de
+ * código: os dados de dev já estão divergentes por `UPDATE` manual de blocos
+ * antigos, e uma guarda que reprovasse por causa disso deixaria o build
+ * vermelho para sempre. Guarda que reprova sempre é abandonada, e aí ela não
+ * protege nem o caso que importa. A conferência de dados vive no
+ * `preflight:live`, onde estado de ambiente é o assunto.
+ */
+async function checkSaldoSempreComLancamento(
+  repoRoot: string,
+  failures: string[],
+  notes: string[],
+): Promise<void> {
+  const alvos = ["backend/src/routes", "backend/src/services/billing"];
+  const permitidos = new Set(SALDO_SEM_LEDGER_PERMITIDO.map((e) => e.file));
+  let inspecionados = 0;
+  let escrevem = 0;
+
+  for (const base of alvos) {
+    const dir = path.join(repoRoot, base);
+    let nomes: string[];
+    try {
+      nomes = (await readdir(dir)).filter((f) => f.endsWith(".ts"));
+    } catch {
+      failures.push(`reconciliação: não consegui ler ${base} — verificador cego é pior que reprovar.`);
+      return;
+    }
+    for (const nome of nomes) {
+      inspecionados += 1;
+      const fonte = stripComments(await readFile(path.join(dir, nome), "utf-8"));
+      if (!/(UPDATE|INSERT INTO)\s+tenant_credits/i.test(fonte)) continue;
+      escrevem += 1;
+      const rel = `${base.replace("backend/", "")}/${nome}`;
+      if (permitidos.has(rel)) continue;
+      if (/credit_ledger/.test(fonte)) continue;
+      failures.push(
+        `reconciliação: ${rel} escreve em tenant_credits sem gravar credit_ledger. O saldo é um CACHE ` +
+          "do que o ledger conta; mexer só nele faz os dois divergirem SEM ERRO NENHUM. Foi assim que o " +
+          "tenant de dev ficou com saldo 2 e ledger −2 (MEDIDO no bloco 5D-1). Ou o módulo grava o " +
+          "lançamento na mesma transação, ou entra em SALDO_SEM_LEDGER_PERMITIDO com o motivo escrito.",
+      );
+    }
+  }
+
+  if (escrevem === 0) {
+    failures.push(
+      "reconciliação: NENHUM módulo escrevendo tenant_credits foi encontrado — a varredura deixou de " +
+        "casar com o código e passaria verde sem inspecionar nada.",
+    );
+  }
+
+  notes.push(
+    `reconciliação: ${escrevem} de ${inspecionados} módulo(s) escrevem saldo — todos gravam lançamento, ` +
+      `com ${SALDO_SEM_LEDGER_PERMITIDO.length} exceção(ões) declarada(s)`,
+  );
 }
 
 async function checkRefundReasonMigrated(repoRoot: string, failures: string[]): Promise<void> {

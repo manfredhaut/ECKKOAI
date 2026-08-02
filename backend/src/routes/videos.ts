@@ -252,6 +252,65 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * O que o painel do tenant precisa e não tinha: saldo de crédito e custo do
+   * mês.
+   *
+   * Os dois cards mostravam "—" com uma legenda que ficou FALSA depois do
+   * bloco 4A: "Rastreamento de custo em breve", num sistema onde o
+   * rastreamento já existe e o número aparece no passo 6. Uma tela que diz
+   * "em breve" sobre algo pronto é pior que uma tela vazia — ela ensina o
+   * cliente a não procurar.
+   *
+   * O custo soma SÓ o que tem medição, e informa quantas linhas ficaram de
+   * fora. Somar as não medidas como zero faria o total parecer completo
+   * (mesma regra do painel admin, bloco 4A).
+   */
+  app.get("/dashboard-summary", async (req) => {
+    const [{ rows: creditRows }, { rows: usageRows }] = await Promise.all([
+      pool.query<{ credit_type: string; balance: number }>(
+        "SELECT credit_type, balance FROM tenant_credits WHERE tenant_id = $1 ORDER BY credit_type",
+        [req.tenantId],
+      ),
+      pool.query<{ provider: string; vendor: string; unit_type: string; unit_count: string }>(
+        `SELECT provider, vendor, unit_type, unit_count FROM provider_usage
+         WHERE tenant_id = $1 AND outcome = 'success' AND created_at >= date_trunc('month', now())`,
+        [req.tenantId],
+      ),
+    ]);
+
+    let usd = 0;
+    let medidas = 0;
+    let semMedicao = 0;
+    for (const linha of usageRows) {
+      const custo = costFor({
+        provider: linha.provider,
+        vendor: linha.vendor,
+        unitType: linha.unit_type,
+        unitCount: Number(linha.unit_count),
+      });
+      if (custo.known) {
+        usd += custo.usd;
+        medidas += 1;
+      } else {
+        semMedicao += 1;
+      }
+    }
+
+    return {
+      credits: creditRows.map((r) => ({ creditType: r.credit_type, balance: Number(r.balance) })),
+      costThisMonth: {
+        // `null`, e não 0, quando nada foi medido: zero afirmaria que o mês
+        // saiu de graça.
+        usd: medidas > 0 ? Math.round(usd * 10000) / 10000 : null,
+        measuredLines: medidas,
+        unmeasuredLines: semMedicao,
+        basis: costBasisNote(),
+      },
+      simulated: isFixtureMode(),
+    };
+  });
+
+  /**
    * Custo de UM vídeo: a estimativa de antes e a medição de depois, lado a
    * lado, com a diferença entre as duas.
    *

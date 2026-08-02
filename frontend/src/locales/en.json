@@ -321,7 +321,7 @@
     "creditsNotConnected": "Not yet connected to a billing provider",
     "videosThisMonth": "Videos this month",
     "videosThisMonthSub": "Across all avatars",
-    "estimatedCost": "Estimated cost",
+    "estimatedCost": "Cost this month",
     "estimatedCostSub": "Cost tracking coming soon",
     "savedAvatars": "Saved avatars",
     "savedAvatarsSub": "Ready to reuse",
@@ -331,7 +331,12 @@
     "videosEmptyPrefix": "No videos yet.",
     "videosEmptyLink": "Create your first one",
     "avatarsEmptyPrefix": "No avatars saved yet.",
-    "avatarsEmptyLink": "Set one up"
+    "avatarsEmptyLink": "Set one up",
+    "creditsVideoSub": "video credits available",
+    "creditsUnavailable": "balance unavailable right now",
+    "costNoneSub": "no usage with measured cost this month",
+    "costMeasuredPartial": "from {{measured}} measured usage record(s) · {{unmeasured}} unmeasured, excluded from the total",
+    "costMeasuredAll": "from {{measured}} measured usage record(s) this month"
   },
   "content": {
     "title": "Content",
@@ -349,7 +354,10 @@
     "colDuration": "Duration",
     "colStatus": "Status",
     "retrain": "Re-train",
-    "download": "Download"
+    "download": "Download",
+    "watch": "Watch",
+    "hideVideo": "Hide",
+    "voiceCloned": "Voice cloned"
   },
   "settings": {
     "title": "Settings",
@@ -576,7 +584,12 @@
       "submitting": "Submitting…",
       "download": "Download",
       "failed": "Generation failed. Please try again.",
-      "avatarTraining": "The avatar is still training at the provider. This takes a few minutes and happens only once, right after creating it — refresh the page shortly."
+      "avatarTraining": "The avatar is still training at the provider. This takes a few minutes and happens only once, right after creating it — refresh the page shortly.",
+      "openLibrary": "Open in video library →"
+    },
+    "blocked": {
+      "selectAvatar": "Select an avatar above to continue.",
+      "writeScript": "Write the script to continue."
     }
   },
   "knowledge": {

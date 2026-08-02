@@ -22,6 +22,8 @@ import { MUTANTS as videoFormatMutants } from "./checkVideoFormatPolicy.js";
 import { MUTANTS as vendorErrorPathMutants } from "./checkVendorErrorPathPolicy.js";
 import { MUTANTS as imageFreshnessMutants } from "./checkImageFreshnessPolicy.js";
 import { MUTANTS as costMutants } from "./checkCostPolicy.js";
+import { MUTANTS as egressMutants } from "./checkNetworkEgressPolicy.js";
+import { MUTANTS as playbackMutants } from "./checkVideoPlaybackPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 const all: Mutant[] = [
@@ -37,6 +39,8 @@ const all: Mutant[] = [
   ...vendorErrorPathMutants,
   ...imageFreshnessMutants,
   ...costMutants,
+  ...egressMutants,
+  ...playbackMutants,
 ];
 
 // Um mutante malformado só apareceria no meio da execução, com a árvore já

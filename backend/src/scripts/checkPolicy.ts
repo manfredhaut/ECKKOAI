@@ -26,6 +26,8 @@ import {
   checkLiveBudgetPolicy,
   checkLiveBudgetRelease,
 } from "./checkLiveBudgetPolicy.js";
+import { checkNetworkEgressPolicy } from "./checkNetworkEgressPolicy.js";
+import { checkVideoPlaybackPolicy } from "./checkVideoPlaybackPolicy.js";
 import { checkVendorLogPolicy } from "./checkVendorLogPolicy.js";
 import { checkVideoFormatPolicy } from "./checkVideoFormatPolicy.js";
 import { checkVendorErrorPathPolicy } from "./checkVendorErrorPathPolicy.js";
@@ -376,6 +378,16 @@ async function main(): Promise<void> {
   budgetRelease.failures.forEach((f) => failures.push(f));
   budgetRelease.notes.forEach((n) => note(n));
 
+  // --- 13d. TODA saída de rede respeita o modo (descoberta, não lista) ---
+  const egress = await checkNetworkEgressPolicy(process.env.REPO_ROOT ?? "/repo");
+  egress.failures.forEach((f) => failures.push(f));
+  egress.notes.forEach((n) => note(n));
+
+  // --- 13e. o vídeo é reproduzível DENTRO do produto ---------------------
+  const playback = await checkVideoPlaybackPolicy(process.env.REPO_ROOT ?? "/repo");
+  playback.failures.forEach((f) => failures.push(f));
+  playback.notes.forEach((n) => note(n));
+
   // --- 14. portão de avatar em treino -----------------------------------
   const gateResult = await checkAvatarTrainingGate(process.env.REPO_ROOT ?? "/repo");
   gateResult.failures.forEach((f) => failures.push(f));
@@ -502,6 +514,14 @@ async function checkScriptPipeline(): Promise<void> {
 
   const band = wordBand();
   const realFetch = globalThis.fetch;
+  // Desde o bloco 5D-1, `complete()` desvia para fixture antes de qualquer
+  // fetch. Esta asserção exercita o pipeline REAL — retentativa, corte, cauda
+  // truncada — então precisa do modo real; o `fetch` substituído abaixo é o
+  // que garante que nada sai para a rede. Restaurado no `finally`, e a
+  // restauração é conferida: deixar o processo do check em live seria um
+  // efeito colateral caro (mesmo padrão de checkPollPolicy).
+  const modoOriginal = process.env.PROVIDER_MODE;
+  process.env.PROVIDER_MODE = "live";
   const words = (n: number) => Array.from({ length: n }, (_, i) => `palavra${i}`).join(" ");
 
   // Cada chamada consome a próxima resposta da fila e conta a requisição.
@@ -588,6 +608,11 @@ async function checkScriptPipeline(): Promise<void> {
     void countWords;
   } finally {
     globalThis.fetch = realFetch;
+    if (modoOriginal === undefined) delete process.env.PROVIDER_MODE;
+    else process.env.PROVIDER_MODE = modoOriginal;
+    if (process.env.PROVIDER_MODE !== modoOriginal) {
+      fail("roteiro", "PROVIDER_MODE não voltou ao valor original — o check alterou o estado que verifica.");
+    }
   }
 }
 
@@ -717,6 +742,12 @@ async function checkProbeSemantics(): Promise<void> {
   );
 
   const realFetch = globalThis.fetch;
+  // Mesma razão de checkScriptPipeline: estas asserções são sobre como o
+  // registry INTERPRETA a resposta do vendor (200 sem texto, 400 de chave,
+  // 429 de cota), e desde o 5D-1 `complete()` desvia para fixture antes de
+  // chegar lá. O `fetch` substituído abaixo é o que impede a rede.
+  const modoOriginal = process.env.PROVIDER_MODE;
+  process.env.PROVIDER_MODE = "live";
   const respond = (status: number, body: unknown): void => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify(body), {
@@ -777,6 +808,11 @@ async function checkProbeSemantics(): Promise<void> {
     }
   } finally {
     globalThis.fetch = realFetch;
+    if (modoOriginal === undefined) delete process.env.PROVIDER_MODE;
+    else process.env.PROVIDER_MODE = modoOriginal;
+    if (process.env.PROVIDER_MODE !== modoOriginal) {
+      fail("probe", "PROVIDER_MODE não voltou ao valor original — o check alterou o estado que verifica.");
+    }
   }
 }
 

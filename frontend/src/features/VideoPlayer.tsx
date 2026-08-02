@@ -1,0 +1,81 @@
+import { useTranslation } from "react-i18next";
+import type { Video } from "../types";
+import { SimulatedNotice } from "./SimulatedBadge";
+
+/**
+ * Player de vídeo do produto — o mesmo no passo 6 e na Biblioteca.
+ *
+ * Existe porque, até o bloco 5D, o único lugar que reproduzia um vídeo era o
+ * passo 6 do wizard, e o estado dele vive em `useState`: sair de /create ou dar
+ * F5 tornava o resultado inalcançável. A Biblioteca listava onze vídeos com
+ * uma única ação — "Baixar" —, então VER o que se acabou de gerar exigia sair
+ * do produto e abrir o arquivo num player externo.
+ *
+ * Componente único, e não uma cópia em cada tela, por causa do item 2.3: o
+ * aviso de SIMULADO precisa estar em TODO player. Duas implementações
+ * divergem, e a que divergir será justamente a que mostra um vídeo de fixture
+ * sem aviso numa apresentação.
+ */
+
+/**
+ * Proporções que o produto oferece (espelho de videoFormat.ts, lado servidor).
+ *
+ * O mapa é explícito em vez de `aspectRatio: ratio.replace(":", "/")` porque
+ * um valor desconhecido vindo do banco viraria CSS inválido e o navegador o
+ * ignoraria em silêncio — o vídeo voltaria a ser esticado, que é exatamente o
+ * defeito que este componente existe para impedir, e sem nenhum sintoma.
+ */
+const CSS_ASPECT: Record<string, string> = {
+  "16:9": "16 / 9",
+  "9:16": "9 / 16",
+  "4:5": "4 / 5",
+  "1:1": "1 / 1",
+};
+
+/** Largura máxima por proporção: um 9:16 com 480px de largura não cabe na tela. */
+const MAX_WIDTH: Record<string, number> = {
+  "16:9": 560,
+  "9:16": 280,
+  "4:5": 360,
+  "1:1": 420,
+};
+
+export function VideoPlayer({ video }: { video: Video }) {
+  const { t } = useTranslation();
+  if (!video.output_url) return null;
+
+  const ratio = video.aspect_ratio ?? "16:9";
+  const cssRatio = CSS_ASPECT[ratio];
+  const maxWidth = MAX_WIDTH[ratio] ?? 480;
+
+  return (
+    <div>
+      {/* Acima do player, nunca abaixo: quem olha o vídeo tem de ler isto
+          antes de julgar o que está vendo. */}
+      <SimulatedNotice simulated={video.simulated} />
+      <video
+        src={video.output_url}
+        controls
+        style={{
+          width: "100%",
+          maxWidth,
+          // `aspectRatio` só é aplicado quando a proporção é conhecida. Com
+          // `undefined`, o elemento cai no tamanho natural do arquivo — que
+          // continua correto, só não reserva espaço antes de carregar.
+          aspectRatio: cssRatio,
+          background: "#000",
+          borderRadius: "var(--radius-card)",
+          display: "block",
+        }}
+      />
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
+        <a className="btn btn-outline" href={`/api/videos/${video.id}/download`} download>
+          {t("content.download")}
+        </a>
+        <span className="text-muted" style={{ fontSize: 12 }}>
+          {ratio} · {video.duration_seconds}s
+        </span>
+      </div>
+    </div>
+  );
+}
