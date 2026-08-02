@@ -503,7 +503,14 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-02 — Bloco 4A (operacional): o custo REAL passou
+**Última atualização:** 2026-08-02 — Bloco TETO-1: a última decisão aberta que
+podia travar a passada live foi fechada. O teto de sessão **devolve o gasto**
+quando a chamada falha (mesma fronteira do estorno de crédito), e quem passou a
+barrar o laço é um **segundo contador, de tentativas**, que nunca volta. Com
+`MAX_GENERATIONS=2` a passada live ganhou 4 falhas de margem em vez de 0. O
+arnês flagrou a guarda nova como inerte por um motivo novo — ela reprovava mas
+**perdia a mensagem**, morrendo antes de devolvê-la. Ver o bloco próprio no fim.
+Antes dele, o Bloco 4A (operacional): o custo REAL passou
 a aparecer na tela, derivado de uma constante única e medida (US$ 0,045/s em
 16:9/720p), com a estimativa ao lado e a diferença entre as duas; ausência de
 medição aparece como ausência, nunca como zero. A tabela de taxas manual —
@@ -1396,6 +1403,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-02 | **TETO-1** | **A falha devolve o teto de GASTO; o laço passa a ser barrado por um contador de TENTATIVAS que não volta. Guarda nova com 3 asserções opostas; 56 mutantes. Ver abaixo.** |
 | 08-02 | **4A — OPERACIONAL** | **Custo real na tela (constante única medida; estimativa e medição lado a lado); rastro da falha em provider_usage; redação no sumidouro do log; freio derivado de catálogo de endpoints; 4 desfechos medidos. Tabela de taxas manual REMOVIDA do banco. Ver abaixo.** |
 | 08-02 | **PREVOO-1 (3.5)** | **Verificação pré-live: geração confirmada em v3; corpo de erro vazava chave num 2º evento (corrigido); teto de sessão não volta em falha (medido, não corrigido); frescor da imagem do frontend; evidência por vendor; plano da passada live. 48 mutantes. Ver abaixo.** |
 | 08-01 | **FORMATO-1** | **Formato explícito no payload, derivado da plataforma; motor selecionado e registrado atrás de flag; 4 fixtures por proporção; guarda nova (41 mutantes no total). Ver abaixo.** |
@@ -1804,13 +1812,18 @@ fornecedor foi observada em nenhuma sessão.
 | O quê | Comportamento medido | Onde um conserto entraria |
 |---|---|---|
 | Crédito | **Debita e ESTORNA.** Saldo 1 → 1, com `−1 consumption` e `+1 refund` no ledger | correto como está — [videos.ts:305](backend/src/routes/videos.ts:305) e [:373](backend/src/routes/videos.ts:373) |
-| **Teto de sessão** | **CONSOME e NÃO devolve.** Medido com `fetch` substituído por 400: usado 0 → **1**, consumido por `["geração de vídeo"]` | [avatarProvider.ts:659](backend/src/services/providers/avatarProvider.ts:659) (vídeo) e [voiceProvider.ts:61](backend/src/services/providers/voiceProvider.ts:61) (voz) — o `consumeLiveGeneration` fica **antes** da chamada, e não há devolução no `catch` |
+| **Teto de sessão** | ~~**CONSOME e NÃO devolve.**~~ **CORRIGIDO no bloco TETO-1** — o gasto volta na falha, a tentativa não. O texto original fica abaixo como registro do que era | era [avatarProvider.ts:659](backend/src/services/providers/avatarProvider.ts:659) e [voiceProvider.ts:61](backend/src/services/providers/voiceProvider.ts:61); hoje os dois passam por `withLiveBudget` |
 | `provider_usage` | **NÃO registra nada** numa falha de criação: 70 linhas antes, 70 depois | a escrita só acontece no polling, ao ficar `ready` ([videos.ts](backend/src/routes/videos.ts)) |
 
 **Consequência prática para o Bloco 5, e é o motivo de isto ter sido medido:**
-com `MAX_GENERATIONS=2`, **duas falhas esgotam o teto sem nenhum vídeo ter
-saído**, e a única saída é reiniciar o backend (o contador é por processo).
+com `MAX_GENERATIONS=2`, **duas falhas esgotavam o teto sem nenhum vídeo ter
+saído**, e a única saída era reiniciar o backend (o contador é por processo).
 Uma falha na voz também conta — o teto é compartilhado.
+
+**Isto foi CORRIGIDO no bloco TETO-1 (2026-08-02).** A falha devolve o gasto;
+quem passou a barrar o laço é um segundo contador, de tentativas, que não
+volta. Ver o bloco próprio no fim deste arquivo. O parágrafo acima fica como
+registro do estado medido no PREVOO-1.
 
 **Nota de custo:** `synthesizeSpeech` tenta **dois** endpoints do ElevenLabs
 (`synthesizeWithTimestamps` e, se falhar, `synthesizePlain`) — observado no log
@@ -2012,10 +2025,17 @@ com a lista antiga isso passava, porque ela nunca teve endpoint de ElevenLabs.
 
 | Desfecho | status | Crédito | Teto de sessão | `provider_usage` |
 |---|---|---|---|---|
-| **A. Aceite + sucesso** | `ready` | −1, sem estorno | consome 1 (live) | `success`, u=5 real, pedido=15 |
-| **B. Aceite + timeout** (~7,5 min) | `error` | −1, **sem estorno** | consome 1 (live) | `failed`, u=0 — **DEDUZIDO** |
-| **C. Aceite + erro no polling** | `error` | **−1, sem estorno** | consome 1 (live) | `failed`, u=0, pedido=15 |
-| **D. Recusa antes do aceite** | `error` | −1 **+1 estorno** | consome 1 (live) | `failed`, u=0, pedido=15 |
+| **A. Aceite + sucesso** | `ready` | −1, sem estorno | gasto 1, tentativa 1 | `success`, u=5 real, pedido=15 |
+| **B. Aceite + timeout** (~7,5 min) | `error` | −1, **sem estorno** | gasto 1, tentativa 1 | `failed`, u=0 — **DEDUZIDO** |
+| **C. Aceite + erro no polling** | `error` | **−1, sem estorno** | gasto 1, tentativa 1 | `failed`, u=0, pedido=15 |
+| **D. Recusa antes do aceite** | `error` | −1 **+1 estorno** | **gasto DEVOLVIDO**, tentativa 1 | `failed`, u=0, pedido=15 |
+
+**A coluna do teto mudou no bloco TETO-1, e note que ela agora acompanha a do
+crédito linha a linha:** A, B e C retêm as duas coisas; só D devolve as duas.
+Não é coincidência — as duas usam a mesma fronteira ("o fornecedor chegou a
+aceitar o trabalho?"), de propósito. Duas fronteiras diferentes para a mesma
+pergunta divergiriam na primeira mudança, e a divergência só apareceria em
+live.
 
 A, C e D foram **medidos** por HTTP real em fixture. B é **DEDUZIDO** do
 código: 90 tentativas × 5 s inviabilizam a medição, e o caminho é o mesmo de C
@@ -2052,6 +2072,93 @@ mutante da redação, e os dois apontam para o mesmo lugar.
 custo 0.045 fora de providerCost.ts"; o `expect` dizia "número de custo fora
 de"). Prender o `expect` a um valor que pode mudar transforma guarda saudável em
 mutante AMBÍGUO — o recorte certo é a parte estável da frase.
+
+### Bloco TETO-1 — a falha devolve o teto, e o laço ganha contador próprio (CONCLUÍDO)
+
+Ambiente em `fixture` do começo ao fim, `PROVIDER_LIVE_CONFIRM` vazia, **zero
+chamadas tarifadas**. Fecha a decisão aberta nº 1 do handoff do 4A.
+
+**A causa era um contador servindo a dois propósitos.** O teto empacotava
+duas proteções diferentes: a da **carteira** (quantas chamadas produziram
+trabalho pago) e a contra **laço** (quantas vezes o código disparou). Uma
+chamada que falha não gasta a carteira, mas consumia o teto de carteira — daí
+o defeito medido no PREVOO-1.
+
+Um contador só não conseguia servir aos dois: devolvê-lo na falha desligaria a
+proteção contra laço (dez disparos que falham dez vezes devolveriam dez vezes
+e rodariam para sempre); não devolvê-lo é o defeito. **Agora são dois:**
+
+| Variável | Conta | Volta na falha? |
+|---|---|---|
+| `PROVIDER_LIVE_MAX_GENERATIONS` | gasto — trabalho que o fornecedor aceitou | **sim** |
+| `PROVIDER_LIVE_MAX_ATTEMPTS` | tentativas, com qualquer desfecho | **nunca** |
+
+O default de tentativas **deriva** (3× o de gasto) em vez de ser um número
+solto: quem sobe o teto para uma passada de 2 vídeos espera margem
+proporcional, e um default fixo transformaria esse aumento em nada — o teto de
+tentativas viraria o gargalo silencioso, que é o mesmo modo de falha que este
+bloco eliminou do outro.
+
+**A ordem das verificações importa, e não é a intuitiva:** a trava de laço é
+verificada **primeiro**. Depois que as falhas passaram a devolver o gasto, o
+teto de gasto pode ter folga justamente porque tudo falhou — verificá-lo antes
+deixaria o laço passar no exato cenário em que ele existe para barrar.
+
+**A fronteira é a MESMA do estorno de crédito** (ESTORNO-1), de propósito:
+devolve quando a chamada **lançou**, porque lançar significa que o fornecedor
+não aceitou o trabalho. Ver a tabela dos quatro desfechos do 4A, onde as
+colunas de crédito e de teto agora andam juntas linha a linha.
+
+**Consumo e devolução no mesmo lugar.** `withLiveBudget(operation, verb, fn)`
+substituiu o par `consumeLiveGeneration` + `throw` nos dois caminhos
+tarifados. Não é açúcar sintático: uma devolução esquecida num `catch` é
+invisível — o código segue funcionando, o contador segue plausível, e o
+defeito só aparece na terceira falha de uma passada live. A guarda passou a
+**reprovar `consumeLiveGeneration` direto** em caminho tarifado.
+
+**Caso de fronteira conhecido e NÃO tratado:** `generateVideoHeygen` sintetiza
+a voz no ElevenLabs (tarifado) **antes** de criar o vídeo. Se a voz foi
+sintetizada e a criação falhou, a devolução devolve uma unidade com custo
+parcial real. Aceitável porque o teto é trava de segurança, não contabilidade
+— quem mede dinheiro é `provider_usage` —, mas vai ao log para não ser
+descoberto ao conciliar uma fatura.
+
+**A mensagem de teto de tentativas diagnostica.** Atingi-lo com gasto sobrando
+só é possível se as chamadas estão **falhando**. A mensagem diz isso, aponta o
+evento `live_budget_released`, e manda olhar a falha antes de aumentar o
+número.
+
+**Três asserções que puxam em direções opostas.** Uma guarda que só
+verificasse "a falha devolve" seria satisfeita por um código que devolve
+**sempre** (desliga o teto inteiro) e por um que devolve a **tentativa** junto
+(desliga a proteção contra laço). As três juntas não têm implementação trivial
+que passe: falha → gasto 0 e tentativa 1; sucesso → gasto retido; e 2 falhas
+com gasto folgado (10) contra tentativas 2 → a 3ª é **recusada**. Exercitado
+de verdade, sem rede e sem banco.
+
+**`npm run check` verde, `check:mutants` 56/56.** Os três mutantes novos batem
+um a um nessas asserções; o esperto que devolve a tentativa junto é o que
+importa — gasto volta certo, sucesso retém, superfície idêntica, e só a
+proteção contra laço morre em silêncio.
+
+**O preflight imprime os DOIS tetos**, com a margem de falhas por extenso
+(*medido:* "3 por sessão — margem de 2 falha(s) antes de travar"), e reprova se
+o de tentativas ficar **abaixo** do de gasto: nesse estado as tentativas acabam
+antes do gasto e um dos dois números está errado.
+
+**O achado do bloco, e é uma classe NOVA de guarda inerte.** O arnês flagrou a
+guarda nova como inerte, e o diagnóstico vale mais que o conserto: ela **não**
+deixava de detectar o defeito — detectava, montava a mensagem certa, e **morria
+antes de devolvê-la**. Com a devolução removida, o teto ficava em 1/1 e a
+asserção seguinte (o contraponto do sucesso) era recusada por
+`LiveBudgetExhaustedError`; a exceção subia sem dono, o `checkPolicy` morria
+com "falhou de forma inesperada", e o array de falhas acumuladas ia junto.
+
+Saída 1, mas por um motivo que não nomeia a causa — quem lesse concluiria que
+o gate está instável, não que o teto parou de voltar. **As armadilhas já
+catalogadas aqui eram guardas que passavam VERDE sem inspecionar nada; esta
+reprovava e ainda assim não protegia.** O `expect` obrigatório do arnês foi o
+que separou os dois casos: sem ele, este mutante teria contado como prova.
 
 ### Procedimento: ler o consumo do ElevenLabs (item 3.2)
 
@@ -2125,10 +2232,15 @@ resposta da HeyGen declara dimensão — nem a criação nem o polling.
 a geração inteira — que é o caminho caro. A seleção continua sendo gravada com
 a razão `flag_off`, então a passada colhe o dado sem arriscar nada.
 
-**6. Se falhar, lembre-se do que a medição do item 3 diz:** a tentativa
-**consumiu** uma unidade do teto e ela **não volta**. Reinicie o backend
-(`docker compose restart backend`) para zerar o contador antes de tentar de
-novo. O crédito, esse, é estornado sozinho.
+**6. Se falhar, o teto de GASTO volta sozinho** (bloco TETO-1) — a falha
+significa que o fornecedor não aceitou o trabalho. O que **não** volta é a
+TENTATIVA: com `MAX_GENERATIONS=2` são **6 tentativas** antes de travar, ou
+seja 4 falhas de margem. O crédito também é estornado sozinho.
+
+Se as tentativas acabarem, a mensagem diz que as chamadas estão falhando e
+aponta o evento `live_budget_released` no log — **leia a falha antes de
+aumentar o número**, senão o aumento só produz mais falhas. Para zerar os
+dois contadores: `docker compose restart backend`.
 
 ### Bloco LIVE-2 — a voz entra no log e o consumo passa a ser medido (CONCLUÍDO)
 
