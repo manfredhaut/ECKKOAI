@@ -297,7 +297,20 @@ export async function checkLiveBudgetRelease(): Promise<LiveBudgetCheckResult> {
     }
 
     // --- 2. Contraponto: o SUCESSO não devolve ---------------------------
-    await withLiveBudget("clonagem de voz", "clonar voz", async () => "ok", envGasto);
+    // O try/catch não é zelo defensivo: quando a devolução da asserção 1
+    // está quebrada, o teto fica em 1/1 e ESTA operação é recusada. Sem
+    // capturar, a exceção sobe, o gate morre com "falhou de forma
+    // inesperada", e todas as falhas já acumuladas — inclusive a mensagem
+    // que diagnostica o defeito — se perdem junto. Foi assim que o arnês
+    // flagrou esta guarda como inerte: ela não reprovava, ela sumia.
+    try {
+      await withLiveBudget("clonagem de voz", "clonar voz", async () => "ok", envGasto);
+    } catch (err) {
+      failures.push(
+        "teto: a operação seguinte a uma FALHA foi recusada, o que só acontece se o gasto não voltou. " +
+          `Recebido: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     if (liveGenerationsUsed() !== 1) {
       failures.push(
         `teto: o sucesso não reteve o gasto (used=${liveGenerationsUsed()}, esperado 1). ` +
