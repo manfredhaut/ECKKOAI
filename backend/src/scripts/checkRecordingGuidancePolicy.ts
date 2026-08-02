@@ -124,7 +124,16 @@ export async function checkRecordingGuidancePolicy(repoRoot: string): Promise<Re
   }
 
   // 2. As três faixas são de fato distinguidas.
-  const faixas = ["short", "workable", "good"].filter((f) => new RegExp(`"${f}"`).test(limites));
+  //
+  // Ancorado em `return "faixa"`, e NÃO na palavra solta: os três nomes também
+  // aparecem na união de tipos `RecordingQuality`, que continua intacta quando
+  // alguém apaga o desvio. A primeira versão desta checagem procurava a
+  // palavra, e o arnês a flagrou INERTE — removi o `return "short"` e o gate
+  // seguiu verde porque o tipo ainda mencionava "short". Sexta ocorrência da
+  // mesma armadilha neste projeto (ver checklist nº 10 do CLAUDE.md).
+  const faixas = ["short", "workable", "good"].filter((f) =>
+    new RegExp(`return\\s+"${f}"`).test(limites),
+  );
   if (faixas.length < 3) {
     failures.push(
       `gravação: ${LIMITES} não distingue as três faixas de duração (encontrei ${JSON.stringify(faixas)}). ` +
@@ -135,7 +144,15 @@ export async function checkRecordingGuidancePolicy(repoRoot: string): Promise<Re
 
   // 3. O indicador é USADO no passo de configuração — ancorado no JSX, nunca
   //    no import (checklist nº 10: import não é uso).
-  if (!/<RecordingProgress\b/.test(passo)) {
+  //
+  // E ancorado no ramo `isRecording` especificamente, não em "aparece em algum
+  // lugar do arquivo": o componente é renderizado em DOIS pontos — durante a
+  // captura e depois dela, enquanto a gravação não foi enviada. A primeira
+  // versão procurava `<RecordingProgress` no arquivo inteiro, e o arnês a
+  // flagrou INERTE: removido o uso durante a captura, o segundo uso satisfazia
+  // a busca sozinho. O que importa aqui é justamente o de DURANTE — depois já
+  // é tarde para ajustar a gravação em curso.
+  if (!/recorder\.isRecording && <RecordingProgress\b/.test(passo)) {
     failures.push(
       `gravação: ${PASSO} não mostra o progresso da gravação durante a captura. A orientação volta a ` +
         "existir só no parágrafo acima, que aparece ANTES de gravar e some da atenção no instante em que " +
