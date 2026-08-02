@@ -89,9 +89,9 @@ export const MUTANTS: Mutant[] = [
     guard: "portão de treino",
     name: "portão removido",
     kind: "obvio",
-    file: "backend/src/routes/videos.ts",
-    find: `if (avatar.provider_status === "processing") {`,
-    replace: "if (false) {",
+    file: "backend/src/services/generationReadiness.ts",
+    find: `} else if (avatar.provider_status === "processing") {`,
+    replace: "} else if (false) {",
     expect: "não barra mais avatar com provider_status",
   },
   {
@@ -102,7 +102,7 @@ export const MUTANTS: Mutant[] = [
     // A condição continua lá, com a mesma forma. Só o valor comparado muda
     // para um que o normalizador nunca produz, então nada é barrado.
     find: `if (avatar.provider_status === "processing") {`,
-    replace: `if (avatar.provider_status === "unknown") {`,
+    replace: `} else if (avatar.provider_status === "unknown") {`,
     expect: "não barra mais avatar com provider_status",
   },
 ];
@@ -427,7 +427,12 @@ export async function checkAvatarTrainingGate(repoRoot: string): Promise<LiveBud
   const failures: string[] = [];
   const notes: string[] = [];
 
-  const rel = "backend/src/routes/videos.ts";
+  // O portão mudou de casa na Fase 1-ter do bloco 5D: saiu de `routes/videos.ts`
+  // e passou a viver no predicado ÚNICO que a rota e a tela consomem. A guarda
+  // SEGUE a lógica em vez de continuar apontando para onde ela morava — uma
+  // guarda que vigia o arquivo errado passa verde para sempre, e é a forma mais
+  // barata de ficar inerte sem que ninguém note.
+  const rel = "backend/src/services/generationReadiness.ts";
   let source: string;
   try {
     source = await readFile(path.join(repoRoot, rel), "utf-8");

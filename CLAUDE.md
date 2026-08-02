@@ -787,6 +787,35 @@ o próprio comentário que a explicava).
    modos precisam de tetos de tamanho diferentes: 5 min em 1080p não cabe nos
    100 MB atuais.
 
+10. **CHECKLIST OBRIGATÓRIO DE GUARDA — ancorar no USO, nunca na MENÇÃO.**
+    Não é um aprendizado a lembrar; é uma lista a percorrer antes de declarar
+    qualquer guarda pronta. `import`, comentário, string e nome de símbolo
+    **não contam como uso**.
+
+    - [ ] A busca ancora no **uso** (`<Componente`, `isFixtureMode()` seguido de
+          `return`, chamada de função), e não no nome solto.
+    - [ ] Existe um mutante que **remove o uso e preserva a menção** — apagar o
+          JSX deixando o `import`, apagar a chamada deixando o comentário que a
+          explica. Escrever esse mutante é obrigatório: é ele que separa guarda
+          ativa de guarda inerte.
+    - [ ] **Presença e LIGAÇÃO são proposições separadas.** Verificar que o
+          elemento existe não prova que ele diz a verdade: `simulated={false}`,
+          `simulated={!x.simulated}` e a prop ausente preservam a superfície
+          inteira. Cada uma precisa do mutante próprio.
+    - [ ] A guarda foi vista **reprovando** (`npm run check:mutants`), com a
+          **mensagem dela** na saída — não a do `tsc`.
+    - [ ] A guarda **não** acusa uso legítimo, nem o texto que a explica.
+
+    **A regra já custou cinco ocorrências neste projeto**, todas com a mesma
+    forma e nenhuma achada por leitura de código: a flag do VIDEO-0
+    (`useFeatureFlag` que não existia); a `checkVendorLogPolicy` do LIVE-2
+    (treze funções casadas, helper nunca inspecionado); a elisão de áudio do
+    LIVE-2 (satisfeita pelo comentário); a de chave de plataforma do CHAVES-2
+    (acusava o próprio comentário); e a do aviso de simulação do 5D
+    (satisfeita pelo `import`). A sexta seria a **ligação** do badge, fechada
+    na Fase 1-bis — a guarda estava corretamente ancorada no uso e ainda assim
+    passava verde com o aviso preso em `false`.
+
 ### Pendências com dono
 
 | O quê | Dono | Observação |

@@ -585,6 +585,7 @@
       "download": "Download",
       "failed": "Generation failed. Please try again.",
       "avatarTraining": "The avatar is still training at the provider. This takes a few minutes and happens only once, right after creating it — refresh the page shortly.",
+      "checking": "Checking whether everything is ready to generate…",
       "openLibrary": "Open in video library →"
     },
     "blocked": {

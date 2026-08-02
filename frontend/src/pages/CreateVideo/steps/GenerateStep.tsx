@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
-import type { Avatar, Video } from "../../../types";
+import type { GenerationReadiness, Video } from "../../../types";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import type { WizardState } from "../types";
 import { VideoPlayer } from "../../../features/VideoPlayer";
@@ -27,19 +27,44 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
   // da ação que falhou.
   const [error, setError] = useState<string | null>(null);
 
-  // O avatar pode estar em treino no fornecedor. Descobrir isso ANTES de o
-  // botão ficar clicável é o ponto: sem isso o cliente clica, espera, e leva
-  // uma recusa que parece falha de geração — quando na verdade é só cedo
-  // demais. Ver migration 036: só "processing" bloqueia.
-  const [avatar, setAvatar] = useState<Avatar | null>(null);
+  // Prontidão vem do SERVIDOR, do mesmo predicado que `POST /videos` usa para
+  // recusar (services/generationReadiness.ts). A tela não reimplementa regra
+  // nenhuma e não reescreve mensagem nenhuma: antes, o botão conhecia três
+  // condições e a rota recusava por sete, então crédito esgotado, teto de
+  // sessão e credencial ausente só apareciam DEPOIS do clique.
+  //
+  // `null` enquanto não se sabe — e nesse estado o botão fica desabilitado,
+  // porque habilitar por otimismo é o que produz o clique que falha.
+  const [readiness, setReadiness] = useState<GenerationReadiness | null>(null);
+  // Reconsulta depois de uma tentativa que falhou: a tentativa pode ter mudado
+  // justamente o que o predicado mede (crédito debitado, teto de sessão
+  // consumido). Sem isto, o botão voltaria habilitado prometendo uma segunda
+  // tentativa que já se sabe que vai ser recusada.
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
-    if (!wizard.avatarId) return;
+    let cancelled = false;
+    setReadiness(null);
     api
-      .get<Avatar>(`/avatars/${wizard.avatarId}`)
-      .then(setAvatar)
-      .catch(() => setAvatar(null));
-  }, [wizard.avatarId]);
-  const training = avatar?.provider_status === "processing";
+      .post<GenerationReadiness>("/videos/readiness", {
+        avatar_id: wizard.avatarId,
+        script: wizard.script,
+      })
+      .then((r) => {
+        if (!cancelled) setReadiness(r);
+      })
+      .catch(() => {
+        // Falha ao consultar não pode virar botão travado para sempre: o
+        // servidor continua sendo quem recusa, então liberar aqui apenas
+        // devolve o comportamento de antes deste bloco — clicar e ver o erro.
+        if (!cancelled) setReadiness({ ready: true, blockers: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wizard.avatarId, wizard.script, reloadKey]);
+
+  const blockers = readiness?.blockers ?? [];
+  const blocked = readiness === null || !readiness.ready;
 
   useEffect(() => {
     return () => {
@@ -74,6 +99,7 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
       }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("errors.generic"));
+      setReloadKey((k) => k + 1);
     } finally {
       setSubmitting(false);
     }
@@ -85,18 +111,29 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
 
       {!video ? (
         <>
-          {training && (
-            <p className="text-muted" style={{ fontSize: 13, marginTop: 0, marginBottom: 12 }}>
-              {t("createVideo.generate.avatarTraining")}
-            </p>
-          )}
           <button
             className="btn btn-primary"
             onClick={handleGenerate}
-            disabled={submitting || !wizard.script || training}
+            disabled={submitting || blocked}
           >
             {submitting ? t("createVideo.generate.submitting") : t("createVideo.generate.generateButton")}
           </button>
+
+          {/* O motivo fica AO LADO do botão, sempre visível e sem exigir hover.
+              Um botão cinza que não explica parece produto quebrado — numa
+              apresentação isso é pior que deixar clicar e mostrar o erro. */}
+          {blockers.length > 0 && (
+            <ul className="blocked-reasons">
+              {blockers.map((b) => (
+                <li key={b.code}>{b.message}</li>
+              ))}
+            </ul>
+          )}
+          {readiness === null && (
+            <p className="text-muted" style={{ fontSize: 13, marginTop: 10, marginBottom: 0 }}>
+              {t("createVideo.generate.checking")}
+            </p>
+          )}
           {error && (
             <p className="alert-error" style={{ fontSize: 13, marginTop: 12, marginBottom: 0 }}>
               {error}

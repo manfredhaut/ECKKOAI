@@ -18,6 +18,7 @@ import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 import { resolveVideoFormat, vendorFormatSupport, type VideoFormat } from "../services/providers/videoFormat.js";
 import { isFeatureEnabled } from "../services/featureFlagStore.js";
 import { logEvent } from "../services/log/safeLog.js";
+import { evaluateGenerationReadiness } from "../services/generationReadiness.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -243,6 +244,28 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  /**
+   * "Dá para gerar agora, e se não, por quê?" — a MESMA função que
+   * `POST /videos` usa para recusar (services/generationReadiness.ts).
+   *
+   * POST, e não GET, por causa do roteiro: ele é conteúdo do cliente e pode
+   * ter milhares de caracteres. Numa query string ele iria parar no log de
+   * acesso, no histórico do navegador e no referer — e o único motivo de ele
+   * vir junto é testar se está vazio.
+   *
+   * Não debita, não reserva, não chama fornecedor. É leitura pura.
+   */
+  app.post<{ Body: { avatar_id?: string | null; script?: string | null } }>(
+    "/videos/readiness",
+    async (req) => {
+      return evaluateGenerationReadiness({
+        tenantId: req.tenantId,
+        avatarId: req.body?.avatar_id ?? null,
+        script: req.body?.script ?? "",
+      });
+    },
+  );
+
   app.get("/videos", async (req) => {
     const { rows } = await pool.query<Video>(
       "SELECT * FROM videos WHERE tenant_id = $1 ORDER BY created_at DESC",
@@ -465,40 +488,34 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     // cliente antigo que não manda o campo não pode ser a exceção.
     const format = resolveVideoFormat(publishPlatform);
 
-    if (!avatar_id) {
-      return reply.code(400).send({ error: "avatar_id is required to generate a video" });
+    // MESMO predicado que a tela consome (services/generationReadiness.ts).
+    // Roda ANTES de criar a linha, de debitar crédito e de tocar o fornecedor:
+    // o botão desabilitado é conveniência, esta recusa é a proteção. O primeiro
+    // bloqueio é o que vale — a ordem dentro do predicado é de precedência.
+    const readiness = await evaluateGenerationReadiness({
+      tenantId: req.tenantId,
+      avatarId: avatar_id,
+      script,
+    });
+    if (!readiness.ready) {
+      const [primeiro] = readiness.blockers;
+      return reply
+        .code(primeiro.status)
+        .send({ error: primeiro.code, message: primeiro.message, blockers: readiness.blockers });
     }
 
+    // Reconsultados aqui porque o predicado devolve o VEREDITO, não os objetos
+    // — devolvê-los faria a tela receber a credencial junto do "pode gerar".
     const { rows: avatarRows } = await pool.query<Avatar>(
       "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
       [avatar_id, req.tenantId],
     );
     const avatar = avatarRows[0];
-    if (!avatar?.provider_avatar_id) {
-      return reply.code(400).send({ error: "This avatar hasn't finished training yet." });
-    }
-
-    // Portão de treino. Só 'processing' barra: NULL (avatares criados antes
-    // desta coluna existir) e 'unknown' (perguntamos e não entendemos a
-    // resposta) LIBERAM de propósito — travar um avatar já pago por causa de
-    // uma suposição nossa seria pior que deixar a tentativa seguir e o
-    // fornecedor recusar. Ver migration 036.
-    if (avatar.provider_status === "processing") {
-      return reply.code(409).send({
-        error: "avatar_still_training",
-        message:
-          "O avatar ainda está em treino no fornecedor e não pode gerar vídeo agora. " +
-          "Isso leva alguns minutos e acontece uma vez só, logo depois de criar o avatar — " +
-          "atualize a página em instantes e tente de novo. Nenhum crédito foi consumido.",
-      });
-    }
-
     const avatarCredential = await getCredential(req.tenantId, "avatar");
-    if (!avatarCredential) {
-      return reply.code(400).send({
-        error: "no_avatar_credential",
-        message: "Connect the avatar provider's API key in Settings to generate a video.",
-      });
+    // Impossível pelo predicado acima; o `throw` existe para o dia em que
+    // alguém reordenar as duas coisas, e não como validação de verdade.
+    if (!avatar?.provider_avatar_id || !avatarCredential) {
+      throw new Error("readiness passou mas avatar/credencial sumiram entre as duas leituras");
     }
     const voiceCredential = await getCredential(req.tenantId, "voice");
 

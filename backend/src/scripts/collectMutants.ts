@@ -24,6 +24,7 @@ import { MUTANTS as imageFreshnessMutants } from "./checkImageFreshnessPolicy.js
 import { MUTANTS as costMutants } from "./checkCostPolicy.js";
 import { MUTANTS as egressMutants } from "./checkNetworkEgressPolicy.js";
 import { MUTANTS as playbackMutants } from "./checkVideoPlaybackPolicy.js";
+import { MUTANTS as readinessMutants } from "./checkGenerationReadinessPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 const all: Mutant[] = [
@@ -41,6 +42,7 @@ const all: Mutant[] = [
   ...costMutants,
   ...egressMutants,
   ...playbackMutants,
+  ...readinessMutants,
 ];
 
 // Um mutante malformado só apareceria no meio da execução, com a árvore já

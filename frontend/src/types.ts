@@ -214,3 +214,22 @@ export interface PlatformCredentialValidation {
   balance: string | null;
   validatedAt: string;
 }
+
+/**
+ * Espelho de `backend/src/services/generationReadiness.ts`.
+ *
+ * A mensagem vem PRONTA do servidor, em pt-BR: a tela não traduz nem
+ * reescreve. Se o texto morasse aqui, a regra teria duas donas — e o defeito
+ * que a Fase 1-ter fechou é exatamente esse (botão com três condições, rota
+ * com sete).
+ */
+export interface GenerationBlocker {
+  code: string;
+  message: string;
+  status: number;
+}
+
+export interface GenerationReadiness {
+  ready: boolean;
+  blockers: GenerationBlocker[];
+}

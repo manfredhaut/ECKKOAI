@@ -28,6 +28,7 @@ import {
 } from "./checkLiveBudgetPolicy.js";
 import { checkNetworkEgressPolicy } from "./checkNetworkEgressPolicy.js";
 import { checkVideoPlaybackPolicy } from "./checkVideoPlaybackPolicy.js";
+import { checkGenerationReadinessPolicy } from "./checkGenerationReadinessPolicy.js";
 import { checkVendorLogPolicy } from "./checkVendorLogPolicy.js";
 import { checkVideoFormatPolicy } from "./checkVideoFormatPolicy.js";
 import { checkVendorErrorPathPolicy } from "./checkVendorErrorPathPolicy.js";
@@ -387,6 +388,11 @@ async function main(): Promise<void> {
   const playback = await checkVideoPlaybackPolicy(process.env.REPO_ROOT ?? "/repo");
   playback.failures.forEach((f) => failures.push(f));
   playback.notes.forEach((n) => note(n));
+
+  // --- 13f. um bloqueio de geração existe dos DOIS lados ------------------
+  const readiness = await checkGenerationReadinessPolicy(process.env.REPO_ROOT ?? "/repo");
+  readiness.failures.forEach((f) => failures.push(f));
+  readiness.notes.forEach((n) => note(n));
 
   // --- 14. portão de avatar em treino -----------------------------------
   const gateResult = await checkAvatarTrainingGate(process.env.REPO_ROOT ?? "/repo");
