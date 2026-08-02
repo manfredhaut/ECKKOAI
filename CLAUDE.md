@@ -1,4 +1,4 @@
-Always respond in Brazilian Portuguese.
+﻿Always respond in Brazilian Portuguese.
 
 # CLAUDE.md — TWINAI
 
@@ -1443,7 +1443,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
-| 08-02 | **5D fases 1-bis a 2** | **Badge ancorado na LIGAÇÃO (não só na presença); predicado ÚNICO de prontidão consumido pela rota e pela tela; artefato do fornecedor persistido no nosso disco; `model_id` explícito no TTS; cronômetro de gravação vira meta; 2ª passada live 9:16. 76 mutantes. Ver abaixo.** |
+| 08-02 | **5D fases 1-bis a 2** | **Badge ancorado na LIGAÇÃO (não só na presença); predicado ÚNICO de prontidão consumido pela rota e pela tela; artefato do fornecedor persistido no nosso disco; `model_id` explícito no TTS; cronômetro de gravação vira meta; 2ª passada live 9:16. 74 mutantes. Ver abaixo.** |
 | 08-02 | **5D fases 0 e 1** | **Percurso dos 6 passos catalogado; fixture passa a valer para os provedores de TEXTO (não valia); vídeo reproduzível na Biblioteca; custo no passo 4; ledger negativo medido e NÃO alterado; telas que mentiam. 64 mutantes. Ver abaixo.** |
 | 08-02 | **TETO-1** | **A falha devolve o teto de GASTO; o laço passa a ser barrado por um contador de TENTATIVAS que não volta. Guarda nova com 3 asserções opostas; 56 mutantes. Ver abaixo.** |
 | 08-02 | **4A — OPERACIONAL** | **Custo real na tela (constante única medida; estimativa e medição lado a lado); rastro da falha em provider_usage; redação no sumidouro do log; freio derivado de catálogo de endpoints; 4 desfechos medidos. Tabela de taxas manual REMOVIDA do banco. Ver abaixo.** |
@@ -2417,7 +2417,7 @@ rotas que tratam erro de fornecedor sem ele. Importa porque `api/client.ts` só
 levanta erro quando `!res.ok`. *Corrigido e provado nos dois sentidos:* recusa
 → **502**, sucesso → **201**.
 
-**Guardas: `npm run check` verde, `check:mutants` 76/76** (eram 64).
+**Guardas: `npm run check` verde, `check:mutants` 74/74** (eram 64).
 
 **Duas guardas novas nasceram INERTES e o arnês pegou as duas** — sexta e
 sétima ocorrência do mesmo padrão: uma procurava `<RecordingProgress` no
