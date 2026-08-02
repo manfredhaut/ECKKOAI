@@ -124,6 +124,30 @@ function respond(method: string, path: string): Response | null {
   // é o que expõe o bloco de fundo virtual sem precisar de câmera.
   if (method === "POST" && path.endsWith("/avatars")) return json(FAKE_AVATAR, 201);
 
+  // Suporte a formato do provedor conectado. Alternável pelo mesmo controle de
+  // flags da galeria: é o único jeito de VER o passo "Publicação" no estado em
+  // que o vendor não honra a proporção sem trocar a credencial do tenant no
+  // banco. Esse estado é justamente o que não pode ser conferido por leitura
+  // de código — é uma tela desabilitada com um motivo escrito.
+  if (method === "GET" && path.includes("/video-format-support")) {
+    return json(
+      galleryVendorHonorsFormat
+        ? {
+            vendor: "heygen",
+            supported: true,
+            evidence: "documentation",
+            reason: "POST /v3/videos documenta aspect_ratio e resolution.",
+          }
+        : {
+            vendor: "did",
+            supported: false,
+            evidence: "none",
+            reason:
+              "Não há campo de proporção documentado em POST /talks: a geometria da D-ID sai da imagem de origem.",
+          },
+    );
+  }
+
   return null;
 }
 
@@ -144,6 +168,13 @@ export let currentFlags: { key: string; label: string; enabled: boolean; reason:
 
 export function setGalleryFlag(key: string, enabled: boolean): void {
   currentFlags = currentFlags.map((f) => (f.key === key ? { ...f, enabled } : f));
+}
+
+/** O provedor simulado honra a proporção escolhida? Ver `respond()` acima. */
+export let galleryVendorHonorsFormat = true;
+
+export function setGalleryVendorHonorsFormat(value: boolean): void {
+  galleryVendorHonorsFormat = value;
 }
 
 let installed = false;

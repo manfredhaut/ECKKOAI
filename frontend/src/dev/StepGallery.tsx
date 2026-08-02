@@ -17,7 +17,12 @@ import { FeatureFlagProvider } from "../features/FeatureFlagContext";
 // Faltando o provider, a árvore inteira caía — defeito que a própria
 // galeria expôs na primeira execução.
 import { CopilotProvider } from "../copilot/CopilotContext";
-import { installGalleryFetch, interceptStats, setGalleryFlag } from "./galleryFetch";
+import {
+  installGalleryFetch,
+  interceptStats,
+  setGalleryFlag,
+  setGalleryVendorHonorsFormat,
+} from "./galleryFetch";
 import type { AssetDefaults } from "../pages/CreateVideo/types";
 
 /**
@@ -61,6 +66,9 @@ export function StepGallery() {
   const [step, setStep] = useState<StepId>("passo1-avatar");
   const [state, setState] = useState<StepState>("vazio");
   const [backgroundFlag, setBackgroundFlag] = useState(false);
+  // Provedor que NÃO honra proporção (D-ID). É o estado que só se verifica
+  // olhando: uma tela desabilitada com o motivo escrito.
+  const [vendorHonors, setVendorHonors] = useState(true);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -75,6 +83,10 @@ export function StepGallery() {
     setGalleryFlag("removable_background", backgroundFlag);
   }, [backgroundFlag]);
 
+  useEffect(() => {
+    setGalleryVendorHonorsFormat(vendorHonors);
+  }, [vendorHonors]);
+
   if (!ready) return null;
 
   return (
@@ -86,6 +98,8 @@ export function StepGallery() {
         onState={setState}
         backgroundFlag={backgroundFlag}
         onBackgroundFlag={setBackgroundFlag}
+        vendorHonors={vendorHonors}
+        onVendorHonors={setVendorHonors}
       />
 
       <div className="gallery-stage" data-shot={`${step}-${state}`}>
@@ -95,7 +109,7 @@ export function StepGallery() {
                 inteira junto — já aconteceu, e o sintoma (todas as telas em
                 branco) é mais enganoso que o defeito original. */}
             <GalleryBoundary label={`${step} / ${state}`}>
-              <StepUnderGlass step={step} state={state} />
+              <StepUnderGlass step={step} state={state} vendorHonors={vendorHonors} />
             </GalleryBoundary>
           </CopilotProvider>
         </FeatureFlagProvider>
@@ -111,6 +125,8 @@ function GalleryHeader({
   onState,
   backgroundFlag,
   onBackgroundFlag,
+  vendorHonors,
+  onVendorHonors,
 }: {
   step: StepId;
   onStep: (s: StepId) => void;
@@ -118,6 +134,8 @@ function GalleryHeader({
   onState: (s: StepState) => void;
   backgroundFlag: boolean;
   onBackgroundFlag: (v: boolean) => void;
+  vendorHonors: boolean;
+  onVendorHonors: (v: boolean) => void;
 }) {
   return (
     <header className="gallery-bar">
@@ -162,6 +180,13 @@ function GalleryHeader({
           >
             flag fundo: {backgroundFlag ? "ligada" : "desligada"}
           </button>
+          <button
+            type="button"
+            className={`gallery-chip${vendorHonors ? " gallery-chip--on" : ""}`}
+            onClick={() => onVendorHonors(!vendorHonors)}
+          >
+            provedor honra proporção: {vendorHonors ? "sim" : "não"}
+          </button>
         </div>
       </div>
 
@@ -205,7 +230,19 @@ const SAMPLE_SCRIPT =
   "Se você tem uma pequena empresa e nunca gravou um vídeo por falta de tempo, " +
   "este é o atalho: escolha seu avatar, escreva o roteiro e publique em minutos.";
 
-function StepUnderGlass({ step, state }: { step: StepId; state: StepState }) {
+function StepUnderGlass({
+  step,
+  state,
+  vendorHonors,
+}: {
+  step: StepId;
+  state: StepState;
+  // Só serve de `key`: trocar o valor remonta o passo de Publicação, que é o
+  // que faz o componente refazer o GET /video-format-support contra o
+  // interceptor. Sem remontar, o `useEffect` não roda de novo e a tela
+  // continuaria mostrando o estado anterior.
+  vendorHonors: boolean;
+}) {
   const noop = () => {};
 
   // O passo 5 monta um componente que dispara geração ao clicar; aqui ele é
@@ -262,6 +299,7 @@ function StepUnderGlass({ step, state }: { step: StepId; state: StepState }) {
       // wizard real produz ao entrar no passo.
       return (
         <PublishStep
+          key={`publish-${vendorHonors}`}
           platform={state === "vazio" ? DEFAULT_PUBLISH_PLATFORM : "reels_tiktok"}
           onChange={noop}
         />

@@ -559,11 +559,13 @@
       "subtitle": "A proporção do vídeo é definida pelo destino escolhido.",
       "platforms": {
         "youtube": "YouTube",
-        "reels_tiktok": "Reels, TikTok e Shorts",
+        "reels_tiktok": "Reels, TikTok, Shorts e Facebook Reels",
         "instagram_feed": "Feed do Instagram",
+        "facebook": "Feed do Facebook",
         "linkedin": "LinkedIn"
       },
-      "notVerified": "A proporção escolhida é enviada ao serviço de vídeo em toda geração. Até agora só o formato horizontal foi conferido em um vídeo real — os demais ainda não passaram por uma geração de verdade."
+      "notVerified": "A proporção escolhida é enviada ao serviço de vídeo em toda geração. Até agora só o formato horizontal foi conferido em um vídeo real — os demais ainda não passaram por uma geração de verdade.",
+      "notHonored": "O provedor de vídeo conectado à sua conta não aceita escolha de proporção."
     },
     "generate": {
       "title": "Gerar e revisar",

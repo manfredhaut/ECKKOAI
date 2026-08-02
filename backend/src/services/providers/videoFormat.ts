@@ -70,8 +70,13 @@ export interface PublishPlatform {
  */
 export const PUBLISH_PLATFORMS = [
   { id: "youtube", label: "YouTube (horizontal)", aspectRatio: "16:9", resolution: MEASURED_RESOLUTION },
-  { id: "reels_tiktok", label: "Reels, TikTok e Shorts (vertical)", aspectRatio: "9:16", resolution: MEASURED_RESOLUTION },
+  { id: "reels_tiktok", label: "Reels, TikTok, Shorts e Facebook Reels (vertical)", aspectRatio: "9:16", resolution: MEASURED_RESOLUTION },
   { id: "instagram_feed", label: "Feed do Instagram (retrato)", aspectRatio: "4:5", resolution: MEASURED_RESOLUTION },
+  // Entrada PRÓPRIA, mesmo compartilhando a proporção com o feed do Instagram.
+  // O catálogo mapeia plataforma → proporção, e plataformas diferentes pedindo
+  // a mesma proporção é o caso normal, não uma duplicação a ser eliminada:
+  // quem publica no Facebook procura "Facebook" na lista, não "4:5".
+  { id: "facebook", label: "Feed do Facebook (retrato)", aspectRatio: "4:5", resolution: MEASURED_RESOLUTION },
   { id: "linkedin", label: "LinkedIn e feed quadrado", aspectRatio: "1:1", resolution: MEASURED_RESOLUTION },
 ] as const satisfies readonly PublishPlatform[];
 
@@ -120,15 +125,36 @@ export function resolveVideoFormat(platform: unknown): VideoFormat {
  *
  * `npm run check` reprova o build se um vendor do catálogo não estiver aqui.
  */
+/**
+ * O que SUSTENTA a declaração de suporte, em ordem crescente de força.
+ *
+ * O campo existe porque "supported: true" sozinho é indistinguível de um
+ * palpite bem escrito. Separar a afirmação da evidência é o que permite a
+ * guarda cobrar a diferença — e é o que impede a UI de prometer entrega quando
+ * a base é só documentação.
+ *
+ * `vendor_response` é o único nível que autoriza afirmar que FUNCIONA, e
+ * **nenhum vendor está nele hoje**: nenhuma geração nossa enviou formato.
+ */
+export type FormatEvidence =
+  /** Uma resposta real do fornecedor confirmou. Ninguém está aqui ainda. */
+  | "vendor_response"
+  /** A documentação pública descreve o campo. Não é o mesmo que ter funcionado. */
+  | "documentation"
+  /** Nada sustenta. Declarar suporte com isto é proibido pelo gate. */
+  | "none";
+
 export const VENDOR_FORMAT_SUPPORT = {
   heygen: {
     supported: true,
+    evidence: "documentation" as FormatEvidence,
     reason:
       "POST /v3/videos documenta `aspect_ratio` e `resolution`; os dois vão em toda geração. " +
       "DOCUMENTADO pelo fornecedor, ainda NÃO confirmado por resposta real — nenhuma geração live enviou formato.",
   },
   did: {
     supported: false,
+    evidence: "none" as FormatEvidence,
     reason:
       "Não há campo de proporção documentado em POST /talks: a geometria da D-ID sai da imagem de origem. " +
       "Nenhuma resposta real da D-ID foi observada em nenhuma sessão, então inventar um campo seria pior " +
@@ -137,6 +163,35 @@ export const VENDOR_FORMAT_SUPPORT = {
   },
 } as const;
 
+export type VendorFormatSupportId = keyof typeof VENDOR_FORMAT_SUPPORT;
+
 export function vendorAcceptsFormat(vendor: string): boolean {
-  return VENDOR_FORMAT_SUPPORT[vendor as keyof typeof VENDOR_FORMAT_SUPPORT]?.supported === true;
+  return VENDOR_FORMAT_SUPPORT[vendor as VendorFormatSupportId]?.supported === true;
+}
+
+/**
+ * O que a TELA precisa saber para não prometer o que o vendor não entrega.
+ *
+ * Vendor desconhecido devolve `supported: false` com motivo próprio: um vendor
+ * que não está no registro é justamente o caso em que não se sabe nada, e o
+ * padrão silencioso ali seria prometer.
+ */
+export function vendorFormatSupport(vendor: string | null | undefined): {
+  vendor: string | null;
+  supported: boolean;
+  evidence: FormatEvidence;
+  reason: string;
+} {
+  const entry = VENDOR_FORMAT_SUPPORT[vendor as VendorFormatSupportId];
+  if (!entry) {
+    return {
+      vendor: vendor ?? null,
+      supported: false,
+      evidence: "none",
+      reason:
+        "O provedor de vídeo conectado não está no registro de suporte a formato, então não há como " +
+        "afirmar que ele respeita a proporção escolhida. A escolha continua sendo gravada.",
+    };
+  }
+  return { vendor: vendor ?? null, supported: entry.supported, evidence: entry.evidence, reason: entry.reason };
 }

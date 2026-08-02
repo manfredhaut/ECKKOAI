@@ -19,6 +19,7 @@ export const PUBLISH_PLATFORMS: PublishPlatformOption[] = [
   { id: "youtube", aspectRatio: "16:9", preview: { width: 64, height: 36 } },
   { id: "reels_tiktok", aspectRatio: "9:16", preview: { width: 27, height: 48 } },
   { id: "instagram_feed", aspectRatio: "4:5", preview: { width: 36, height: 45 } },
+  { id: "facebook", aspectRatio: "4:5", preview: { width: 36, height: 45 } },
   { id: "linkedin", aspectRatio: "1:1", preview: { width: 44, height: 44 } },
 ];
 

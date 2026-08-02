@@ -63,7 +63,10 @@ export const MUTANTS: Mutant[] = [
     // O probe continua fazendo UMA chamada, continua na allowlist, continua
     // com cara de validação. Só o endpoint muda — e validar passaria a gerar.
     find: `  heygen: "https://api.heygen.com/v2/user/remaining_quota",`,
-    replace: `  heygen: "https://api.heygen.com/v2/video/generate",`,
+    // Aponta para o endpoint de geração da **v3**, que é o que este projeto de
+    // fato usa. Até o bloco 3.5 a deny-list conhecia só o da v2, e este mutante
+    // passava VERDE — a guarda vigiava um endpoint que o código não chama mais.
+    replace: `  heygen: "https://api.heygen.com/v3/videos",`,
     expect: "contém o caminho",
   },
   {
@@ -123,9 +126,23 @@ const PLAINTEXT_ALLOWED = [
 // casar nunca — ocupava um terço da lista aparentando cobertura.
 const PLAINTEXT_MARKERS = ["resolvePlatformKey", "platform_credentials"];
 
-/** Endpoints de geração. Nenhum deles pode ser alcançável pelo probe. */
+/**
+ * Endpoints de geração. Nenhum deles pode ser alcançável pelo probe.
+ *
+ * `/v3/videos` e `/v3/avatars` entraram no bloco 3.5, e a ausência deles era um
+ * buraco real: a lista conhecia só `/v2/video/generate`, que é o endpoint de
+ * geração da v2 — e **o caminho de geração deste projeto é v3** desde sempre
+ * (`avatarProvider.ts`). Um probe apontado para `api.heygen.com/v3/videos`
+ * passava verde. Pior: `/v3/avatars` é o endpoint MAIS caro do projeto
+ * (US$ 1,00 por avatar, medido no DEMO-3), contra US$ 0,15 de um vídeo curto.
+ *
+ * Lição para quem acrescentar vendor ou versão: uma deny-list nomeia o que
+ * conhece, e envelhece em silêncio quando o código migra de versão.
+ */
 const GENERATION_ENDPOINTS = [
   "/v2/video/generate",
+  "/v3/videos",
+  "/v3/avatars",
   "/v2/text_to_speech",
   "/v1/text-to-speech",
   "/generateContent",

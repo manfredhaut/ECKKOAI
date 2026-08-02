@@ -1,5 +1,14 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { api } from "../../../api/client";
 import { PUBLISH_PLATFORMS } from "../publishPlatforms";
+
+interface FormatSupport {
+  vendor: string | null;
+  supported: boolean;
+  evidence: string;
+  reason: string;
+}
 
 /**
  * Onde o vídeo vai ser publicado — e, por consequência, em que proporção ele é
@@ -24,6 +33,20 @@ export function PublishStep({
 }) {
   const { t } = useTranslation();
 
+  // O provedor conectado a este tenant honra a proporção? A resposta muda o que
+  // a tela pode PROMETER, e por isso é buscada antes de desenhar os botões.
+  // Enquanto não chega, `null` é tratado como "ainda não sei" e nada é
+  // desabilitado — piscar os botões entre habilitado e inerte seria pior que
+  // esperar um instante.
+  const [support, setSupport] = useState<FormatSupport | null>(null);
+  useEffect(() => {
+    api
+      .get<FormatSupport>("/video-format-support")
+      .then(setSupport)
+      .catch(() => setSupport(null));
+  }, []);
+  const naoHonra = support !== null && !support.supported;
+
   return (
     <div className="card">
       <div className="card-title">{t("createVideo.publish.title")}</div>
@@ -31,7 +54,17 @@ export function PublishStep({
         {t("createVideo.publish.subtitle")}
       </p>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+      {/* Contrato das feature flags aplicado aqui: o recurso não SOME quando
+          está indisponível — aparece inerte, com o motivo. Sumir faz parecer
+          defeito; deixar clicável faz o cliente escolher um destino que o
+          provedor dele vai ignorar em silêncio. */}
+      {naoHonra && (
+        <p className="alert-error" style={{ fontSize: 13, marginTop: 0, marginBottom: 12 }}>
+          {t("createVideo.publish.notHonored")} {support?.reason}
+        </p>
+      )}
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, opacity: naoHonra ? 0.55 : 1 }}>
         {PUBLISH_PLATFORMS.map((option) => {
           const selected = platform === option.id;
           return (
@@ -40,6 +73,7 @@ export function PublishStep({
               type="button"
               className={`chip${selected ? " selected" : ""}`}
               aria-pressed={selected}
+              disabled={naoHonra}
               onClick={() => onChange(option.id)}
               style={{
                 display: "flex",

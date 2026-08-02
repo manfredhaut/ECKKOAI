@@ -559,11 +559,13 @@
       "subtitle": "The video's aspect ratio comes from the destination you pick.",
       "platforms": {
         "youtube": "YouTube",
-        "reels_tiktok": "Reels, TikTok and Shorts",
+        "reels_tiktok": "Reels, TikTok, Shorts and Facebook Reels",
         "instagram_feed": "Instagram feed",
+        "facebook": "Facebook feed",
         "linkedin": "LinkedIn"
       },
-      "notVerified": "The chosen aspect ratio is sent to the video service on every generation. So far only the landscape format has been checked against a real video — the others have not been through an actual generation yet."
+      "notVerified": "The chosen aspect ratio is sent to the video service on every generation. So far only the landscape format has been checked against a real video — the others have not been through an actual generation yet.",
+      "notHonored": "The video provider connected to your account does not accept an aspect ratio choice."
     },
     "generate": {
       "title": "Generate & review",

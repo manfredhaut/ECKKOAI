@@ -14,7 +14,7 @@
  * dia em que alguém movesse a montagem para outra função — e é justamente o
  * tipo de reorganização que faz um campo se perder.
  */
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Mutant } from "./mutants.js";
 import { buildHeygenVideoPayload } from "../services/providers/avatarProvider.js";
@@ -25,7 +25,11 @@ import {
   VENDOR_FORMAT_SUPPORT,
   resolveVideoFormat,
 } from "../services/providers/videoFormat.js";
-import { FIXTURE_VIDEO_FILES, FIXTURES_DIR } from "../services/providers/fixtureProvider.js";
+import {
+  FIXTURE_VIDEO_DIMENSIONS,
+  FIXTURE_VIDEO_FILES,
+  FIXTURES_DIR,
+} from "../services/providers/fixtureProvider.js";
 import { VENDORS_BY_PROVIDER } from "../services/providers/vendorCatalog.js";
 import { selectEngine } from "../services/providers/videoEngine.js";
 
@@ -63,6 +67,31 @@ export const MUTANTS: Mutant[] = [
     expect: "resolvem para a MESMA proporção",
   },
   {
+    guard: "formato: nenhum texto de produto promete resolução",
+    name: "a tela passa a afirmar a resolução entregue",
+    kind: "obvio",
+    file: "frontend/src/locales/pt-BR.json",
+    find: `"subtitle": "A proporção do vídeo é definida pelo destino escolhido.",`,
+    replace: `"subtitle": "A proporção do vídeo é definida pelo destino escolhido. Todos os vídeos saem em 720p.",`,
+    expect: "afirma resolução entregue",
+  },
+  {
+    guard: "formato: suporte declarado precisa de evidência",
+    name: "vendor sem evidência nenhuma passa a declarar suporte",
+    kind: "esperto",
+    file: "backend/src/services/providers/videoFormat.ts",
+    // O registro continua completo, o motivo continua escrito e continua
+    // honesto ("nenhuma resposta real foi observada"). Só o booleano vira
+    // `true` — e a tela passa a oferecer proporção a um vendor que ninguém
+    // nunca viu honrar uma. Uma guarda que só cobrasse "todo vendor está no
+    // registro, com motivo" passaria: o registro está lá, e o motivo também.
+    find: `    supported: false,
+    evidence: "none" as FormatEvidence,`,
+    replace: `    supported: true,
+    evidence: "none" as FormatEvidence,`,
+    expect: "declara suporte a formato com evidência",
+  },
+  {
     guard: "formato: a simulação honra a proporção pedida",
     name: "a fixture volta a ser a mesma para toda proporção",
     kind: "esperto",
@@ -96,6 +125,9 @@ export async function checkVideoFormatPolicy(repoRoot: string): Promise<VideoFor
   await checkFixturesPerAspectRatio(failures, notes);
   checkEngineSelectionAlwaysDecides(failures, notes);
   await checkFrontendMirrorsCatalog(repoRoot, failures, notes);
+  checkResolutionIsNotSimulated(failures, notes);
+  await checkNoProductTextPromisesResolution(repoRoot, failures, notes);
+  checkSupportClaimsHaveEvidence(failures, notes);
 
   notes.push(
     `formato: ${montagens} montagem(ns) de payload de geração conferida(s) — todas com ` +
@@ -355,6 +387,192 @@ async function checkFrontendMirrorsCatalog(
   }
 
   notes.push(`formato: espelho do frontend conferido — ${espelho.size} plataforma(s) idênticas ao catálogo`);
+}
+
+/**
+ * RESOLUÇÃO NÃO É OBSERVÁVEL EM FIXTURE — e a guarda existe para que isso
+ * continue dito em voz alta.
+ *
+ * A simulação honra proporção porque há um arquivo por proporção. Não honra
+ * resolução, e não tem como: as fixtures são pequenas (maior lado 640 px), e
+ * mesmo que fossem 1280×720, a simulação estaria apenas devolvendo o arquivo
+ * que nós escolhemos — o que não diz nada sobre o campo `resolution` fazer
+ * efeito no fornecedor.
+ *
+ * A asserção é o inverso do que se esperaria: reprova se alguma fixture
+ * COINCIDIR com uma resolução declarada. Uma fixture em 1280×720 daria a
+ * impressão de que 720p foi verificado, e é justamente essa impressão que
+ * custa caro depois.
+ */
+function checkResolutionIsNotSimulated(failures: string[], notes: string[]): void {
+  const alturasDeResolucao: Record<string, number> = { "720p": 720, "1080p": 1080, "4k": 2160 };
+
+  for (const [ratio, dim] of Object.entries(FIXTURE_VIDEO_DIMENSIONS)) {
+    for (const [nome, altura] of Object.entries(alturasDeResolucao)) {
+      if (dim.height === altura || dim.width === altura) {
+        failures.push(
+          `formato: a fixture de ${ratio} tem ${dim.width}×${dim.height}, que coincide com ${nome}. ` +
+            "A simulação passaria a PARECER que verifica resolução, e ela não verifica: devolveria " +
+            "apenas o arquivo que nós escolhemos. Resolução só é verificável em live.",
+        );
+      }
+    }
+  }
+
+  notes.push(
+    "formato: resolução NÃO é observável em fixture (maior lado das fixtures: 640 px) — " +
+      "a simulação honra proporção, e só ela",
+  );
+}
+
+/**
+ * Nenhum texto visto pelo CLIENTE pode afirmar a resolução ENTREGUE.
+ *
+ * Enquanto nenhuma geração tiver enviado `resolution` a um fornecedor, dizer
+ * que o vídeo sai em 720p é vender o que não foi medido. O termo aparece
+ * livremente no código e nos comentários — é lá que a decisão está registrada;
+ * o que a guarda vigia é o que o cliente lê.
+ *
+ * **A distinção que esta guarda precisou aprender:** resolução de ENTRADA é uso
+ * legítimo e frequente. "Grave em 1080p em vez de 4K" orienta o upload e não
+ * promete nada sobre a saída. A primeira versão proibia o termo e acusou seis
+ * usos legítimos de uma vez — e guarda que acusa uso legítimo é abandonada, o
+ * que já custou caro neste projeto (GUARDAS-1, achado C). Uma guarda abandonada
+ * não protege nada.
+ *
+ * Duas camadas, por isso:
+ *  (a) COOCORRÊNCIA — resolução perto de verbo de entrega, em qualquer texto;
+ *  (b) ESCOPO — dentro do bloco do passo "Publicação", resolução nenhuma passa,
+ *      em nenhum contexto. Ali não existe uso legítimo: aquele texto fala
+ *      exclusivamente do que entregamos.
+ */
+async function checkNoProductTextPromisesResolution(
+  repoRoot: string,
+  failures: string[],
+  notes: string[],
+): Promise<void> {
+  const alvos = [
+    "frontend/src/locales/pt-BR.json",
+    "frontend/src/locales/en.json",
+    ...(await listDocFiles(path.join(repoRoot, "docs"))),
+  ];
+
+  const RESOLUCAO = /\b(720p|1080p|2160p|4k|full ?hd|ultra ?hd)\b/i;
+  /** Verbos que transformam a menção em PROMESSA sobre o que sai. */
+  const ENTREGA =
+    /\b(sai|saem|saída|saida|entregu|gerado|geradas?|gerados|exportad|produzid|renderizad|todos os vídeos|seu vídeo|o vídeo (fica|será|sai)|delivered|output|exported|rendered|generated in|videos are|your video)\b/i;
+
+  let inspecionados = 0;
+  let mencoesLegitimas = 0;
+
+  for (const rel of alvos) {
+    const full = path.isAbsolute(rel) ? rel : path.join(repoRoot, rel);
+    let source: string;
+    try {
+      source = await readFile(full, "utf8");
+    } catch {
+      continue;
+    }
+    inspecionados += 1;
+    const relativo = path.relative(repoRoot, full).replace(/\\/g, "/");
+    const linhas = source.split(/\r?\n/);
+
+    for (const [i, linha] of linhas.entries()) {
+      if (!RESOLUCAO.test(linha)) continue;
+
+      const noBlocoPublish = /"(publish|publicacao)"|createVideo\.publish/.test(linha) || dentroDoBlocoPublish(linhas, i);
+
+      if (ENTREGA.test(linha) || noBlocoPublish) {
+        failures.push(
+          `formato: ${relativo}:${i + 1} afirma resolução entregue ` +
+            `("${linha.trim().slice(0, 100)}"). Nenhuma geração enviou \`resolution\` a um fornecedor até ` +
+            "hoje, e a simulação não verifica resolução (as fixtures têm no máximo 640 px de lado) — " +
+            "prometer isso ao cliente é vender o que não foi medido. Orientar a resolução de ENTRADA " +
+            '("grave em 1080p") continua permitido: ali não há promessa sobre a saída.',
+        );
+      } else {
+        mencoesLegitimas += 1;
+      }
+    }
+  }
+
+  if (inspecionados === 0) {
+    failures.push(
+      "formato: nenhum texto de produto foi inspecionado quanto a promessa de resolução — os caminhos " +
+        "mudaram e a guarda deixou de olhar qualquer coisa.",
+    );
+  }
+
+  notes.push(
+    `formato: ${inspecionados} arquivo(s) de texto de produto sem promessa de resolução entregue ` +
+      `(${mencoesLegitimas} menção(ões) a resolução de ENTRADA, que é uso legítimo)`,
+  );
+}
+
+/**
+ * A linha está dentro do bloco de tradução do passo "Publicação"?
+ *
+ * Varredura para trás até achar a abertura de um bloco de primeiro nível. É
+ * grosseiro e suficiente: o alvo é um objeto de tradução com dois níveis de
+ * indentação, não JSON arbitrário — e o custo de errar para o lado rígido aqui
+ * é uma frase reescrita, contra uma promessa não medida indo para a tela.
+ */
+function dentroDoBlocoPublish(linhas: string[], indice: number): boolean {
+  for (let i = indice; i >= 0 && indice - i < 40; i--) {
+    const m = linhas[i].match(/^\s{0,6}"([a-zA-Z_]+)"\s*:\s*\{/);
+    if (m) return m[1] === "publish";
+  }
+  return false;
+}
+
+/** Lista recursiva de arquivos .md sob um diretório; vazio se ele não existir. */
+async function listDocFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  try {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...(await listDocFiles(full)));
+      else if (entry.name.endsWith(".md")) out.push(full);
+    }
+  } catch {
+    // Diretório ausente não é falha desta guarda; o contador acima acusa se
+    // NADA for inspecionado.
+  }
+  return out;
+}
+
+/**
+ * Declarar suporte a formato exige EVIDÊNCIA.
+ *
+ * `supported: true` com `evidence: "none"` é um palpite bem escrito ocupando o
+ * lugar de um fato — e a consequência não é abstrata: a tela passa a oferecer
+ * proporção a um vendor que ninguém nunca viu honrar uma, e o cliente só
+ * descobre olhando o vídeo pronto.
+ *
+ * A guarda também registra que NINGUÉM está em `vendor_response` hoje. Quando
+ * o primeiro vendor chegar lá, esta nota muda sozinha — e é ela que autoriza a
+ * UI a parar de dizer "ainda não verificado".
+ */
+function checkSupportClaimsHaveEvidence(failures: string[], notes: string[]): void {
+  const porEvidencia: string[] = [];
+  let confirmadosPorResposta = 0;
+
+  for (const [vendorId, entry] of Object.entries(VENDOR_FORMAT_SUPPORT)) {
+    if (entry.supported && entry.evidence === "none") {
+      failures.push(
+        `formato: "${vendorId}" declara suporte a formato com evidência "none". Suporte sem nada que o ` +
+          "sustente é palpite ocupando o lugar de fato — e faz a tela oferecer uma proporção que o vendor " +
+          "pode ignorar em silêncio, que é o modo de falha mais caro (só aparece no vídeo pronto).",
+      );
+    }
+    if (entry.evidence === "vendor_response") confirmadosPorResposta += 1;
+    porEvidencia.push(`${vendorId}=${entry.supported ? "sim" : "não"}/${entry.evidence}`);
+  }
+
+  notes.push(
+    `formato: evidência por vendor (${porEvidencia.join(", ")}); ` +
+      `${confirmadosPorResposta} confirmado(s) por resposta real do fornecedor`,
+  );
 }
 
 /**

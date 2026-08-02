@@ -66,6 +66,29 @@ export const FIXTURE_VIDEO_FILES: Record<AspectRatio, string> = {
 };
 
 /**
+ * Dimensões reais de cada fixture, conferidas com `ffprobe`.
+ *
+ * **A SIMULAÇÃO HONRA PROPORÇÃO, NÃO RESOLUÇÃO — e isto está aqui para que
+ * essa distinção não se perca.** Todas as fixtures são pequenas (o maior lado
+ * tem 640 px); nenhuma corresponde a 720p, 1080p ou 4k. Ou seja: pedir `720p`
+ * e receber 640×360 é o comportamento CORRETO da simulação, e não há como
+ * verificar em fixture se o campo `resolution` produz o efeito pedido.
+ *
+ * Fazer as fixtures nascerem em 720p pareceria mais fiel e seria pior: daria a
+ * impressão de que a resolução foi verificada, quando a simulação apenas
+ * devolveria o arquivo que nós mesmos escolhemos. Um falso verde que custa
+ * disco. A verificação de resolução só existe em live, e está declarada como
+ * pendente — `npm run check` reprova qualquer texto de produto que afirme
+ * resolução entregue.
+ */
+export const FIXTURE_VIDEO_DIMENSIONS: Record<AspectRatio, { width: number; height: number }> = {
+  "16:9": { width: 640, height: 360 },
+  "9:16": { width: 360, height: 640 },
+  "4:5": { width: 512, height: 640 },
+  "1:1": { width: 512, height: 512 },
+};
+
+/**
  * Duração real dos artefatos de fixture, em segundos, conferida com `ffprobe`.
  *
  * Existe para que a simulação declare a duração do que entrega, como a HeyGen
@@ -158,7 +181,46 @@ export function trainAvatarFixture(): TrainAvatarResult {
   };
 }
 
+/**
+ * Corpo de erro que a simulação de falha reproduz.
+ *
+ * Copiado da FORMA de um 400 de fornecedor, não inventado livremente: envelope
+ * `{ error: { code, message } }`, e um campo `api_key` dentro — porque
+ * fornecedores costumam ecoar parte da requisição no erro, e é exatamente aí
+ * que uma chave chega ao log sem ninguém ter pedido. O valor abaixo não é uma
+ * chave: é um literal de teste, e existe para que a máscara do LOG-1 tenha o
+ * que mascarar.
+ */
+export const FIXTURE_VENDOR_ERROR_BODY = JSON.stringify({
+  error: { code: "invalid_request", message: "avatar_id not found or not ready" },
+  api_key: "valor-de-teste-que-nao-e-uma-chave",
+});
+
+/**
+ * Marcador que faz um avatar simulado FALHAR na geração.
+ *
+ * Mesma convenção de `-processing-`: o id decide o comportamento. Isso mantém
+ * o caminho de falha exercitável sem variável de ambiente nova, sem tocar a
+ * rede e sem um ramo especial dentro da rota — a rota não sabe que é
+ * simulação, que é a única forma de o teste dizer alguma coisa sobre ela.
+ */
+export const FIXTURE_FAIL_MARKER = "-fail-";
+
+export class FixtureVendorFailure extends Error {
+  constructor() {
+    super(`HeyGen API error (400): ${FIXTURE_VENDOR_ERROR_BODY}`);
+    this.name = "FixtureVendorFailure";
+  }
+}
+
 export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoResult {
+  // Falha ANTES de registrar o job: é o que acontece quando o fornecedor
+  // recusa a criação — nenhum job existe do lado dele, e é essa a fronteira do
+  // estorno fixada no ESTORNO-1.
+  if (input.providerAvatarId.includes(FIXTURE_FAIL_MARKER)) {
+    throw new FixtureVendorFailure();
+  }
+
   const providerJobId = `fixture-${randomUUID()}`;
   jobs.set(providerJobId, {
     tenantId: input.tenantId,

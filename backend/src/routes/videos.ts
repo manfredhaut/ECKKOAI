@@ -14,7 +14,7 @@ import { ARTIFACT_INVALID_MESSAGE, InvalidArtifactError, validateVideoArtifact }
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
-import { resolveVideoFormat, type VideoFormat } from "../services/providers/videoFormat.js";
+import { resolveVideoFormat, vendorFormatSupport, type VideoFormat } from "../services/providers/videoFormat.js";
 import { isFeatureEnabled } from "../services/featureFlagStore.js";
 
 const POLL_INTERVAL_MS = 5000;
@@ -136,6 +136,21 @@ function pollJob(
 }
 
 export async function videoRoutes(app: FastifyInstance): Promise<void> {
+  /**
+   * O provedor conectado a ESTE tenant honra a proporção escolhida?
+   *
+   * Existe para o passo "Publicação" não prometer o que o vendor do cliente
+   * não entrega. Sem isto, a tela ofereceria 9:16 a um tenant em D-ID e a
+   * geometria sairia da imagem de origem — sem erro nenhum, que é o modo de
+   * falha mais caro: o cliente só descobre olhando o vídeo pronto.
+   *
+   * Nunca devolve chave nem nada da credencial além do nome do vendor.
+   */
+  app.get("/video-format-support", async (req) => {
+    const credential = await getCredential(req.tenantId, "avatar");
+    return vendorFormatSupport(credential?.vendor ?? null);
+  });
+
   app.get("/videos", async (req) => {
     const { rows } = await pool.query<Video>(
       "SELECT * FROM videos WHERE tenant_id = $1 ORDER BY created_at DESC",

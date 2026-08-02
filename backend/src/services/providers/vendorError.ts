@@ -11,6 +11,8 @@
 // que fazer; o detalhe do fornecedor vai para o log do servidor, onde a
 // equipe o encontra. Nunca os dois no mesmo lugar.
 
+import { scrubSecretsFromText } from "./vendorResponseLog.js";
+
 export type VendorKind = "script" | "voice" | "avatar";
 
 export type VendorFailure =
@@ -79,8 +81,20 @@ export function toClientVendorError(
       context,
       kind,
       failure,
-      // Detalhe do fornecedor fica AQUI, no servidor, e só aqui.
-      detail: err instanceof Error ? err.message : String(err),
+      // Detalhe do fornecedor fica AQUI, no servidor, e só aqui — passado pela
+      // MESMA varredura de segredos que o LOG-1 aplica a corpo não-JSON.
+      //
+      // Não é zelo preventivo: `fetchJson` monta a exceção como
+      // "<Vendor> API error (<status>): <corpo bruto>", então o corpo INTEIRO
+      // do fornecedor viaja dentro de `err.message` e chegava aqui em claro.
+      // O `vendor_response` mascarava aquele mesmo corpo alguns milissegundos
+      // antes, e este evento o publicava de volta legível — o defeito exato
+      // que o LOG-1 corrigiu, num evento que ninguém tinha olhado. Medido em
+      // 2026-08-01: um 400 com `api_key` no corpo saiu inteiro por aqui.
+      //
+      // Um segredo mascarado num evento e legível no seguinte não está
+      // mascarado.
+      detail: scrubSecretsFromText(err instanceof Error ? err.message : String(err)),
     }),
   );
   return { failure, message: vendorErrorMessage(kind, failure) };

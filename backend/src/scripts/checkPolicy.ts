@@ -27,6 +27,8 @@ import {
 } from "./checkLiveBudgetPolicy.js";
 import { checkVendorLogPolicy } from "./checkVendorLogPolicy.js";
 import { checkVideoFormatPolicy } from "./checkVideoFormatPolicy.js";
+import { checkVendorErrorPathPolicy } from "./checkVendorErrorPathPolicy.js";
+import { checkImageFreshnessPolicy } from "./checkImageFreshnessPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -381,6 +383,16 @@ async function main(): Promise<void> {
   const formatResult = await checkVideoFormatPolicy(process.env.REPO_ROOT ?? "/repo");
   formatResult.failures.forEach((f) => failures.push(f));
   formatResult.notes.forEach((n) => note(n));
+
+  // --- 17. caminho de erro do fornecedor: corpo no log, mascarado ---------
+  const errorPathResult = await checkVendorErrorPathPolicy();
+  errorPathResult.failures.forEach((f) => failures.push(f));
+  errorPathResult.notes.forEach((n) => note(n));
+
+  // --- 18. a imagem do frontend corresponde ao repositório ---------------
+  const freshnessResult = await checkImageFreshnessPolicy(process.env.REPO_ROOT ?? "/repo");
+  freshnessResult.failures.forEach((f) => failures.push(f));
+  freshnessResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

@@ -316,7 +316,7 @@ export function logVendorBinaryResponse(input: {
  * registrar nada — e é justamente o corpo não-JSON (um HTML de 502, um texto
  * de erro de proxy) que costuma explicar as falhas mais confusas.
  */
-function scrubSecretsFromText(text: string): string {
+export function scrubSecretsFromText(text: string): string {
   return text
     .replace(/(api[_-]?key|secret|password|authorization|token)("?\s*[:=]\s*"?)[^"\s,&}]+/gi, `$1$2${REDACTED}`)
     .replace(/\b(sk-[A-Za-z0-9-]{8,}|AIza[A-Za-z0-9_-]{8,})\b/g, REDACTED);

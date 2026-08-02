@@ -114,6 +114,15 @@ services:
       - ./backend/src:/repo/backend/src:ro
       - ./backend/scripts:/repo/backend/scripts:ro
       - ./frontend/src:/repo/frontend/src:ro
+      # Os arquivos que a imagem do frontend COPIA e o compose NÃO monta — é
+      # exatamente esse conjunto que pode divergir em silêncio entre o
+      # repositório e a imagem em execução. O gate calcula o hash deles e o
+      # compara com o carimbo gravado no build (ver frontend/image-stamp.mjs).
+      - ./frontend/package.json:/repo/frontend/package.json:ro
+      - ./frontend/tsconfig.json:/repo/frontend/tsconfig.json:ro
+      - ./frontend/vite.config.ts:/repo/frontend/vite.config.ts:ro
+      - ./frontend/Dockerfile:/repo/frontend/Dockerfile:ro
+      - ./frontend/image-stamp.mjs:/repo/frontend/image-stamp.mjs:ro
       - ./tools:/repo/tools:ro
     depends_on:
       postgres:

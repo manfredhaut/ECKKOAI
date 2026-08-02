@@ -503,7 +503,13 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-01 — Bloco FORMATO-1: o payload de geração
+**Última atualização:** 2026-08-02 — Bloco PREVOO-1 (3.5), de verificação:
+confirmou que a geração usa **v3** (sem parada condicional), achou e corrigiu um
+vazamento de chave no evento `vendor_error`, mediu que o **teto de sessão não
+volta quando a geração falha** (registrado, NÃO corrigido — é decisão de
+produto), criou a invariante de frescor da imagem do frontend, exigiu evidência
+para declaração de suporte por vendor, e escreveu o plano da passada live. Tudo
+em fixture, zero chamadas tarifadas. Antes dele, o Bloco FORMATO-1: o payload de geração
 passou a levar `aspect_ratio` e `resolution` SEMPRE, derivados da plataforma
 escolhida num passo novo ("Publicação", 5 de 6). O motor é selecionado a partir
 do `supported_api_engines` declarado pelo avatar, gravado sempre e **enviado só
@@ -1381,6 +1387,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-02 | **PREVOO-1 (3.5)** | **Verificação pré-live: geração confirmada em v3; corpo de erro vazava chave num 2º evento (corrigido); teto de sessão não volta em falha (medido, não corrigido); frescor da imagem do frontend; evidência por vendor; plano da passada live. 48 mutantes. Ver abaixo.** |
 | 08-01 | **FORMATO-1** | **Formato explícito no payload, derivado da plataforma; motor selecionado e registrado atrás de flag; 4 fixtures por proporção; guarda nova (41 mutantes no total). Ver abaixo.** |
 | 08-01 | **GUARDAS-1** | **`npm run check:mutants`: 38 mutantes provam que cada guarda reprova de verdade. D, C, E, B, G consertados + 1 achado novo (teto testado sem quem o chama). Ver abaixo.** |
 | 08-01 | **LIVE-2** | **Voz entra no LOG-1 (sem bytes de áudio); `provider_usage` grava duração real e pedida lado a lado; guarda nova de registro de resposta. Ver abaixo.** |
@@ -1719,6 +1726,226 @@ está:
 - **O que a D-ID faz com a proporção.** Declarada como `supported: false` (a
   geometria sai da imagem de origem), e **nenhuma resposta real da D-ID foi
   observada em nenhuma sessão** — a declaração é leitura de doc, não medição.
+
+### Bloco PREVOO-1 (3.5) — verificação antes da passada live (CONCLUÍDO)
+
+Bloco de **verificação**, não de construção. Ambiente em `fixture` do começo ao
+fim, `PROVIDER_LIVE_CONFIRM` vazia, **zero chamadas tarifadas**.
+
+**1. Versão da API — MEDIDO pelo código, e sem parada condicional.** O caminho
+de geração é **v3**. Todos os endpoints HeyGen do projeto:
+
+| Endpoint | Versão | Onde | Papel |
+|---|---|---|---|
+| `POST /v3/assets` | v3 | [avatarProvider.ts:243](backend/src/services/providers/avatarProvider.ts:243) | upload de foto e de áudio |
+| `POST /v3/avatars` | v3 | [:265](backend/src/services/providers/avatarProvider.ts:265) | criação (o mais caro: US$ 1,00) |
+| `GET /v3/avatars/{id}` | v3 | [:318](backend/src/services/providers/avatarProvider.ts:318) | status do avatar (`// ASSUMPTION`) |
+| `POST /v3/videos` | **v3** | [:380](backend/src/services/providers/avatarProvider.ts:380) | **geração** |
+| `GET /v3/videos/{id}` | **v3** | [:406](backend/src/services/providers/avatarProvider.ts:406) | **polling** |
+| `GET /v2/user/remaining_quota` | v2 | [:450](backend/src/services/providers/avatarProvider.ts:450) | teste de credencial — **sunset 2026-10-31** |
+| `GET /v2/user/remaining_quota` | v2 | [platformKeyProbe.ts:27](backend/src/services/providers/platformKeyProbe.ts:27) | botão "Validar" do painel |
+
+**DOCUMENTADO:** `aspect_ratio`, `resolution` e `engine` pertencem ao schema
+`CreateVideoFromAvatar` de `POST /v3/videos` — confirmado em duas leituras
+independentes da doc pública. Cuidado com uma armadilha de fonte: o campo
+`dimension {width,height}` que aparece em specs de terceiros é da **v2**
+(`/v2/video/generate`); a v3 usa `resolution` + `aspect_ratio`. Quem consultar
+a v2 por engano vai montar um payload que a v3 ignora.
+
+**ACHADO, e era um buraco real:** `GENERATION_ENDPOINTS` — a deny-list que
+impede o probe de validação de apontar para um endpoint que gera — conhecia
+**só `/v2/video/generate`**. O caminho de geração deste projeto é v3 desde
+sempre, então um probe apontado para `api.heygen.com/v3/videos` passava
+**verde**. Pior: `/v3/avatars` custa US$ 1,00 por chamada, contra US$ 0,15 de um
+vídeo curto. Os dois entraram na lista, e o mutante correspondente passou a
+apontar para a v3. *Lição: deny-list nomeia o que conhece, e envelhece em
+silêncio quando o código migra de versão.*
+
+**2. Caminho de erro do fornecedor — e o achado mais sério do bloco.**
+
+**MEDIDO:** um 400 do fornecedor com um campo `api_key` no corpo saía **em
+claro** no log. Não por falta do LOG-1 — o `vendor_response` mascarava
+corretamente —, mas porque `fetchJson` monta a exceção como
+`"<Vendor> API error (400): <corpo bruto>"`, de modo que o **corpo inteiro
+viaja dentro de `err.message`**, e `toClientVendorError` publicava esse texto
+no evento `vendor_error` alguns milissegundos depois.
+
+É exatamente o defeito que o LOG-1 corrigiu, num evento que ninguém tinha
+olhado. **Um segredo mascarado num evento e legível no seguinte não está
+mascarado.** Corrigido passando o `detail` pela mesma varredura
+(`scrubSecretsFromText`, agora exportada).
+
+Guarda nova ([checkVendorErrorPathPolicy.ts](backend/src/scripts/checkVendorErrorPathPolicy.ts)),
+exercitando o caminho real com `fetch` substituído e `console` capturado —
+sem rede, sem banco, sem consumir teto. Quatro asserções que puxam em direções
+opostas de propósito: o erro **interrompe** (não vira job pendurado), o corpo
+**chega** ao log, o segredo **não** chega em claro, e nada do fornecedor chega
+à mensagem do cliente.
+
+*Medido no caminho HTTP real, com a fixture de falha:* estado terminal `error`,
+`provider_job_id` nulo, mensagem genérica em pt-BR na tela.
+
+**NÃO VERIFICADO:** que a HeyGen real devolve o corpo de erro na forma
+simulada aqui (`{error:{code,message}}`) — nenhuma resposta de erro real do
+fornecedor foi observada em nenhuma sessão.
+
+**3. Contabilidade em falha — MEDIDO, e NÃO corrigido (decisão do usuário).**
+
+| O quê | Comportamento medido | Onde um conserto entraria |
+|---|---|---|
+| Crédito | **Debita e ESTORNA.** Saldo 1 → 1, com `−1 consumption` e `+1 refund` no ledger | correto como está — [videos.ts:305](backend/src/routes/videos.ts:305) e [:373](backend/src/routes/videos.ts:373) |
+| **Teto de sessão** | **CONSOME e NÃO devolve.** Medido com `fetch` substituído por 400: usado 0 → **1**, consumido por `["geração de vídeo"]` | [avatarProvider.ts:659](backend/src/services/providers/avatarProvider.ts:659) (vídeo) e [voiceProvider.ts:61](backend/src/services/providers/voiceProvider.ts:61) (voz) — o `consumeLiveGeneration` fica **antes** da chamada, e não há devolução no `catch` |
+| `provider_usage` | **NÃO registra nada** numa falha de criação: 70 linhas antes, 70 depois | a escrita só acontece no polling, ao ficar `ready` ([videos.ts](backend/src/routes/videos.ts)) |
+
+**Consequência prática para o Bloco 5, e é o motivo de isto ter sido medido:**
+com `MAX_GENERATIONS=2`, **duas falhas esgotam o teto sem nenhum vídeo ter
+saído**, e a única saída é reiniciar o backend (o contador é por processo).
+Uma falha na voz também conta — o teto é compartilhado.
+
+**Nota de custo:** `synthesizeSpeech` tenta **dois** endpoints do ElevenLabs
+(`synthesizeWithTimestamps` e, se falhar, `synthesizePlain`) — observado no log
+durante a medição. São duas chamadas por geração, não uma.
+
+**4. Resolução não é observável em fixture — registrado e congelado.**
+
+**MEDIDO:** as fixtures têm no máximo 640 px de lado (640×360, 360×640,
+512×640, 512×512). A simulação honra **proporção**, e só ela. Pedir `720p` e
+receber 640×360 é o comportamento **correto** da simulação.
+
+Fazer as fixtures nascerem em 720p pareceria mais fiel e seria pior: daria a
+impressão de que a resolução foi verificada, quando a simulação apenas
+devolveria o arquivo que nós escolhemos. A guarda reprova se alguma fixture
+**coincidir** com uma resolução declarada — a asserção é o inverso do
+instinto, de propósito.
+
+Uma segunda guarda reprova texto de produto que **afirme resolução entregue**.
+Ela precisou aprender uma distinção: resolução de **entrada** ("grave em 1080p
+em vez de 4K") é uso legítimo e frequente. A primeira versão proibia o termo e
+acusou **seis** usos legítimos de uma vez — e guarda que acusa uso legítimo é
+abandonada, o que já custou caro aqui (GUARDAS-1, achado C). Agora são duas
+camadas: coocorrência com verbo de entrega em qualquer texto, e proibição
+total dentro do bloco de tradução do passo "Publicação", onde não existe uso
+legítimo. *Medido: 0 promessas, 6 menções a resolução de entrada.*
+
+**5. Frescor da imagem do frontend — a invariante que faltava.**
+
+O defeito real: a imagem era anterior ao commit que acrescentou
+`__MAX_IMAGE_BYTES__` ao `vite.config.ts`, arquivo **fora do bind mount**. A
+app inteira ficava em branco, com console limpo, Vite anunciando `ready` e
+healthcheck verde. **Nenhum sinal do ambiente apontava para "imagem velha".**
+
+Desenho: hash dos arquivos **copiados e não montados** (`package.json`,
+`tsconfig.json`, `vite.config.ts`, `Dockerfile`), gravado em `/app/.image-stamp`
+**durante o build** e servido em `GET /__image-stamp` por um plugin do Vite. O
+gate recalcula a partir do repositório e compara. Fins de linha normalizados —
+sem isso, todo build no Windows acusaria divergência permanente, e guarda que
+acusa sempre é abandonada na primeira semana.
+
+O carimbo fica em `/app` puro, e não em `src/` ou `public/`: nesses o host
+sobrescreveria, e o carimbo passaria a comparar o repositório com ele mesmo.
+
+**Frontend fora do ar vira NOTA, não falha** — o gate também é verificação de
+código, e amarrá-lo a um serviço de pé produziria o falso positivo que ensina
+a ignorar o gate. A nota diz que a verificação **não aconteceu**, em vez de
+fingir que passou.
+
+**6. Verdade da promessa por vendor.** `VENDOR_FORMAT_SUPPORT` ganhou
+`evidence`: `vendor_response` (nenhum vendor está aqui) > `documentation`
+(HeyGen) > `none` (D-ID). O gate reprova `supported: true` com `evidence:
+"none"` — suporte sem nada que o sustente é palpite ocupando o lugar de fato.
+
+`GET /video-format-support` diz à tela se o provedor **daquele tenant** honra a
+proporção. *Medido nos dois estados, na galeria:* provedor que honra → 5 chips,
+0 desabilitados, sem aviso; provedor que não honra → 5 chips, **5
+desabilitados**, com o motivo em vermelho. Contrato das feature flags aplicado:
+o recurso **não some**, aparece inerte **com o motivo**.
+
+*Defeito que a própria galeria expôs, de novo:* uma prop faltando derrubou o
+painel — e o error boundary do PENDENCIAS-1 isolou, mostrando
+`vendorHonors is not defined` em vez de deixar a galeria inteira em branco.
+Segunda vez que esse boundary paga por si.
+
+**Facebook entrou no catálogo** (a pedido, durante o bloco): entrada própria
+"Feed do Facebook" em 4:5 — mesma proporção do feed do Instagram, e isso é o
+caso normal, não duplicação a eliminar: quem publica no Facebook procura
+"Facebook" na lista, não "4:5". O Facebook Reels entrou no rótulo do 9:16. São
+**5 plataformas → 4 proporções**.
+
+**Estado das guardas ao fim do bloco:** `npm run check` verde,
+`npm run check:mutants` **48/48**.
+
+**Três mutantes nasceram errados, e os três ensinam coisa diferente** — vale
+mais que o resultado:
+
+1. **`expect` com a caixa errada.** A mensagem diz "**NÃO** corresponde ao
+   repositório" e o `expect` dizia "não corresponde". O arnês compara com
+   `includes`, que diferencia maiúscula, então uma guarda perfeitamente
+   saudável apareceu como AMBÍGUA. Segunda vez que um `expect` mal escrito
+   acusa guarda boa (a primeira foi no FORMATO-1, com a contagem).
+2. **Mutante que testa a proposição errada.** O primeiro mutante do caminho de
+   erro removia o corpo da *mensagem da exceção* para provar que "o corpo vai
+   ao log" — mas o corpo chega ao log pelo `rawBody`, que não passa pela
+   mensagem. O mutante não introduzia o defeito que a guarda pega, e o gate
+   passava verde com razão.
+3. **O melhor achado: a guarda verificava menos do que afirmava.** Ao esvaziar
+   o corpo do `vendor_response`, o gate continuou verde — porque o
+   `vendor_error`, emitido depois, repete o mesmo texto dentro do `detail`. A
+   asserção dizia "o corpo chega ao log" e o que ela verificava era "o corpo
+   aparece em algum lugar". São coisas diferentes: o `vendor_error` passa por
+   scrub e é emitido *depois* da interpretação, então depender dele esvaziaria
+   justamente a garantia que o LOG-1 existe para dar. Corrigido recortando o
+   evento antes de procurar.
+
+### PLANO DA PASSADA LIVE (Bloco 5) — siga na ordem, sem improvisar
+
+Escrito antes de precisar dele, porque no meio de uma passada que gasta
+dinheiro não se lê documentação.
+
+**Antes de qualquer coisa:**
+
+```bash
+docker compose exec backend npm run preflight:live
+```
+
+**1. Teto para 2, no `.env`, e recriar o container.** O teto conta **voz e
+vídeo juntas** — 1 não basta para um fluxo completo, e foi assim que a
+primeira passada live morreu.
+
+```bash
+docker compose up -d backend
+```
+
+`docker compose restart` **NÃO recarrega variável de ambiente** — só `up -d`
+recria o container. Recriar zera o log, e tudo bem: isto acontece **antes** da
+passada. **Depois disto, só `restart`** — ele preserva o log acumulado e zera
+o contador do teto, que é exatamente a combinação desejada se algo falhar no
+meio.
+
+**2. Captura de log em UTF-8.** No PowerShell, `>` e `Out-File` sem
+`-Encoding` gravam **UTF-16LE**, e `grep` não acha nada dentro:
+
+```bash
+docker compose logs backend | Out-File -Encoding utf8 live-run.log
+```
+
+**3. Ordem das gerações: 9:16 PRIMEIRO.** O horizontal já foi visto funcionar;
+o vertical é a pergunta aberta do Bloco 3. Se só couber uma geração, tem de ser
+a que responde algo. **16:9 depois, e só se a primeira passar.**
+
+**4. Baixe o artefato IMEDIATAMENTE, para fora do projeto.** A URL da HeyGen é
+assinada e expira (`Expires=` observado no LIVE-1). Depois rode `ffprobe` no
+arquivo baixado: **é a única forma de saber a geometria real**, porque nenhuma
+resposta da HeyGen declara dimensão — nem a criação nem o polling.
+
+**5. `explicit_avatar_engine` permanece DESLIGADA.** A ligação entre
+`supported_api_engines` e `engine.type` é dedução, e um valor recusado derruba
+a geração inteira — que é o caminho caro. A seleção continua sendo gravada com
+a razão `flag_off`, então a passada colhe o dado sem arriscar nada.
+
+**6. Se falhar, lembre-se do que a medição do item 3 diz:** a tentativa
+**consumiu** uma unidade do teto e ela **não volta**. Reinicie o backend
+(`docker compose restart backend`) para zerar o contador antes de tentar de
+novo. O crédito, esse, é estornado sozinho.
 
 ### Bloco LIVE-2 — a voz entra no log e o consumo passa a ser medido (CONCLUÍDO)
 

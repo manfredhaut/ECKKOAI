@@ -1,5 +1,36 @@
-import { defineConfig } from "vite";
+import { readFileSync } from "node:fs";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+
+/**
+ * Publica o carimbo de frescor da imagem em `GET /__image-stamp`.
+ *
+ * É o único jeito de o gate — que roda dentro do container do backend —
+ * descobrir o que há DENTRO da imagem do frontend. Ele compara essa resposta
+ * com o hash calculado a partir do repositório; divergiu, a imagem está velha.
+ *
+ * Responde em texto puro e nunca falha: se o carimbo não existir (imagem
+ * construída antes desta invariante), devolve um valor que se identifica como
+ * tal, para o gate distinguir "imagem antiga demais" de "imagem divergente" —
+ * são causas diferentes com a mesma cara.
+ */
+function imageStampPlugin(): Plugin {
+  return {
+    name: "eckko-image-stamp",
+    configureServer(server) {
+      server.middlewares.use("/__image-stamp", (_req, res) => {
+        let stamp: string;
+        try {
+          stamp = readFileSync("/app/.image-stamp", "utf8").trim();
+        } catch {
+          stamp = "sem-carimbo";
+        }
+        res.setHeader("content-type", "text/plain; charset=utf-8");
+        res.end(stamp);
+      });
+    },
+  };
+}
 
 const traefikHttpPort = Number(process.env.TRAEFIK_HTTP_PORT) || 8090;
 // Single source of truth is backend/src/domainConfig.ts — this is just the
@@ -37,7 +68,7 @@ const devGallery = process.env.DEV_GALLERY === "1" && !isProduction;
 const devCred = (name: string) => (devAutofill ? (process.env[name] ?? "") : "");
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), imageStampPlugin()],
   define: {
     __BASE_DOMAIN__: JSON.stringify(baseDomain),
     __WHATSAPP_NUMBER__: JSON.stringify(whatsappNumber),
