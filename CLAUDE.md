@@ -2446,9 +2446,16 @@ As duas pareciam corretas na leitura.
   viola a regra "nada ampliado". **A cópia A, intocada, é o ativo.** As duas
   estão lado a lado em `uploads/c77a5b8a-…/` e em
   `Documents/eckko-live-2026-08-02/`.
-- **8 vídeos de teste da Fase 2 continuam no banco**, marcados SIMULADO. Não
-  foram apagados: apagar zeraria `related_video_id` no `credit_ledger`, e a
-  instrução desta sessão foi não tocar em dado de ledger.
+- **Os 9 vídeos e 3 avatares de teste da Fase 2 foram removidos** — eles
+  ocupavam o TOPO da Biblioteca, que é a primeira coisa que a apresentação
+  mostra. A remoção zera `related_video_id` no `credit_ledger` (FK `SET
+  NULL`), mas **não toca em valor nenhum**: *medido antes e depois*,
+  `avatar=4 script=9 video=-2` nos dois lados. Mesmo precedente da limpeza da
+  Fase 1. A divergência saldo × ledger que já existia continua **intocada** —
+  decidir qual dos dois números está certo segue sendo decisão do usuário.
+  *Conferido na tela ao fim:* topo da Biblioteca é o vídeo real, **sem
+  badge**, tocando 720×1280 em `9/16`, download 200 com 1.742.664 bytes; as
+  linhas de fixture logo abaixo, todas com SIMULADO.
 - **A tela de custo conta só o vídeo.** Neste mês: US$ 5,71 medidos, e **6
   consumos sem taxa** fora do total — 256 caracteres de voz no ElevenLabs e
   669 tokens de roteiro no Gemini. A legenda do card já declara isso.
