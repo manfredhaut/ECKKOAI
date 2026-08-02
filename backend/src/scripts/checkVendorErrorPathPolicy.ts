@@ -44,6 +44,25 @@ const CORPO_DE_ERRO = JSON.stringify({
 
 export const MUTANTS: Mutant[] = [
   {
+    guard: "erro de vendor: a recusa não volta como 201",
+    name: "a rota de geração volta a responder 201 numa recusa",
+    kind: "esperto",
+    // MEDIDO na Fase 2 do bloco 5D, e o defeito é exatamente este: uma geração
+    // que o fornecedor RECUSOU voltava como `HTTP 201 Created` com
+    // `status: "error"` no corpo. `vendorErrorStatus` já estava importado no
+    // arquivo e nunca era chamado — `videos.ts` era a única das seis rotas que
+    // tratam erro de fornecedor sem ele.
+    //
+    // O mutante é esperto porque a linha do vídeo continua sendo devolvida, com
+    // `status: "error"` e a mensagem sanitizada dentro: tudo que uma guarda de
+    // "a falha é registrada?" verificaria continua verdade. Só o código HTTP
+    // mente — e `api/client.ts` só levanta erro quando `!res.ok`.
+    file: "backend/src/routes/videos.ts",
+    find: "      return reply.code(vendorErrorStatus(failure)).send(errored[0]);",
+    replace: "      return reply.code(201).send(errored[0]);",
+    expect: "responde 201 quando o fornecedor recusa",
+  },
+  {
     guard: "erro de vendor: 400 interrompe o caminho",
     name: "resposta de erro deixa de ser tratada como erro",
     kind: "obvio",
@@ -205,9 +224,35 @@ export async function checkVendorErrorPathPolicy(): Promise<VendorErrorPathResul
     failures.push("erro de vendor: PROVIDER_MODE não voltou para fixture depois da verificação.");
   }
 
+  // A recusa não pode voltar como sucesso HTTP.
+  //
+  // Textual, e ancorado no USO de `vendorErrorStatus` dentro do ramo de falha —
+  // não na importação, que estava lá o tempo todo e não impediu nada (é
+  // literalmente como este defeito passou despercebido). Ver checklist nº 10
+  // do CLAUDE.md.
+  const { readFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const repoRoot = process.env.REPO_ROOT ?? "/repo";
+  let rota = "";
+  try {
+    rota = await readFile(path.join(repoRoot, "backend/src/routes/videos.ts"), "utf-8");
+  } catch {
+    failures.push("erro de vendor: não consegui ler routes/videos.ts — verificador cego é pior que reprovar.");
+  }
+  const semComentarios = rota.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  if (rota && !/reply\.code\(vendorErrorStatus\(failure\)\)\.send\(errored\[0\]\)/.test(semComentarios)) {
+    failures.push(
+      "erro de vendor: routes/videos.ts responde 201 quando o fornecedor recusa a geração, em vez de um " +
+        "status de erro derivado de `vendorErrorStatus`. A linha do vídeo até volta com status 'error' " +
+        "dentro, mas `api/client.ts` só levanta erro quando `!res.ok` — com 201, a recusa é lida como " +
+        "sucesso por qualquer consumidor que confie no código HTTP, que é para isso que ele existe.",
+    );
+  }
+
   notes.push(
     "erro de vendor: 400 exercitado no caminho real — corpo no log, segredo mascarado nos dois eventos, " +
       "nada do fornecedor na mensagem ao cliente",
   );
+  notes.push("erro de vendor: a recusa de geração responde status de erro derivado do fornecedor, nunca 201");
   return { failures, notes };
 }

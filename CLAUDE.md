@@ -1443,6 +1443,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-02 | **5D fases 1-bis a 2** | **Badge ancorado na LIGAÇÃO (não só na presença); predicado ÚNICO de prontidão consumido pela rota e pela tela; artefato do fornecedor persistido no nosso disco; `model_id` explícito no TTS; cronômetro de gravação vira meta; 2ª passada live 9:16. 76 mutantes. Ver abaixo.** |
 | 08-02 | **5D fases 0 e 1** | **Percurso dos 6 passos catalogado; fixture passa a valer para os provedores de TEXTO (não valia); vídeo reproduzível na Biblioteca; custo no passo 4; ledger negativo medido e NÃO alterado; telas que mentiam. 64 mutantes. Ver abaixo.** |
 | 08-02 | **TETO-1** | **A falha devolve o teto de GASTO; o laço passa a ser barrado por um contador de TENTATIVAS que não volta. Guarda nova com 3 asserções opostas; 56 mutantes. Ver abaixo.** |
 | 08-02 | **4A — OPERACIONAL** | **Custo real na tela (constante única medida; estimativa e medição lado a lado); rastro da falha em provider_usage; redação no sumidouro do log; freio derivado de catálogo de endpoints; 4 desfechos medidos. Tabela de taxas manual REMOVIDA do banco. Ver abaixo.** |
@@ -2307,6 +2308,150 @@ duas chaves e a condição no componente.
    dentro do `replace` do mutante declarado no próprio arquivo. Quarta vez que
    uma guarda tropeça no texto escrito para descrevê-la, e a primeira em que
    esse texto era a prova de que ela funciona.
+
+### Bloco 5D — fases 1-bis a 2 (véspera da apresentação, 2026-08-02)
+
+**A passada live nº 2 saiu, e o vertical é REAL.** `ffprobe` no arquivo
+baixado: **720×1280, DAR 9:16, SAR 1:1, 25 fps, 16,96 s**, h264+aac, 1,74 MB.
+A pergunta central do FORMATO-1 está respondida — **9:16 sai vertical de
+verdade**, e o payload leva `aspect_ratio: "9:16"` + `resolution: "720p"`
+(exercitado pelo montador real), sem `dimension` e sem `engine` (`flag_off`).
+
+| Medida | Antes | Depois | Delta |
+|---|---|---|---|
+| Quota HeyGen | 921 | 873 | −48 |
+| Carteira | US$ 15,35 | US$ 14,55 | **−US$ 0,80** |
+
+**60 unidades/dólar confirmado num terceiro ponto.** Custo por segundo
+ENTREGUE: 0,80 ÷ 16,972 = **US$ 0,047/s** em 9:16/720p, contra US$ 0,045/s
+medido em 16:9. A diferença de 4,5% não distingue "9:16 custa mais" de
+arredondamento por bloco — **não medido**.
+
+**A estimativa errou para o OUTRO lado desta vez, e isso é o achado.** O
+LIVE-1 pediu 15 s e recebeu 3,37 s (estimativa 4,5× alta). Aqui pediu 15 s e
+recebeu 16,97 s (estimativa **0,88× do real**, isto é, baixa). A direção do
+erro não é do sistema: é o comprimento do ROTEIRO, porque a tela estima sobre
+a duração escolhida no seletor e a fatura cobra a duração falada. **Resposta
+pronta para a sala:** a estimativa é do que foi pedido; a medição é do que foi
+entregue; as duas aparecem lado a lado justamente porque divergem.
+
+**1-bis — o badge podia mentir sem sumir da tela.** A guarda já estava
+ancorada no USO (`<SimulatedNotice`), corrigido na Fase 1 — o registro que
+pedia essa correção estava desatualizado. O defeito real era outro:
+verificava **presença**, e presença não é **LIGAÇÃO**. `simulated={false}`,
+`simulated={!video.simulated}` e a prop ausente no selo da Biblioteca
+preservam o elemento intacto no JSX. A terceira é a que mordia: sem prop, o
+selo segue o modo do AMBIENTE, e como a apresentação roda em fixture isso
+carimbaria SIMULADO no único vídeo real da tela.
+
+**1-ter — o botão conhecia três condições, a rota recusava por sete.** Ver a
+tabela do diagnóstico no commit. O predicado único vive em
+[generationReadiness.ts](backend/src/services/generationReadiness.ts) e é
+consumido pela rota **e** pela tela (`POST /videos/readiness` — POST, não GET,
+porque o roteiro é conteúdo do cliente e não pode ir em query string).
+*Medido nos dois lados:* botão inoperante com o motivo em lista ao lado, e
+`POST /videos` → 400 `avatar_not_trained` **com a mensagem idêntica**.
+
+> **CORREÇÃO DE REGISTRO: o limite mensal do plano NÃO é aplicado.** A seção 3
+> deste arquivo afirma que o enforcement existe em `POST /videos` desde
+> 2026-07-21. **Esse código não existe mais** — foi substituído pelo sistema
+> de créditos, que reaproveitou o mesmo código de erro `plan_limit_reached`, e
+> é por isso que a substituição passou despercebida: o sintoma externo ficou
+> idêntico. `subscription.ts` conta vídeos do mês **só para exibir**. Medido:
+> `dev-c77a5b` com 7 vídeos no mês contra limite 2, e nada bloqueia. O
+> "6/2 vídeos" catalogado como bug de UI é isto: **o contador mente**.
+
+**4.5 — a Biblioteca guardava um PONTEIRO, não um vídeo.** Em live, o polling
+gravava a URL assinada de `files2.heygen.ai` direto em `output_url`. *Medido,
+não deduzido:* dos 6 vídeos que ainda apontavam para o fornecedor, **DOIS já
+devolviam 403** — a assinatura tinha vencido. Agora o artefato é baixado,
+validado e gravado no nosso armazenamento antes de virar `ready`;
+`provider_output_url` (migration 040) guarda a URL do fornecedor só para
+rastreio. *Aceite medido com o container recriado e o ambiente de volta em
+fixture:* player 720×1280 `9/16`, download 200 com 1.742.664 bytes e
+assinatura `ftyp`, os dois de `/uploads`, **zero requisições a host externo**.
+
+**A voz: a clonagem aconteceu, e mesmo assim há dois defeitos.**
+`wAd9MJ2IK71FGs1FWjIX` é `category=cloned`, `name="Mário"`, e a geração usou
+essa voz (`requireAudio` lança sem `voiceId` — não há retaguarda para voz de
+catálogo). Os dois defeitos:
+
+1. **A amostra que treinou o clone tem 15,37 s** (ffprobe no wav de
+   referência), contra os 30 s que a própria tela declara como piso.
+2. **A síntese não declarava modelo.** Corpo `{ text }` nos dois ramos —
+   mesma classe de defeito que o FORMATO-1 tirou do payload de vídeo.
+   `ELEVENLABS_TTS_MODEL`, default `eleven_multilingual_v2`, **exercitado
+   contra o fornecedor e ACEITO (200)**. O padrão anterior continua
+   **NÃO CONFIRMADO**: `GET /v1/models` responde 401 com esta chave.
+
+**Três medições da sonda de TTS**, que custou centavos e nenhum vídeo:
+**UMA** chamada de síntese no caminho feliz (o fallback não disparou —
+confirma a correção do 4A); o **teto não se moveu** (gasto 0→0, tentativas
+0→0), provando que `synthesizeSpeech` está fora do contador; 17,6 s de áudio
+para 206 caracteres.
+
+**O cronômetro vigiava o teto e escondia a meta.** "Gravando 0:15 de 2:00 —
+para sozinho em 105s" responde *quanto ainda posso gravar* e nunca *quanto
+preciso gravar*. Foi assim que a amostra de 15,37 s aconteceu. Virou
+[RecordingProgress](frontend/src/pages/CreateVideo/RecordingProgress.tsx), com
+três faixas (<0:30 curto · 0:30–1:00 dá para clonar · ≥1:00 bom) e o que falta
+em segundos. **Verificado na UI real montando o componente pelo módulo do
+Vite** — o que o DEMO-2 não conseguiu, porque a câmera é bloqueada aqui.
+
+**Fase 2 — tabela dos quatro desfechos revalidada, SEM divergência**
+(`MAX_GENERATIONS=1`, `MAX_ATTEMPTS=2`):
+
+| Desfecho | status | aceito | ledger | provider_usage |
+|---|---|---|---|---|
+| A aceite+sucesso | `ready` | sim | −1, sem estorno | `success` u=5 |
+| C aceite+erro no polling | `error` | sim | **−1, sem estorno** | `failed` u=0 |
+| D recusa antes do aceite | `error` | **não** | −1 **+1 estorno** | `failed` u=0 |
+
+B (timeout, ~7,5 min) continua **DEDUZIDO** — 90 tentativas × 5 s inviabilizam
+a medição.
+
+**E a Fase 2 achou um defeito que ninguém procurava: a recusa voltava como
+`HTTP 201 Created`.** Com `status: "error"` no corpo. `vendorErrorStatus` já
+estava importado em `videos.ts` **e nunca era chamado** — era a única das seis
+rotas que tratam erro de fornecedor sem ele. Importa porque `api/client.ts` só
+levanta erro quando `!res.ok`. *Corrigido e provado nos dois sentidos:* recusa
+→ **502**, sucesso → **201**.
+
+**Guardas: `npm run check` verde, `check:mutants` 76/76** (eram 64).
+
+**Duas guardas novas nasceram INERTES e o arnês pegou as duas** — sexta e
+sétima ocorrência do mesmo padrão: uma procurava `<RecordingProgress` no
+arquivo inteiro (havia um segundo uso satisfazendo a busca sozinho), a outra
+procurava o nome da faixa como palavra (a união de tipos ainda o mencionava).
+As duas pareciam corretas na leitura.
+
+### O que sobrou aberto do 5D (2026-08-02)
+
+- **A voz NÃO foi reclonada.** Depende de uma amostra de 1–2 min que o
+  usuário ia gravar e não chegou nesta sessão. O critério de aprovação foi
+  fixado por ele: *a voz sintetizada tem de ser IGUAL à da amostra*. **Aviso
+  registrado:** `cloneVoice()` usa `/v1/voices/add`, que é **Instant Voice
+  Cloning** — entrega semelhança reconhecível, não voz idêntica. Voz idêntica
+  é *Professional Voice Cloning*, outro fluxo, ~30 min de áudio e horas de
+  treino. Sob o critério fixado, o desfecho provável é reprovar.
+- **A sequência da reclonagem está escrita e travada**, com o portão de
+  escuta antes da geração: clonar → TTS → o usuário ouve → só então gerar.
+  Uma reprovação custa 1 unidade do teto + centavos, e nenhum dólar de vídeo.
+- **NÃO use o passo 1 do app para regravar:**
+  `POST /avatars/:id/reference-video` chama `trainAvatar` ANTES de clonar —
+  US$ 1,00 de `photo_avatar` novo + 1 crédito de avatar, trocando uma
+  aparência já aprovada. O caminho é clonar só a voz e repontar `voice_id`.
+- **Derivação de formato: a cópia B é descarte.** A HeyGen devolveu 9:16
+  NATIVO, então a moldura desfocada (1080×1920) apenas **amplia 1,5×** —
+  viola a regra "nada ampliado". **A cópia A, intocada, é o ativo.** As duas
+  estão lado a lado em `uploads/c77a5b8a-…/` e em
+  `Documents/eckko-live-2026-08-02/`.
+- **8 vídeos de teste da Fase 2 continuam no banco**, marcados SIMULADO. Não
+  foram apagados: apagar zeraria `related_video_id` no `credit_ledger`, e a
+  instrução desta sessão foi não tocar em dado de ledger.
+- **A tela de custo conta só o vídeo.** Neste mês: US$ 5,71 medidos, e **6
+  consumos sem taxa** fora do total — 256 caracteres de voz no ElevenLabs e
+  669 tokens de roteiro no Gemini. A legenda do card já declara isso.
 
 ### O que a Fase 0 catalogou e a Fase 1 NÃO consertou
 

@@ -675,7 +675,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         logEvent("error", "live_budget_exhausted", { context: "videos.create", used: err.used, max: err.max });
         return reply.code(429).send({ error: "live_budget_exhausted", message: err.message, video: barrado[0] });
       }
-      const { message } = toClientVendorError("avatar", "videos.create", err);
+      const { failure, message } = toClientVendorError("avatar", "videos.create", err);
       const { rows: errored } = await pool.query<Video>(
         "UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 RETURNING *",
         [video.id, message],
@@ -696,7 +696,23 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         aspectRatio: format.aspectRatio,
         resolution: format.resolution,
       });
-      return reply.code(201).send(errored[0]);
+      // Status de ERRO, e não 201.
+      //
+      // Medido na Fase 2 do bloco 5D: uma geração que o fornecedor RECUSOU
+      // voltava como `HTTP 201 Created` com `status: "error"` no corpo. O
+      // `vendorErrorStatus` já estava importado neste arquivo desde sempre e
+      // nunca foi chamado — `videos.ts` era a única das seis rotas que tratam
+      // erro de fornecedor sem ele, e a única a responder 201 numa falha.
+      //
+      // Importa porque `api/client.ts` só levanta erro quando `!res.ok`: com
+      // 201, o cliente trata a recusa como sucesso. A tela ainda mostrava a
+      // falha por olhar `video.status`, mas qualquer consumidor que confie no
+      // status HTTP — e é para isso que ele existe — leria "criado".
+      //
+      // O corpo continua trazendo a linha do vídeo, e não só a mensagem: ela
+      // carrega o `error_message` já sanitizado e o id, que é o que permite
+      // olhar a tentativa depois na Biblioteca.
+      return reply.code(vendorErrorStatus(failure)).send(errored[0]);
     }
 
     return reply.code(201).send(video);
