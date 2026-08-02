@@ -10,7 +10,7 @@ import { recordFailedProviderUsage, recordProviderUsage } from "../services/bill
 import { costBasisNote, costFor, estimateVideoCost } from "../services/billing/providerCost.js";
 import { debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
-import { probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.js";
+import { persistRemoteArtifact, probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.js";
 import { ARTIFACT_INVALID_MESSAGE, InvalidArtifactError, validateVideoArtifact } from "../services/videoArtifact.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
@@ -74,10 +74,47 @@ function pollJob(
           return;
         }
 
-        await pool.query("UPDATE videos SET status = 'ready', output_url = $2 WHERE id = $1", [
-          videoId,
-          result.outputUrl,
-        ]);
+        // O artefato passa a ser NOSSO antes de virar `ready`.
+        //
+        // Antes desta linha, `output_url` recebia a URL assinada do fornecedor
+        // tal como veio, e a Biblioteca guardava um ponteiro para um host de
+        // terceiro que EXPIRA. O vídeo que o cliente pagou desaparecia da tela
+        // sem nenhum erro nosso — e some justamente quando mais se precisa
+        // dele, porque a assinatura vence com o tempo, não com o uso.
+        //
+        // Falhar aqui NÃO estorna e NÃO invalida o vídeo: o fornecedor
+        // renderizou e cobrou. Cai na URL remota, que é o comportamento de
+        // antes — pior, mas melhor que perder o artefato inteiro por causa de
+        // uma falha de cópia.
+        let servedUrl = result.outputUrl;
+        let providerUrl: string | null = null;
+        try {
+          const saved = await persistRemoteArtifact(tenantId, result.outputUrl, `${videoId}.mp4`);
+          if (saved) {
+            servedUrl = saved.localUrl;
+            providerUrl = result.outputUrl;
+            logEvent("info", "artifact_persisted", {
+              context: "videos.poll",
+              videoId,
+              bytes: saved.bytes,
+              localUrl: saved.localUrl,
+            });
+          }
+        } catch (err) {
+          logEvent("error", "artifact_persist_failed", {
+            context: "videos.poll",
+            videoId,
+            reason: err instanceof Error ? err.message : String(err),
+            message:
+              "Não consegui guardar o vídeo no nosso armazenamento; a Biblioteca vai continuar " +
+              "apontando para a URL do fornecedor, que expira.",
+          });
+        }
+
+        await pool.query(
+          "UPDATE videos SET status = 'ready', output_url = $2, provider_output_url = $3 WHERE id = $1",
+          [videoId, servedUrl, providerUrl],
+        );
         await createNotification(tenantId, "video_ready", "Your video is ready.");
 
         // Duração REAL, com a fonte declarada. A ordem importa e não é

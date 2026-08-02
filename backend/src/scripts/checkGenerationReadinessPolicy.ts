@@ -284,6 +284,87 @@ export async function checkGenerationReadinessPolicy(repoRoot: string): Promise<
           "Um predicado que nunca libera desabilita o botão para sempre.",
       );
     }
+    // -----------------------------------------------------------------------
+    // 1b. O teto de sessão em modo live — o único bloqueio que a tela não
+    //     tinha COMO saber antes deste bloco.
+    //
+    // O contador vive na memória do processo do servidor, e não havia rota
+    // que o expusesse: a única forma de descobrir que o teto acabou era
+    // gastando uma tentativa. Exercitado aqui, e não em live, porque consumir
+    // o teto de verdade custa dinheiro — e um verificador que gasta cota é uma
+    // contradição.
+    //
+    // `PROVIDER_MODE` é trocado localmente e restaurado no `finally`, com
+    // conferência de que voltou: mesmo padrão do `checkPollPolicy`, porque
+    // deixar o processo do gate em live seria um efeito colateral caro.
+    // -----------------------------------------------------------------------
+    const { consumeLiveGeneration, resetLiveGenerationCount } = await import(
+      "../services/providers/liveGuard.js"
+    );
+    const modoAntes = process.env.PROVIDER_MODE;
+    const tetoAntes = process.env.PROVIDER_LIVE_MAX_GENERATIONS;
+    try {
+      process.env.PROVIDER_MODE = "live";
+      process.env.PROVIDER_LIVE_MAX_GENERATIONS = "1";
+      resetLiveGenerationCount();
+
+      // Contraponto primeiro: com o teto INTACTO, live não pode inventar
+      // bloqueio nenhum. Sem esta metade, um predicado que barrasse toda
+      // geração em live passaria na asserção seguinte sem distinguir nada — e
+      // o botão nunca habilitaria justamente na passada que gasta dinheiro.
+      const comFolga = await evaluateGenerationReadiness({
+        tenantId: "t1",
+        avatarId: "a1",
+        script: "roteiro de verdade",
+      });
+      if (!comFolga.ready) {
+        failures.push(
+          "prontidão: em modo live com o teto INTACTO o predicado bloqueou: " +
+            `${JSON.stringify(comFolga.blockers.map((b) => b.code))}. O teto ainda tem folga, e barrar aqui ` +
+            "impediria a única passada que produz vídeo real.",
+        );
+      }
+
+      consumeLiveGeneration("verificação do teto");
+      const esgotado = await evaluateGenerationReadiness({
+        tenantId: "t1",
+        avatarId: "a1",
+        script: "roteiro de verdade",
+      });
+      const teto = esgotado.blockers.find((b) => b.code === "live_budget_exhausted");
+      if (!teto) {
+        failures.push(
+          "prontidão: com o teto de sessão esgotado em modo live, o predicado não devolveu " +
+            "`live_budget_exhausted` — o botão continuaria habilitado e a recusa voltaria a chegar depois " +
+            "do clique, empacotada pelo sanitizador como se fosse falha do fornecedor. Foi assim que a " +
+            "primeira passada live terminou mandando procurar defeito na HeyGen.",
+        );
+      } else {
+        // O texto tem de dizer que o limite é NOSSO. Um "teto atingido" genérico
+        // reproduz o defeito do DEMO-3 num lugar novo.
+        if (!/DESTE aplicativo/.test(teto.message) || !/n[ãa]o do fornecedor/i.test(teto.message)) {
+          failures.push(
+            "prontidão: a mensagem de teto esgotado não diz que o limite é DESTE aplicativo e não do " +
+              `fornecedor. Texto atual: ${JSON.stringify(teto.message.slice(0, 120))}`,
+          );
+        }
+        vistos.set("live_budget_exhausted", 1);
+      }
+    } finally {
+      resetLiveGenerationCount();
+      if (modoAntes === undefined) delete process.env.PROVIDER_MODE;
+      else process.env.PROVIDER_MODE = modoAntes;
+      if (tetoAntes === undefined) delete process.env.PROVIDER_LIVE_MAX_GENERATIONS;
+      else process.env.PROVIDER_LIVE_MAX_GENERATIONS = tetoAntes;
+    }
+
+    if (process.env.PROVIDER_MODE !== modoAntes) {
+      failures.push(
+        `prontidão: o verificador deixou PROVIDER_MODE em ${JSON.stringify(process.env.PROVIDER_MODE)} ` +
+          `em vez de restaurar ${JSON.stringify(modoAntes)}. Um gate que deixa o processo em live é um ` +
+          "efeito colateral caro.",
+      );
+    }
   } finally {
     (pool as unknown as { query: unknown }).query = realQuery;
   }

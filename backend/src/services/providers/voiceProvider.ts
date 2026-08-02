@@ -115,6 +115,33 @@ export interface SynthesizedSpeech {
 // com timestamps não está disponível.
 const DEFAULT_MP3_BITRATE_BPS = 128_000;
 
+/**
+ * Modelo de síntese, SEMPRE explícito.
+ *
+ * Antes desta constante o corpo da requisição era `{ text }` e mais nada, nos
+ * dois ramos — o modelo ficava por conta do padrão do fornecedor. É a MESMA
+ * classe de defeito que o bloco FORMATO-1 tirou do payload de vídeo, e a
+ * mesma frase se aplica: escolher por omissão é escolher mesmo assim.
+ *
+ * Aqui a omissão custa mais que lá, porque o produto é vendido em português.
+ * O padrão documentado desta rota é um modelo monolíngue de inglês; um roteiro
+ * em português sintetizado por ele sai com fonética errada, e o resultado é
+ * indistinguível — para quem ouve — de "a clonagem não funcionou". O timbre
+ * até pode ser o da pessoa; a pronúncia não é a dela.
+ *
+ * **NÃO CONFIRMADO qual é o padrão em uso**: `GET /v1/models` responde 401 com
+ * a chave deste tenant (falta permissão de leitura, mesma limitação já
+ * registrada para `/v1/user/subscription`), então não foi possível enumerar os
+ * modelos nem ler qual é o default. O que está medido é que nós não mandávamos
+ * nenhum. Mandar um explicitamente é correto independentemente de qual era o
+ * padrão — é justamente por não sabermos que ele não pode ficar implícito.
+ *
+ * Configurável por ambiente para que trocar de modelo não exija rebuild: se
+ * este valor não for aceito pelo plano, a síntese falha, a geração inteira
+ * falha junto, e o conserto precisa caber numa variável.
+ */
+export const ELEVENLABS_TTS_MODEL = process.env.ELEVENLABS_TTS_MODEL?.trim() || "eleven_multilingual_v2";
+
 // Text-to-speech using a cloned voice — used by avatarProvider.ts to
 // synthesize the video script in the tenant's own cloned voice before
 // handing the audio to HeyGen/D-ID.
@@ -139,7 +166,7 @@ export async function synthesizeSpeech(
     res = await fetch(`${base}/with-timestamps`, {
       method: "POST",
       headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),
     });
   } catch (err) {
     logProviderNetworkError("voiceProvider.synthesizeSpeech", err);
@@ -192,7 +219,10 @@ export async function synthesizeSpeech(
     plain = await fetch(base, {
       method: "POST",
       headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ text }),
+      // O MESMO modelo do ramo acima. Dois ramos com modelos diferentes
+      // produziriam vozes diferentes conforme o endpoint que respondesse — um
+      // defeito que só apareceria de forma intermitente.
+      body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),
     });
   } catch (err) {
     logProviderNetworkError("voiceProvider.synthesizeSpeech", err);
