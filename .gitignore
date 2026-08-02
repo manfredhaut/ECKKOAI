@@ -28,3 +28,4 @@ previews/
 # conter corpo de resposta de fornecedor.
 *.log
 ultimas.txt
+.claude/settings.local.json
