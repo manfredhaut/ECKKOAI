@@ -1170,6 +1170,78 @@ th {
   color: var(--color-tertiary);
 }
 
+/* --- Progresso da gravação de referência (RecordingProgress) ------------
+   A barra mede o caminho até a META de qualidade, não até o teto. As duas
+   marcas são o ponto: sem elas o preenchimento vira um progresso rumo ao
+   limite, que é a leitura que produziu uma amostra de 15 s. */
+.recording-progress {
+  max-width: 420px;
+}
+
+.recording-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.recording-bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s linear, background 0.3s ease;
+}
+
+.recording-bar--short .recording-bar__fill {
+  background: var(--color-tertiary);
+}
+
+.recording-bar--workable .recording-bar__fill {
+  background: #d99100;
+}
+
+.recording-bar--good .recording-bar__fill {
+  background: var(--color-primary);
+}
+
+.recording-bar__mark {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--color-bg);
+  opacity: 0.9;
+}
+
+.recording-bar__legend {
+  position: relative;
+  height: 16px;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.recording-bar__legend span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.recording-progress__message {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 6px 0 0;
+}
+
+.recording-progress__message--short {
+  color: var(--color-tertiary);
+  font-weight: 600;
+}
+
+.recording-progress__message--workable {
+  color: #a86f00;
+}
+
 /* --- O que falta para poder gerar (GenerateStep) ------------------------
    Fica ao lado do botão desabilitado, sempre visível, sem hover. Um botão
    cinza que não explica parece produto quebrado — e numa apresentação isso

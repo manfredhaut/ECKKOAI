@@ -33,6 +33,43 @@ export const MAX_IMAGE_BYTES = __MAX_IMAGE_BYTES__;
  */
 export const MAX_RECORDING_SECONDS = __MAX_RECORDING_SECONDS__;
 
+/**
+ * METAS de duração da gravação — diferentes do TETO acima, e a distinção é o
+ * ponto deste bloco.
+ *
+ * O contador antigo dizia "Gravando 0:15 de 2:00 — para sozinho em 105s".
+ * Isso responde "quanto ainda posso gravar?" e nunca "quanto preciso
+ * gravar?". Aos 15 segundos ele parece saudável, com folga larga, e nada
+ * sinaliza que a amostra está curta demais para clonar uma voz.
+ *
+ * Não é hipótese: o clone do avatar de demonstração foi treinado com uma
+ * amostra de **15,37 s** (medido com ffprobe no wav de referência), e o
+ * sintoma apareceu só no vídeo pronto — "a voz não parece a pessoa" —, longe
+ * do momento em que ainda dava para consertar de graça. Um limite superior
+ * vigiado e uma meta inferior invisível produzem exatamente esse desfecho.
+ *
+ * Constantes simples, e NÃO `define` do Vite como os tetos acima. Dois
+ * motivos: (a) são orientação de qualidade, não limite que o servidor aplica,
+ * então não há segunda ponta com que concordar; e (b) `vite.config.ts` está
+ * fora do bind mount, e um `define` novo consumido por código montado derruba
+ * a app inteira em branco até alguém reconstruir a imagem — já aconteceu neste
+ * projeto com `__MAX_IMAGE_BYTES__` (ver o bloco FORMATO-1 no CLAUDE.md).
+ *
+ * Os números vêm da orientação publicada dos fornecedores, a mesma que já
+ * estava no texto da tela — DOCUMENTADO, não medido por nós.
+ */
+export const RECORDING_MINIMUM_SECONDS = 30;
+export const RECORDING_RECOMMENDED_SECONDS = 60;
+
+export type RecordingQuality = "short" | "workable" | "good";
+
+/** Em que faixa de qualidade a gravação está, agora. */
+export function recordingQuality(elapsedSeconds: number): RecordingQuality {
+  if (elapsedSeconds < RECORDING_MINIMUM_SECONDS) return "short";
+  if (elapsedSeconds < RECORDING_RECOMMENDED_SECONDS) return "workable";
+  return "good";
+}
+
 /** "38,4 MB" — mesma forma da função equivalente no backend. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

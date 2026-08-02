@@ -10,7 +10,8 @@ import { BACKGROUND_OPTIONS, DEFAULT_BACKGROUND_ID } from "../virtualBackground/
 import { DEFAULT_QUALITY } from "../imageQuality/applyQualityTreatment";
 import type { QualityOptions } from "../imageQuality/applyQualityTreatment";
 import { useFeature } from "../../../features/FeatureFlagContext";
-import { MAX_IMAGE_BYTES, MAX_REFERENCE_VIDEO_BYTES, formatBytes, formatDuration } from "../../../uploadLimits";
+import { MAX_IMAGE_BYTES, MAX_REFERENCE_VIDEO_BYTES, formatBytes } from "../../../uploadLimits";
+import { RecordingProgress } from "../RecordingProgress";
 
 export function AvatarSetupStep({
   selectedAvatarId,
@@ -616,16 +617,17 @@ export function AvatarSetupStep({
                 </div>
               )}
 
-              {/* Contador durante a gravação. Um limite que só aparece no
-                  instante em que corta é indistinguível de um defeito. */}
-              {recorder.isRecording && (
-                <p style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>
-                  {t("createVideo.avatarSetup.recordingCounter", {
-                    elapsed: formatDuration(recorder.elapsedSeconds),
-                    max: formatDuration(recorder.maxSeconds),
-                    remaining: recorder.remainingSeconds,
-                  })}
-                </p>
+              {/* Progresso em direção à META, não ao teto. O contador anterior
+                  dizia "0:15 de 2:00 — para sozinho em 105s": vigiava o limite
+                  superior e deixava a meta inferior invisível, que foi como um
+                  clone acabou treinado com 15,37 s de amostra. */}
+              {recorder.isRecording && <RecordingProgress elapsedSeconds={recorder.elapsedSeconds} />}
+
+              {/* Depois de parar, o veredito PERMANECE: é o último momento em
+                  que regravar ainda é barato. Some quando a gravação já foi
+                  enviada. */}
+              {!recorder.isRecording && recorder.recordedBlob && !draftAvatar.reference_video_url && (
+                <RecordingProgress elapsedSeconds={recorder.elapsedSeconds} />
               )}
 
               {/* Tamanho SEMPRE que houver gravação, não só quando estoura:

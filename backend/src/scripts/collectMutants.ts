@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Junta os mutantes declarados por cada guarda e imprime como JSON.
  *
  * A divisão de trabalho é deliberada: os mutantes moram JUNTO da guarda que
@@ -25,6 +25,7 @@ import { MUTANTS as costMutants } from "./checkCostPolicy.js";
 import { MUTANTS as egressMutants } from "./checkNetworkEgressPolicy.js";
 import { MUTANTS as playbackMutants } from "./checkVideoPlaybackPolicy.js";
 import { MUTANTS as readinessMutants } from "./checkGenerationReadinessPolicy.js";
+import { MUTANTS as recordingMutants } from "./checkRecordingGuidancePolicy.js";
 import type { Mutant } from "./mutants.js";
 
 const all: Mutant[] = [
@@ -43,6 +44,7 @@ const all: Mutant[] = [
   ...egressMutants,
   ...playbackMutants,
   ...readinessMutants,
+  ...recordingMutants,
 ];
 
 // Um mutante malformado só apareceria no meio da execução, com a árvore já

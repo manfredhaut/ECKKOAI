@@ -29,6 +29,7 @@ import {
 import { checkNetworkEgressPolicy } from "./checkNetworkEgressPolicy.js";
 import { checkVideoPlaybackPolicy } from "./checkVideoPlaybackPolicy.js";
 import { checkGenerationReadinessPolicy } from "./checkGenerationReadinessPolicy.js";
+import { checkRecordingGuidancePolicy } from "./checkRecordingGuidancePolicy.js";
 import { checkVendorLogPolicy } from "./checkVendorLogPolicy.js";
 import { checkVideoFormatPolicy } from "./checkVideoFormatPolicy.js";
 import { checkVendorErrorPathPolicy } from "./checkVendorErrorPathPolicy.js";
@@ -393,6 +394,11 @@ async function main(): Promise<void> {
   const readiness = await checkGenerationReadinessPolicy(process.env.REPO_ROOT ?? "/repo");
   readiness.failures.forEach((f) => failures.push(f));
   readiness.notes.forEach((n) => note(n));
+
+  // --- 13g. a gravação de referência mostra a META, não só o teto ---------
+  const gravacao = await checkRecordingGuidancePolicy(process.env.REPO_ROOT ?? "/repo");
+  gravacao.failures.forEach((f) => failures.push(f));
+  gravacao.notes.forEach((n) => note(n));
 
   // --- 14. portão de avatar em treino -----------------------------------
   const gateResult = await checkAvatarTrainingGate(process.env.REPO_ROOT ?? "/repo");
