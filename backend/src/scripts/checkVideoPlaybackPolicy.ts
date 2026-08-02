@@ -48,14 +48,59 @@ export const MUTANTS: Mutant[] = [
   },
   {
     guard: "reprodução: todo player avisa quando é simulação",
-    name: "o aviso de simulação some do player",
+    name: "o aviso de simulação some do player, mas o import fica",
     kind: "esperto",
-    // O mais perigoso dos três numa apresentação: o vídeo continua tocando,
-    // bonito, e nada diz que ele é um artefato de fixture.
+    // O mais perigoso numa apresentação: o vídeo continua tocando, bonito, e
+    // nada diz que ele é um artefato de fixture.
+    //
+    // Este é o mutante (a) do checklist de ancoragem: remove o USO e preserva
+    // a MENÇÃO. A primeira versão desta guarda procurava `SimulatedNotice` no
+    // arquivo inteiro, e o `import { SimulatedNotice }` — que este mutante NÃO
+    // toca — bastava para satisfazê-la. O gate passava verde com o defeito
+    // aplicado.
     file: "frontend/src/features/VideoPlayer.tsx",
     find: "      <SimulatedNotice simulated={video.simulated} />",
     replace: "",
     expect: "não avisa quando o vídeo é simulado",
+  },
+  {
+    guard: "reprodução: todo player avisa quando é simulação",
+    name: "o aviso fica renderizado, mas preso em false",
+    kind: "esperto",
+    // Mutante (b). A superfície que a guarda ancorada no uso inspeciona não
+    // muda em nada: `<SimulatedNotice` continua no JSX, no mesmo lugar. Só a
+    // LIGAÇÃO com o fato gravado na linha some, e o aviso nunca mais aparece
+    // — nem para um vídeo de fixture.
+    file: "frontend/src/features/VideoPlayer.tsx",
+    find: "<SimulatedNotice simulated={video.simulated} />",
+    replace: "<SimulatedNotice simulated={false} />",
+    expect: "não liga o aviso ao fato gravado no vídeo",
+  },
+  {
+    guard: "reprodução: todo player avisa quando é simulação",
+    name: "a condição do aviso é invertida",
+    kind: "esperto",
+    // Mutante (c), e o pior dos três: o aviso continua existindo e continua
+    // aparecendo, então a tela parece honesta. Só que aparece exatamente nos
+    // vídeos REAIS e some nos simulados — a mentira invertida do VIDEO-0.
+    file: "frontend/src/features/VideoPlayer.tsx",
+    find: "<SimulatedNotice simulated={video.simulated} />",
+    replace: "<SimulatedNotice simulated={!video.simulated} />",
+    expect: "não liga o aviso ao fato gravado no vídeo",
+  },
+  {
+    guard: "reprodução: o selo da Biblioteca segue o vídeo, não o ambiente",
+    name: "o selo da Biblioteca perde a ligação e passa a seguir o modo global",
+    kind: "esperto",
+    // O selo continua lá, a lista continua igual. Sem a prop, `SimulatedBadge`
+    // cai no modo do AMBIENTE — e como a apresentação roda em fixture, TODO
+    // vídeo da Biblioteca passa a exibir SIMULADO, inclusive o único que é
+    // real. É a mentira que o `credit_ledger.simulated` e o `videos.simulated`
+    // existem para impedir, na tela onde ela seria vista.
+    file: "frontend/src/pages/Content/ContentPage.tsx",
+    find: "<SimulatedBadge compact simulated={v.simulated} />",
+    replace: "<SimulatedBadge compact />",
+    expect: "não liga o selo da Biblioteca ao fato gravado no vídeo",
   },
 ];
 
@@ -65,6 +110,44 @@ const BIBLIOTECA = "frontend/src/pages/Content/ContentPage.tsx";
 /** Comentários fora: guardas deste projeto já acusaram o texto que as explicava. */
 function semComentarios(fonte: string): string {
   return fonte.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+}
+
+/**
+ * A marca de simulação está LIGADA ao fato gravado na linha do vídeo?
+ *
+ * Verificar que o elemento aparece no JSX prova que ele existe, não que ele
+ * diz a verdade. `simulated={false}` desliga o aviso; `simulated={!v.simulated}`
+ * o inverte; omitir a prop o faz seguir o modo do AMBIENTE, e em fixture isso
+ * carimba SIMULADO no único vídeo real da tela. Nas três mutações o elemento
+ * continua exatamente onde estava.
+ *
+ * A forma exigida é `simulated={<algo>.simulated}` — um acesso ao campo, e nada
+ * mais. Aceitar qualquer expressão deixaria `false` passar; exigir o nome
+ * literal `video.simulated` reprovaria uma renomeação de variável, e guarda que
+ * acusa manutenção legítima é abandonada (achado C do GUARDAS-1).
+ */
+const LIGACAO_ESPERADA = /^\s*[A-Za-z_$][\w$]*\.simulated\s*$/;
+
+function verificarLigacao(
+  fonte: string,
+  arquivo: string,
+  componente: string,
+  rotulo: string,
+  failures: string[],
+): void {
+  const uso = fonte.match(new RegExp(`<${componente}\\b([^>]*)>`));
+  const props = uso?.[1] ?? "";
+  const prop = props.match(/simulated=\{([^}]*)\}/);
+
+  if (!prop || !LIGACAO_ESPERADA.test(prop[1])) {
+    const visto = prop ? `\`simulated={${prop[1].trim()}}\`` : "a prop `simulated` ausente";
+    failures.push(
+      `reprodução: ${arquivo} não liga o ${rotulo} ao fato gravado no vídeo — encontrei ${visto}. ` +
+        `O <${componente}> continua renderizado, então a tela parece correta, mas a marca deixa de ` +
+        "seguir `videos.simulated` e passa a mentir: ou nunca aparece, ou aparece no vídeo errado, " +
+        "ou segue o modo do ambiente e carimba SIMULADO numa geração real.",
+    );
+  }
 }
 
 export async function checkVideoPlaybackPolicy(repoRoot: string): Promise<PlaybackCheckResult> {
@@ -109,11 +192,19 @@ export async function checkVideoPlaybackPolicy(repoRoot: string): Promise<Playba
   // satisfazia a busca. O gate passou verde com o defeito aplicado, que numa
   // apresentação seria fixture tocando sem aviso nenhum. É a quinta vez que
   // uma guarda deste projeto casa a menção em vez do uso.
+  //
+  // Ancorar no uso, porém, ainda não basta: `simulated={false}` e
+  // `simulated={!video.simulated}` preservam o elemento no JSX, intacto, e
+  // desligam ou invertem o aviso. Presença e LIGAÇÃO são proposições
+  // diferentes, e uma guarda que verifica só a primeira volta a ser inerte
+  // contra as duas mutações que mais parecem manutenção inocente.
   if (!/<SimulatedNotice\b/.test(player)) {
     failures.push(
       `reprodução: ${PLAYER} não avisa quando o vídeo é simulado. Numa apresentação, um artefato de ` +
         "fixture tocando sem aviso é indistinguível de uma geração real.",
     );
+  } else {
+    verificarLigacao(player, PLAYER, "SimulatedNotice", "aviso", failures);
   }
 
   // 4. A Biblioteca usa o player — e não uma cópia local.
@@ -122,6 +213,21 @@ export async function checkVideoPlaybackPolicy(repoRoot: string): Promise<Playba
       `reprodução: ${BIBLIOTECA} não usa <VideoPlayer>. A Biblioteca é onde o vídeo continua existindo ` +
         "depois que o wizard é fechado; sem player ali, o resultado só é alcançável por download.",
     );
+  }
+
+  // 4b. E o selo da lista segue o VÍDEO, não o ambiente.
+  //
+  // Sem a prop, `SimulatedBadge` cai no modo global. Na apresentação — que roda
+  // em fixture — isso carimba SIMULADO em todo vídeo da Biblioteca, inclusive
+  // no único que foi gerado de verdade. É a mesma classe de mentira do VIDEO-0,
+  // só que invertida, e é a tela onde ela seria vista.
+  if (!/<SimulatedBadge\b/.test(biblioteca)) {
+    failures.push(
+      `reprodução: ${BIBLIOTECA} não marca os vídeos simulados na lista. Um artefato de fixture e uma ` +
+        "geração real passam a ocupar a mesma linha, sem nada que os distinga.",
+    );
+  } else {
+    verificarLigacao(biblioteca, BIBLIOTECA, "SimulatedBadge", "selo da Biblioteca", failures);
   }
 
   // 5. E o download continua existindo — reproduzir não substitui levar embora.
@@ -133,7 +239,11 @@ export async function checkVideoPlaybackPolicy(repoRoot: string): Promise<Playba
   }
 
   notes.push(
-    "reprodução: a Biblioteca reproduz com <VideoPlayer>, que respeita a proporção, avisa simulação e mantém o download",
+    "reprodução: a Biblioteca reproduz com <VideoPlayer>, que respeita a proporção e mantém o download",
+  );
+  notes.push(
+    "reprodução: 2 marca(s) de simulação (player e Biblioteca) ancoradas no USO em JSX e LIGADAS a `.simulated` — " +
+      "presença e ligação são conferidas em separado",
   );
   return { failures, notes };
 }
