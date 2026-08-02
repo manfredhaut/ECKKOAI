@@ -98,10 +98,10 @@ export const MUTANTS: Mutant[] = [
     guard: "portão de treino",
     name: "portão presente, comparando com valor que nunca ocorre",
     kind: "esperto",
-    file: "backend/src/routes/videos.ts",
+    file: "backend/src/services/generationReadiness.ts",
     // A condição continua lá, com a mesma forma. Só o valor comparado muda
     // para um que o normalizador nunca produz, então nada é barrado.
-    find: `if (avatar.provider_status === "processing") {`,
+    find: `} else if (avatar.provider_status === "processing") {`,
     replace: `} else if (avatar.provider_status === "unknown") {`,
     expect: "não barra mais avatar com provider_status",
   },
