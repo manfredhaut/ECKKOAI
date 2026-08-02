@@ -24,6 +24,7 @@ import {
   checkAvatarTrainingGate,
   checkLiveBudgetCallers,
   checkLiveBudgetPolicy,
+  checkLiveBudgetRelease,
 } from "./checkLiveBudgetPolicy.js";
 import { checkVendorLogPolicy } from "./checkVendorLogPolicy.js";
 import { checkVideoFormatPolicy } from "./checkVideoFormatPolicy.js";
@@ -369,6 +370,11 @@ async function main(): Promise<void> {
   const budgetCallers = await checkLiveBudgetCallers(process.env.REPO_ROOT ?? "/repo");
   budgetCallers.failures.forEach((f) => failures.push(f));
   budgetCallers.notes.forEach((n) => note(n));
+
+  // --- 13c. a falha devolve o gasto, e o laço continua barrado -----------
+  const budgetRelease = await checkLiveBudgetRelease();
+  budgetRelease.failures.forEach((f) => failures.push(f));
+  budgetRelease.notes.forEach((n) => note(n));
 
   // --- 14. portão de avatar em treino -----------------------------------
   const gateResult = await checkAvatarTrainingGate(process.env.REPO_ROOT ?? "/repo");

@@ -18,7 +18,7 @@ import {
 } from "../script/scriptDuration.js";
 import type { AvatarVendor } from "./vendorCatalog.js";
 import { isFixtureMode } from "./providerMode.js";
-import { consumeLiveGeneration, LiveBudgetExhaustedError } from "./liveGuard.js";
+import { withLiveBudget } from "./liveGuard.js";
 import { vendorAcceptsFormat, type VideoFormat } from "./videoFormat.js";
 import { readSupportedEngines, selectEngine, type EngineReason, type HeygenEngine } from "./videoEngine.js";
 import {
@@ -648,12 +648,13 @@ export async function generateVideo(input: GenerateVideoInput): Promise<Generate
   if (isFixtureMode()) return generateVideoFixture(input);
 
   // Teto por sessão: protege contra o laço que dispara N vezes, que nenhuma
-  // declaração de intenção no boot impediria.
-  const budget = consumeLiveGeneration("geração de vídeo");
-  if (!budget.allowed) {
-    throw new LiveBudgetExhaustedError(budget.used, budget.max, "gerar vídeo");
-  }
-  return input.vendor === "did" ? generateVideoDid(input) : generateVideoHeygen(input);
+  // declaração de intenção no boot impediria. `withLiveBudget` devolve o
+  // GASTO se a chamada lançar — o fornecedor não chegou a aceitar o trabalho,
+  // mesma fronteira do estorno de crédito. A TENTATIVA não volta, e é ela que
+  // continua barrando o laço.
+  return withLiveBudget("geração de vídeo", "gerar vídeo", async () =>
+    input.vendor === "did" ? generateVideoDid(input) : generateVideoHeygen(input),
+  );
 }
 
 export async function pollVideoJob(vendor: AvatarVendor, apiKey: string, jobId: string): Promise<PollResult> {

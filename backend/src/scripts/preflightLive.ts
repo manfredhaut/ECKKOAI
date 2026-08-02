@@ -20,8 +20,10 @@ import { pool } from "../db/pool.js";
 import {
   LIVE_CONFIRM_ENV,
   LIVE_CONFIRM_VALUE,
+  LIVE_ATTEMPT_LIMIT_ENV,
   LIVE_LIMIT_ENV,
   isLiveAuthorized,
+  readLiveMaxAttempts,
   readLiveMaxGenerations,
 } from "../services/providers/liveGuard.js";
 import { readProviderMode } from "../services/providers/providerMode.js";
@@ -113,8 +115,23 @@ async function main(): Promise<void> {
   record(
     cap > 0,
     true,
-    `teto de gerações tarifadas (${LIVE_LIMIT_ENV})`,
-    `${cap} por sessão do servidor${cap > 1 ? " — acima do default de 1; confira se é intencional" : ""}`,
+    `teto de GASTO (${LIVE_LIMIT_ENV})`,
+    `${cap} por sessão do servidor${cap > 1 ? " — acima do default de 1; confira se é intencional" : ""}` +
+      "; conta voz e vídeo juntas, e a falha devolve a unidade",
+  );
+
+  // O segundo teto entra no preflight porque ele é o que pode travar uma
+  // passada que está falhando — e descobrir sua existência no meio da passada
+  // é exatamente o que este bloco eliminou do teto de gasto.
+  const attemptCap = readLiveMaxAttempts();
+  record(
+    attemptCap >= cap,
+    true,
+    `teto de TENTATIVAS (${LIVE_ATTEMPT_LIMIT_ENV})`,
+    attemptCap >= cap
+      ? `${attemptCap} por sessão — margem de ${attemptCap - cap} falha(s) antes de travar. Não é devolvido.`
+      : `${attemptCap}, ABAIXO do teto de gasto (${cap}): as tentativas acabam antes do gasto e o teto de ` +
+        "gasto nunca é alcançado. Um dos dois números está errado.",
   );
 
   record(true, false, "PROVIDER_MODE atual", mode === "live" ? "live" : `${mode} (simulação)`);

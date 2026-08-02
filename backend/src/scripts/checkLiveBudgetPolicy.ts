@@ -13,10 +13,14 @@
  */
 import type { Mutant } from "./mutants.js";
 import {
+  LIVE_ATTEMPT_LIMIT_ENV,
   LiveBudgetExhaustedError,
   consumeLiveGeneration,
+  liveGenerationAttempts,
   liveGenerationsConsumedBy,
+  liveGenerationsUsed,
   resetLiveGenerationCount,
+  withLiveBudget,
 } from "../services/providers/liveGuard.js";
 
 export interface LiveBudgetCheckResult {
@@ -43,9 +47,43 @@ export const MUTANTS: Mutant[] = [
     // continua respeitando-o. Só a VOZ sai da conta — que é exatamente a
     // confusão que este bloco existe para impedir, e o número por si só
     // (1/1) continuaria parecendo certo.
-    find: `  const budget = consumeLiveGeneration("clonagem de voz");`,
-    replace: `  const budget = { allowed: true, used: 0, max: 1 };`,
-    expect: "teto",
+    find: `  return withLiveBudget("clonagem de voz", "clonar voz", async () => {`,
+    replace: `  return (async (fn: () => Promise<CloneVoiceResult>) => fn())(async () => {`,
+    expect: "não consome mais o teto",
+  },
+  {
+    guard: "teto: a falha devolve o gasto",
+    name: "a devolução some do caminho de erro",
+    kind: "obvio",
+    file: "backend/src/services/providers/liveGuard.ts",
+    find: `    releaseLiveGeneration(operation, err instanceof Error ? \`\${err.name}: \${err.message}\` : String(err));`,
+    replace: "",
+    expect: "a falha NÃO devolveu o gasto",
+  },
+  {
+    guard: "teto: a falha devolve o gasto",
+    name: "devolve também no sucesso",
+    kind: "esperto",
+    // A falha continua devolvendo, exatamente como a asserção principal
+    // exige — e o teto inteiro deixa de existir, porque nada mais retém uma
+    // unidade. Só o CONTRAPONTO (o sucesso retém) distingue os dois casos.
+    file: "backend/src/services/providers/liveGuard.ts",
+    find: `    return await fn();`,
+    replace: `    const r = await fn(); releaseLiveGeneration(operation, "sempre"); return r;`,
+    expect: "o sucesso não reteve o gasto",
+  },
+  {
+    guard: "teto: a tentativa não volta",
+    name: "a devolução devolve a tentativa junto",
+    kind: "esperto",
+    // O mais importante dos três. O gasto volta certo, o sucesso retém, a
+    // superfície inspecionada não muda — e a proteção contra laço morre em
+    // silêncio: um caminho que falha sempre devolve tudo a cada volta e
+    // dispara indefinidamente contra o fornecedor.
+    file: "backend/src/services/providers/liveGuard.ts",
+    find: `  used -= 1;`,
+    replace: `  used -= 1;\n  attempted -= 1;`,
+    expect: "a TENTATIVA não ficou contada",
   },
   {
     guard: "portão de treino",
@@ -106,13 +144,24 @@ export async function checkLiveBudgetCallers(repoRoot: string): Promise<LiveBudg
       continue;
     }
     const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
-    const chamada = new RegExp(`consumeLiveGeneration\\(\\s*["'\`]${alvo.operacao}["'\`]`);
+    // Cobra `withLiveBudget`, e não `consumeLiveGeneration` solto: consumir
+    // sem o wrapper compila, roda e parece certo — só deixa de devolver o
+    // gasto na falha, que é o defeito inteiro deste bloco e não tem sintoma
+    // até a terceira falha de uma passada live.
+    const chamada = new RegExp(`withLiveBudget\\(\\s*["'\`]${alvo.operacao}["'\`]`);
     if (!chamada.test(code)) {
       failures.push(
-        `teto: ${alvo.file} → ${alvo.fn}() não consome mais o teto com a operação "${alvo.operacao}". ` +
-          "O contador continuaria correto e a mensagem continuaria dizendo que o teto conta voz e vídeo " +
-          "juntas — verdade sobre o mecanismo, mentira sobre o sistema. Em live isso libera uma chamada " +
-          "tarifada que a trava deveria ter barrado.",
+        `teto: ${alvo.file} → ${alvo.fn}() não consome mais o teto por withLiveBudget() com a operação ` +
+          `"${alvo.operacao}". O contador continuaria correto e a mensagem continuaria dizendo que o teto ` +
+          "conta voz e vídeo juntas — verdade sobre o mecanismo, mentira sobre o sistema. Em live isso " +
+          "libera uma chamada tarifada que a trava deveria ter barrado, ou retém um gasto que a falha " +
+          "deveria ter devolvido.",
+      );
+    }
+    if (/consumeLiveGeneration\(/.test(code)) {
+      failures.push(
+        `teto: ${alvo.file} chama consumeLiveGeneration() direto. Só as guardas podem fazer isso — ` +
+          "num caminho tarifado, consumir sem o wrapper é consumir sem devolver na falha.",
       );
     }
   }
@@ -187,6 +236,166 @@ export function checkLiveBudgetPolicy(): LiveBudgetCheckResult {
     resetLiveGenerationCount();
   }
 
+  return { failures, notes };
+}
+
+/**
+ * A devolução do teto de GASTO na falha, exercitada de verdade.
+ *
+ * O defeito congelado aqui foi medido no bloco PREVOO-1 e corrigido depois: o
+ * teto era consumido antes da chamada e nunca voltava, então DUAS falhas
+ * esgotavam a cota de uma passada live sem nenhum vídeo ter saído — e a única
+ * saída era reiniciar o backend, no meio da passada.
+ *
+ * Três asserções que puxam em direções opostas de propósito, porque uma
+ * guarda que só verifica "a falha devolve" seria satisfeita por um código que
+ * devolve sempre — inclusive no sucesso, o que desligaria o teto inteiro, e
+ * por um que devolve a TENTATIVA junto, o que desligaria a proteção contra
+ * laço. As três juntas não têm implementação trivial que passe.
+ */
+export async function checkLiveBudgetRelease(): Promise<LiveBudgetCheckResult> {
+  const failures: string[] = [];
+  const notes: string[] = [];
+
+  const envGasto = { PROVIDER_LIVE_MAX_GENERATIONS: "1" } as unknown as NodeJS.ProcessEnv;
+
+  resetLiveGenerationCount();
+  try {
+    // --- 1. A falha devolve o GASTO e retém a TENTATIVA ------------------
+    let subiu = false;
+    try {
+      await withLiveBudget(
+        "geração de vídeo",
+        "gerar vídeo",
+        async () => {
+          throw new Error("fornecedor recusou o payload");
+        },
+        envGasto,
+      );
+    } catch {
+      subiu = true;
+    }
+    if (!subiu) {
+      failures.push(
+        "teto: withLiveBudget engoliu o erro da operação. Devolver o teto não pode transformar uma falha " +
+          "de fornecedor em sucesso silencioso — quem chamou precisa saber que nada foi gerado.",
+      );
+    }
+    if (liveGenerationsUsed() !== 0) {
+      failures.push(
+        `teto: a falha NÃO devolveu o gasto (used=${liveGenerationsUsed()}, esperado 0). ` +
+          "Com o teto em 2, duas falhas voltam a esgotar a cota sem nenhum vídeo ter saído, e a única " +
+          "saída passa a ser reiniciar o backend no meio da passada live.",
+      );
+    }
+    if (liveGenerationAttempts() !== 1) {
+      failures.push(
+        `teto: a TENTATIVA não ficou contada (attempts=${liveGenerationAttempts()}, esperado 1). ` +
+          "É ela que barra o laço depois que o gasto passou a ser devolvido; devolvida junto, um caminho " +
+          "que falha sempre dispara para sempre.",
+      );
+    }
+
+    // --- 2. Contraponto: o SUCESSO não devolve ---------------------------
+    await withLiveBudget("clonagem de voz", "clonar voz", async () => "ok", envGasto);
+    if (liveGenerationsUsed() !== 1) {
+      failures.push(
+        `teto: o sucesso não reteve o gasto (used=${liveGenerationsUsed()}, esperado 1). ` +
+          "Devolver sempre desliga o teto por completo — a carteira comporta cerca de um vídeo.",
+      );
+    }
+
+    // --- 3. Esgotado o gasto, a recusa é por spend_cap --------------------
+    let recusaGasto: LiveBudgetExhaustedError | null = null;
+    try {
+      await withLiveBudget("geração de vídeo", "gerar vídeo", async () => "não deveria rodar", envGasto);
+    } catch (err) {
+      if (err instanceof LiveBudgetExhaustedError) recusaGasto = err;
+    }
+    if (!recusaGasto) {
+      failures.push(
+        "teto: com o gasto em 1/1, a operação seguinte passou. O teto de gasto deixou de proteger a carteira.",
+      );
+    } else if (recusaGasto.deniedBy !== "spend_cap") {
+      failures.push(
+        `teto: a recusa por gasto esgotado veio marcada como "${recusaGasto.deniedBy}". ` +
+          "As duas travas têm saídas diferentes, e nomear a errada manda a pessoa mexer na variável errada.",
+      );
+    }
+  } finally {
+    resetLiveGenerationCount();
+  }
+
+  // --- 4. O teto de TENTATIVAS trava mesmo com o gasto todo devolvido ----
+  // Este é o cenário que a devolução criou: gasto folgado (10), tudo falhando,
+  // gasto voltando a cada falha. Sem o contador de tentativas, este laço não
+  // pararia nunca.
+  const envLaco = {
+    PROVIDER_LIVE_MAX_GENERATIONS: "10",
+    PROVIDER_LIVE_MAX_ATTEMPTS: "2",
+  } as unknown as NodeJS.ProcessEnv;
+
+  resetLiveGenerationCount();
+  try {
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        await withLiveBudget(
+          "geração de vídeo",
+          "gerar vídeo",
+          async () => {
+            throw new Error("fornecedor recusou o payload");
+          },
+          envLaco,
+        );
+      } catch {
+        /* esperado */
+      }
+    }
+    if (liveGenerationsUsed() !== 0) {
+      failures.push(
+        `teto: depois de 2 falhas o gasto ficou em ${liveGenerationsUsed()}, esperado 0 — a devolução parou de funcionar no laço.`,
+      );
+    }
+
+    let recusaLaco: LiveBudgetExhaustedError | null = null;
+    try {
+      await withLiveBudget("geração de vídeo", "gerar vídeo", async () => "não deveria rodar", envLaco);
+    } catch (err) {
+      if (err instanceof LiveBudgetExhaustedError) recusaLaco = err;
+    }
+    if (!recusaLaco) {
+      failures.push(
+        "teto: com 2 de 2 tentativas gastas em falhas, a terceira PASSOU. O gasto volta a cada falha, então " +
+          "sem o teto de tentativas um caminho quebrado dispara indefinidamente contra o fornecedor.",
+      );
+    } else {
+      if (recusaLaco.deniedBy !== "attempt_cap") {
+        failures.push(
+          `teto: a recusa por laço veio marcada como "${recusaLaco.deniedBy}", esperado "attempt_cap".`,
+        );
+      }
+      if (!recusaLaco.message.includes(LIVE_ATTEMPT_LIMIT_ENV)) {
+        failures.push(
+          `teto: a mensagem de teto de tentativas não diz como aumentá-lo (${LIVE_ATTEMPT_LIMIT_ENV}). Recebida: "${recusaLaco.message}"`,
+        );
+      }
+      // O diagnóstico é metade da mensagem: chegar aqui com gasto sobrando
+      // significa que as chamadas estão FALHANDO, e aumentar o limite sem
+      // olhar a falha só produz mais falhas.
+      if (!/est(ã|a)o falhando/i.test(recusaLaco.message)) {
+        failures.push(
+          `teto: a mensagem de teto de tentativas não diagnostica que as chamadas estão falhando. Recebida: "${recusaLaco.message}"`,
+        );
+      }
+    }
+  } finally {
+    resetLiveGenerationCount();
+  }
+
+  notes.push(
+    "teto: falha devolve o GASTO e retém a TENTATIVA; sucesso retém as duas; e 2 falhas com gasto folgado " +
+      "ainda barram a 3ª tentativa (o laço continua travado)",
+  );
   return { failures, notes };
 }
 

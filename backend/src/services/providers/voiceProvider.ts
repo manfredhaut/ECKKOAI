@@ -2,7 +2,7 @@
 // see vendorCatalog.ts.
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { isFixtureMode } from "./providerMode.js";
-import { consumeLiveGeneration, LiveBudgetExhaustedError } from "./liveGuard.js";
+import { withLiveBudget } from "./liveGuard.js";
 import { logVendorBinaryResponse, logVendorResponse } from "./vendorResponseLog.js";
 import {
   checkVoiceConnectionFixture,
@@ -58,29 +58,31 @@ export interface CloneVoiceResult {
 // se alguma deixar de consultar.
 export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResult> {
   if (isFixtureMode()) return cloneVoiceFixture();
-  const budget = consumeLiveGeneration("clonagem de voz");
-  if (!budget.allowed) {
-    throw new LiveBudgetExhaustedError(budget.used, budget.max, "clonar voz");
-  }
-  const form = new FormData();
-  form.set("name", input.name);
-  form.set("files", new Blob([new Uint8Array(input.fileBuffer)], { type: input.mimeType }), input.filename);
+  // `withLiveBudget` consome o teto ANTES da chamada e devolve o GASTO se
+  // esta função lançar — a tentativa continua contada. O wrapper existe para
+  // que consumo e devolução não possam ser separados por um refactor: um
+  // `catch` esquecido aqui reintroduziria o defeito sem sintoma nenhum.
+  return withLiveBudget("clonagem de voz", "clonar voz", async () => {
+    const form = new FormData();
+    form.set("name", input.name);
+    form.set("files", new Blob([new Uint8Array(input.fileBuffer)], { type: input.mimeType }), input.filename);
 
-  let res: Response;
-  try {
-    res = await fetch(ELEVENLABS_ADD_VOICE_URL, {
-      method: "POST",
-      headers: { "xi-api-key": input.apiKey },
-      body: form,
-    });
-  } catch (err) {
-    logProviderNetworkError("voiceProvider.cloneVoice", err);
-    throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
-  }
+    let res: Response;
+    try {
+      res = await fetch(ELEVENLABS_ADD_VOICE_URL, {
+        method: "POST",
+        headers: { "xi-api-key": input.apiKey },
+        body: form,
+      });
+    } catch (err) {
+      logProviderNetworkError("voiceProvider.cloneVoice", err);
+      throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
+    }
 
-  const data = (await readVoiceJson(res, "elevenlabs.cloneVoice")) as { voice_id?: string };
-  if (!data.voice_id) throw new VoiceProviderError("ElevenLabs API returned no voice_id");
-  return { voiceId: data.voice_id };
+    const data = (await readVoiceJson(res, "elevenlabs.cloneVoice")) as { voice_id?: string };
+    if (!data.voice_id) throw new VoiceProviderError("ElevenLabs API returned no voice_id");
+    return { voiceId: data.voice_id };
+  });
 }
 
 // Cheap authenticated call used by POST /credentials/voice/test — lists the

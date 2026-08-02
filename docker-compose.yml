@@ -61,6 +61,10 @@ services:
       PROVIDER_MODE: ${PROVIDER_MODE:-fixture}
       PROVIDER_LIVE_CONFIRM: ${PROVIDER_LIVE_CONFIRM:-}
       PROVIDER_LIVE_MAX_GENERATIONS: ${PROVIDER_LIVE_MAX_GENERATIONS:-1}
+      # Teto de TENTATIVAS (qualquer desfecho). Vazio = 3× o de gasto. Existe
+      # porque a falha passou a devolver o GASTO: sem um contador que não
+      # volta, um caminho que falha sempre dispararia para sempre.
+      PROVIDER_LIVE_MAX_ATTEMPTS: ${PROVIDER_LIVE_MAX_ATTEMPTS:-}
       # Teto das rotas de imagem (cenário, traje, fotos do rosto). Vazio = 25 MB.
       # Repassado aos DOIS serviços para que cliente e servidor concordem por
       # construção — o servidor continua sendo a autoridade.
