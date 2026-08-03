@@ -503,22 +503,42 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-> # 🔴 ANTES DE QUALQUER COISA (2026-08-03 18:46 UTC)
-> **O AMBIENTE ESTÁ ARMADO EM MODO PAGO.** `PROVIDER_MODE=live`,
-> `PROVIDER_LIVE_CONFIRM` preenchida, teto de 2 gerações — medido no container
-> em execução, com prova no log de boot (`"billable":true`). A sessão anterior
-> foi interrompida para troca de conta **no meio de uma passada live**, com a
-> PARADA 2 já liberada e o disparo **não** executado. Qualquer clique no
-> caminho de geração gasta dinheiro real, e o botão "Novo avatar" do passo 1
-> custa **US$ 1,00**. **Vá para a seção
-> "PASSADA LIVE DE 03/08 — HANDOFF DE TROCA DE CONTA", no fim deste arquivo,
-> antes de tocar em qualquer coisa** — o roteiro aprovado, o estado medido, a
-> regra absoluta do polling e as duas saídas (disparar ou desarmar) estão lá.
-> Gasto até agora: **ZERO**. Crédito `video=2` intacto.
+> # 🟢 ANTES DE QUALQUER COISA (2026-08-03 19:45 UTC)
+> **O AMBIENTE ESTÁ DESARMADO.** `PROVIDER_MODE=fixture`,
+> `PROVIDER_LIVE_CONFIRM` vazia — medido pelos TRÊS critérios (`printenv` no
+> container, `docker compose config`, e o log de boot com
+> `"mode":"fixture","billable":false"`). O aviso vermelho anterior, que dizia
+> "ARMADO EM MODO PAGO", está **vencido**: o operador desarmou ao fim daquela
+> sessão. O disparo live **nunca aconteceu**, e o gasto com fornecedor
+> continua **ZERO** — confirmado contra a própria HeyGen em 03/08 19:38 UTC:
+> cota **873** e carteira **US$ 14,55**, os mesmos números de 02/08.
+>
+> **Crédito `video` NÃO está mais em 2 — está em 1.** Um ensaio em fixture de
+> 03/08 consumiu um crédito, porque `debitCredit` roda antes de
+> `generateVideo` e `isFixtureMode()` só decide a coluna `simulated` do
+> ledger, **nunca o `delta`** ([videos.ts:589](backend/src/routes/videos.ts:589)).
+> Simulação não gasta fornecedor, mas gasta crédito. Repor, se quiser:
+> `docker compose exec backend npm run dev:grant-credits -- --slug dev-c77a5b --video 1`.
+>
+> **Duas coisas a ler antes de armar de novo:** a seção TELA-1 (o botão "Novo
+> avatar" do passo 1 custa **US$ 1,00** em live) e a seção FIXTURE-1, no fim
+> deste arquivo — ela mede a semântica exata dos dois tetos e mostra que a
+> margem real é **1 tentativa**, não as 4 que o plano da passada prometia.
 
-**Última atualização:** 2026-08-03 — **passada live ARMADA e NÃO disparada
-(handoff de troca de conta), mais o fechamento da lacuna do `voice_id`.** Leia
-o aviso vermelho acima primeiro. Depois, **vá à seção TELA-1, no fim deste
+**Última atualização:** 2026-08-03 — **bloco FIXTURE-1: ambiente DESARMADO e
+o que dava para saber antes de gastar, medido sem gastar.** Leia o aviso verde
+acima primeiro, e depois a **seção FIXTURE-1, no fim deste arquivo**. Os três
+achados que mudam decisão: a **Parte B do 5F já está respondida** pelos
+arquivos em disco (Mário em 16:9 é `clean`, o mesmo Mário em 9:16 tem 57,8% de
+barra ⇒ o preenchimento é do FORNECEDOR, e as 2 gerações de controle deixaram
+de ser necessárias); a margem real do teto é **1 tentativa**, não 4; e
+**fixture não exercita o TTS**, de modo que toda linha `tts_timestamps` gravada
+em simulação é rótulo, não medição. A passada live continua **NÃO disparada**,
+com gasto **ZERO** confirmado contra a HeyGen — mas o crédito `video` caiu para
+**1**, consumido por um ensaio em fixture. Antes dele, **vá à seção TELA-1**:
+ela abre com o achado que mais importa antes de qualquer coisa em
+live — **existe SIM um ramo de clonagem de voz
+alcançável da tela "Criar vídeo"**, no passo 1, atrás do botão "Novo avatar", e
 arquivo**: ela abre com o achado que mais importa antes de qualquer coisa em
 live — **existe SIM um ramo de clonagem de voz
 alcançável da tela "Criar vídeo"**, no passo 1, atrás do botão "Novo avatar", e
@@ -1516,6 +1536,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-03 | **FIXTURE-1** | **Ambiente DESARMADO (3 critérios). Linha de base MEDIDA contra a HeyGen: cota 873, carteira US$ 14,55 — previsão bateu exata, nada gasto desde 02/08. Fixture NÃO exercita o TTS (`generateVideo` volta antes de `requireAudio`), então `audio_duration_source=tts_timestamps` em fixture é RÓTULO, não medição. TTS exercitado com fetch substituído: 180 chars sem truncagem, 1 chamada (2 no fallback), `eleven_multilingual_v2`. Tetos são GLOBAIS da sessão; falha antes do aceite devolve gasto e crédito, NUNCA a tentativa ⇒ sobra 1 tentativa. `provider_usage` NÃO tem coluna `simulated` e 93% das linhas são inclassificáveis (conserto PROPOSTO, não feito). Parte B do 5F RESPONDIDA de graça: Mário 16:9 `clean` × Mário 9:16 `padded` 57,8% ⇒ preenchimento é do FORNECEDOR. Ensaio consumiu 1 crédito. Ver abaixo.** |
 | 08-03 | **TELA-1** | **Diagnostico da tela "Criar video": 12 defeitos ordenados por visibilidade, NENHUM corrigido. Parte A da rodada live entregue e PARADA na 1. 2 lacunas novas: voice_id nao entra no predicado mas requireAudio exige; 3 campos diferentes descrevem "voz" no mesmo card. Zero gasto. Ver abaixo.** |
 | 08-03 | **PASSADA LIVE — ARMADA, NÃO disparada** | **AMBIENTE FICOU EM LIVE na troca de conta (medido: `billable":true`, teto 2). PARADAS 1 e 2 liberadas, roteiro aprovado GRAVADO (187 car / 34 palavras), pré-voo completo, `uploads/_prova/live-15s-03082026/` criada. Disparo NAO executado, gasto ZERO, credito video=2. 3 falsas partidas ensinaram: `&&` nao vale no PowerShell do operador; `.env` em UTF-16/BOM cai no default em silencio; o item 1 passou a exigir printenv + StartedAt + `docker compose config`. Ver o bloco no fim.** |
 | 08-03 | **TELA-1 · lacuna do `voice_id`** | **FECHADA por leitura, sem gasto. EXISTE ramo de clonagem alcancavel da tela Criar video — passo 1, `cloneVoice` em avatars.ts:266 via AvatarSetupStep.tsx:192/209, atras de "Novo avatar" (`draftAvatar`), e ele treina avatar de US$ 1,00 antes. Passo 6 NAO alcanca por nenhum ramo. voice_id nulo FALHA (avatarProvider.ts:160), nunca clona; entra como segmento de URL (voiceProvider.ts:162), nao como campo de corpo; 1 chamada ao ElevenLabs no caminho feliz. CORRECAO: a sintese roda DENTRO do teto de sessao, nao fora. Prova renomeada para live-15s-03082026. Ver abaixo.** |
@@ -4497,3 +4518,224 @@ desarme. **Não** "consertar" a guarda no meio de uma passada live armada: é
 mudança de guarda com dinheiro em jogo, e o arnês de mutantes teria de ser
 reexecutado para valer. Registrado como achado, **NÃO corrigido**. O conserto,
 quando vier, é comparar com o modo original em vez de com `fixture`.
+
+---
+
+### FIXTURE-1 — o que se pode saber antes de gastar (2026-08-03, custo ZERO de fornecedor)
+
+Ambiente em `fixture` do começo ao fim. **Zero chamadas tarifadas** — as duas
+únicas requisições que saíram da máquina foram leituras de cota/carteira da
+HeyGen, `billable: false` no catálogo. **Um crédito de vídeo foi consumido**
+por um ensaio em fixture (ver o aviso no topo).
+
+#### O ensaio em fixture NÃO exercita o TTS — e por isso não responde a maior parte do que se quer saber
+
+[fixtureProvider.ts:241](backend/src/services/providers/fixtureProvider.ts:241)
+declara: *"em simulação a síntese não acontece — `generateVideo` devolve antes
+de `requireAudio`"*. Não é só o desvio de
+[voiceProvider.ts:161](backend/src/services/providers/voiceProvider.ts:161): o
+caminho de voz nem é alcançado. *MEDIDO no ensaio:* **zero** ocorrências de
+`elevenlabs` no log e **zero** eventos `vendor_response`; as 292 linhas do
+período são requisições HTTP internas.
+
+**Armadilha que sai daí:** o ensaio grava
+`videos.audio_duration_source = tts_timestamps` **sem que medição nenhuma
+tenha ocorrido**. É rótulo deliberado, carimbado em
+[fixtureProvider.ts:248](backend/src/services/providers/fixtureProvider.ts:248)
+com o motivo escrito; o caminho real só emite esse valor quando o ElevenLabs
+devolve `elevenlabs_timestamps`
+([avatarProvider.ts:202](backend/src/services/providers/avatarProvider.ts:202)).
+**Em live o campo significa medição; em fixture, não.** Quem auditar linhas
+antigas por esse campo vai contar simulação como medição.
+
+#### O caminho do TTS, exercitado com `fetch` substituído (zero rede)
+
+Mesmo padrão das guardas do projeto, `PROVIDER_MODE=live` só dentro do processo
+do script. *MEDIDO:*
+
+| Pergunta | Resposta |
+|---|---|
+| caracteres enviados | **180 chars / 187 bytes**, idêntico ao roteiro aprovado. **Nenhuma truncagem** |
+| chamadas ao ElevenLabs | **1** no caminho feliz; **2** se cair no fallback |
+| `model_id` | **`eleven_multilingual_v2`**, igual nos dois ramos |
+
+O corpo é só `{text, model_id}`; o `voice_id` vai como **segmento de URL**.
+Não há `slice`/`substring`/limite em `videos.ts`, `avatarProvider.ts` nem
+`voiceProvider.ts`, e o campo do formulário tem `maxLength = -1`.
+
+**Correção de contagem:** o roteiro aprovado tem **180 caracteres**, não 187 —
+os 187 são **bytes UTF-8** (7 acentuados). São 34 palavras.
+
+**Um `voice_id` inválido custa DUAS chamadas, não uma:** o 404 do ramo
+`with-timestamps` cai no fallback, que só então lança
+([voiceProvider.ts:242](backend/src/services/providers/voiceProvider.ts:242)).
+Em nenhum desfecho há criação de voz. *Exercitado com resposta simulada por
+nós — a forma real do 404 do fornecedor continua NÃO VERIFICADA.*
+
+#### Semântica dos dois tetos — leitura de código
+
+**Os dois contadores são GLOBAIS DA SESSÃO (do processo), nunca por geração:**
+`let used` em [liveGuard.ts:103](backend/src/services/providers/liveGuard.ts:103)
+e `let attempted` em [:114](backend/src/services/providers/liveGuard.ts:114).
+Ambos incrementam juntos em [:192](backend/src/services/providers/liveGuard.ts:192).
+Existe `used -= 1` em [:219](backend/src/services/providers/liveGuard.ts:219);
+**não existe decremento de `attempted` em lugar nenhum do módulo.**
+
+| Desfecho | Tentativa | Gasto | Crédito |
+|---|---|---|---|
+| **falha ANTES de o fornecedor aceitar** | consome, **não volta** | consome e **DEVOLVE** | debita e **ESTORNA** ([videos.ts:657](backend/src/routes/videos.ts:657)) |
+| **falha DEPOIS do aceite** (polling, artefato, timeout) | consome, não volta | consome, **não volta** | debita, **não estorna** |
+| **preso em `queued`** (processo reiniciou) | zerada pelo restart | zerado pelo restart | debita, **não estorna, sem linha de falha** |
+
+A fronteira é a mesma do ESTORNO-1: `withLiveBudget` devolve quando a função
+lança ([:248](backend/src/services/providers/liveGuard.ts:248)); o
+`pollJob` roda em `setInterval` **fora** dele. *MEDIDO por contagem:* **zero**
+`refundCredit` dentro de `pollJob` (linhas 26–140 de `videos.ts`).
+
+**Armadilha de nomenclatura:** `pollJob` tem um `let attempts` **local**
+([videos.ts:36](backend/src/routes/videos.ts:36)) que conta tentativas de
+POLLING e nada tem a ver com o `attempted` do teto. Dois `attempts` com
+significados diferentes.
+
+**`restart` zera os DOIS**, porque são estado de processo — é por isso que
+reiniciar é a saída documentada quando as tentativas acabam.
+
+> **A frase, com os números de hoje** (`MAX_GENERATIONS=2`, `MAX_ATTEMPTS=2`,
+> saldo 1): **depois de uma falha antes do aceite sobram 1 tentativa,
+> 2 gerações e 1 crédito.** O gargalo é a TENTATIVA — sobra exatamente um
+> disparo.
+
+**Correção do registro anterior:** o plano da passada diz "com
+`MAX_GENERATIONS=2` são 6 tentativas, ou seja 4 falhas de margem". Isso vale só
+para o **default derivado** (2 × `LIVE_DEFAULT_ATTEMPTS_PER_GENERATION`); o
+`.env` fixa `PROVIDER_LIVE_MAX_ATTEMPTS=2`, e valor explícito vence o derivado
+([liveGuard.ts:82](backend/src/services/providers/liveGuard.ts:82)). Também
+some a contradição "margem ZERO" de um relatório intermediário: **é 1**.
+
+#### Linha de base de cota — MEDIDA, e a previsão bateu exata
+
+| Endpoint | Papel | Tarifado? |
+|---|---|---|
+| `GET /v2/user/remaining_quota` | cota em unidades | **NÃO** ([endpointCatalog.ts:85](backend/src/services/providers/endpointCatalog.ts:85)) |
+| `GET /v3/users/me` | carteira em dólar | **NÃO** — substituto do sunset de 2026-10-31 |
+
+*MEDIDO em 03/08 19:38 UTC:* **cota 873**, **carteira US$ 14,55**. Idênticos aos
+de 02/08, ou seja **nada foi gasto**. E 873 ÷ 14,55 = **60,0** — quarto ponto
+confirmando 60 unidades por dólar.
+
+**Ler cota pelo caminho do TENANT NÃO funciona em fixture:**
+`checkAvatarConnection` desvia em
+[avatarProvider.ts:666](backend/src/services/providers/avatarProvider.ts:666).
+**Pelo painel admin também não, hoje:** o probe não desvia (a única menção a
+`isFixtureMode()` em `platformKeyProbe.ts` é um comentário), mas
+`platform_credentials` está **VAZIA** — *MEDIDO: 0 linhas*. Sobra ler direto,
+com a credencial do tenant.
+
+> **A medição de custo da rodada é o DELTA de cota antes/depois.** E
+> **`provider_usage.unit_count` guarda SEGUNDOS, não unidades** (`unit_type` é
+> `seconds`): **nunca comparar os dois números**. A conversão é 3 unidades por
+> segundo inteiro truncado.
+
+#### Proveniência envenenada em `provider_usage`
+
+**Não existe coluna `simulated` nessa tabela** — *MEDIDO: 0 colunas com esse
+nome.* E o join com `videos.simulated` não salva, porque quase nada tem
+`video_id`:
+
+| Origem | linhas |
+|---|---|
+| `video_id` presente, `simulated=false` (**real**) | 3 |
+| `video_id` presente, `simulated=true` (fixture) | 4 |
+| **sem `video_id`** (15 avatar + 58 script + 3 voice) | **76** |
+
+**93% das 82 linhas são inclassificáveis.** Toda tela de custo agregado soma
+simulação com dinheiro real. **Menor conserto:** acrescentar uma coluna
+`simulated boolean NOT NULL DEFAULT false` a `provider_usage`, preenchida no
+ponto de escrita a partir de `isFixtureMode()` — mesmo desenho de
+`credit_ledger.simulated`, que já resolveu isto para o ledger. As 76 linhas
+antigas ficam como `false` e **continuam mentindo**; corrigi-las exige decidir
+caso a caso, que não é decisão de script. **PROPOSTO, NÃO IMPLEMENTADO.**
+
+#### O padding: o par controlado JÁ EXISTE, e a Parte B do 5F está respondida
+
+*MEDIDO — o mestre 9:16 de 02/08 é do **Mário**, e há um 16:9 do MESMO avatar:*
+
+| Arquivo | Avatar | Proporção | Veredito |
+|---|---|---|---|
+| `5f77229e` (02/08) | **Mário** | 9:16 | **`padded`, 57,8%** — conteúdo 720×540 |
+| `61caaab1` (31/07) | **Mário** | 16:9 | **`clean`, 0%** |
+| `0a0193b8` (01/08) | TESTE REAL | 16:9 | `clean`, 0% |
+| `…-5f-recortado-9x16` | Mário | 9:16 | `clean`, 0% (o ativo da Biblioteca) |
+
+**Mesmo avatar, mesma foto de origem, duas proporções: a barra aparece só no
+9:16.** Pela tabela de decisão da Parte B, isso é a linha *"com barra / limpo →
+o preenchimento é do FORNECEDOR"*. **A rodada de controle de 2 gerações não é
+mais necessária para essa conclusão** — o FOV-1 já tinha usado este par, e
+aqui os vereditos foram reconferidos direto dos arquivos.
+
+*Ressalva:* os dois têm roteiros e durações diferentes (33,7 s e 17,0 s), e a
+generalização "a HeyGen sempre preenche em 9:16" continua **NÃO VERIFICADA** —
+o medido é que **este avatar**, nestas duas proporções, se comporta assim.
+
+#### Artefato pós-disparo: o UPDATE que o plano previa NÃO é necessário
+
+Desde o 5D o polling **já** baixa, valida e persiste o artefato **antes** de
+marcar `ready`, gravando a cópia local em `output_url` e a URL do fornecedor em
+`provider_output_url` ([videos.ts:113](backend/src/routes/videos.ts:113)). O
+`UPDATE` manual só faz falta no ramo de **falha da cópia**, que cai na URL
+remota e deixa `artifact_persist_failed` no log.
+
+- **Coluna `origin`: não existe em `videos`** — ela é de `video_variants`. Não
+  há o que preencher aqui.
+- **O proxy serve arquivo local:** resolve URL relativa contra o próprio
+  servidor ([downloadProxy.ts:54](backend/src/services/downloadProxy.ts:54)).
+- **A Biblioteca toca sem badge** quando `videos.simulated` é falso.
+
+Contingência, **só se o log acusar `artifact_persist_failed`** (diretório do
+projeto), conferindo o arquivo em disco **antes**:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d twinai -c "UPDATE videos SET output_url='/uploads/<tenant>/<arquivo>.mp4' WHERE id='<VIDEO_ID>' AND output_url LIKE 'https://%'"
+```
+
+Espere `UPDATE 1`. A cláusula sobre `https://` existe para que rodar duas vezes
+não faça nada na segunda.
+
+#### Banda e cobrança — comprometidas ANTES do disparo
+
+A banda por **caracteres** foi abandonada: ela ignorava o ritmo da voz. Pelo
+wpm, com as 34 palavras do roteiro aprovado:
+
+| wpm | duração prevista |
+|---|---|
+| **125** (medido nesta voz clonada) | **16,3 s** |
+| 140 (configurado em `scriptDuration.ts`) | 14,6 s |
+
+> **Banda comprometida: 14,6 a 16,3 s**, ou seja segundos cobrados **14, 15 ou
+> 16**.
+
+**Tabela de cobrança por segundo ENTREGUE truncado** (3 un/s · 60 un/US$):
+
+| segundos entregues | unidades | custo |
+|---|---|---|
+| 12 | 36 | US$ 0,60 |
+| 13 | 39 | US$ 0,65 |
+| 14 | 42 | US$ 0,70 |
+| 15 | 45 | US$ 0,75 |
+| 16 | 48 | **US$ 0,80** |
+
+**A estimativa da tela usa a duração PEDIDA, não a entregue** — para 15 s
+pedidos ela mostra **US$ 0,75**. Divergência é ESPERADA e o sinal é previsível:
+saindo no topo da banda (16 s) a estimativa terá sido **baixa** em US$ 0,05;
+saindo embaixo (14 s), **alta** em US$ 0,05. *MEDIDO no ensaio em fixture, onde
+a divergência é grande de propósito:* estimativa US$ 0,75 (15 s pedidos) contra
+real US$ 0,25 (5 s entregues), com a tela dizendo *"a estimativa foi 3× o custo
+real"*.
+
+#### Continua NÃO VERIFICADO
+
+- A forma real do erro do ElevenLabs para `voice_id` inválido.
+- Se a HeyGen aceita `1080p` na nossa conta.
+- Se o preenchimento em 9:16 é regra do fornecedor **para todo avatar**.
+- A constante de custo contra FATURA (só contra saldo e quota da API).
+- Cobrança abaixo de 1 segundo.
