@@ -503,10 +503,24 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-03 — **Bloco TELA-1, incluindo o fechamento da
-lacuna do `voice_id`.** Se você acabou de assumir este projeto, **vá direto à
-seção TELA-1, no fim deste arquivo**: ela abre com o achado que mais importa
-antes de qualquer coisa em live — **existe SIM um ramo de clonagem de voz
+> # 🔴 ANTES DE QUALQUER COISA (2026-08-03 18:46 UTC)
+> **O AMBIENTE ESTÁ ARMADO EM MODO PAGO.** `PROVIDER_MODE=live`,
+> `PROVIDER_LIVE_CONFIRM` preenchida, teto de 2 gerações — medido no container
+> em execução, com prova no log de boot (`"billable":true`). A sessão anterior
+> foi interrompida para troca de conta **no meio de uma passada live**, com a
+> PARADA 2 já liberada e o disparo **não** executado. Qualquer clique no
+> caminho de geração gasta dinheiro real, e o botão "Novo avatar" do passo 1
+> custa **US$ 1,00**. **Vá para a seção
+> "PASSADA LIVE DE 03/08 — HANDOFF DE TROCA DE CONTA", no fim deste arquivo,
+> antes de tocar em qualquer coisa** — o roteiro aprovado, o estado medido, a
+> regra absoluta do polling e as duas saídas (disparar ou desarmar) estão lá.
+> Gasto até agora: **ZERO**. Crédito `video=2` intacto.
+
+**Última atualização:** 2026-08-03 — **passada live ARMADA e NÃO disparada
+(handoff de troca de conta), mais o fechamento da lacuna do `voice_id`.** Leia
+o aviso vermelho acima primeiro. Depois, **vá à seção TELA-1, no fim deste
+arquivo**: ela abre com o achado que mais importa antes de qualquer coisa em
+live — **existe SIM um ramo de clonagem de voz
 alcançável da tela "Criar vídeo"**, no passo 1, atrás do botão "Novo avatar", e
 ele treina um avatar de **US$ 1,00** antes de clonar. O passo 6 não alcança
 clonagem por nenhum ramo (nem `catch`, nem retentativa, nem fallback). A seção
@@ -1503,6 +1517,7 @@ só para responder "isso já foi feito?".
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
 | 08-03 | **TELA-1** | **Diagnostico da tela "Criar video": 12 defeitos ordenados por visibilidade, NENHUM corrigido. Parte A da rodada live entregue e PARADA na 1. 2 lacunas novas: voice_id nao entra no predicado mas requireAudio exige; 3 campos diferentes descrevem "voz" no mesmo card. Zero gasto. Ver abaixo.** |
+| 08-03 | **PASSADA LIVE — ARMADA, NÃO disparada** | **AMBIENTE FICOU EM LIVE na troca de conta (medido: `billable":true`, teto 2). PARADAS 1 e 2 liberadas, roteiro aprovado GRAVADO (187 car / 34 palavras), pré-voo completo, `uploads/_prova/live-15s-03082026/` criada. Disparo NAO executado, gasto ZERO, credito video=2. 3 falsas partidas ensinaram: `&&` nao vale no PowerShell do operador; `.env` em UTF-16/BOM cai no default em silencio; o item 1 passou a exigir printenv + StartedAt + `docker compose config`. Ver o bloco no fim.** |
 | 08-03 | **TELA-1 · lacuna do `voice_id`** | **FECHADA por leitura, sem gasto. EXISTE ramo de clonagem alcancavel da tela Criar video — passo 1, `cloneVoice` em avatars.ts:266 via AvatarSetupStep.tsx:192/209, atras de "Novo avatar" (`draftAvatar`), e ele treina avatar de US$ 1,00 antes. Passo 6 NAO alcanca por nenhum ramo. voice_id nulo FALHA (avatarProvider.ts:160), nunca clona; entra como segmento de URL (voiceProvider.ts:162), nao como campo de corpo; 1 chamada ao ElevenLabs no caminho feliz. CORRECAO: a sintese roda DENTRO do teto de sessao, nao fora. Prova renomeada para live-15s-03082026. Ver abaixo.** |
 | 08-03 | **INSTRUMENTOS-1** | **`tools/scale-match.mjs` commitado (vivia em scratchpad efemero); headroom/sujeitoV/sujeitoH do fov-compare DESQUALIFICADOS (bounding box muda 1,80→0,94 na mesma sala) e o veredito automatico removido; barFrac passa a cobrar concordancia de 3 quadros. Sanidade 57,8/1,3333 batendo nos dois. Achado: existem DOIS masters 16:9 de 1280x720 e o do FOV-1 e o de 33,696 s (`61caaab1`), nao o do LIVE-1. MEDIDO que 1080p daria 2,25x mais pixels uteis pelo mesmo preco e que seus alvos sao os 4 numeros da politica do 5E — nada alterado. Ver abaixo.** |
 | 08-03 | **FOV-1** | **O 9:16 e RECOMPOSICAO, nao corte — MEDIDO por casamento de escala em dois masters que ja estavam em disco, custo zero: mesma largura de campo, 33% mais campo vertical. A chave do catalogo e (avatar, formato_pedido) e a migration por combinacao E necessaria. 2 dos 4 videos do Mario ja dao 403: a evidencia do fornecedor apodrece. Ver abaixo.** |
@@ -4285,3 +4300,200 @@ orientar código.
 código, mas nunca contra o fornecedor real — e provar isso passou a exigir
 ambiente de produção, então a lacuna ficou registrada e classificada, não
 esquecida.*
+
+---
+
+## 🔴 PASSADA LIVE DE 03/08 — HANDOFF DE TROCA DE CONTA · AMBIENTE ARMADO EM LIVE
+
+**Se você acabou de assumir o projeto, LEIA ESTA SEÇÃO ANTES DE TUDO, inclusive
+antes do resto de TELA-1.** A sessão anterior foi interrompida para troca de
+conta **com o ambiente ligado em modo pago**, no meio de uma passada live
+planejada. Nada foi gasto, e o que impede um gasto acidental agora é só esta
+página.
+
+### ⚠ O ambiente NÃO está em `fixture`. Está em LIVE, armado e conferido
+
+*MEDIDO em 2026-08-03 18:46 UTC, no container em execução:*
+
+```
+PROVIDER_MODE                  = live
+PROVIDER_LIVE_CONFIRM          = PREENCHIDA
+PROVIDER_LIVE_MAX_GENERATIONS  = 2
+StartedAt                      = 2026-08-03T18:43:32Z
+```
+
+Prova no log de boot, que é a fonte que não mente sobre o processo de pé:
+
+```json
+{"event":"provider_mode","mode":"live","billable":true,
+ "maxGenerationsThisSession":2,
+ "message":"MODO LIVE AUTORIZADO — chamadas a HeyGen/ElevenLabs vão gastar cota PAGA…"}
+```
+
+**Consequência prática, e é o único aviso que importa:** qualquer clique no
+caminho de geração agora **gasta dinheiro de verdade**. Não existe rede de
+proteção além do teto de 2. O botão **"Novo avatar"** do passo 1 dispara treino
+(**US$ 1,00** + 1 crédito de avatar) — ver a armadilha de palco no ROTEIRO DA
+DEMO. **"Gerar com IA"** no passo 2 chama o Gemini de verdade.
+
+**Duas saídas, e a escolha é do operador — nenhuma sessão deve decidir sozinha:**
+disparar a passada (Parte C abaixo, tudo pronto), ou **desarmar** devolvendo
+`PROVIDER_MODE=fixture` e esvaziando `PROVIDER_LIVE_CONFIRM`, com
+`docker compose up -d backend` (**`restart` não recarrega variável de
+ambiente**) e conferindo `"mode":"fixture","billable":false` no log de boot.
+**Deixar armado entre sessões é o estado mais perigoso do dia.**
+
+### O ROTEIRO APROVADO — grava aqui porque só existia numa conversa
+
+Aprovado pelo operador em 03/08. **É este texto, sem editar.** As quebras de
+linha do prompt original caíam no meio de frases (era wrap de formatação): o
+roteiro é **um parágrafo único**.
+
+```
+Olá, eu sou o Mário, da eckko ponto ai. Este vídeo foi gerado inteiro a partir de um roteiro escrito, com a minha voz e o meu rosto. Nenhuma câmera, nenhum estúdio, nenhuma edição.
+```
+
+*MEDIDO:* **187 caracteres, 34 palavras.** (O registro anterior falava em "35
+palavras"; a contagem real do texto aprovado é 34 — a diferença não muda nada,
+mas evita que alguém ache que recebeu o roteiro errado.)
+
+Banda de duração esperada, **DEDUZIDA** das duas medições reais de TTS
+(11,7 e 14,8 caracteres/s): **12,6 a 16,0 s** para estes 187 caracteres. Use
+**esta** como primária, não a de 140 wpm — a de wpm é o número que o próprio
+código chama de mais chutado. Estimativa que a tela mostra para 15 s pedidos:
+**US$ 0,75**.
+
+### Estado exato ao fim da sessão
+
+| O quê | Estado |
+|---|---|
+| Gasto | **ZERO.** Nenhum clique no fluxo, nenhuma chamada a fornecedor |
+| Crédito do tenant | **video=2**, avatar=3, script=9 (baseline reconferido) |
+| PARADA 1 | **LIBERADA** — roteiro aprovado, 15 s, `live-15s-03082026` |
+| PARADA 2 | **LIBERADA** — o operador armou o ambiente (medido acima) |
+| Parte C (disparo) | **NÃO INICIADA** |
+| Árvore git | limpa em `1826a64` antes deste commit |
+
+### Pré-voo COMPLETO — não refaça
+
+| # | Verificação | Resultado |
+|---|---|---|
+| 1 | `/api/health` via Traefik | `{"status":"ok"}` |
+| 1 | Containers | 4/4 `running (healthy)` |
+| 3 | `uploads/_prova/live-15s-03082026/` | **criada**, com `pre-voo-backend.log` (1.943.842 bytes, UTF-8 conferido por `file`) |
+| 4 | Seletor do passo 4 | `[15, 30, 60]` — 15 s é o mínimo ([DurationStep.tsx:4](frontend/src/pages/CreateVideo/steps/DurationStep.tsx:4)) |
+| 4 | YouTube | **16:9 / 720p** ([videoFormat.ts:54](backend/src/services/providers/videoFormat.ts:54) e [:72](backend/src/services/providers/videoFormat.ts:72)) |
+| 4 | Mário `983c7de4` | `provider_avatar_id=45528bb8bf914899b12403e6d50cb780`, `voice_id=wAd9MJ2IK71FGs1FWjIX` |
+
+`uploads/_prova/5f-e1e47cc/` e `uploads/_prova/fov/` **intocadas**.
+
+### ⛔ REGRA ABSOLUTA DO POLLING — a única coisa irreversível do dia
+
+O polling roda em `setInterval` **FORA** do `withLiveBudget`. Reinício entre a
+criação e o polling **mata o `setInterval`**: o vídeo fica preso em `queued`
+para sempre, **sem linha de falha e sem estorno de crédito** (desfecho E do 4A).
+
+**Portanto: nunca sugerir, pedir ou executar `restart`, `up -d` ou qualquer
+reinício enquanto houver geração em andamento.** Só depois de `ready` ou de erro
+declarado. Antes do disparo, reiniciar é seguro.
+
+### O que resta — Parte C em diante
+
+**Item 1, sempre primeiro, e com TRÊS critérios** (a sessão anterior gastou três
+falsas partidas por verificar de menos):
+
+```bash
+docker compose exec -T backend printenv PROVIDER_MODE
+docker inspect --format 'StartedAt={{.State.StartedAt}}' $(docker compose ps -q backend)
+docker compose config | grep PROVIDER_MODE
+```
+
+`printenv` diz o que o processo tem; `StartedAt` diz se o container é novo;
+`docker compose config` diz o que o `.env` entrega **sem subir nada** — é o
+teste barato que isola `.env` de container.
+
+**Parte C:** card do **Mário** apenas (nunca "Novo avatar", nunca "Excluir") →
+passo 2 com o roteiro colado (**nunca** "Gerar com IA") → plataforma **YouTube**
+→ **15 s** → registrar a estimativa que o painel mostra → disparar **um único
+vídeo** → relatar cada transição de status com horário. **Se falhar: PARAR, não
+retentar** — retentar é decisão do operador — e relatar erro, se foi antes ou
+depois do aceite, teto (gasto e tentativas) e saldo com/sem estorno.
+
+**Parte D, nesta ordem:** copiar o mp4 para a pasta de prova e registrar md5 e
+tamanho **antes de medir qualquer coisa** → `ffprobe` do arquivo **local**
+(duração, resolução, DAR, áudio decodifica) → `probePadding` local (esperado
+**0%** em 16:9) → linha de `provider_usage` (`unit_count`, `unit_source`,
+`requested_unit_count`, resolução) com cobrado × estimado em dólar e em % e
+comparação com a banda de 12,6–16,0 s → painel de custo na tela (estimativa,
+real, diferença) → **registrar o preço por segundo realmente cobrado em 720p**,
+dizendo que a **paridade 720p/1080p CONTINUA não verificada**, porque esta
+rodada não pede 1080p.
+
+**Parte D2:** só depois de `ready` (ou erro declarado), salvar o log do backend
+em UTF-8 na pasta de prova — **ele contém a ida e volta real com o fornecedor e
+é apagado no `up -d` do desarme.**
+
+**Parte E:** o operador desarma; a sessão confere por `printenv`; depois
+Biblioteca — onde o vídeo novo apareceu, se toca, e quais dos antigos ainda
+tocam e quais dão 403.
+
+### Cópia do artefato — comando MONTADO, não executado
+
+O artefato **não** vem do CDN: desde o 5D o polling baixa e persiste no nosso
+disco antes de marcar `ready`. A cópia é para ter prova imutável.
+
+```bash
+V=<VIDEO_ID>; F=$(docker compose exec -T postgres sh -c "psql -tA -U \$POSTGRES_USER -d \$POSTGRES_DB -c \"SELECT output_url FROM videos WHERE id='$V'\"" | tr -d '\r'); cp "uploads/${F#/uploads/}" uploads/_prova/live-15s-03082026/live-15s-16x9.mp4; md5sum uploads/_prova/live-15s-03082026/live-15s-16x9.mp4; ls -l uploads/_prova/live-15s-03082026/live-15s-16x9.mp4
+```
+
+### Três falsas partidas, e o que cada uma ensinou
+
+Valem mais que o tempo que custaram, porque as duas primeiras se repetem
+sozinhas em qualquer sessão futura:
+
+1. **`&&` não vale no PowerShell do operador.** Os comandos compostos que a
+   sessão sugeriu **nunca rodaram** — daí um container com 9 horas de vida
+   parecendo desobediência. **Todo comando entregue ao operador tem de ser
+   sintaxe PowerShell: `;` ou linhas separadas, nunca `&&`.**
+2. **`.env` novo não chega ao container sem recriação, e não chega ao Compose se
+   o arquivo não for legível.** Container recriado (`StartedAt` recente) ainda
+   lendo `fixture` isola o problema no `.env`, não no Docker: `docker compose
+   config` devolvia exatamente os defaults de `${VAR:-default}` do
+   `docker-compose.yml` (linhas 61–63). Candidatos, em ordem: nome errado
+   (`.env.txt` — o Notepad faz isso sozinho), linha comentada, espaço em volta
+   do `=`, e **arquivo em UTF-16LE ou com BOM**, que o Compose não lê e que faz
+   toda variável cair no default **em silêncio**. Conferência sem imprimir
+   valor: `Get-Item -Force .env* | Select-Object Name, Length` e
+   `Format-Hex -Path .env -Count 4` (`FF FE` = UTF-16LE, `EF BB BF` = BOM).
+3. **`printenv` sozinho não bastava.** Ele diz que está errado, não **onde**.
+   O trio `printenv` + `StartedAt` + `docker compose config` separa as três
+   causas possíveis em uma passada, e é por isso que virou o item 1.
+
+### ⚠ `npm run check` NÃO FICA VERDE com o ambiente em live — e não é defeito do commit
+
+*MEDIDO nas duas direções, e vale saber antes de perder tempo procurando o que
+não existe:*
+
+| Como foi rodado | Saída | Violações |
+|---|---|---|
+| ambiente como está (live) | **1** | 2, ambas `PROVIDER_MODE não voltou para fixture depois da verificação` |
+| `docker compose exec -e PROVIDER_MODE=fixture backend npm run check` | **0** | nenhuma — *"todas as invariantes passaram"* |
+
+**A causa é uma guarda que verifica a proposição errada, e é PRÉ-EXISTENTE.**
+`checkPollPolicy` e `checkVendorErrorPathPolicy` trocam o modo para `live`
+localmente, restauram o **modo original** ([checkPollPolicy.ts:120](backend/src/scripts/checkPollPolicy.ts:120))
+e depois cobram `if (!isFixtureMode())`
+([:132](backend/src/scripts/checkPollPolicy.ts:132) e
+[checkVendorErrorPathPolicy.ts:224](backend/src/scripts/checkVendorErrorPathPolicy.ts:224)).
+Restaurar para `live` — que é o comportamento **correto** — reprova a asserção.
+Ela confunde *"restaurou o que estava"* com *"é fixture"*, e funciona por
+acidente só enquanto o ambiente de desenvolvimento está em fixture.
+
+**Consequência para a passada:** o fechamento não consegue exibir
+`npm run check` verde enquanto o ambiente estiver armado. As duas opções
+honestas são rodar o gate com `-e PROVIDER_MODE=fixture` (que não toca o
+container nem o `.env`) e **declarar que foi assim**, ou rodá-lo depois do
+desarme. **Não** "consertar" a guarda no meio de uma passada live armada: é
+mudança de guarda com dinheiro em jogo, e o arnês de mutantes teria de ser
+reexecutado para valer. Registrado como achado, **NÃO corrigido**. O conserto,
+quando vier, é comparar com o modo original em vez de com `fixture`.
