@@ -1480,6 +1480,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-03 | **FOV-1** | **O 9:16 e RECOMPOSICAO, nao corte — MEDIDO por casamento de escala em dois masters que ja estavam em disco, custo zero: mesma largura de campo, 33% mais campo vertical. A chave do catalogo e (avatar, formato_pedido) e a migration por combinacao E necessaria. 2 dos 4 videos do Mario ja dao 403: a evidencia do fornecedor apodrece. Ver abaixo.** |
 | 08-03 | **APRESENTACAO-1** | **Arnês 90/90 MEDIDO (781 s), com os 4 mutantes de preenchimento que provam a guarda mais 1 controle, nominais pela linha de falha de cada um; prova preservada em `_prova/5f-e1e47cc/` com manifesto; ativo da Biblioteca repontado para a cópia sem barra (UPDATE 1, com REVERTER.txt); rota estática provada por curl ANTES do UPDATE; confirmado no navegador. `video_variants` não comporta duas variantes 9:16 — nada inserido. Ver abaixo.** |
 | 08-03 | **5F Parte A** | **Sonda de preenchimento por luminância (57,8% de barra no master de 02/08); régua passa a medir o conteúdo e 2 alvos mudam de veredito; recorte antes do enquadramento; `setsar=1` conserta DAR mentiroso; ativo reprocessado ao lado. Parte B armada e não disparada. 90 mutantes. Ver abaixo.** |
 | 08-03 | **5E fases 0–4** | **Custo por segundo inteiro truncado (3 medições exatas); tabela de formatos derivada da âncora de lado curto; filter_complex provado nos arquivos (0 ampliou, 0 cortou); job de derivação + schema master/variantes; lote nativo com N=N=N. ACHADO: o 9:16 da HeyGen é 57% barra branca. Fase 5 não iniciada. 85 mutantes. Ver abaixo.** |
@@ -3739,8 +3740,54 @@ caminhos vivos (`checkHeygenConnection` e o probe do painel) passam a falhar, e
 o sintoma será "chave inválida", que é o diagnóstico errado. Substituto:
 `GET /v3/users/me`, já exercitado com sucesso.
 
-**Continua NÃO VERIFICADO:** se o preenchimento em 9:16 é regra do fornecedor
-(só a Parte B responde, e ela segue **armada e não disparada**); se a HeyGen
-aceita `1080p` na nossa conta; e como a sonda se comporta com preenchimento não
-branco ou cena clara encostando na borda — o caminho `pending` existe para isso
-e nunca foi exercitado contra um caso real.
+**Continua NÃO VERIFICADO:** se a HeyGen aceita `1080p` na nossa conta; e como
+a sonda se comporta com preenchimento não branco ou cena clara encostando na
+borda — o caminho `pending` existe para isso e nunca foi exercitado contra um
+caso real.
+
+### FOV-1 — o 9:16 é RECOMPOSIÇÃO, não corte (2026-08-03, custo zero)
+
+**A pergunta que a Parte B ia responder foi respondida sem gastar nada**, e o
+insumo já estava em disco: o avatar Mário tem dois masters do fornecedor em
+proporções diferentes — 31/07 sem `aspect_ratio` (16:9, 1280×720, `clean`) e
+02/08 em 9:16 (720×1280, conteúdo 4:3, 57,8% de barra). Mesmo
+`provider_avatar_id`, mesma sala.
+
+**VEREDITO: RECOMPOSIÇÃO.** *MEDIDO por casamento de escala:* o conteúdo 4:3 do
+9:16 equivale a **exatamente 1280 px** de largura no mundo do 16:9 (escala
+1,000×, mínimo bem definido — erro 4,14 contra 4,82 e 6,00 nos vizinhos), com
+deslocamento vertical de **120 px**, que é exatamente metade de (960 − 720).
+Ou seja: **mesma largura de campo, 33% mais campo vertical**, distribuído
+simetricamente. Prova visual alinhada em `uploads/_prova/fov/`.
+
+**Consequência para o Estágio 1, em uma linha:** a chave do catálogo é
+`(avatar, formato_pedido) → conteúdo entregue`, e a migration por combinação **é
+necessária** — medir "conteúdo nativo por avatar" mediria a coisa errada.
+
+E há uma consequência de produto: **derivar 9:16 do master 16:9 é pior do que
+pedir 9:16 ao fornecedor** — daria 68,4% de tarja contra 57,8%, e com menos
+imagem real, porque o fornecedor entrega campo vertical que a derivação local
+não tem de onde tirar.
+
+**O instrumento errou antes de acertar, e isso vale registrar.** O `headroom` do
+`tools/fov-compare.mjs` deu veredito "anômalo" e **não foi aceito**: ele mede o
+primeiro ponto com variação de luminância, que aqui é mobília e parede, não a
+cabeça — o bounding box que ele chama de sujeito muda de proporção entre os dois
+masters (1,80 contra 0,94), sinal de que não isola pessoa nenhuma. O limiar
+**não** foi ajustado para produzir veredito; entrou um segundo instrumento,
+independente, cuja premissa é a cena ser a mesma.
+
+**A evidência do fornecedor APODRECE — requisito do Estágio 1, não conserto
+agora.** *MEDIDO:* 2 dos 4 vídeos reais do Mário têm `output_url` apontando
+`files2.heygen.ai` com assinatura vencida, e já devolvem 403. Esta comparação
+só foi possível porque os outros dois haviam sido baixados para o nosso disco.
+**Se o master não for baixado na ingestão, a medição de hoje é irreproduzível
+amanhã** — e o que se perde não é o arquivo, é a possibilidade de reabrir a
+pergunta.
+
+**Ressalvas (NÃO VERIFICADO):** os dois masters têm roteiros e durações
+diferentes (33,7 s e 17,0 s), então a pose do sujeito não é idêntica — o
+casamento de escala mede a sala, que é estática, e não a pessoa; se a
+recomposição vale para 4:5 e 1:1, nunca pedidos em live; e `avatars` não tem
+`updated_at`, então a ausência de retreino entre as duas datas é DEDUZIDA de
+existir um único `provider_avatar_id`.
