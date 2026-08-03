@@ -35,6 +35,8 @@ import { checkVideoFormatPolicy } from "./checkVideoFormatPolicy.js";
 import { checkVendorErrorPathPolicy } from "./checkVendorErrorPathPolicy.js";
 import { checkImageFreshnessPolicy } from "./checkImageFreshnessPolicy.js";
 import { checkCostPolicy } from "./checkCostPolicy.js";
+import { checkDerivationPolicy } from "./checkDerivationPolicy.js";
+import { checkNativeBatchPolicy } from "./checkNativeBatchPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -429,6 +431,16 @@ async function main(): Promise<void> {
   const costResult = await checkCostPolicy(process.env.REPO_ROOT ?? "/repo");
   costResult.failures.forEach((f) => failures.push(f));
   costResult.notes.forEach((n) => note(n));
+
+  // --- 20. derivação: o sujeito nunca amplia; o master vem do nosso disco --
+  const derivationResult = await checkDerivationPolicy();
+  derivationResult.failures.forEach((f) => failures.push(f));
+  derivationResult.notes.forEach((n) => note(n));
+
+  // --- 21. lote nativo: N gerações = N débitos = N unidades de teto -------
+  const batchResult = await checkNativeBatchPolicy();
+  batchResult.failures.forEach((f) => failures.push(f));
+  batchResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

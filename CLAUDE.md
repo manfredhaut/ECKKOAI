@@ -503,7 +503,21 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-02 — Bloco 5D, fases 0 e 1. **O achado
+**Última atualização:** 2026-08-03 — Bloco 5E, fases 0 a 4 (a Fase 5 NÃO foi
+iniciada). **Dois achados mudam decisões abertas.** Primeiro: a constante de
+custo estava errada — a cobrança é por **segundo INTEIRO truncado**, 3 unidades
+cada, e as três medições já registradas fecham exatas nessa regra (sobre a
+duração fracionária, nenhuma bate). Isso dá US$ 0,05/s, igual à tabela pública
+do fornecedor; a estimativa de 30 s passa de US$ 1,35 para US$ 1,50. Segundo, e
+ataca a premissa do próprio bloco: **o 9:16 da HeyGen é preenchimento, não
+composição** — o master de 02/08 tem 57% de barra branca (útil 720×548 em
+720×1280), enquanto o master 16:9 do LIVE-1 não tem barra nenhuma. Derivar de
+um master 9:16 entrega menos imagem útil do que derivar do mesmo conteúdo em
+16:9. **Nada foi revertido** — é decisão de produto, e `MASTER_ASPECT_RATIO` é
+uma constante única. A derivação por software está construída, medida e
+guardada (8 derivações reais: 0 ampliaram, 0 cortaram); ffmpeg já existia no
+container. 85 mutantes. Ver o bloco próprio no fim. Antes dele, o Bloco 5D,
+fases 0 e 1. **O achado
 principal invalida uma garantia dos blocos anteriores: `PROVIDER_MODE=fixture`
 nunca cobriu os provedores de TEXTO** (`complete()` não consultava
 `isFixtureMode()`), então "zero chamadas tarifadas" valia por ninguém ter
@@ -1318,9 +1332,16 @@ depois. **1 unidade ≈ US$ 0,0167.** Dois pontos com a mesma razão é forte, m
 lugar nenhum da resposta.
 
 **Custo real de vídeo, medido:** 3,372 s de vídeo custaram **US$ 0,15 / 9
-unidades** ⇒ **~US$ 0,045 por segundo**. Confere em ordem de grandeza com a
-medição antiga (33,7 s → 99 unidades = 2,94 un/s, contra 2,67 un/s agora); a
-diferença sugere arredondamento por bloco, não medido.
+unidades**.
+
+> **CORREÇÃO (Bloco 5E, 2026-08-03): a taxa NÃO é US$ 0,045/s, e a "diferença
+> por arredondamento de bloco" desta linha estava explicada errado.** Dividir o
+> gasto pela duração fracionária dava um número diferente a cada medição (2,67 ·
+> 2,83 · 2,94 un/s) porque a cobrança é por **segundo INTEIRO truncado**, a 3
+> unidades cada. Com essa regra as três medições fecham exatas: 3,372→3×3=**9**,
+> 16,972→16×3=**48**, 33,696→33×3=**99**. Ou seja **US$ 0,05 por segundo
+> inteiro**, que é o que a tabela pública do fornecedor anuncia para avatar de
+> foto. Ver o bloco 5E no fim deste arquivo.
 
 **Formato real do que a HeyGen devolve, medido com `ffprobe` no arquivo
 baixado:** MP4 (QuickTime/MOV), **h264 High, 1280×720, DAR 16:9, SAR 1:1,
@@ -1443,6 +1464,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-03 | **5E fases 0–4** | **Custo por segundo inteiro truncado (3 medições exatas); tabela de formatos derivada da âncora de lado curto; filter_complex provado nos arquivos (0 ampliou, 0 cortou); job de derivação + schema master/variantes; lote nativo com N=N=N. ACHADO: o 9:16 da HeyGen é 57% barra branca. Fase 5 não iniciada. 85 mutantes. Ver abaixo.** |
 | 08-02 | **5D fases 1-bis a 2** | **Badge ancorado na LIGAÇÃO (não só na presença); predicado ÚNICO de prontidão consumido pela rota e pela tela; artefato do fornecedor persistido no nosso disco; `model_id` explícito no TTS; cronômetro de gravação vira meta; 2ª passada live 9:16. 74 mutantes. Ver abaixo.** |
 | 08-02 | **5D fases 0 e 1** | **Percurso dos 6 passos catalogado; fixture passa a valer para os provedores de TEXTO (não valia); vídeo reproduzível na Biblioteca; custo no passo 4; ledger negativo medido e NÃO alterado; telas que mentiam. 64 mutantes. Ver abaixo.** |
 | 08-02 | **TETO-1** | **A falha devolve o teto de GASTO; o laço passa a ser barrado por um contador de TENTATIVAS que não volta. Guarda nova com 3 asserções opostas; 56 mutantes. Ver abaixo.** |
@@ -1703,6 +1725,13 @@ MEDIDO** (~US$ 0,045/s no LIVE-1). Explicitar o que já era o comportamento
 observado tira a decisão do fornecedor sem mexer no custo. Corpo sem plataforma
 cai no padrão declarado (YouTube/16:9): um cliente antigo não pode ser a
 exceção que reabre a omissão.
+
+> **A premissa deste parágrafo caiu no Bloco 5E (DOCUMENTADO, duas fontes): a
+> tarifa da HeyGen é por segundo e por tipo de avatar, NÃO por pixel — 720p e
+> 1080p custam o mesmo.** Pedir 720p não economizou nada; só entregou metade da
+> resolução. `MEASURED_RESOLUTION` **continua em 720p** porque mudá-la altera o
+> que se pede ao fornecedor em toda geração e o teto real da nossa conta segue
+> NÃO VERIFICADO — mas o motivo escrito acima já não sustenta a escolha.
 
 **2. Motor: decidido e gravado sempre, enviado só atrás de flag.** A peça
 central é DEDUZIDA (ver tabela), e um valor recusado em `engine` derruba a
@@ -1973,6 +2002,12 @@ do sistema com número de custo de fornecedor:
 > **60 unidades por dólar · US$ 0,045 por segundo ENTREGUE**
 > Medido em 2026-08-01: carteira 15,50→15,35 USD e quota 930→921 numa geração
 > de 3,372 s (ffprobe). **Condições: HeyGen, 16:9, 720p.**
+
+**A segunda metade daquele número foi SUBSTITUÍDA no Bloco 5E:** as 60 unidades
+por dólar continuam valendo, mas o "por segundo entregue" virou **3 unidades por
+segundo INTEIRO truncado** (US$ 0,05/s). O erro era dividir pela duração
+fracionária; a regra nova reproduz exatamente as três medições, e a antiga não
+reproduzia nenhuma.
 
 O que existia antes eram **dois** números, e os dois erravam ao mesmo tempo: a
 taxa de `provider_cost_rates` (US$ 0,03/s, palpite) multiplicando a duração
@@ -3080,3 +3115,288 @@ sucesso sem casar o texto, e o `tsc` passou porque as duas metades faltaram
 juntas — o estado do erro e o bloco que o exibe. Aplicado de verdade agora.
 Lição já registrada em outros blocos e repetida aqui: substituição por script
 que não confirma o resultado é indistinguível de sucesso.
+
+### Bloco 5E — master no teto do fornecedor e derivação por software (PARCIAL)
+
+Ambiente em `fixture` do começo ao fim, `PROVIDER_LIVE_CONFIRM` vazia, **zero
+chamadas a fornecedor** (conferido por carimbo de tempo: os únicos 4 eventos
+`vendor_error` do log são de 02/08 17:38–17:40, anteriores a esta sessão, e
+`grep` por host de fornecedor no log inteiro devolve 0).
+
+**Fases 0 a 4 concluídas. A Fase 5 (a escolha no passo 6) NÃO foi iniciada** —
+ver o porquê no fim desta seção, que é mais interessante que a omissão.
+
+---
+
+#### O ACHADO QUE MUDA A PREMISSA DO BLOCO: o 9:16 da HeyGen é preenchimento
+
+A política deste bloco parte de "gere o master em 9:16, derive o resto por
+redução". A medição diz que, para o avatar de foto que temos, **o 9:16 do
+fornecedor não é uma composição feita para vertical — é a mesma imagem com
+barras brancas**.
+
+*MEDIDO* por perfil de brilho faixa a faixa (`signalstats`, `YAVG`) no master
+real de 02/08 (`5f77229e….mp4`, 720×1280):
+
+| Faixa | YAVG | O que é |
+|---|---|---|
+| y = 0 … ~360 | **227 constante** | barra branca |
+| y ≈ 360 … 908 | 86–132, variando | imagem |
+| y ≈ 910 … 1280 | **227 constante** | barra branca |
+
+Conteúdo útil ≈ **720×548 num quadro de 720×1280 — 43% da altura.** Os outros
+57% são preenchimento que nós pagamos para gerar e que se propaga para toda
+derivação feita a partir dele.
+
+*MEDIDO, e é o contraste que fecha o argumento:* o master **16:9** do LIVE-1
+(`0a0193b8….mp4`, 1280×720) **não tem barra nenhuma** — o perfil horizontal
+varia continuamente de borda a borda (94 → 185 → 134), sem faixa constante.
+
+**Consequência prática:** derivar a partir de um master 9:16 entrega menos
+imagem útil do que derivar do mesmo conteúdo em 16:9, porque o vertical já
+chega com 57% de barra. A política aprovada ("o master é sempre 9:16") pode
+estar otimizando a favor do formato errado. **Não revertida** — é decisão de
+produto, e a infraestrutura não depende dela: `MASTER_ASPECT_RATIO`
+(`formatDerivation.ts`) é uma constante única, e trocá-la move a tabela inteira
+junto.
+
+**NÃO VERIFICADO, e a ressalva importa:** os dois vídeos vêm de **avatares
+diferentes**, com fotos de origem diferentes. Não é comparação controlada, e
+uma amostra por proporção não sustenta "a HeyGen sempre preenche em 9:16". O
+que está medido é que **este** master 9:16 tem 57% de barra e **aquele** 16:9
+não tem nenhuma. Fechar isso exige gerar as duas proporções do MESMO avatar —
+duas gerações live, ~US$ 0,10 pelos números abaixo.
+
+---
+
+#### A constante de custo estava errada, e três medições provam a certa
+
+A taxa anterior (US$ 0,045/s) dividia o dólar gasto pela duração **fracionária**
+do arquivo. Isso produzia um número diferente a cada medição — 2,67 · 2,83 ·
+2,94 unidades por segundo — e o 4A registrou a diferença como "arredondamento
+por bloco, NÃO medido".
+
+Não era bloco: **é truncagem**. O fornecedor cobra **3 unidades por segundo
+INTEIRO**, descartando a fração. Com essa regra as três medições que já
+estavam registradas fecham exatas:
+
+| Duração entregue | Truncada | ×3 | Unidades MEDIDAS |
+|---|---|---|---|
+| 3,372 s | 3 | 9 | **9** ✓ |
+| 16,972 s | 16 | 48 | **48** ✓ |
+| 33,696 s | 33 | 99 | **99** ✓ |
+
+Sobre a duração fracionária os mesmos pontos dariam 10,12 · 50,92 · 101,09 —
+nenhum bate. Três pontos exatos, durações de ordem bem diferente, **um único
+parâmetro livre**. E 3/60 = **US$ 0,05 por segundo**, que é exatamente o que a
+tabela pública da HeyGen anuncia para avatar de foto.
+
+`providerCost.ts` foi reescrito: `unitsPerBilledSecond: 3` e
+`unitsPerDollar: 60` são a medição; **`USD_PER_BILLED_SECOND` é DERIVADO**, não
+digitado — guardar os dois lado a lado permitiria que divergissem, que é o
+defeito original um nível acima. `billedSecondsFor()` isola a truncagem.
+
+**Efeito na tela:** a estimativa de 30 s passa de US$ 1,35 para **US$ 1,50**.
+
+*DEDUZIDO, não medido contra fatura.* Nenhuma fatura do fornecedor foi lida em
+sessão nenhuma; tudo vem de saldo e quota lidos pela API.
+
+**Lacuna NOVA que a regra cria:** vídeo com menos de 1 s custaria **zero** pela
+truncagem. As três medições têm 3 s ou mais, e isso nunca foi observado. É o
+único ponto em que o caminho MEDIDO pode devolver zero — se aparecer na tela, é
+caso a investigar, não cortesia do fornecedor. Está escrito ao lado da
+constante.
+
+---
+
+#### Fase 0 — o teto do fornecedor (DOCUMENTADO, duas fontes)
+
+- `resolution`: `720p` · `1080p` · `4k`. `aspect_ratio`: `16:9` · `9:16` ·
+  `4:5` · `5:4` · `1:1` · `auto`.
+- **Saída ancorada no LADO CURTO**: *"Output is short-edge anchored to the
+  requested resolution (`1080p` 1:1 → 1080x1080, `1080p` 4:5 → 1080x1350)"*,
+  limitada ao lado longo do plano.
+- **A tarifa é por segundo e por tipo de avatar, NÃO por pixel.** 720p e 1080p
+  custam igual; avatar de foto sai a US$ 0,05/s. Fontes:
+  `developers.heygen.com/docs/pricing` e o artigo de preços da central de
+  ajuda, concordantes.
+
+**Consequência:** pedir 720p foi desperdício desde o começo — 1080p sai pelo
+mesmo preço. `MEASURED_RESOLUTION` em `videoFormat.ts` **continua em 720p**:
+mudá-la é uma linha, mas altera o que se pede ao fornecedor em toda geração, e
+o teto real da NOSSA conta segue **NÃO VERIFICADO**.
+
+**Fase 0.3 — o que a rede bloqueada impediu.** Estes comandos NÃO foram
+executados. O primeiro lê o plano e a carteira; o segundo sonda se 1080p é
+aceito **sem gerar nada**, usando um `avatar_id` inexistente para que a resposta
+diga qual erro vem primeiro — se vier "resolução não permitida", o teto está
+respondido sem custo; se vier "avatar não encontrado", nada foi gasto.
+
+```powershell
+$h = @{ "x-api-key" = $env:HEYGEN_KEY }
+Invoke-RestMethod -Uri "https://api.heygen.com/v3/users/me" -Headers $h |
+  ConvertTo-Json -Depth 6 | Out-File -Encoding utf8 heygen-conta.json
+
+$b = @{ type="avatar"; avatar_id="sonda-inexistente"; audio_asset_id="x";
+        aspect_ratio="9:16"; resolution="1080p" } | ConvertTo-Json
+try { Invoke-RestMethod -Uri "https://api.heygen.com/v3/videos" -Method Post `
+        -Headers $h -ContentType "application/json" -Body $b }
+catch { $_.ErrorDetails.Message | Out-File -Encoding utf8 heygen-sonda-1080.json }
+```
+
+`Out-File -Encoding utf8`, nunca `>` — no PowerShell o `>` grava UTF-16LE e
+nenhuma ferramenta de texto acha nada dentro.
+
+---
+
+#### Fase 1 — a tabela é derivada de UM número, não escrita à mão
+
+`targetForAspect(ratio, shortEdge)` aplica a âncora de lado curto do próprio
+fornecedor. A consequência é que **os quatro alvos da política deixam de ser
+quatro números** e passam a ser consequência de um: o lado curto.
+
+*MEDIDO* rodando a função:
+
+| master | 9:16 | 4:5 | 1:1 | 16:9 |
+|---|---|---|---|---|
+| **1080×1920** | 1080×1920 | 1080×1350 | 1080×1080 | 1920×1080 |
+| **720×1280** | 720×1280 ⚠ | **1024×1280** ⚠ | 1080×1080 | 1920×1080 |
+
+⚠ = abaixo do alvo, **com aviso trazendo os dois números**. Os quatro números
+da política vivem na GUARDA, como dado observado — se estivessem no código, o
+teste compararia o código consigo mesmo.
+
+---
+
+#### Fase 2 — a regra das duas metades, provada nos arquivos
+
+```
+[0:v]split=2[bg][fg];
+[bg]scale=W:H:force_original_aspect_ratio=increase,crop=W:H,
+    boxblur=luma_radius=min(h\,w)/20:luma_power=1:
+    chroma_radius=min(cw\,ch)/20:chroma_power=1[bg2];
+[fg]scale=W:H:force_original_aspect_ratio=decrease:flags=lanczos[fg2];
+[bg2][fg2]overlay=(W-w)/2:(H-h)/2
+```
+com `-c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p -c:a copy
+-movflags +faststart`.
+
+**As duas metades, e confundi-las é o defeito:** o **sujeito** nunca é cortado
+nem ampliado (`decrease`); o **fundo** desfocado PODE ser ampliado
+(`increase` + `crop` + `boxblur`). A segunda é o que torna a primeira viável.
+
+`-c:a copy` sem exceção: o áudio é a voz clonada e sai bit a bit igual. Os `fps`
+não são tocados — reamostrar inventa ou descarta quadros.
+
+**Sem dependência nova.** `fluent-ffmpeg` foi avaliado e descartado: o que ele
+oferece pronto é `pad`, que preenche com **cor sólida**, e a política preenche
+com extensão desfocada do próprio quadro. **Flixier VETADO** (marca d'água e
+escala manual de 218%).
+
+**A PROVA (2.4), medida com `ffprobe` em cada arquivo — 8 derivações, 0
+ampliaram, 0 cortaram:**
+
+| insumo | formato | quadro | sujeito | h master | tempo |
+|---|---|---|---|---|---|
+| 5f77229e (720×1280) | 16:9 | 1920×1080 | 608×1080 | 1280 | 6,7 s |
+| 5f77229e | 9:16 | 720×1280 | 720×1280 | 1280 | 3,1 s |
+| 5f77229e | 4:5 | 1024×1280 | 720×1280 | 1280 | 5,3 s |
+| 5f77229e | 1:1 | 1080×1080 | 608×1080 | 1280 | 3,6 s |
+| 0a0193b8 (1280×720) | 16:9 | 1280×720 | 1280×720 | 720 | 1,1 s |
+| 0a0193b8 | 9:16 | 1080×1920 | 1080×608 | 720 | 2,6 s |
+| 0a0193b8 | 4:5 | 1080×1350 | 1080×608 | 720 | 1,7 s |
+| 0a0193b8 | 1:1 | 1080×1080 | 1080×608 | 720 | 1,4 s |
+
+Total **25,5 s** para 8 derivações de vídeos de 3 e 17 segundos (Fase 5.5).
+
+**Como o sujeito é MEDIDO e não deduzido:** `buildSubjectProbeArgs()` aplica só
+a expressão de escala do sujeito e extrai UM quadro; o `ffprobe` daquele quadro
+é a altura real que o ffmpeg deu. Quem decide essa altura é a palavra
+`decrease` dentro do filtro, e trocá-la por `increase` não mexe numa linha da
+nossa aritmética — passaria por qualquer guarda que só conferisse números
+nossos.
+
+**Nota de precisão:** a previsão da conta e a medição divergem em até 2 px
+(606 previsto × 608 medido), porque o nosso arredondamento trunca para par e o
+do ffmpeg arredonda. O quadro bate exato; a fonte de verdade do sujeito é a
+medição. A tela mostra o **quadro**.
+
+**2.5 — veredito por formato: PENDENTE, e por um motivo que não é preguiça.**
+A qualidade do enquadramento derivado é indistinguível da qualidade do master,
+e o master está com 57% de barra branca (achado acima). Julgar "derivável" hoje
+seria julgar o preenchimento da HeyGen, não a derivação. O veredito fica para
+depois da decisão sobre o master. Os frames estão em `uploads/_5e-prova/`
+(fora do git, `uploads/*` é ignorado).
+
+---
+
+#### Fase 3 — ffmpeg no backend
+
+**3.1:** `ffmpeg` e `ffprobe` **já existem no container**, em `/usr/bin`. Nada
+a instalar, custo zero, imagem não reconstruída.
+
+**3.2:** `deriveVariants.ts` deriva do master **já persistido no nosso disco** e
+**RECUSA** master que não seja nosso (`MasterNotLocalError`). Não é preferência:
+dois vídeos deste projeto viraram 403 porque `output_url` apontava para
+`files2.heygen.ai` e a assinatura venceu. Baixar seria conveniente e esconderia
+o problema — funcionaria no desenvolvimento inteiro e falharia semanas depois.
+
+O artefato derivado passa pela **mesma** validação do que vem do fornecedor
+(piso de 100 KB + assinatura `ftyp`), e a invariante de não-ampliação é
+conferida com o número **medido** antes de entregar: falhar é preferível a
+entregar, porque sujeito ampliado é irreversível e passa despercebido em tela
+pequena.
+
+**3.3:** migration `041_video_variants.sql` — master + variantes, com
+`origin` em `('generated','derived')`. A assimetria que o schema materializa:
+**uma linha de custo por geração, N linhas de artefato.** Sem esse campo, um
+artefato derivado seria indistinguível de um gerado, e "por que a fatura não
+bate com a contagem de vídeos?" não teria resposta no banco.
+
+---
+
+#### Fase 4 — o caminho nativo, armado e NÃO disparado
+
+`nativeBatch.ts` separa **planejar** de **executar**, e a razão é a conta:
+
+> N gerações ⇒ N débitos ⇒ N linhas em `provider_usage` ⇒ N unidades de teto
+
+*MEDIDO na guarda:* falha no 3º de 4 → **2 cobradas** (o fornecedor aceitou, não
+há estorno depois do aceite — mesma fronteira do ESTORNO-1), **1 pulada**,
+fornecedor chamado **3×** e não 4. Com teto de 2, um lote de 4 para no segundo,
+mantém as 2 e **explica o que houve** — parar em silêncio é o pior desfecho,
+porque o cliente vê dois arquivos onde pediu quatro.
+
+**Regra do master:** pedir "nativo" na proporção em que o master já foi gerado
+**não** gera nem cobra — seria vender duas vezes a mesma renderização.
+
+**NÃO FEITO nesta fase:** o planejador e o executor existem e estão provados,
+mas **não estão ligados a `POST /videos`**. Nenhum lote pode ser disparado pela
+interface hoje, o que é coerente com "armado e não disparado", mas significa
+que a integração é trabalho que resta.
+
+---
+
+#### O que NÃO foi feito, e por quê
+
+- **Fase 5 (a escolha no passo 6) — NÃO INICIADA.** Ficou por último e o
+  orçamento da sessão acabou antes. Vale registrar um ponto que a Fase 2
+  levantou e que precisa ser resolvido ANTES de escrever aquela tela: o texto
+  aprovado para a opção nativa diz *"gerado pela HeyGen já neste formato, com a
+  composição feita para ele"* — e a medição do padding branco mostra que, para
+  o avatar de foto atual, **isso não é verdade**. Escrever a tela com esse texto
+  seria publicar uma afirmação que este bloco mediu ser falsa.
+- **Fase 6.1** (percurso dos 6 passos nos dois caminhos) depende da Fase 5.
+- **Veredito DERIVÁVEL/EXIGE NATIVO por formato**: PENDENTE, ver 2.5.
+
+#### NÃO VERIFICADO (lista fechada)
+
+- O teto de resolução da NOSSA conta. Só a sonda de rede responde.
+- Se a HeyGen aceita `resolution: "1080p"` no nosso plano, e se erra ou degrada
+  em silêncio ao recusar.
+- Se o padding branco em 9:16 é regra do fornecedor ou consequência da foto
+  daquele avatar — os dois masters são de avatares diferentes.
+- O custo real em 1080p. A doc diz preço igual ao de 720p; nenhuma geração
+  nossa saiu fora de 720p.
+- A constante de custo contra FATURA (só contra saldo e quota da API).
+- Comportamento de cobrança abaixo de 1 segundo.

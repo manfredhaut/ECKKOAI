@@ -8,54 +8,119 @@
  * duração PEDIDA (15 s) a uma taxa palpite (US$ 0,03/s) — errado nos dois
  * fatores ao mesmo tempo, e errado de um jeito plausível, que é o pior.
  *
- * Aqui há um número, ele é MEDIDO, e a procedência anda junto dele. Todo o
- * resto do código deriva; `npm run check` reprova quem embutir custo em outro
- * lugar.
+ * ---------------------------------------------------------------------------
+ * A UNIDADE DE COBRANÇA É O SEGUNDO INTEIRO, NÃO O SEGUNDO FRACIONÁRIO
+ *
+ * Esta é a correção do bloco 5E, e ela nasce de três medições que já estavam
+ * registradas neste projeto sem que ninguém tivesse tentado a conta certa. A
+ * taxa anterior — US$ 0,045/s — vinha de dividir o dólar gasto pela duração
+ * FRACIONÁRIA do arquivo. Essa divisão produzia um número diferente a cada
+ * medição (2,67 · 2,83 · 2,94 unidades por segundo), e o registro do 4A
+ * chamava a diferença de "arredondamento por bloco, NÃO medido".
+ *
+ * Não era bloco: era truncagem. O fornecedor cobra 3 unidades por segundo
+ * INTEIRO, descartando a fração. Com essa regra as três medições fecham
+ * exatas, e é por isso que ela substitui a média:
+ *
+ *   duração entregue   truncada   ×3    unidades MEDIDAS
+ *      3,372 s            3        9          9   ✓
+ *     16,972 s           16       48         48   ✓
+ *     33,696 s           33       99         99   ✓
+ *
+ * Sobre a duração fracionária, a mesma taxa daria 10,12 · 50,92 · 101,09 —
+ * nenhuma delas bate. Três pontos exatos, com durações de ordem bem diferente,
+ * e nenhum ajuste livre: a regra tem um parâmetro só (3 unidades por segundo) e
+ * ele é o mesmo nos três.
+ * ---------------------------------------------------------------------------
  *
  * ┌─ O QUE É MEDIDO ────────────────────────────────────────────────────────┐
- * │ Passada live de 2026-08-01, HeyGen, avatar de foto, 16:9, 720p:         │
- * │                                                                         │
- * │  · carteira 15,50 → 15,35 USD  ⇒  US$ 0,15 por aquela geração           │
- * │  · remaining_quota 930 → 921   ⇒  9 unidades por aquela geração         │
- * │  · ffprobe do arquivo baixado  ⇒  3,372 s de vídeo entregue             │
- * │                                                                         │
- * │  ⇒ 60 unidades por dólar (930/15,50 = 60,0 e 921/15,35 = 60,0)          │
- * │  ⇒ ~US$ 0,045 por segundo de vídeo entregue                             │
+ * │ · 60 unidades de quota por dólar. Dois pares carteira/quota, ambos 60,0:│
+ * │     930/15,50 = 60,0   e   921/15,35 = 60,0                             │
+ * │ · As três durações e as três contagens de unidades da tabela acima,     │
+ * │   cada duração por `ffprobe` no arquivo baixado, cada contagem pela     │
+ * │   diferença de `remaining_quota` na mesma passada.                      │
+ * │ · Que 16:9 e 9:16 cobram a MESMA taxa: a passada de 02/08 saiu em 9:16  │
+ * │   e fechou nos mesmos 3 un/s das duas em 16:9.                          │
  * └─────────────────────────────────────────────────────────────────────────┘
  *
  * ┌─ O QUE É DEDUZIDO ──────────────────────────────────────────────────────┐
- * │ Que a razão de 60 unidades/dólar vale fora dos dois pontos medidos. Os  │
- * │ dois fecharam exatos, o que é forte, mas são DOIS pontos — e o          │
- * │ fornecedor não declara a unidade em lugar nenhum da resposta.           │
- * │                                                                         │
- * │ Que o custo por segundo é linear. A medição antiga (33,7 s → 99         │
- * │ unidades = 2,94 un/s) contra a nova (3,372 s → 9 = 2,67 un/s) sugere    │
- * │ arredondamento por bloco, NÃO medido.                                   │
+ * │ Que a unidade de cobrança é o segundo inteiro truncado, a 3 unidades    │
+ * │ cada. É a única regra de um parâmetro que fecha exata nos três pontos,  │
+ * │ e ela concorda com a tabela pública do fornecedor, que anuncia          │
+ * │ US$ 0,05/s para avatar de foto — exatamente 3/60. Ainda assim é         │
+ * │ DEDUÇÃO: o fornecedor não declara a unidade em nenhuma resposta, e a    │
+ * │ concordância com a tabela pública não é o mesmo que a fatura confirmar. │
  * └─────────────────────────────────────────────────────────────────────────┘
  *
  * ┌─ O QUE NÃO FOI VERIFICADO ──────────────────────────────────────────────┐
- * │ Se 9:16, 1:1 ou 4:5 custam o mesmo que 16:9 — nenhuma geração saiu      │
- * │ noutra proporção. Se 1080p ou 4k custam mais. Qualquer custo de voz     │
- * │ (ElevenLabs) ou de roteiro: nunca foram medidos, e por isso este módulo │
- * │ devolve AUSÊNCIA para eles, nunca zero.                                 │
+ * │ · Contra FATURA. Nenhuma fatura do fornecedor foi lida em nenhuma       │
+ * │   sessão; toda a medição vem de saldo e quota lidos pela API.           │
+ * │ · Vídeo com menos de 1 segundo. As três medições têm 3 s ou mais, e a   │
+ * │   regra truncada prevê custo ZERO abaixo de 1 s. Isso nunca foi         │
+ * │   observado, e é o único ponto onde esta conta pode devolver zero por   │
+ * │   um caminho medido — se aparecer na tela, é um caso a investigar, não  │
+ * │   uma cortesia do fornecedor.                                           │
+ * │ · Se 1080p ou 4k custam mais. A doc pública diz que 720p e 1080p têm    │
+ * │   preço idêntico (a tarifa é por segundo e por tipo de avatar, não por  │
+ * │   pixel), mas nenhuma geração nossa saiu fora de 720p.                  │
+ * │ · Qualquer custo de voz (ElevenLabs) ou de roteiro: nunca foram         │
+ * │   medidos, e por isso este módulo devolve AUSÊNCIA para eles, nunca     │
+ * │   zero.                                                                 │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
 /**
  * A medição, num objeto só. Mexer aqui muda todo custo exibido no produto —
  * que é exatamente a propriedade desejada.
+ *
+ * Note que NÃO há um campo "dólares por segundo": ele é derivado logo abaixo.
+ * Guardar os dois lado a lado permitiria que divergissem, e a divergência entre
+ * duas cópias da mesma medição é o defeito original que este arquivo existe
+ * para eliminar — só que desta vez dentro do próprio arquivo.
  */
 export const HEYGEN_VIDEO_COST = {
-  /** Unidades de `remaining_quota` por dólar. Dois pontos medidos, ambos 60,0. */
+  /** Unidades de `remaining_quota` por dólar. Dois pares medidos, ambos 60,0. */
   unitsPerDollar: 60,
-  /** Dólares por segundo de vídeo ENTREGUE (não pedido). */
-  usdPerSecond: 0.045,
+  /**
+   * Unidades cobradas por segundo INTEIRO de vídeo entregue. Fecha exato nas
+   * três medições; ver a tabela no cabeçalho.
+   */
+  unitsPerBilledSecond: 3,
   /** Sob que condições isto foi medido. A UI mostra esta ressalva. */
-  measuredUnder: { vendor: "heygen", aspectRatio: "16:9", resolution: "720p" },
-  measuredOn: "2026-08-01",
+  measuredUnder: { vendor: "heygen", aspectRatio: "16:9 e 9:16", resolution: "720p" },
+  measuredOn: "2026-08-01 e 2026-08-02",
   /** Como foi medido, em uma linha — vai para a tela, não só para o log. */
-  method: "carteira 15,50→15,35 USD e quota 930→921 numa geração de 3,372 s (ffprobe)",
+  method:
+    "três gerações reais (3,372 s → 9 unidades, 16,972 s → 48, 33,696 s → 99), " +
+    "com a duração por ffprobe no arquivo baixado e as unidades pela variação de remaining_quota",
 } as const;
+
+/**
+ * Dólares por segundo INTEIRO cobrado. DERIVADO, nunca digitado.
+ *
+ * Se este número fosse uma constante própria, alguém poderia mudar
+ * `unitsPerBilledSecond` e deixar o dólar para trás — e a tela passaria a
+ * mostrar um preço que não corresponde a nenhuma medição.
+ */
+export const USD_PER_BILLED_SECOND =
+  HEYGEN_VIDEO_COST.unitsPerBilledSecond / HEYGEN_VIDEO_COST.unitsPerDollar;
+
+/**
+ * Segundos COBRADOS a partir dos segundos ENTREGUES.
+ *
+ * A truncagem é a regra medida, e ela precisa viver numa função própria porque
+ * é o ponto exato onde o erro anterior acontecia: multiplicar a taxa pela
+ * duração fracionária parece mais preciso e é justamente o que não bate com
+ * nenhuma das três medições.
+ *
+ * Entrada inválida ou negativa devolve 0 em vez de propagar `NaN`: um `NaN`
+ * atravessaria as comparações todas como falso e apareceria na tela como
+ * "US$ NaN", que é pior que um zero honesto.
+ */
+export function billedSecondsFor(deliveredSeconds: number): number {
+  if (!Number.isFinite(deliveredSeconds) || deliveredSeconds <= 0) return 0;
+  return Math.floor(deliveredSeconds);
+}
 
 /** Por que não há custo para este consumo. Nunca é zero — zero seria mentira. */
 export type CostAbsenceReason =
@@ -69,6 +134,12 @@ export interface CostKnown {
   usd: number;
   /** Unidades de cota do fornecedor, quando a razão é conhecida. */
   vendorUnits: number | null;
+  /**
+   * Segundos que o fornecedor de fato cobra, depois da truncagem. Fica ao lado
+   * do dólar para a tela poder explicar por que 16,97 s custaram 16 s — sem
+   * isso, a diferença parece erro de arredondamento nosso.
+   */
+  billedSeconds: number;
 }
 
 export interface CostUnknown {
@@ -107,8 +178,15 @@ export function costFor(input: {
           `este consumo está em "${input.unitType}", que nunca foi medido.`,
       };
     }
-    const usd = round(input.unitCount * HEYGEN_VIDEO_COST.usdPerSecond, 4);
-    return { known: true, usd, vendorUnits: Math.round(usd * HEYGEN_VIDEO_COST.unitsPerDollar) };
+    const billedSeconds = billedSecondsFor(input.unitCount);
+    return {
+      known: true,
+      usd: round(billedSeconds * USD_PER_BILLED_SECOND, 4),
+      // Contagem exata, e não reconstruída a partir do dólar: as unidades são
+      // o que o fornecedor de fato debita, e o dólar é que sai delas.
+      vendorUnits: billedSeconds * HEYGEN_VIDEO_COST.unitsPerBilledSecond,
+      billedSeconds,
+    };
   }
 
   return { known: false, reason: "never_measured", explanation: NEVER_MEASURED };
@@ -130,9 +208,11 @@ export function estimateVideoCost(requestedSeconds: number, vendor: string): Cos
 export function costBasisNote(): string {
   const { aspectRatio, resolution } = HEYGEN_VIDEO_COST.measuredUnder;
   return (
-    `Estimativa baseada em uma única medição real (${HEYGEN_VIDEO_COST.measuredOn}): ` +
-    `${HEYGEN_VIDEO_COST.method}. A medição é em ${aspectRatio} / ${resolution}; ` +
-    "outras proporções e resoluções nunca foram medidas e podem custar diferente."
+    `Estimativa baseada em medições reais (${HEYGEN_VIDEO_COST.measuredOn}): ` +
+    `${HEYGEN_VIDEO_COST.method}. A cobrança é por segundo inteiro — a fração do último segundo ` +
+    `não é cobrada. As medições são em ${aspectRatio} / ${resolution}; ` +
+    "resoluções maiores nunca foram medidas por nós, embora o fornecedor documente preço igual " +
+    "para 720p e 1080p."
   );
 }
 

@@ -17,7 +17,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Mutant } from "./mutants.js";
-import { HEYGEN_VIDEO_COST, costFor, estimateVideoCost } from "../services/billing/providerCost.js";
+import {
+  HEYGEN_VIDEO_COST,
+  USD_PER_BILLED_SECOND,
+  costFor,
+  estimateVideoCost,
+} from "../services/billing/providerCost.js";
 import { redactDeep, redactText } from "../services/log/safeLog.js";
 import { VENDOR_ENDPOINTS, billableEndpointPaths } from "../services/providers/endpointCatalog.js";
 
@@ -28,7 +33,7 @@ export const MUTANTS: Mutant[] = [
     kind: "obvio",
     file: "backend/src/routes/videos.ts",
     find: "    const vendor = video.provider_vendor ?? \"heygen\";",
-    replace: "    const vendor = video.provider_vendor ?? \"heygen\";\n    const usdPerSecond = 0.045;\n    void usdPerSecond;",
+    replace: "    const vendor = video.provider_vendor ?? \"heygen\";\n    const usdPerSecond = 0.05;\n    void usdPerSecond;",
     // Sem o valor no meio: a mensagem diz "o número de custo 0.045 fora de
     // providerCost.ts", e prender o `expect` ao número faria o mutante virar
     // AMBÍGUO no dia em que a medição fosse refeita — guarda saudável parecendo
@@ -45,8 +50,49 @@ export const MUTANTS: Mutant[] = [
     // US$ 0,00" — que é uma frase verdadeira em aritmética e falsa em fato.
     // Uma guarda que só checasse "a função devolve algo" passaria.
     find: '  return { known: false, reason: "never_measured", explanation: NEVER_MEASURED };',
-    replace: "  return { known: true, usd: 0, vendorUnits: 0 };",
+    // `billedSeconds` faz parte de `CostKnown` desde o 5E: sem ele o mutante
+    // reprova no `tsc` e a guarda nunca chega a opinar — o arnês trata isso
+    // como AMBÍGUO, com razão.
+    replace: "  return { known: true, usd: 0, vendorUnits: 0, billedSeconds: 0 };",
     expect: "devolveu custo ZERO para um consumo sem medição",
+  },
+  {
+    guard: "custo: a cobrança é por segundo INTEIRO",
+    name: "estimativa volta a ser calculada sobre a duração fracionária",
+    kind: "obvio",
+    file: "backend/src/services/billing/providerCost.ts",
+    find: "  return Math.floor(deliveredSeconds);",
+    replace: "  return deliveredSeconds;",
+    expect: "A cobrança é por SEGUNDO INTEIRO truncado",
+  },
+  {
+    guard: "custo: a cobrança é por segundo INTEIRO",
+    name: "a truncagem sai dos segundos e vai para o total em dólar",
+    kind: "esperto",
+    file: "backend/src/services/billing/providerCost.ts",
+    // O `Math.floor` continua no arquivo, a função `billedSecondsFor` continua
+    // existindo e sendo chamada, e a constante não muda. Só o LUGAR onde a
+    // fração é descartada se desloca: arredonda-se o dinheiro em vez do tempo.
+    // Uma guarda que procurasse "Math.floor" no arquivo passaria; uma que
+    // conferisse "existe função de truncagem" também. Só reproduzir as três
+    // medições pega isto.
+    find: "    const billedSeconds = billedSecondsFor(input.unitCount);",
+    replace: "    const billedSeconds = input.unitCount;",
+    expect: "A cobrança é por SEGUNDO INTEIRO truncado",
+  },
+  {
+    guard: "custo: a cobrança é por segundo INTEIRO",
+    name: "trunc no lugar de floor — mesma semântica, deve seguir verde",
+    kind: "esperto",
+    // Contraponto. A asserção verifica COMPORTAMENTO, não a letra da
+    // implementação: para duração positiva `trunc` e `floor` são a mesma
+    // coisa, e uma guarda que reprovasse aqui estaria casando texto em vez de
+    // conta — e seria abandonada na primeira refatoração legítima.
+    file: "backend/src/services/billing/providerCost.ts",
+    find: "  return Math.floor(deliveredSeconds);",
+    replace: "  return Math.trunc(deliveredSeconds);",
+    expect: "medição(ões) real(is) reproduzidas exatamente",
+    expectGreen: true,
   },
   {
     guard: "log: nada sai sem passar pelo sumidouro",
@@ -98,6 +144,7 @@ export async function checkCostPolicy(repoRoot: string): Promise<CostCheckResult
   const notes: string[] = [];
 
   checkAbsenceIsNeverZero(failures, notes);
+  checkCostMatchesRealMeasurements(failures, notes);
   await checkNoCostNumbersOutsideConstant(repoRoot, failures, notes);
   await checkNoLogOutsideSink(repoRoot, failures, notes);
   checkRedactionIsOn(failures, notes);
@@ -151,7 +198,7 @@ function checkAbsenceIsNeverZero(failures: string[], notes: string[]): void {
 
   // E a estimativa tem de bater com a conta declarada.
   const est = estimateVideoCost(20, "heygen");
-  const esperado = Number((20 * HEYGEN_VIDEO_COST.usdPerSecond).toFixed(4));
+  const esperado = Number((20 * USD_PER_BILLED_SECOND).toFixed(4));
   if (!est.known || Math.abs(est.usd - esperado) > 1e-6) {
     failures.push(
       `custo: a estimativa de 20 s devolveu ${est.known ? est.usd : "ausência"}, esperado ${esperado} ` +
@@ -161,8 +208,75 @@ function checkAbsenceIsNeverZero(failures: string[], notes: string[]): void {
 
   notes.push(
     `custo: ${semMedicao.length} consumo(s) sem medição devolvem AUSÊNCIA (nunca zero); ` +
-      `medição base US$ ${HEYGEN_VIDEO_COST.usdPerSecond}/s em ` +
+      `medição base US$ ${USD_PER_BILLED_SECOND}/s inteiro em ` +
       `${HEYGEN_VIDEO_COST.measuredUnder.aspectRatio}/${HEYGEN_VIDEO_COST.measuredUnder.resolution}`,
+  );
+}
+
+// -------------------------------------------------------------------- 1b ---
+
+/**
+ * As TRÊS medições reais são o caso de teste da conta de custo.
+ *
+ * Esta asserção existe porque a taxa anterior (US$ 0,045/s sobre a duração
+ * fracionária) era plausível e errada: ela nunca reproduziu nenhuma das três
+ * contagens de unidades que o fornecedor de fato debitou. A regra da truncagem
+ * reproduz as três exatamente, e é isso que fica travado aqui — não o número,
+ * mas a capacidade de prever o que já aconteceu.
+ *
+ * Os números da política não estão no código de produção; estão AQUI, como
+ * dado observado. Se estivessem lá, este teste compararia o código consigo
+ * mesmo e não afirmaria coisa nenhuma.
+ */
+const MEDICOES_REAIS = [
+  { deliveredSeconds: 3.372, vendorUnits: 9, quando: "2026-08-01, 16:9" },
+  { deliveredSeconds: 16.972, vendorUnits: 48, quando: "2026-08-02, 9:16" },
+  { deliveredSeconds: 33.696, vendorUnits: 99, quando: "medição antiga, 16:9" },
+] as const;
+
+function checkCostMatchesRealMeasurements(failures: string[], notes: string[]): void {
+  for (const m of MEDICOES_REAIS) {
+    const c = costFor({
+      provider: "avatar",
+      vendor: "heygen",
+      unitType: "seconds",
+      unitCount: m.deliveredSeconds,
+    });
+
+    if (!c.known) {
+      failures.push(
+        `custo: a medição real de ${m.deliveredSeconds} s (${m.quando}) passou a devolver ausência. ` +
+          "O caminho medido é o único número que o produto tem sobre dinheiro.",
+      );
+      continue;
+    }
+
+    if (c.vendorUnits !== m.vendorUnits) {
+      const fracionario = (m.deliveredSeconds * HEYGEN_VIDEO_COST.unitsPerBilledSecond).toFixed(2);
+      failures.push(
+        `custo: para ${m.deliveredSeconds} s (${m.quando}) a conta devolveu ${c.vendorUnits} unidades, ` +
+          `mas o fornecedor debitou ${m.vendorUnits}. A cobrança é por SEGUNDO INTEIRO truncado — ` +
+          `calcular sobre a duração fracionária daria ${fracionario}, que não bate com nenhuma das ` +
+          "três medições. Foi essa conta que produziu a taxa de US$ 0,045/s, plausível e errada.",
+      );
+    }
+  }
+
+  // Contraponto: a truncagem não pode virar "arredonda para qualquer coisa".
+  // Uma implementação que devolvesse sempre zero, ou sempre o teto, passaria
+  // em alguma das medições por acaso — mas não nesta.
+  const meio = costFor({ provider: "avatar", vendor: "heygen", unitType: "seconds", unitCount: 10.999 });
+  if (!meio.known || meio.billedSeconds !== 10) {
+    failures.push(
+      `custo: 10,999 s deveriam ser cobrados como 10 s inteiros, e a conta devolveu ` +
+        `${meio.known ? meio.billedSeconds : "ausência"}. Arredondar para cima inventa cobrança que o ` +
+        "fornecedor não fez; as três medições mostram truncagem, não arredondamento.",
+    );
+  }
+
+  notes.push(
+    `custo: ${MEDICOES_REAIS.length} medição(ões) real(is) reproduzidas exatamente pela regra de ` +
+      `${HEYGEN_VIDEO_COST.unitsPerBilledSecond} unidades por segundo inteiro truncado`,
   );
 }
 
@@ -184,7 +298,7 @@ async function checkNoCostNumbersOutsideConstant(
   failures: string[],
   notes: string[],
 ): Promise<void> {
-  const valores = [String(HEYGEN_VIDEO_COST.usdPerSecond), String(HEYGEN_VIDEO_COST.unitsPerDollar)];
+  const valores = [String(USD_PER_BILLED_SECOND), String(HEYGEN_VIDEO_COST.unitsPerDollar)];
   const arquivos = await listSourceFiles(path.join(repoRoot, "backend", "src"));
   let inspecionados = 0;
 
