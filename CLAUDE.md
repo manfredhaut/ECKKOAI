@@ -861,6 +861,7 @@ o próprio comentário que a explicava).
 | Conferir os 9 valores de `provider_cost_rates` | **usuário** | São placeholder; toda tela já mostra banner de estimativa |
 | Escrever o Bloco 2B | próxima sessão | Insumo pronto na tabela de lacunas |
 | Validar fundo virtual com câmera real | **usuário** | Câmera bloqueada em toda automação desta ferramenta |
+| **Copiar `uploads/_prova/` para fora da máquina** | **usuário** | `uploads/*` é ignorado pelo git ⇒ a prova só existe neste disco. `uploads/_5e-prova/` já foi sobrescrito e a prova do 5E não é mais reconferível — o precedente está pago. **PENDENTE** |
 | **Ligar o autostart do Docker Desktop** | **usuário** | Verificado: `AutoStart: false` em `%APPDATA%\Docker\settings-store.json`. **Não é código** — nenhuma política de restart do Compose ajuda se o próprio daemon não estiver rodando. Caminho: **Docker Desktop → ícone de engrenagem (Settings) → General → marcar "Start Docker Desktop when you sign in to your computer"** |
 
 ### Riscos conhecidos e NÃO corrigidos
@@ -1480,6 +1481,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-03 | **INSTRUMENTOS-1** | **`tools/scale-match.mjs` commitado (vivia em scratchpad efemero); headroom/sujeitoV/sujeitoH do fov-compare DESQUALIFICADOS (bounding box muda 1,80→0,94 na mesma sala) e o veredito automatico removido; barFrac passa a cobrar concordancia de 3 quadros. Sanidade 57,8/1,3333 batendo nos dois. Achado: existem DOIS masters 16:9 de 1280x720 e o do FOV-1 e o de 33,696 s (`61caaab1`), nao o do LIVE-1. MEDIDO que 1080p daria 2,25x mais pixels uteis pelo mesmo preco e que seus alvos sao os 4 numeros da politica do 5E — nada alterado. Ver abaixo.** |
 | 08-03 | **FOV-1** | **O 9:16 e RECOMPOSICAO, nao corte — MEDIDO por casamento de escala em dois masters que ja estavam em disco, custo zero: mesma largura de campo, 33% mais campo vertical. A chave do catalogo e (avatar, formato_pedido) e a migration por combinacao E necessaria. 2 dos 4 videos do Mario ja dao 403: a evidencia do fornecedor apodrece. Ver abaixo.** |
 | 08-03 | **APRESENTACAO-1** | **Arnês 90/90 MEDIDO (781 s), com os 4 mutantes de preenchimento que provam a guarda mais 1 controle, nominais pela linha de falha de cada um; prova preservada em `_prova/5f-e1e47cc/` com manifesto; ativo da Biblioteca repontado para a cópia sem barra (UPDATE 1, com REVERTER.txt); rota estática provada por curl ANTES do UPDATE; confirmado no navegador. `video_variants` não comporta duas variantes 9:16 — nada inserido. Ver abaixo.** |
 | 08-03 | **5F Parte A** | **Sonda de preenchimento por luminância (57,8% de barra no master de 02/08); régua passa a medir o conteúdo e 2 alvos mudam de veredito; recorte antes do enquadramento; `setsar=1` conserta DAR mentiroso; ativo reprocessado ao lado. Parte B armada e não disparada. 90 mutantes. Ver abaixo.** |
@@ -3791,3 +3793,107 @@ casamento de escala mede a sala, que é estática, e não a pessoa; se a
 recomposição vale para 4:5 e 1:1, nunca pedidos em live; e `avatars` não tem
 `updated_at`, então a ausência de retreino entre as duas datas é DEDUZIDA de
 existir um único `provider_avatar_id`.
+
+### INSTRUMENTOS-1 — o rastro do veredito FOV-1 (2026-08-03, custo zero)
+
+**O instrumento do veredito é `tools/scale-match.mjs`, agora COMMITADO.** Ele
+vivia no scratchpad de uma sessão — diretório efêmero —, então o veredito
+RECOMPOSIÇÃO estava sustentado por código que ia desaparecer, enquanto o único
+instrumento no repositório dizia o contrário.
+
+**`headroom`, `sujeitoV` e `sujeitoH` do `tools/fov-compare.mjs` são
+INVÁLIDOS** e passaram a se chamar `*_NAO_CONFIAVEL` na tabela, com o veredito
+automático removido. Eles derivam de `edges()`, que marca o primeiro ponto com
+desvio-padrão acima de um limiar — nestes masters, mobília e parede. A prova de
+que não isolam sujeito nenhum está na própria saída: o bounding box muda de
+proporção **1,80 → 0,94** entre dois vídeos da MESMA sala. O `EDGE_K` **não foi
+tocado**: a métrica foi desqualificada, não recalibrada.
+
+**O que continua VÁLIDO no `fov-compare`:** `barFrac`, `conteudo` e
+`razaoConteudo`. Ele passou a cobrar concordância entre os três quadros do
+`barFrac`, que é o critério da sonda do 5F. *Sanidade MEDIDA nos dois
+instrumentos sobre o mesmo par:* **57,8%** de barra (3 quadros concordam) e
+razão de conteúdo **1,3333**.
+
+**Reprodução do veredito, MEDIDA direto dos `.mp4` (sem depender dos PNGs de
+prova):** barra 57,8% · razão 1,3333 · **1280 px · 1,000× · dx=0 dy=120** ·
+erro 4,09 contra 4,78 no vizinho. O `dy=120` é metade de (960−720), como
+registrado. Sobre os PNGs o erro é 4,14 — a diferença é recompressão.
+
+**DOIS ARMADILHAS que custaram tempo e estão no cabeçalho do script:**
+
+1. **Existem DOIS masters 16:9 de 1280×720 no mesmo tenant, e a dimensão não os
+   distingue.** O do FOV-1 é o de **33,696 s (`61caaab1`)**; o de 3,372 s
+   (`0a0193b8`, do LIVE-1, que é o master do 5E) é de **outra cena**. Com o
+   arquivo errado o erro fica em 39 num platô sem mínimo e o veredito sai
+   "campo AMPLIADO" — espúrio. Nenhum registro anterior nomeava o arquivo do
+   FOV-1; *MEDIDO:* o PNG de referência casa com `61caaab1` (MAE 3,11) e não
+   com `0a0193b8` (MAE 51–54).
+2. **O instante importa.** Em `t=0` nem o par correto casa, porque um dos
+   masters ainda está entrando na fala. Daí a flag `--ss`; amostre o meio. Um
+   casamento que não se destaca dos vizinhos é resultado a **descartar**, não a
+   interpretar.
+
+#### 1080p no vertical: 2,25× mais pixels úteis pelo MESMO preço
+
+*MEDIDO exercitando a régua real (`masterResolutionFor`/`targetForAspect`), não
+aritmética à mão:*
+
+| pedido | master 9:16 | conteúdo útil | alvos derivados |
+|---|---|---|---|
+| **720p** (o que enviamos hoje) | 720×1280 | **720×540 = 389k px** | 9:16 720×1280 · 4:5 720×900 · 1:1 720×720 · 16:9 1280×720 |
+| **1080p** | 1080×1920 | **1080×810 = 875k px** | 9:16 1080×1920 · 4:5 1080×1350 · 1:1 1080×1080 · 16:9 1920×1080 |
+
+**Razão de pixels úteis: 2,2500 exata.** É DEDUZIDO, e a premissa está nomeada:
+que a fração de barra (57,8%) se mantenha em 1080p. Se mantiver, a razão é
+geometricamente forçada — (1080/720)².
+
+**O achado que decide a discussão: os alvos em 1080p são EXATAMENTE os quatro
+números da política aprovada do 5E** (9:16 1080×1920 · 4:5 1080×1350 · 1:1
+1080×1080 · 16:9 1920×1080). Em 720p, os quatro ficam **abaixo do alvo** — é o
+próprio 720p que faz a régua emitir o aviso "abaixo da especificação". Passar a
+pedir 1080p **alinha** o pedido com a política já aprovada; não quebra nada.
+
+**Estado da checagem da Tarefa 2, item por item:**
+
+- **(a) O que enviamos hoje — MEDIDO: `720p`, FIXO, não escolhível.**
+  `MEASURED_RESOLUTION` em [videoFormat.ts:54](backend/src/services/providers/videoFormat.ts:54)
+  é constante única, aplicada às 5 plataformas; o payload leva
+  `resolution: input.format.resolution` em
+  [avatarProvider.ts:356](backend/src/services/providers/avatarProvider.ts:356).
+  A UI escolhe PLATAFORMA (que determina a proporção); a resolução é a mesma
+  para todas. **`1080p` aparece só em guardas e no `controlRun.ts` da Parte B
+  (armada, não disparada)** — nenhum caminho de produção o envia.
+- **(b) Registro de geração em 1080p — NÃO EXISTE.** *MEDIDO:* `provider_usage`
+  tem 13 linhas com resolução, **todas 720p** (1× 16:9 sucesso, 8× 9:16
+  sucesso, 4× 9:16 falha) e 69 com `NULL` (voz e roteiro, que não têm
+  resolução); **zero** em 1080p. Log do backend: **zero** ocorrências de
+  "1080p". Fixtures: nenhuma coincide com resolução declarada (maior lado 640
+  px), **por desenho** — a guarda `checkResolutionIsNotSimulated` reprova se
+  coincidirem, para que a simulação não pareça verificar resolução.
+  **Portanto: 1080p nunca foi aceito NEM recusado — nunca foi pedido.**
+- **(c) O que assume 720p — quase nada, e nada que quebre.** A régua do 5E é
+  **parametrizada**: `RESOLUTION_SHORT_EDGE` mapeia os três rótulos e
+  `targetForAspect(ratio, shortEdge)` recebe o lado curto como argumento. Três
+  pontos precisariam de ajuste, e são de **proveniência, não de cálculo**:
+  1. **[videoFormat.ts:42-52](backend/src/services/providers/videoFormat.ts:42)
+     está DESATUALIZADO** — justifica 720p dizendo que "subir para 1080p mudaria
+     o custo por um fator que ninguém mediu". O 5E derrubou isso: a tarifa é por
+     **segundo e por tipo de avatar, não por pixel** (DOCUMENTADO, duas fontes).
+     A justificativa escrita ali já não sustenta a escolha.
+  2. `measuredUnder.resolution = "720p"` em
+     [providerCost.ts:90](backend/src/services/billing/providerCost.ts:90) é o
+     registro das **condições** da medição. O cálculo não muda (é por segundo),
+     mas o rótulo deixaria de descrever o que se gera.
+  3. O teto real da NOSSA conta continua **NÃO VERIFICADO** — só a sonda de rede
+     responde, e ela é a pergunta 2 da Parte B.
+
+**NADA FOI ALTERADO.** `MEASURED_RESOLUTION` continua em `720p`, aguardando
+decisão — mudá-la altera o que se pede ao fornecedor em toda geração.
+
+#### Pendência de dono: backup da prova
+
+**`uploads/_prova/` só existe NESTE disco** (`uploads/*` é ignorado pelo git).
+Copiá-lo para fora da máquina é **responsabilidade do usuário** e continua
+**PENDENTE**. Precedente que mostra o custo: `uploads/_5e-prova/` foi
+sobrescrito e a prova do 5E já **não é reconferível em disco**.
