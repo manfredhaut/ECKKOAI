@@ -538,6 +538,23 @@ rodada:
 > do teto é **1 tentativa**. E a lição operacional do RETOMADA-1 continua
 > valendo: **um `.env` armado torna "subir o ambiente" e "armar o modo pago" a
 > mesma ação**.
+>
+> ### 🔄 TROCA DE CONTA aqui — estado entregue limpo
+>
+> HEAD **`ab943a3`**, árvore limpa, `npm run check` **exit 0** (rodado com
+> `-e PROVIDER_MODE=fixture` só no processo), ambiente em **`fixture`** com
+> CONFIRM vazio, 4 pastas de prova em disco. **Nada em andamento, nada pela
+> metade, nenhuma geração pendente.** Pode começar do zero.
+>
+> **Uma única coisa ficou aberta desta sessão, e ela NÃO custa nada:** o delta
+> de créditos de voz do ElevenLabs. A base **698 / 64.917** está registrada; só
+> falta o operador ler o painel DEPOIS e informar o número. Isso decide entre
+> **+180** (cobra por caractere) e **+187** (por byte) — o **+360** do fallback
+> já está descartado pelo log. O contador não anda sozinho, então a leitura
+> continua válida a qualquer momento. Ver o fim do bloco **LIVE-3**.
+>
+> **Não é preciso refazer medição nenhuma** para retomar: custo, artefato,
+> ritmo de fala e forma da resposta de voz estão todos medidos e no LIVE-3.
 
 **Última atualização:** 2026-08-03 — **bloco LIVE-3: a segunda passada live
 horizontal, medida e fechada.** Um vídeo, um clique, **US$ 0,70** pelo delta de
