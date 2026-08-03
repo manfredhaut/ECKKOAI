@@ -503,29 +503,53 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-> # 🟢 ANTES DE QUALQUER COISA (2026-08-03 19:45 UTC)
-> **O AMBIENTE ESTÁ DESARMADO.** `PROVIDER_MODE=fixture`,
-> `PROVIDER_LIVE_CONFIRM` vazia — medido pelos TRÊS critérios (`printenv` no
-> container, `docker compose config`, e o log de boot com
-> `"mode":"fixture","billable":false"`). O aviso vermelho anterior, que dizia
-> "ARMADO EM MODO PAGO", está **vencido**: o operador desarmou ao fim daquela
-> sessão. O disparo live **nunca aconteceu**, e o gasto com fornecedor
-> continua **ZERO** — confirmado contra a própria HeyGen em 03/08 19:38 UTC:
-> cota **873** e carteira **US$ 14,55**, os mesmos números de 02/08.
+> # 🟡 ANTES DE QUALQUER COISA (2026-08-03 20:47 UTC)
+> **REARMADO NO ARQUIVO, NÃO APLICADO — e este é o estado mais fácil de ler
+> errado do projeto.** O `.env` já está em `live` com a frase de confirmação
+> preenchida; o **processo em execução continua em `fixture`**. Nenhuma das
+> duas leituras isoladas conta a verdade: `printenv` diria "seguro",
+> `docker compose config` diria "armado", e os dois estariam certos sobre
+> coisas diferentes. *MEDIDO pelos três critérios:*
 >
-> **Crédito `video` NÃO está mais em 2 — está em 1.** Um ensaio em fixture de
-> 03/08 consumiu um crédito, porque `debitCredit` roda antes de
-> `generateVideo` e `isFixtureMode()` só decide a coluna `simulated` do
-> ledger, **nunca o `delta`** ([videos.ts:589](backend/src/routes/videos.ts:589)).
-> Simulação não gasta fornecedor, mas gasta crédito. Repor, se quiser:
-> `docker compose exec backend npm run dev:grant-credits -- --slug dev-c77a5b --video 1`.
+> | Critério | Diz | Significa |
+> |---|---|---|
+> | `printenv` no container | `fixture`, CONFIRM len **0**, ATTEMPTS 2 | o processo de pé é seguro |
+> | `docker compose config` | `live`, CONFIRM **28 car.**, ATTEMPTS 6 | o arquivo já está armado |
+> | log de boot | `"mode":"fixture","billable":false` | nunca houve boot em live |
 >
-> **Duas coisas a ler antes de armar de novo:** a seção TELA-1 (o botão "Novo
-> avatar" do passo 1 custa **US$ 1,00** em live) e a seção FIXTURE-1, no fim
-> deste arquivo — ela mede a semântica exata dos dois tetos e mostra que a
-> margem real é **1 tentativa**, não as 4 que o plano da passada prometia.
+> `StartedAt` 18:58:17 UTC · `RestartCount=0` · `.env` alterado **20:29:37 UTC**,
+> 1h31 DEPOIS do boot. **A consequência prática: qualquer `up -d` — ou qualquer
+> recriação de container por qualquer motivo — arma o modo pago na hora, sem
+> mais nenhuma pergunta.** Não é preciso editar nada para gastar; basta subir.
+>
+> **Gasto com fornecedor continua ZERO.** Confirmado contra a própria HeyGen em
+> 03/08 20:45 UTC: cota **873**, carteira **US$ 14,55** — os mesmos números de
+> 02/08 e das 19:38. Desde o commit `0627af4`: **0 vídeos, 0 linhas de
+> `provider_usage`**.
+>
+> **Crédito `video` está em 3, não em 1.** O aviso anterior dizia 1 e venceu: o
+> operador repôs 2 (`grant +1` às 20:21:00 e 20:21:13, `simulated=f`). Continua
+> valendo o motivo pelo qual ele caíra — simulação **não** gasta fornecedor mas
+> **gasta crédito**, porque `debitCredit` roda antes de `generateVideo` e
+> `isFixtureMode()` só decide a coluna `simulated` do ledger, nunca o `delta`
+> ([videos.ts:589](backend/src/routes/videos.ts:589)).
+>
+> **Duas coisas a ler antes de aplicar:** a seção TELA-1 (o botão "Novo avatar"
+> do passo 1 custa **US$ 1,00** em live) e a seção FIXTURE-1 — ela mede a
+> semântica dos dois tetos e mostra que a margem real é **1 tentativa**, não as
+> 4 que o plano da passada prometia. O bloco **RETOMADA-1**, no fim, tem os
+> números desta medição.
 
-**Última atualização:** 2026-08-03 — **bloco FIXTURE-1: ambiente DESARMADO e
+**Última atualização:** 2026-08-03 — **bloco RETOMADA-1: rodada de LEITURA
+depois de uma troca de conta no meio do rearme.** Fecha a pergunta "houve
+disparo?" com **não**, medido contra o fornecedor e contra o banco, e nomeia o
+estado do ambiente como **rearmado-no-arquivo-não-aplicado** — que nenhuma das
+duas leituras isoladas revelaria. Promoveu `quotaBaseline.ts` do scratchpad
+efêmero para o repositório (segundo instrumento a viver fora do git sustentando
+um número registrado; o primeiro foi o `scale-match.mjs` do INSTRUMENTOS-1),
+mediu o teto do polling em **450 s** (confirma os 90 × 5 s do registro) e
+corrigiu o recorte de `provider_usage` — o "93% inclassificáveis" misturava
+populações. Ver o bloco próprio no fim. Antes dele, o **bloco FIXTURE-1: ambiente DESARMADO e
 o que dava para saber antes de gastar, medido sem gastar.** Leia o aviso verde
 acima primeiro, e depois a **seção FIXTURE-1, no fim deste arquivo**. Os três
 achados que mudam decisão: a **Parte B do 5F já está respondida** pelos
@@ -1536,6 +1560,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-03 | **RETOMADA-1** | **Rodada de LEITURA pós-troca de conta. Ambiente = REARMADO NO ARQUIVO, NÃO APLICADO: `printenv`=fixture (CONFIRM len 0, ATTEMPTS 2) × `docker compose config`=live (CONFIRM 28 car., ATTEMPTS 6), `.env` alterado 1h31 DEPOIS do boot, `RestartCount=0`, boot único em fixture ⇒ qualquer `up -d` arma o modo pago sem nova pergunta. NÃO HOUVE DISPARO, medido pelas DUAS pontas: HeyGen cota **873** / carteira **US$ 14,55** (inalteradas, 5º ponto de 60 un/US$) e banco com 0 vídeos e 0 `provider_usage` desde 0627af4 — as 2 linhas de ledger novas são `grant +1` (reposição), saldo video=**3**. Teto do polling MEDIDO: 90 × 5 s = **450 s**, confirma o registro, com a precisão de que é piso de parede (setInterval async não serializa). `quotaBaseline.ts` PROMOVIDO do scratchpad efêmero (2ª vez em 2 dias que um instrumento sustentava número registrado fora do git). ACHADO: `/v3/users/me` NÃO está no `endpointCatalog.ts` — o freio deriva do catálogo, então o substituto do sunset de 2026-10-31 não é barrado nem confirmado. CORRIGIDO o recorte de `provider_usage`: geração de vídeo é 7 linhas e **100% classificável**; o "93%" misturava 3 populações que nunca teriam `video_id`. Zero `up -d`/`restart`/`stop`. Ver abaixo.** |
 | 08-03 | **FIXTURE-1** | **Ambiente DESARMADO (3 critérios). Linha de base MEDIDA contra a HeyGen: cota 873, carteira US$ 14,55 — previsão bateu exata, nada gasto desde 02/08. Fixture NÃO exercita o TTS (`generateVideo` volta antes de `requireAudio`), então `audio_duration_source=tts_timestamps` em fixture é RÓTULO, não medição. TTS exercitado com fetch substituído: 180 chars sem truncagem, 1 chamada (2 no fallback), `eleven_multilingual_v2`. Tetos são GLOBAIS da sessão; falha antes do aceite devolve gasto e crédito, NUNCA a tentativa ⇒ sobra 1 tentativa. `provider_usage` NÃO tem coluna `simulated` e 93% das linhas são inclassificáveis (conserto PROPOSTO, não feito). Parte B do 5F RESPONDIDA de graça: Mário 16:9 `clean` × Mário 9:16 `padded` 57,8% ⇒ preenchimento é do FORNECEDOR. Ensaio consumiu 1 crédito. Ver abaixo.** |
 | 08-03 | **TELA-1** | **Diagnostico da tela "Criar video": 12 defeitos ordenados por visibilidade, NENHUM corrigido. Parte A da rodada live entregue e PARADA na 1. 2 lacunas novas: voice_id nao entra no predicado mas requireAudio exige; 3 campos diferentes descrevem "voz" no mesmo card. Zero gasto. Ver abaixo.** |
 | 08-03 | **PASSADA LIVE — ARMADA, NÃO disparada** | **AMBIENTE FICOU EM LIVE na troca de conta (medido: `billable":true`, teto 2). PARADAS 1 e 2 liberadas, roteiro aprovado GRAVADO (187 car / 34 palavras), pré-voo completo, `uploads/_prova/live-15s-03082026/` criada. Disparo NAO executado, gasto ZERO, credito video=2. 3 falsas partidas ensinaram: `&&` nao vale no PowerShell do operador; `.env` em UTF-16/BOM cai no default em silencio; o item 1 passou a exigir printenv + StartedAt + `docker compose config`. Ver o bloco no fim.** |
@@ -4737,5 +4762,182 @@ real"*.
 - A forma real do erro do ElevenLabs para `voice_id` inválido.
 - Se a HeyGen aceita `1080p` na nossa conta.
 - Se o preenchimento em 9:16 é regra do fornecedor **para todo avatar**.
+- A constante de custo contra FATURA (só contra saldo e quota da API).
+- Cobrança abaixo de 1 segundo.
+
+---
+
+### RETOMADA-1 — houve disparo? Não. (2026-08-03, custo ZERO de fornecedor)
+
+Rodada de **leitura**, aberta depois de uma troca de conta no meio de um
+rearme. Nada foi disparado, nada foi gerado (nem em fixture), nada foi subido:
+**zero `up -d`, zero `restart`, zero `stop`** — a regra existia porque `up -d`
+apaga o stdout acumulado, e se um disparo tivesse acontecido esse log seria a
+única prova das chamadas de voz. As duas únicas requisições que saíram da
+máquina foram leituras de cota e carteira.
+
+#### O estado do ambiente é o terceiro, e é o que engana
+
+**REARMADO NO ARQUIVO, NÃO APLICADO.** Ver a tabela no aviso do topo desta
+seção. O ponto que merece ficar: **nenhuma das duas leituras isoladas conta a
+verdade.** `printenv` diz `fixture` e está certo sobre o processo; `docker
+compose config` diz `live` e está certo sobre o arquivo. Quem consultasse só a
+primeira concluiria "estamos seguros, pode mexer"; quem consultasse só a
+segunda concluiria "está armado, não toque em nada". As duas conclusões levam a
+ações erradas, e a diferença entre elas é um `up -d` de distância.
+
+*MEDIDO:* `.env` alterado às **20:29:37 UTC**, container iniciado às
+**18:58:17 UTC**, `RestartCount=0`, uma única linha de boot e ela diz
+`fixture`. O arquivo foi armado 1h31 **depois** do boot e nunca chegou ao
+processo.
+
+**O risco que isso cria não é editar o `.env` — é subir o serviço.** Qualquer
+`docker compose up -d`, qualquer recriação de container por qualquer motivo
+(incluindo um `build`, ou o Docker Desktop reiniciando a máquina) aplica o modo
+pago sem mais nenhuma pergunta. O `.env` já contém a frase de confirmação, que
+é justamente a proteção desenhada para exigir um ato deliberado — e ela já foi
+praticada. **A partir daqui, "subir o ambiente" e "armar o modo pago" são a
+mesma ação.**
+
+#### Não houve disparo — medido pelas duas pontas
+
+Contra o **fornecedor**, lido às 20:45:14 UTC pela credencial do tenant:
+
+| Leitura | Valor | Comparação |
+|---|---|---|
+| `GET /v2/user/remaining_quota` | **873** | igual a 02/08 e a 03/08 19:38 |
+| `GET /v3/users/me` → `wallet.remaining_balance` | **US$ 14,55** | idem |
+
+873 ÷ 14,55 = **60,0** — quinto ponto confirmando 60 unidades por dólar.
+
+Contra o **banco**, recorte "criado depois de `0627af4`" (2026-08-03 19:57:22
+UTC): **0 vídeos**, **0 linhas de `provider_usage`**, e **2 linhas de
+`credit_ledger`** — ambas `grant +1` de `video`, `simulated=f`, sem
+`related_video_id`, às 20:21:00 e 20:21:13. Isso é **reposição**, não consumo.
+O último consumo do banco é de 19:30:06 UTC, `simulated=t`, e é o ensaio em
+fixture que o FIXTURE-1 já registrou.
+
+> **A frase: desde `0627af4` não gastou nada — 0 unidades de cota e US$ 0,00 —
+> e o saldo de crédito de vídeo é 3.**
+
+**Vale notar que as duas pontas eram necessárias.** O banco sozinho não
+responderia: um disparo feito fora do app (curl à mão, script de sessão) não
+deixaria linha em `videos`. A cota sozinha também não: ela mede o fornecedor,
+não o nosso ledger. As duas juntas fecham.
+
+#### Teto do polling — 450 s, o registro estava certo
+
+*MEDIDO em código:* `POLL_INTERVAL_MS = 5000`
+([videos.ts:23](backend/src/routes/videos.ts:23)) e `MAX_POLL_ATTEMPTS = 90`
+([videos.ts:24](backend/src/routes/videos.ts:24)); o contador sobe no início do
+callback ([videos.ts:38](backend/src/routes/videos.ts:38)), o corte é
+`attempts >= MAX_POLL_ATTEMPTS` ([videos.ts:205](backend/src/routes/videos.ts:205))
+e o timer é armado com o intervalo em
+[videos.ts:232](backend/src/routes/videos.ts:232).
+
+> **90 sondagens, uma a cada 5 s ⇒ teto de 450 s = 7 min 30 s.** A primeira
+> sondagem cai em t≈5 s e a 90ª em t≈450 s. **Este é o número que define "em
+> andamento"**: enquanto ele não vence, o vídeo ainda pode virar `ready` — e
+> reiniciar o backend nesse intervalo mata o `setInterval` e prende o vídeo em
+> `queued` para sempre, sem linha de falha e sem estorno (desfecho E do 4A).
+
+**Precisão que o registro anterior não trazia:** 450 s é o instante do último
+**disparo**, não o do desfecho. `setInterval` com callback `async` não
+serializa — o timer dispara a cada 5 s independentemente de a sondagem anterior
+ter voltado. Com o fornecedor lento, os ticks se sobrepõem e o desfecho
+terminal chega alguns instantes depois dos 450 s. Portanto **450 s é piso de
+parede, não teto exato** — quem for cronometrar uma passada deve esperar um
+pouco mais que 7 min 30 s antes de concluir que o laço morreu.
+
+#### O instrumento saiu do scratchpad — segunda vez que isto acontece
+
+`quotaBaseline.ts` vivia no scratchpad de outra sessão, que é diretório
+efêmero. **O número "873 / US$ 14,55" — que é a linha de base de todo cálculo
+de custo real deste projeto — estava sustentado por código prestes a
+desaparecer.** É a mesma situação que o INSTRUMENTOS-1 corrigiu com o
+`scale-match.mjs`, e a segunda ocorrência em dois dias: instrumento que produz
+número registrado precisa entrar no git no mesmo movimento que produz o número.
+
+**Ficou em `backend/src/scripts/quotaBaseline.ts`, e não em `tools/`, por um
+motivo mecânico:** ele precisa de `pool` e de `getCredential`, e o bind mount
+que o torna executável é `backend/src → /app/src`. `tools/` também é montado,
+mas em `/repo/tools`, sem acesso a `/app/src` — um script lá teria de importar
+por caminho atravessado. `tools/` guarda ferramentas de **host** (`.mjs`,
+`.sh`); ferramentas que falam com o banco moram junto das irmãs
+(`probePadding.ts`, `controlRun.ts`, `proveDerivation.ts`).
+
+```bash
+docker compose exec -T backend npx tsx src/scripts/quotaBaseline.ts
+```
+
+**Sem segredo no fonte:** a chave é lida cifrada do banco e decifrada em memória
+por `getCredential()`; a saída imprime só números e o nome do vendor. A guarda
+de egress **não** o acusa porque `scripts/` sai antes de qualquer inspeção
+([checkNetworkEgressPolicy.ts:145](backend/src/scripts/checkNetworkEgressPolicy.ts:145)) —
+isenção deliberada e pré-existente, não algo afrouxado para este arquivo.
+
+**Achado que fica como pendência: `GET /v3/users/me` NÃO está no
+`endpointCatalog.ts`.** Só o `remaining_quota` está lá, declarado
+`billable: false` ([endpointCatalog.ts:85](backend/src/services/providers/endpointCatalog.ts:85)).
+Como o freio do probe **deriva** do catálogo (4A, item 5), um endpoint ausente
+não é barrado **nem confirmado** — e é justamente o substituto que assume
+quando o `remaining_quota` for desligado em **2026-10-31**. Hoje a segurança
+dele é empírica: cota e carteira não se moveram entre 02/08 e 03/08 apesar de
+ele ter sido chamado no intervalo. **Catalogá-lo é o conserto; NÃO foi feito
+aqui**, porque esta rodada não mexe em código além da promoção do instrumento.
+
+#### Correção: o "93% inclassificáveis" de `provider_usage` misturava populações
+
+O FIXTURE-1 registrou que 93% das linhas de `provider_usage` são
+inclassificáveis quanto a simulação. O número está certo como aritmética e
+**errado como diagnóstico**, porque conta junto três populações que se comportam
+de maneira diferente. *MEDIDO agora (83 linhas no total):*
+
+| Recorte | Linhas | Com `video_id` | Classificável pelo join? |
+|---|---|---|---|
+| **geração de vídeo** (`avatar` com `video_id`) | **7** | 7 | **100% — 3 reais, 4 simuladas** |
+| treino de avatar (`avatar` sem `video_id`) | 15 | 0 | não |
+| roteiro (`script`) | 58 | 0 | não |
+| voz (`voice`) | 3 | 0 | não |
+
+**O recorte que importa — as linhas de geração de vídeo — é 100%
+classificável.** As outras 76 não são, mas **não por defeito de preenchimento**:
+treino, roteiro e voz **não têm vídeo a que se ligar**, então nenhum `video_id`
+jamais existiria ali. Dizer "93% inclassificáveis" sugere dado perdido; o que
+há é um join que nunca poderia funcionar para três quartos da tabela.
+
+**O conserto proposto continua o mesmo e o argumento fica mais forte:** uma
+coluna `simulated boolean NOT NULL DEFAULT false` em `provider_usage`,
+preenchida na escrita a partir de `isFixtureMode()` — mesmo desenho de
+`credit_ledger.simulated`. Ela é necessária **justamente** para as 76 linhas que
+não têm entidade a que fazer join, e é inútil para as 7 que já se resolvem.
+**PROPOSTO, NÃO IMPLEMENTADO** — as linhas antigas ficariam `false` e
+continuariam mentindo, e corrigi-las caso a caso não é decisão de script.
+
+#### Prova preservada
+
+`uploads/_prova/retomada-03082026/` — o log do backend em UTF-8 (1.053.035
+bytes, md5 `49b9211d3ef33498d08a9e18e3621757`) mais `MANIFESTO.txt`. Ele existe
+por um motivo datado: é a prova de que o processo rodou em `fixture` do boot até
+a coleta, apesar de o `.env` já estar armado — e **o `up -d` que aplicará o live
+apaga esse log**. As três provas anteriores (`5f-e1e47cc/`, `fov/`,
+`live-15s-03082026/`) foram conferidas **intocadas**. Continua valendo que
+`uploads/*` é ignorado pelo git ⇒ **prova só existe neste disco**, e copiá-la
+para fora é ação do operador.
+
+#### Gate
+
+`npm run check` **exit 0**, "todas as invariantes passaram" — rodado com
+`-e PROVIDER_MODE=fixture` **só no processo do check**, sem tocar o container
+nem o `.env`. Isso é obrigatório enquanto o ambiente estiver rearmado, pelo
+defeito de guarda já registrado no fim de TELA-1: `checkPollPolicy` restaura o
+modo **original** e depois cobra `isFixtureMode()`, então ela reprova quando o
+original é `live`. **NÃO corrigido** — continua sendo mudança de guarda a se
+fazer fora de uma passada armada.
+
+#### Continua NÃO VERIFICADO (nada nesta rodada mudou isto)
+
+- Se a HeyGen aceita `1080p` na nossa conta.
+- A forma real do erro do ElevenLabs para `voice_id` inválido.
 - A constante de custo contra FATURA (só contra saldo e quota da API).
 - Cobrança abaixo de 1 segundo.
