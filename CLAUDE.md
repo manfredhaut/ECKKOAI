@@ -503,44 +503,53 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-> # 🟡 ANTES DE QUALQUER COISA (2026-08-03 20:47 UTC)
-> **REARMADO NO ARQUIVO, NÃO APLICADO — e este é o estado mais fácil de ler
-> errado do projeto.** O `.env` já está em `live` com a frase de confirmação
-> preenchida; o **processo em execução continua em `fixture`**. Nenhuma das
-> duas leituras isoladas conta a verdade: `printenv` diria "seguro",
-> `docker compose config` diria "armado", e os dois estariam certos sobre
-> coisas diferentes. *MEDIDO pelos três critérios:*
+> # 🟢 ANTES DE QUALQUER COISA (2026-08-03 21:45 UTC)
+> **O AMBIENTE ESTÁ DESARMADO, e desta vez arquivo e processo CONCORDAM** —
+> que é a diferença em relação ao aviso amarelo anterior. *MEDIDO pelos cinco
+> critérios:*
 >
-> | Critério | Diz | Significa |
-> |---|---|---|
-> | `printenv` no container | `fixture`, CONFIRM len **0**, ATTEMPTS 2 | o processo de pé é seguro |
-> | `docker compose config` | `live`, CONFIRM **28 car.**, ATTEMPTS 6 | o arquivo já está armado |
-> | log de boot | `"mode":"fixture","billable":false` | nunca houve boot em live |
+> | Critério | Diz |
+> |---|---|
+> | `printenv` no container | `fixture`, CONFIRM comprimento **0** |
+> | `docker compose config` | `fixture`, CONFIRM **`""`** (conferido com `cat -A`) |
+> | log de boot | `"mode":"fixture","billable":false` |
+> | `StartedAt` | **21:40:15 UTC** (novo; o boot em live foi 21:13:29) |
+> | `RestartCount` | 0 |
 >
-> `StartedAt` 18:58:17 UTC · `RestartCount=0` · `.env` alterado **20:29:37 UTC**,
-> 1h31 DEPOIS do boot. **A consequência prática: qualquer `up -d` — ou qualquer
-> recriação de container por qualquer motivo — arma o modo pago na hora, sem
-> mais nenhuma pergunta.** Não é preciso editar nada para gastar; basta subir.
+> **A PASSADA LIVE ACONTECEU E ESTÁ FECHADA.** Um vídeo real, um clique,
+> **US$ 0,70** medidos pelo delta de carteira. Ver o bloco **LIVE-3** no fim
+> deste arquivo — ele traz a régua de cobrança, o ritmo de fala medido e as
+> lacunas que continuam abertas.
 >
-> **Gasto com fornecedor continua ZERO.** Confirmado contra a própria HeyGen em
-> 03/08 20:45 UTC: cota **873**, carteira **US$ 14,55** — os mesmos números de
-> 02/08 e das 19:38. Desde o commit `0627af4`: **0 vídeos, 0 linhas de
-> `provider_usage`**.
+> | | Antes | Depois | Delta |
+> |---|---|---|---|
+> | Cota HeyGen | 873 | **831** | **−42 unidades** |
+> | Carteira | US$ 14,55 | **US$ 13,85** | **−US$ 0,70** |
+> | Crédito `video` | 3 | **2** | −1 (`consumption`, `simulated=f`) |
 >
-> **Crédito `video` está em 3, não em 1.** O aviso anterior dizia 1 e venceu: o
-> operador repôs 2 (`grant +1` às 20:21:00 e 20:21:13, `simulated=f`). Continua
-> valendo o motivo pelo qual ele caíra — simulação **não** gasta fornecedor mas
-> **gasta crédito**, porque `debitCredit` roda antes de `generateVideo` e
-> `isFixtureMode()` só decide a coluna `simulated` do ledger, nunca o `delta`
-> ([videos.ts:589](backend/src/routes/videos.ts:589)).
+> **O ativo da apresentação mudou.** O vídeo do topo da Biblioteca agora é
+> `8d28fd47` (16:9, 1280×720, 14,807 s, `clean` 0% de barra), e logo abaixo
+> dele está o ensaio em fixture **com o mesmo roteiro** e com o selo SIMULADO.
+> Esse par é a melhor demonstração do badge que este projeto tem: mesmo texto,
+> mesmo dia, ambiente em `fixture`, e só o simulado é carimbado.
 >
-> **Duas coisas a ler antes de aplicar:** a seção TELA-1 (o botão "Novo avatar"
-> do passo 1 custa **US$ 1,00** em live) e a seção FIXTURE-1 — ela mede a
-> semântica dos dois tetos e mostra que a margem real é **1 tentativa**, não as
-> 4 que o plano da passada prometia. O bloco **RETOMADA-1**, no fim, tem os
-> números desta medição.
+> **Duas coisas a ler antes de armar de novo:** a seção TELA-1 (o botão "Novo
+> avatar" do passo 1 custa **US$ 1,00** em live) e a FIXTURE-1 — a margem real
+> do teto é **1 tentativa**. E a lição operacional do RETOMADA-1 continua
+> valendo: **um `.env` armado torna "subir o ambiente" e "armar o modo pago" a
+> mesma ação**.
 
-**Última atualização:** 2026-08-03 — **bloco RETOMADA-1: rodada de LEITURA
+**Última atualização:** 2026-08-03 — **bloco LIVE-3: a segunda passada live
+horizontal, medida e fechada.** Um vídeo, um clique, **US$ 0,70** pelo delta de
+carteira — e a previsão comprometida antes do tiro (14 s → 42 un → US$ 0,70)
+bateu **exata**, quarta confirmação da regra de segundo inteiro truncado. Três
+coisas que mudam registro: o **ritmo de fala** passou de suposto (125 wpm) a
+medido (**137,8 wpm · 12,16 car/s**, n=1); a **régua de cobrança é a duração do
+FORNECEDOR**, não o nosso `ffprobe`, e as duas divergem em 0,0177 s (aqui sem
+consequência, mas vale US$ 0,05 perto de um inteiro); e a **forma real da
+resposta do ElevenLabs** foi observada pela primeira vez, fechando um NÃO
+VERIFICADO do LIVE-2. Ver o bloco próprio no fim. Antes dele, o **bloco
+RETOMADA-1: rodada de LEITURA
 depois de uma troca de conta no meio do rearme.** Fecha a pergunta "houve
 disparo?" com **não**, medido contra o fornecedor e contra o banco, e nomeia o
 estado do ambiente como **rearmado-no-arquivo-não-aplicado** — que nenhuma das
@@ -924,7 +933,9 @@ o próprio comentário que a explicava).
 | **Trocar a chave Google de desenvolvimento antes de VPS/produção** | **usuário** | Passou por transcrição de chat ⇒ comprometida. Ver a seção de aviso própria |
 | Gravar HeyGen/ElevenLabs da plataforma (opcional) | **usuário** | Só habilita validação e leitura de saldo; a geração continua na credencial do cliente |
 | Rotacionar as senhas de `admin@eckkoai.com` e `demo@eckko.ai` | **usuário** | Mesmo motivo; via `npm run dev:seed-access` |
-| Pôr saldo no HeyGen | **usuário** | Hoje comporta ~1 vídeo, ver tabela de cota |
+| Pôr saldo no HeyGen | **usuário** | US$ 13,85 / 831 unidades ⇒ ~19 vídeos de 15 s. Ver tabela de cota |
+| **Ler o painel do ElevenLabs e fechar o delta de voz** | **usuário** | Base **698 / 64.917** registrada; falta a leitura de DEPOIS. Decide entre +180 (por caractere) e +187 (por byte) — ver LIVE-3 |
+| **Conceder `user_read` à chave do ElevenLabs** | **usuário** | Sem ela, `GET /v1/user/subscription` dá 401 e o consumo de voz só é legível a olho no painel |
 | Billing/cota do Gemini (sair do free tier) | **usuário** | Criar projeto novo a cada teto batido não escala |
 | Conferir os 9 valores de `provider_cost_rates` | **usuário** | São placeholder; toda tela já mostra banner de estimativa |
 | Escrever o Bloco 2B | próxima sessão | Insumo pronto na tabela de lacunas |
@@ -1415,9 +1426,9 @@ não preenche `draftAvatar`) — ver o aviso no topo da seção TELA-1.
 
 | Fornecedor | Estado em 2026-08-01 | O que isso permite |
 |---|---|---|
-| **HeyGen** | `billing_type: wallet`, saldo **US$ 15,35**, `remaining_quota` **921** (medido depois da passada live do LIVE-1) | ~340 vídeos curtos como o medido. Deixou de ser o gargalo |
+| **HeyGen** | `billing_type: wallet`, saldo **US$ 13,85**, `remaining_quota` **831** (medido em 03/08 21:29 UTC, depois da passada do LIVE-3) | ~19 vídeos de 15 s como o medido (US$ 0,70 cada), ou ~277 s de vídeo. Deixou de ser o gargalo |
 | **Gemini** | Free tier, ~20 requisições/dia, compartilhado com o copiloto | Um roteiro custa 1–2 requisições. Cabem poucos ensaios por dia |
-| **ElevenLabs** | Chave sem permissão `user_read` — **não dá para consultar a própria cota** | TTS funciona normalmente; o limite restante é desconhecido |
+| **ElevenLabs** | Chave sem permissão `user_read` — **não dá para consultar a própria cota pela API**. *MEDIDO no LIVE-3:* `GET /v1/user/subscription` → **401** `"missing the permission user_read"`. É permissão faltando, **não** chave inválida | TTS funciona normalmente. O painel é a única fonte: base de **698 / 64.917** créditos utilizados, lida em 03/08 antes da passada. Uma síntese de 180 caracteres já aconteceu desde então, e o delta **não foi lido** |
 
 **A unidade de `remaining_quota` deixou de ser mistério: 60 unidades por
 dólar.** O registro anterior dizia que as duas leituras (quota e carteira)
@@ -1560,6 +1571,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-03 | **LIVE-3** | **Passada live de 15 s em 16:9 (o operador chama de "LIVE-1"; aqui é LIVE-3 porque já existe um LIVE-1 de 08-01). Vídeo `8d28fd47`, UM clique, medido 12→13 linhas sem duplicata, `ready` em ~12 s. CUSTO: cota 873→**831** (−42 un), carteira 14,55→**13,85** (−**US$ 0,70**) — a previsão comprometida ANTES do tiro (14 s → 42 un → 0,70) bateu EXATA, 4ª confirmação do segundo inteiro truncado; razão 60,0 pela 6ª vez. Artefato 1280×720 SAR 1:1 DAR 16:9 25 fps 14,807 s, `clean` 0% de barra, md5 `cf0b7bb4…`. RITMO deixou de ser suposto: **137,8 wpm · 12,16 car/s** (n=1) — mas os 12,16 foram AJUSTADOS nesse ponto, então reproduzir 14,80 s é CIRCULARIDADE, não previsão; só um 2º roteiro dá evidência preditiva. A régua de cobrança é a duração do FORNECEDOR (14,7893), não o nosso ffprobe (14,807) — aqui ambas truncam para 14, mas perto de um inteiro divergem em US$ 0,05. Tela: estimativa 0,75 (duração PEDIDA) × real 0,7 com **42 unidades batendo o delta de cota**; estimar pelo roteiro daria 0,70 exato — melhoria POSSÍVEL, NÃO feita. VOZ: 1 chamada, ramo `synthesizeWithTimestamps`, fallback NÃO disparou, 180 car sem truncagem; **1ª resposta real de voz observada em log**, fechando um NÃO VERIFICADO do LIVE-2 (elisão: 325.005 bytes → registro curto). Delta de créditos de voz EM ABERTO (base 698 registrada; leitura de depois não informada). Ambiente desarmado por 5 critérios. Ver abaixo.** |
 | 08-03 | **RETOMADA-1** | **Rodada de LEITURA pós-troca de conta. Ambiente = REARMADO NO ARQUIVO, NÃO APLICADO: `printenv`=fixture (CONFIRM len 0, ATTEMPTS 2) × `docker compose config`=live (CONFIRM 28 car., ATTEMPTS 6), `.env` alterado 1h31 DEPOIS do boot, `RestartCount=0`, boot único em fixture ⇒ qualquer `up -d` arma o modo pago sem nova pergunta. NÃO HOUVE DISPARO, medido pelas DUAS pontas: HeyGen cota **873** / carteira **US$ 14,55** (inalteradas, 5º ponto de 60 un/US$) e banco com 0 vídeos e 0 `provider_usage` desde 0627af4 — as 2 linhas de ledger novas são `grant +1` (reposição), saldo video=**3**. Teto do polling MEDIDO: 90 × 5 s = **450 s**, confirma o registro, com a precisão de que é piso de parede (setInterval async não serializa). `quotaBaseline.ts` PROMOVIDO do scratchpad efêmero (2ª vez em 2 dias que um instrumento sustentava número registrado fora do git). ACHADO: `/v3/users/me` NÃO está no `endpointCatalog.ts` — o freio deriva do catálogo, então o substituto do sunset de 2026-10-31 não é barrado nem confirmado. CORRIGIDO o recorte de `provider_usage`: geração de vídeo é 7 linhas e **100% classificável**; o "93%" misturava 3 populações que nunca teriam `video_id`. Zero `up -d`/`restart`/`stop`. Ver abaixo.** |
 | 08-03 | **FIXTURE-1** | **Ambiente DESARMADO (3 critérios). Linha de base MEDIDA contra a HeyGen: cota 873, carteira US$ 14,55 — previsão bateu exata, nada gasto desde 02/08. Fixture NÃO exercita o TTS (`generateVideo` volta antes de `requireAudio`), então `audio_duration_source=tts_timestamps` em fixture é RÓTULO, não medição. TTS exercitado com fetch substituído: 180 chars sem truncagem, 1 chamada (2 no fallback), `eleven_multilingual_v2`. Tetos são GLOBAIS da sessão; falha antes do aceite devolve gasto e crédito, NUNCA a tentativa ⇒ sobra 1 tentativa. `provider_usage` NÃO tem coluna `simulated` e 93% das linhas são inclassificáveis (conserto PROPOSTO, não feito). Parte B do 5F RESPONDIDA de graça: Mário 16:9 `clean` × Mário 9:16 `padded` 57,8% ⇒ preenchimento é do FORNECEDOR. Ensaio consumiu 1 crédito. Ver abaixo.** |
 | 08-03 | **TELA-1** | **Diagnostico da tela "Criar video": 12 defeitos ordenados por visibilidade, NENHUM corrigido. Parte A da rodada live entregue e PARADA na 1. 2 lacunas novas: voice_id nao entra no predicado mas requireAudio exige; 3 campos diferentes descrevem "voz" no mesmo card. Zero gasto. Ver abaixo.** |
@@ -4941,3 +4953,231 @@ fazer fora de uma passada armada.
 - A forma real do erro do ElevenLabs para `voice_id` inválido.
 - A constante de custo contra FATURA (só contra saldo e quota da API).
 - Cobrança abaixo de 1 segundo.
+
+---
+
+### LIVE-3 — a passada de 15 s em 16:9, medida e fechada (2026-08-03)
+
+**Nota de nomenclatura, para quem for procurar depois:** o operador chama esta
+passada de "LIVE-1" no planejamento dele. Aqui ela é **LIVE-3**, porque este
+arquivo já tem um bloco LIVE-1 (2026-08-01, a primeira geração real) e um
+LIVE-2. Mesma passada, nomes diferentes; o que a identifica sem ambiguidade é o
+vídeo `8d28fd47-e927-4809-a462-d0d196c53c2e`.
+
+Um vídeo real, **um clique**, do avatar Mário, plataforma YouTube (16:9/720p),
+15 s pedidos, com o roteiro aprovado colado literalmente. Ambiente armado pelo
+operador, disparado pela sessão, desarmado pelo operador — as três paradas
+respeitadas.
+
+#### A previsão comprometida ANTES do tiro bateu EXATA
+
+Antes de clicar ficou escrito: 14 s → 42 un → US$ 0,70 · 15 s → 45 → 0,75 ·
+16 s → 48 → 0,80. *MEDIDO:*
+
+| | Antes | Depois | Delta |
+|---|---|---|---|
+| Cota | 873 | 831 | **−42 unidades** |
+| Carteira | US$ 14,55 | US$ 13,85 | **−US$ 0,70** |
+
+14,7893 s → trunca **14** → 14 × 3 = **42 unidades** → **US$ 0,70**. É a
+**quarta medição exata** da regra de segundo inteiro truncado; sobre a duração
+fracionária daria 44,4 unidades e não bateria em nenhuma. Razão 831 ÷ 13,85 =
+**60,0** — sexto ponto confirmando 60 unidades por dólar.
+
+**O custo é o DELTA de cota, nunca `unit_count`.** A tabela grava
+`unit_count = 14,7893` com `unit_type = seconds`: são SEGUNDOS, não unidades.
+Comparar os dois números é o erro mais fácil de cometer aqui.
+
+#### O artefato
+
+`ffprobe` no arquivo **local**: h264 High, **1280×720**, **SAR 1:1, DAR 16:9**,
+25 fps, 14,807 s; áudio aac LC 48 kHz estéreo. 3.241.118 bytes, md5
+`cf0b7bb4c42ada72e081dd7f185fd761`. `probePadding`: veredito **`clean`, 0,0% de
+barra**, conteúdo 1280×720 — como previsto para 16:9, e o contraste com os
+57,8% do 9:16 do mesmo avatar continua de pé.
+
+O artefato **já veio persistido no nosso disco** — o `UPDATE` de contingência
+previsto no plano não foi necessário, porque desde o 5D o polling baixa, valida
+e grava antes de marcar `ready`.
+
+#### `provider_usage` — duas linhas
+
+| provider | unit_type | unit_count | requested | unit_source |
+|---|---|---|---|---|
+| voice/elevenlabs | characters | **180** | — | — |
+| avatar/heygen | **seconds** | **14,7893** | 15 | `vendor_response` |
+
+E em `videos`: `audio_duration_seconds = 14,81`, `audio_duration_source =
+tts_timestamps`. **Aqui isso é medição de verdade** — o FIXTURE-1 registrou que
+esse mesmo campo é RÓTULO em simulação, porque em fixture o caminho de voz nem
+é alcançado. Em live ele é exercitado, e o valor vem do ElevenLabs.
+
+#### (a) O ritmo de fala saiu de suposto para medido — mas n=1, e cuidado com a circularidade
+
+34 palavras / 180 caracteres em 14,807 s ⇒ **137,8 wpm · 12,16 caracteres/s**.
+Substitui os **125 wpm** que estavam registrados como suposição e os 140 wpm de
+`scriptDuration.ts` (que o próprio código chama de "o número mais chutado dos
+três"). As três leituras de duração disponíveis convergem — 137,7 (banco) ·
+137,8 (ffprobe) · 137,9 (fornecedor) —, então o valor não depende de qual se
+escolhe.
+
+**A banda antiga (14,6–16,3 s) estava enviesada para cima:** a entrega real caiu
+quase no piso dela.
+
+> **AVISO DE CIRCULARIDADE, e ele importa mais que o número.** Os 12,16 car/s
+> foram **AJUSTADOS NESTE MESMO PONTO**. Mostrar que 180 ÷ 12,16 = 14,80 s
+> reproduz a medição **não é previsão validada** — é a definição da constante
+> devolvendo o dado de onde saiu. Um parâmetro ajustado a uma amostra sempre
+> reproduz essa amostra. **Só um SEGUNDO roteiro, de comprimento diferente, dá
+> evidência preditiva.** Enquanto isso não acontecer, 12,16 car/s é uma
+> observação de n=1: uma voz clonada, um roteiro, um idioma.
+
+#### (b) A régua de cobrança é a duração do FORNECEDOR
+
+Duas leituras de duração existem e **não** são a mesma coisa:
+
+| Fonte | Valor | Trunca para |
+|---|---|---|
+| `vendor_response` (HeyGen, `data.duration`) | 14,7893 s | 14 |
+| nosso `ffprobe` no arquivo | 14,807 s | 14 |
+
+Diferença **0,0177 s**. **Aqui as duas truncam para 14 e a divergência não teve
+consequência** — mas isso é sorte de amostra, não propriedade. Numa entrega a
+~0,02 s de um inteiro elas separam: vendor 14,995 → 14 → US$ 0,70 contra ffprobe
+15,002 → 15 → US$ 0,75. **Quem manda é o fornecedor**, porque é a leitura dele
+que vira fatura; o nosso `ffprobe` serve para conferir o artefato, não para
+prever a cobrança. `unit_source = vendor_response` já registra qual das duas
+foi usada, e essa coluna existe exatamente para esta distinção.
+
+#### (c) A estimativa da tela usa a duração PEDIDA — melhoria POSSÍVEL, não feita
+
+*MEDIDO na tela do passo 6:* Estimativa (15 s pedidos) **US$ 0.75** · Custo real
+(14,7893 s entregues) **US$ 0.7** · **42 unidades de cota** · Diferença
+**−US$ 0,05**, "a estimativa foi 1.07× o custo real". **As 42 unidades exibidas
+batem exatamente com o delta de cota medido contra o fornecedor** — a tela e a
+carteira contam a mesma história.
+
+O 1,07× não é defeito de cálculo: é a estimativa medir o **pedido** (15 s) e a
+fatura medir o **entregue** (14 s cobrados). Estimar pela extensão do roteiro
+(180 ÷ 12,16 = 14,80 s → 42 un → US$ 0,70) teria acertado o valor exato.
+**Registrado como melhoria POSSÍVEL e NÃO implementada**, e o motivo é o aviso
+de circularidade acima: trocar a régua da tela por uma constante ajustada a uma
+única amostra é o tipo de mudança que parece uma melhoria e vira um erro
+sistemático quando a voz, o idioma ou a pontuação mudam.
+
+Defeito cosmético confirmado de passagem (nº 6 do TELA-1): a tela escreve
+"US$ 0.7", com ponto decimal e sem o zero final. **Não corrigido.**
+
+#### (d) A voz — a forma da resposta deixou de ser suposição
+
+*MEDIDO no log:* **UMA** chamada ao ElevenLabs, ramo
+`elevenlabs.synthesizeWithTimestamps`, HTTP 200. **O fallback NÃO disparou** —
+confirma a correção registrada no 4A (o registro do PREVOO-1, que dizia "duas
+chamadas por geração", já estava corrigido lá, e agora está confirmado contra o
+fornecedor real). No total: 1 de voz + 13 da HeyGen (1 `uploadAsset`, 1
+`createVideo`, 11 `pollVideo`).
+
+**Esta é a PRIMEIRA resposta real de voz observada em log neste projeto**, e ela
+fecha um NÃO VERIFICADO explícito do LIVE-2. A forma prevista estava certa:
+
+```
+{"event":"vendor_response","context":"elevenlabs.synthesizeWithTimestamps",
+ "status":200,"bodyBytes":325005,"bodyForm":"json",
+ "body":{"audio_base64":"<elidido: string de 317708 chars>",
+         "alignment":"<elidido: objeto{characters, character_start_times_seconds,
+                       character_end_times_seconds}>",
+         "normalized_alignment":"<elidido: ...>"}}
+```
+
+**A elisão do LIVE-2 pagou por si na primeira vez que foi exercitada de
+verdade:** 325.005 bytes de corpo viraram um registro de algumas centenas,
+guardando forma e tamanho e nenhum byte de áudio. Sem ela, cada geração
+despejaria ~325 KB no log.
+
+**Roteiro enviado, medido no navegador antes do envio:** 180 caracteres, 187
+bytes UTF-8, 34 palavras, `identico_ao_aprovado: true`. **Sem truncagem.**
+
+#### O delta de créditos de voz: EM ABERTO
+
+A linha de base do painel **existe e está registrada: 698 de 64.917 créditos
+utilizados**, lida pelo operador imediatamente antes do disparo. **A leitura de
+DEPOIS não foi informada** — o campo veio como placeholder não preenchido em
+três mensagens seguidas —, então o delta não foi calculado e **a hipótese
+vencedora continua indeterminada**:
+
+| Delta | Significaria |
+|---|---|
+| **+180** | o ElevenLabs cobra por CARACTERE |
+| **+187** | cobra por BYTE UTF-8 |
+| +360 | o fallback teria disparado — **já descartado pelo log**, que registra uma única chamada |
+
+**O que ESTÁ medido:** uma chamada, ramo `synthesizeWithTimestamps`, 180
+caracteres enviados sem truncagem, fallback não disparado. **O que falta é só o
+número do painel**, e ele continua obtível: o contador não anda sozinho, e
+nenhuma síntese nova aconteceu desde então. Uma leitura fecha isto sem gastar
+nada.
+
+**Por que o painel é a única fonte:** a chave em uso **não** lê
+`GET /v1/user/subscription` — *MEDIDO:* HTTP **401**,
+`"The API key you used is missing the permission user_read to execute this
+operation."` Isso é **permissão faltando, NÃO chave inválida**, e o diagnóstico
+errado aqui custa tempo. Conceder `user_read` à chave é **pendência do
+operador**, e enquanto não for feito o consumo de voz só é legível a olho humano
+no painel.
+
+#### O ativo da apresentação
+
+```
+uploads/c77a5b8a-ec24-47b5-bc69-c4503d6c7cbd/21f74956-9aab-44b4-9b85-4abda698f6c3.mp4
+md5 cf0b7bb4c42ada72e081dd7f185fd761 · 3.241.118 bytes
+```
+
+*Verificado no navegador, com o ambiente já de volta em `fixture`:* está no
+**topo** da Biblioteca, toca com `readyState 4`, **1280×720**, `aspect-ratio`
+computado **16/9**, `seekable 0–14.807`, servido de
+`dev-c77a5b.twinai.localhost:8090/uploads/…` — **`externo: false`**, do nosso
+disco, não do CDN. **Zero `simulated-notice` na página** e a linha do vídeo real
+não tem selo.
+
+**E o par que ficou na Biblioteca é a melhor prova de badge que este projeto
+tem:** logo abaixo do vídeo real está o ensaio em fixture **com o mesmo
+roteiro**, esse **com** SIMULADO. Mesmo texto, mesmo dia, ambiente em `fixture`
+— e só o simulado é carimbado. Se o selo seguisse o modo do AMBIENTE, como
+seguia antes da Fase 1-bis do 5D, o vídeo pago estaria marcado como simulado
+na tela da apresentação.
+
+#### Disciplina da passada
+
+**Um clique.** *MEDIDO:* 12 → 13 linhas em `videos`, uma só, sem duplicata —
+conferido no banco segundos após o clique, que é o procedimento que substitui
+"clicar de novo porque a tela não respondeu". Desfecho `ready` em ~12 s. Crédito
+3 → 2, uma linha `-1 consumption` com `simulated=f`, sem estorno. **Zero
+`restart`, `up -d` ou `stop` durante a geração** — a regra existe porque o
+polling roda em `setInterval` FORA do `withLiveBudget`, e um reinício ali prende
+o vídeo em `queued` para sempre (desfecho E do 4A).
+
+**Prova em `uploads/_prova/live-15s-03082026/`**: o mp4, o log do backend em
+UTF-8 (150.009 bytes, md5 `7636a497947fab5c8f20d382a5fcec35`), o log de pré-voo
+e o `MANIFESTO.txt`. **O log foi salvo ANTES de qualquer outra medição**, e essa
+ordem se provou necessária: o `up -d` do desarme zerou o stdout do container, e
+ele é a única prova das chamadas de voz. As três provas anteriores
+(`5f-e1e47cc/`, `fov/`, `retomada-03082026/`) foram conferidas **intocadas**.
+`uploads/*` é ignorado pelo git ⇒ **prova só existe neste disco**; copiá-la para
+fora é ação do operador.
+
+#### Continua NÃO VERIFICADO
+
+- **O delta de créditos de voz** — ver acima; falta uma leitura do painel.
+- **Se a HeyGen aceita `1080p` nesta conta.** Não foi pedido nesta rodada, e
+  continua sendo a única forma de saber se os 2,25× de pixels úteis medidos no
+  INSTRUMENTOS-1 estão disponíveis pelo mesmo preço.
+- **A constante de custo contra FATURA.** Tudo até aqui é medido contra saldo e
+  cota da API; nenhuma fatura do fornecedor foi lida em sessão nenhuma.
+- **Cobrança abaixo de 1 segundo.** Pela regra de truncagem custaria zero, e
+  nenhuma entrega nossa ficou perto disso (a menor tem 3,372 s).
+- **Se o preenchimento em 9:16 vale para outros avatares.** *MEDIDO* apenas para
+  o Mário, nas duas proporções (16:9 `clean` × 9:16 `padded` 57,8%). Que "a
+  HeyGen sempre preenche em 9:16" continua uma generalização de uma amostra.
+- **`model_id` efetivamente enviado ao ElevenLabs.** Não aparece no log **por
+  desenho** — só a RESPOSTA é registrada, nunca o corpo da requisição. O default
+  do código é `eleven_multilingual_v2`, já aceito pelo fornecedor no 5D.
