@@ -503,13 +503,17 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-03 — **Bloco TELA-1 (sessão interrompida a
-pedido do usuário; troca de conta).** Se você acabou de assumir este projeto,
-**vá direto à seção TELA-1, no fim deste arquivo**: ela tem o diagnóstico da
-tela "Criar vídeo" (12 defeitos, nenhum corrigido) e a rodada live **ARMADA e
-NÃO disparada**, parada na PARADA 1 por 3 decisões do usuário — a primeira
-sendo que **10 s não existe no seletor, o mínimo é 15 s**. Zero gasto, ambiente
-em `fixture`. Antes dele, INSTRUMENTOS-1 e APRESENTACAO-1: o arnês fechou em
+**Última atualização:** 2026-08-03 — **Bloco TELA-1, incluindo o fechamento da
+lacuna do `voice_id`.** Se você acabou de assumir este projeto, **vá direto à
+seção TELA-1, no fim deste arquivo**: ela abre com o achado que mais importa
+antes de qualquer coisa em live — **existe SIM um ramo de clonagem de voz
+alcançável da tela "Criar vídeo"**, no passo 1, atrás do botão "Novo avatar", e
+ele treina um avatar de **US$ 1,00** antes de clonar. O passo 6 não alcança
+clonagem por nenhum ramo (nem `catch`, nem retentativa, nem fallback). A seção
+tem também o diagnóstico da tela (12 defeitos, nenhum corrigido) e a rodada live
+**ARMADA e NÃO disparada**, parada na PARADA 1 — dos 3 itens, duração (**15 s**)
+e nome da prova (`live-15s-03082026/`) estão fechados; **só o roteiro falta
+aprovar**. Zero gasto, ambiente em `fixture`. Antes dele, INSTRUMENTOS-1 e APRESENTACAO-1: o arnês fechou em
 **90/90 MEDIDO** (781 s), com os 4 mutantes de preenchimento que PROVAM a
 guarda (86–89) mais 1 controle de robustez (90, que passa verde) provados
 nominalmente, e o ativo da Biblioteca foi **repontado** para a cópia sem barra
@@ -1487,7 +1491,8 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
-| 08-03 | **TELA-1** | **Diagnostico da tela "Criar video": 12 defeitos ordenados por visibilidade, NENHUM corrigido. Parte A da rodada live entregue e PARADA na 1 — 3 decisoes travam a partida (10 s nao existe, minimo 15 s). 2 lacunas novas: voice_id nao entra no predicado mas requireAudio exige; 3 campos diferentes descrevem "voz" no mesmo card. Zero gasto. Ver abaixo.** |
+| 08-03 | **TELA-1** | **Diagnostico da tela "Criar video": 12 defeitos ordenados por visibilidade, NENHUM corrigido. Parte A da rodada live entregue e PARADA na 1. 2 lacunas novas: voice_id nao entra no predicado mas requireAudio exige; 3 campos diferentes descrevem "voz" no mesmo card. Zero gasto. Ver abaixo.** |
+| 08-03 | **TELA-1 · lacuna do `voice_id`** | **FECHADA por leitura, sem gasto. EXISTE ramo de clonagem alcancavel da tela Criar video — passo 1, `cloneVoice` em avatars.ts:266 via AvatarSetupStep.tsx:192/209, atras de "Novo avatar" (`draftAvatar`), e ele treina avatar de US$ 1,00 antes. Passo 6 NAO alcanca por nenhum ramo. voice_id nulo FALHA (avatarProvider.ts:160), nunca clona; entra como segmento de URL (voiceProvider.ts:162), nao como campo de corpo; 1 chamada ao ElevenLabs no caminho feliz. CORRECAO: a sintese roda DENTRO do teto de sessao, nao fora. Prova renomeada para live-15s-03082026. Ver abaixo.** |
 | 08-03 | **INSTRUMENTOS-1** | **`tools/scale-match.mjs` commitado (vivia em scratchpad efemero); headroom/sujeitoV/sujeitoH do fov-compare DESQUALIFICADOS (bounding box muda 1,80→0,94 na mesma sala) e o veredito automatico removido; barFrac passa a cobrar concordancia de 3 quadros. Sanidade 57,8/1,3333 batendo nos dois. Achado: existem DOIS masters 16:9 de 1280x720 e o do FOV-1 e o de 33,696 s (`61caaab1`), nao o do LIVE-1. MEDIDO que 1080p daria 2,25x mais pixels uteis pelo mesmo preco e que seus alvos sao os 4 numeros da politica do 5E — nada alterado. Ver abaixo.** |
 | 08-03 | **FOV-1** | **O 9:16 e RECOMPOSICAO, nao corte — MEDIDO por casamento de escala em dois masters que ja estavam em disco, custo zero: mesma largura de campo, 33% mais campo vertical. A chave do catalogo e (avatar, formato_pedido) e a migration por combinacao E necessaria. 2 dos 4 videos do Mario ja dao 403: a evidencia do fornecedor apodrece. Ver abaixo.** |
 | 08-03 | **APRESENTACAO-1** | **Arnês 90/90 MEDIDO (781 s), com os 4 mutantes de preenchimento que provam a guarda mais 1 controle, nominais pela linha de falha de cada um; prova preservada em `_prova/5f-e1e47cc/` com manifesto; ativo da Biblioteca repontado para a cópia sem barra (UPDATE 1, com REVERTER.txt); rota estática provada por curl ANTES do UPDATE; confirmado no navegador. `video_variants` não comporta duas variantes 9:16 — nada inserido. Ver abaixo.** |
@@ -3911,9 +3916,63 @@ sobrescrito e a prova do 5E já **não é reconferível em disco**.
 meada de uma sessão interrompida a pedido do usuário ("pare tudo"), na véspera
 de uma apresentação. **Nada foi gasto, nada foi disparado, nada foi corrigido.**
 
+#### ⚠ EXISTE UM RAMO DE CLONAGEM DE VOZ ALCANÇÁVEL DA TELA "CRIAR VÍDEO" — e ele é o caminho MAIS CARO do produto
+
+*Fechado por leitura em 2026-08-03. MEDIDO, ancorado em uso — nenhum item desta
+subseção vem de `import`.*
+
+`cloneVoice` tem **um único** call site em `backend/src` fora dos scripts de
+guarda: [avatars.ts:266](backend/src/routes/avatars.ts:266), dentro de
+`POST /avatars/:id/reference-video` ([avatars.ts:152](backend/src/routes/avatars.ts:152)).
+E o único `fetch` a `/v1/voices/add` está em
+[voiceProvider.ts:72](backend/src/services/providers/voiceProvider.ts:72) (URL
+declarada em [:12](backend/src/services/providers/voiceProvider.ts:12)) — não
+existe segundo caminho que crie voz.
+
+**Essa rota é chamada de DENTRO da tela Criar vídeo, em dois pontos, os dois no
+passo 1:** [AvatarSetupStep.tsx:192](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:192)
+(gravação, `handleUploadRecording`) e
+[:209](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:209) (arquivo,
+`handleReferenceFileChange`).
+
+**O que a alcança, exatamente:** as duas abrem com `if (!draftAvatar) return`
+([:186](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:186) e
+[:203](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:203)), e
+`draftAvatar` só é preenchido com um avatar **NOVO**, criado em
+`handleCreateAvatar` ([:103](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:103)),
+atrás do botão "Novo avatar" que faz `setCreating(true)`
+([:259](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:259));
+`handleFinishSetup` o zera ([:224](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:224)).
+**Selecionar um avatar existente é `onSelectAvatar(avatar.id)` e NUNCA preenche
+`draftAvatar`** — não há caminho partindo de "selecionar o Mário" que clone voz.
+
+**Por que isso importa mais que a voz:** antes de clonar, essa mesma rota
+**treina um avatar** — `trainAvatar` em
+[avatars.ts:212](backend/src/routes/avatars.ts:212), **US$ 1,00** de
+`photo_avatar` no HeyGen, mais 1 crédito de avatar debitado em
+[avatars.ts:193](backend/src/routes/avatars.ts:193). Em live, um clique errado em
+"Novo avatar" seguido de um envio de vídeo custa ~6× um vídeo de 15 s. O botão
+fica na **mesma tela** do disparo planejado.
+
+**Consequência operacional para a rodada: em live, no passo 1, não clicar em
+"Novo avatar".** Selecionar o Mário na grade é seguro.
+
+**O passo 6 NÃO alcança clonagem, por nenhum ramo.**
+`GenerateStep.handleGenerate` chama só `POST /videos`
+([GenerateStep.tsx:79](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:79))
+e `GET /videos/:id` ([:94](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:94));
+o `catch` ([:100](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:100)) só
+faz `setError` + `setReloadKey`, e `reloadKey` reroda apenas
+`POST /videos/readiness` ([:48](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:48)),
+que é leitura pura. **Não há retentativa automática, fallback nem caminho de erro
+que fale com voz.** O botão "Retreinar" que existe no produto é **decorativo** —
+[ContentPage.tsx:82](frontend/src/pages/Content/ContentPage.tsx:82) é um
+`<button>` **sem `onClick`**, e está na tela Conteúdo, não nesta.
+
 Ambiente ao fim: `PROVIDER_MODE=fixture`, `PROVIDER_LIVE_CONFIRM` vazia, árvore
 limpa, gate verde, **zero chamadas a fornecedor**. Crédito do tenant de demo
-intacto (`video=2`), 5 avatares, 9 vídeos — nada gerado, nada excluído.
+intacto (`video=2`, reconferido por `SELECT` em 03/08), 5 avatares, 9 vídeos —
+nada gerado, nada excluído.
 
 #### A rodada live está ARMADA e NÃO disparada — 3 decisões travam a partida
 
@@ -3922,17 +3981,20 @@ com paradas obrigatórias: Parte A (leitura) → **PARADA 1** → Parte B (pré-
 **PARADA 2, em que O USUÁRIO vira o `.env` para live** → Parte C (disparo) →
 Parte D (medição) → **PARADA 3, em que O USUÁRIO devolve `fixture`**.
 
-**A Parte A foi entregue. Paramos na PARADA 1.** Três respostas faltam, e sem
-elas não se passa para a Parte B:
+**A Parte A foi entregue. Paramos na PARADA 1.** Dos três itens, **dois foram
+fechados em 03/08** e **um continua pendente** — e sem ele não se passa para a
+Parte B:
 
-1. **A duração: 10 s NÃO EXISTE.** O seletor do passo 4 oferece `15 | 30 | 60`
+1. ~~**A duração: 10 s NÃO EXISTE.**~~ **RESOLVIDO: 15 s.** O seletor do passo 4
+   oferece `15 | 30 | 60`
    ([DurationStep.tsx:4](frontend/src/pages/CreateVideo/steps/DurationStep.tsx:4)),
-   sem campo livre. O mínimo é **15 s** (estimativa US$ 0,75). O usuário pediu
-   um diretório de prova chamado `live-10s-03082026/` — precisa confirmar 15 s.
-2. **O nome do diretório de prova**, por causa do item 1: `live-10s-…` diria
-   10 s com um vídeo de 15 s dentro. **Nada foi criado em `uploads/_prova/`.**
-3. **O roteiro.** Proposta de 35 palavras (o alvo do próprio sistema para 15 s),
-   pendente de aprovação.
+   sem campo livre; o mínimo é **15 s**, estimativa **US$ 0,75**.
+2. ~~**O nome do diretório de prova.**~~ **RESOLVIDO: `live-15s-03082026/`.** O
+   nome antigo (`live-10s-03082026/`) diria 10 s com um vídeo de 15 s dentro.
+   **Nada foi criado em `uploads/_prova/`** — criar é PARADA 2.
+3. **O roteiro — ÚNICO ITEM AINDA PENDENTE.** Proposta de 35 palavras (o alvo do
+   próprio sistema para 15 s), **sem aprovação registrada**. Nenhuma sessão deve
+   escolher o roteiro por conta própria.
 
 **Regras que o usuário fixou para essa rodada:** não clicar em "Gerar com IA"
 (em live chama o Gemini de verdade); **se falhar, PARAR e não retentar**; baixar
@@ -3973,15 +4035,59 @@ Reposição consistente: `npm run dev:grant-credits -- --slug dev-c77a5b --video
 (saldo + ledger na mesma transação). `UPDATE` manual é o que desalinha, e é a
 causa do ledger de vídeo em **−2** deste banco.
 
-**Voz — o fluxo de vídeo NÃO pode clonar.** `cloneVoice` tem **um único** call
-site em todo o backend: [avatars.ts:266](backend/src/routes/avatars.ts:266),
-dentro de `POST /avatars/:id/reference-video`. `requireAudio` usa o `voiceId`
-existente ([avatarProvider.ts:165](backend/src/services/providers/avatarProvider.ts:165)).
-Caminho feliz: **1** chamada ao ElevenLabs (a 2ª é fallback condicional), mais
-`POST /v3/assets` + `POST /v3/videos` + N pollings no HeyGen. A síntese roda
-**dentro** do `withLiveBudget` de `generateVideo`
-([avatarProvider.ts:655](backend/src/services/providers/avatarProvider.ts:655)):
-o disparo custa **1 unidade de gasto + 1 tentativa**, não duas.
+**Voz — o passo 6 USA o `voice_id` existente e não pode clonar** (o ramo que
+PODE clonar é o do passo 1, ver o aviso no topo desta seção). Cadeia completa,
+MEDIDA por leitura:
+
+| Etapa | Onde |
+|---|---|
+| `voice_id` lido do banco | [videos.ts:547](backend/src/routes/videos.ts:547) (`SELECT * FROM avatars …`) |
+| entregue ao provider | [videos.ts:612](backend/src/routes/videos.ts:612) — `voiceId: avatar.voice_id` |
+| repassado à síntese | [avatarProvider.ts:165](backend/src/services/providers/avatarProvider.ts:165) — `synthesizeSpeech(input.elevenLabsApiKey, input.voiceId, input.script)` |
+| **entra no payload do ElevenLabs** | [voiceProvider.ts:162](backend/src/services/providers/voiceProvider.ts:162) — como **segmento de URL**, `…/v1/text-to-speech/${encodeURIComponent(voiceId)}`, usada no `fetch` de [:166](backend/src/services/providers/voiceProvider.ts:166) e no fallback de [:219](backend/src/services/providers/voiceProvider.ts:219) |
+
+Vale registrar a forma: o `voiceId` **não é campo de corpo** — o corpo é só
+`{ text, model_id }` ([:169](backend/src/services/providers/voiceProvider.ts:169)
+e [:225](backend/src/services/providers/voiceProvider.ts:225)). Quem for procurar
+"onde a voz entra no payload" olhando o JSON não acha.
+
+**`voice_id` nulo ou inválido: FALHA, nunca tenta clonar.** Nulo/vazio →
+[avatarProvider.ts:160-163](backend/src/services/providers/avatarProvider.ts:160)
+lança `AvatarProviderError` **antes de qualquer rede**. Não-nulo mas inválido →
+vai ao ElevenLabs, o ramo `with-timestamps` não-ok cai no fallback
+([:219](backend/src/services/providers/voiceProvider.ts:219)) e um 4xx ali lança
+`VoiceProviderError` em
+[voiceProvider.ts:242](backend/src/services/providers/voiceProvider.ts:242). Em
+nenhum dos dois desfechos existe criação de voz.
+
+**Chamadas ao ElevenLabs no caminho feliz: UMA** — `with-timestamps` devolvendo
+200 com `audio_base64` retorna em
+[voiceProvider.ts:206](backend/src/services/providers/voiceProvider.ts:206); a
+2ª é fallback condicional. Depois vêm `POST /v3/assets` + `POST /v3/videos` + N
+pollings no HeyGen. O tratamento de áudio (`processVoiceAudio`,
+`services/audioProcessing.ts`) **não faz rede** — `grep` por `fetch(`/`https://`
+naquele arquivo devolve vazio.
+
+> **CORREÇÃO (03/08): a síntese NÃO passa "fora do teto de sessão" — ela roda
+> DENTRO dele.** `synthesizeSpeech` não tem `withLiveBudget` próprio (só
+> `cloneVoice` tem, [voiceProvider.ts:65](backend/src/services/providers/voiceProvider.ts:65)),
+> mas o **único** caminho até ela é `requireAudio` ← `generateVideoHeygen`
+> ([avatarProvider.ts:371](backend/src/services/providers/avatarProvider.ts:371))
+> ← `withLiveBudget("geração de vídeo", …)`
+> ([avatarProvider.ts:655](backend/src/services/providers/avatarProvider.ts:655)).
+> Três consequências, e a terceira é a que morde numa passada live:
+> 1. Ela **não consome unidade própria** ⇒ o disparo custa **1 gasto + 1
+>    tentativa**, não duas. (Isto o registro anterior já dizia, e segue certo.)
+> 2. Ela é **protegida** pelo teto: esgotado o teto, nada chega ao ElevenLabs.
+> 3. **Se a síntese falhar, o GASTO volta** ([liveGuard.ts:255](backend/src/services/providers/liveGuard.ts:255))
+>    **e a TENTATIVA não** — uma falha de TTS queima uma tentativa sem gerar
+>    vídeo nenhum.
+>
+> A medição do 5D ("o teto não se moveu, gasto 0→0, tentativas 0→0, provando que
+> `synthesizeSpeech` está fora do contador") foi feita chamando
+> `synthesizeSpeech` **direto**, não pelo caminho de geração. As duas afirmações
+> não se contradizem — dizem coisas diferentes, e a que vale para a rodada live
+> é esta.
 
 **Premissa DEDUZIDA que precisa ficar visível:** `wordsPerMinute: 140`
 ([scriptDuration.ts:35](backend/src/services/script/scriptDuration.ts:35)), que
@@ -3997,8 +4103,13 @@ reais de TTS do projeto divergem 27% entre si (206 car → 17,6 s = 11,7 car/s;
    consulta (o comentário diz que voz é opcional por desenho), e
    [avatarProvider.ts:160](backend/src/services/providers/avatarProvider.ts:160)
    **lança** sem ele. Consequência: um avatar treinado sem `voice_id` passa o
-   predicado, o botão libera, e a geração falha **depois de debitar crédito**.
-   Não afeta o disparo planejado (os dois liberados têm voz).
+   predicado, o botão libera, e a geração falha **depois de debitar crédito** —
+   o débito é em [videos.ts:589](backend/src/routes/videos.ts:589) e a falha em
+   [avatarProvider.ts:160](backend/src/services/providers/avatarProvider.ts:160),
+   nessa ordem. **CONFIRMADO por leitura em 03/08, e NÃO corrigido.** O estorno
+   cobre o crédito ([videos.ts:657](backend/src/routes/videos.ts:657), a falha é
+   antes do aceite do fornecedor) e o teto devolve o gasto — mas a **tentativa**
+   não volta. Não afeta o disparo planejado (os dois avatares liberados têm voz).
 2. **Três campos diferentes descrevem "voz" no MESMO card.** A linha
    `"3/3 fotos · voz pronta"` usa `a.reference_video_url`
    ([AvatarSetupStep.tsx:302](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:302)),
