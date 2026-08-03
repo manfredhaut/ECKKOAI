@@ -1,11 +1,12 @@
 /**
- * Prova da derivação NOS ARQUIVOS — Fase 2 do bloco 5E.
+ * Prova da derivação NOS ARQUIVOS — Fase 2 do 5E, estendida pelo 5F.
  *
- * Não afirma nada por aritmética: para cada insumo real, roda o ffmpeg de
- * verdade, mede a saída com `ffprobe`, mede o SUJEITO com uma sonda separada e
- * compara a altura dele com a do master. A conta prevê; o arquivo constata.
+ * Não afirma nada por aritmética: para cada insumo real, sonda o
+ * preenchimento, roda o ffmpeg de verdade, mede a saída com `ffprobe`, mede o
+ * SUJEITO com uma sonda separada e compara a altura dele com a do conteúdo.
+ * A conta prevê; o arquivo constata.
  *
- *   docker compose exec backend npx tsx src/scripts/proveDerivation.ts
+ *   docker compose exec backend npx tsx src/scripts/proveDerivation.ts <arquivo>...
  *
  * As saídas vão para uploads/_5e-prova/, que é descartável — nada disto é
  * artefato de cliente.
@@ -14,6 +15,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
 import { probeVideo, runFfmpeg } from "../services/video/ffmpeg.js";
+import { probePadding } from "../services/video/paddingProbe.js";
 import {
   buildDerivationArgs,
   buildSubjectProbeArgs,
@@ -28,20 +30,6 @@ const DELIVERY_SHORT_EDGE = 1080;
 
 const OUT_DIR = path.join(config.uploadsDir, "_5e-prova");
 
-interface Linha {
-  insumo: string;
-  aspect: string;
-  quadroPrevisto: string;
-  quadroReal: string;
-  sujeitoPrevisto: string;
-  sujeitoReal: string;
-  alturaMaster: number;
-  ampliou: boolean;
-  cortou: boolean;
-  segundos: number;
-  atendeAlvo: boolean;
-}
-
 async function main(): Promise<void> {
   await mkdir(OUT_DIR, { recursive: true });
 
@@ -51,89 +39,91 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const linhas: Linha[] = [];
+  let ampliaram = 0;
+  let cortaram = 0;
+  let tempoTotal = 0;
 
   for (const insumo of insumos) {
-    const master = await probeVideo(insumo);
+    const geo = await probeVideo(insumo);
     const nome = path.basename(insumo).slice(0, 8);
-    console.log(
-      `\n=== INSUMO ${nome} — ${master.width}×${master.height} ${master.codec} ` +
-        `${master.durationSeconds.toFixed(3)}s`,
-    );
+    const padding = await probePadding(insumo);
 
+    const quadro: Resolution = { width: geo.width, height: geo.height };
+    const conteudo: Resolution = { width: padding.content.width, height: padding.content.height };
+
+    console.log(`\n${"=".repeat(78)}`);
+    console.log(`INSUMO ${nome} — quadro ${geo.width}×${geo.height} ${geo.codec} ${geo.durationSeconds.toFixed(3)}s`);
+    console.log(`  sonda: ${padding.verdict} · conteúdo ${conteudo.width}×${conteudo.height} · ` +
+      `preenchimento ${(padding.paddingFraction * 100).toFixed(1)}%`);
+
+    // -------- A.2: a régua antes e depois ---------------------------------
+    console.log(`\n  RÉGUA — o que a tabela dizia (sobre o QUADRO) × o que diz agora (sobre o CONTEÚDO)`);
+    console.log(`  formato | quadro:  saída        atende? | conteúdo: saída        atende?`);
     for (const aspect of HEYGEN_ASPECT_RATIOS) {
       const target = targetForAspect(aspect, DELIVERY_SHORT_EDGE);
-      const d = deriveFormat({ width: master.width, height: master.height }, { aspectRatio: aspect, target });
+      const antes = deriveFormat(quadro, { aspectRatio: aspect, target });
+      const depois = deriveFormat(conteudo, { aspectRatio: aspect, target });
+      const mudou = antes.meetsTarget !== depois.meetsTarget ||
+        antes.canvas.width !== depois.canvas.width || antes.canvas.height !== depois.canvas.height;
+      console.log(
+        `  ${aspect.padEnd(7)} | ${`${antes.canvas.width}×${antes.canvas.height}`.padEnd(12)} ` +
+          `${(antes.meetsTarget ? "sim" : "NÃO").padEnd(7)} | ` +
+          `${`${depois.canvas.width}×${depois.canvas.height}`.padEnd(12)} ` +
+          `${(depois.meetsTarget ? "sim" : "NÃO").padEnd(7)}${mudou ? "  ← mudou" : ""}`,
+      );
+    }
+
+    // -------- A.3/A.4: a cadeia nova, medida ------------------------------
+    console.log(`\n  DERIVAÇÃO (sonda → recorte → decrease → fundo → overlay)`);
+    for (const aspect of HEYGEN_ASPECT_RATIOS) {
+      const target = targetForAspect(aspect, DELIVERY_SHORT_EDGE);
+      const plan = deriveFormat(conteudo, { aspectRatio: aspect, target });
 
       const slug = aspect.replace(":", "x");
       const saida = path.join(OUT_DIR, `${nome}-${slug}.mp4`);
       const sonda = path.join(OUT_DIR, `${nome}-${slug}-sujeito.png`);
 
       const { elapsedMs } = await runFfmpeg(
-        buildDerivationArgs(insumo, saida, d.canvas),
+        buildDerivationArgs(insumo, saida, plan.canvas, padding.crop),
         `prova ${nome} ${aspect}`,
       );
-      await runFfmpeg(buildSubjectProbeArgs(insumo, sonda, d.canvas), `sonda ${nome} ${aspect}`);
+      await runFfmpeg(
+        buildSubjectProbeArgs(insumo, sonda, plan.canvas, padding.crop),
+        `sonda ${nome} ${aspect}`,
+      );
+      tempoTotal += elapsedMs / 1000;
 
       const real = await probeVideo(saida);
       const sujeito = await probeVideo(sonda);
 
-      // A INVARIANTE, medida e não deduzida: o sujeito nunca sai mais alto nem
-      // mais largo do que entrou. Passar significa que houve ampliação.
-      const ampliou = sujeito.height > master.height || sujeito.width > master.width;
-      // E nunca é cortado: a proporção do sujeito tem de ser a do master.
-      const propMaster = master.width / master.height;
+      // A INVARIANTE, medida contra o CONTEÚDO — não contra o quadro. Comparar
+      // com o quadro daria folga falsa de 58% num master preenchido.
+      const ampliou = sujeito.height > conteudo.height || sujeito.width > conteudo.width;
+      const propConteudo = conteudo.width / conteudo.height;
       const propSujeito = sujeito.width / sujeito.height;
-      const cortou = Math.abs(propMaster - propSujeito) > 0.01;
-
-      linhas.push({
-        insumo: nome,
-        aspect,
-        quadroPrevisto: `${d.canvas.width}×${d.canvas.height}`,
-        quadroReal: `${real.width}×${real.height}`,
-        sujeitoPrevisto: `${d.subject.width}×${d.subject.height}`,
-        sujeitoReal: `${sujeito.width}×${sujeito.height}`,
-        alturaMaster: master.height,
-        ampliou,
-        cortou,
-        segundos: elapsedMs / 1000,
-        atendeAlvo: d.meetsTarget,
-      });
+      const cortou = Math.abs(propConteudo - propSujeito) > 0.02;
+      if (ampliou) ampliaram += 1;
+      if (cortou) cortaram += 1;
 
       console.log(
-        `  ${aspect.padEnd(5)} quadro ${`${real.width}×${real.height}`.padEnd(10)}` +
-          ` sujeito ${`${sujeito.width}×${sujeito.height}`.padEnd(10)}` +
-          ` (master h=${master.height})` +
+        `  ${aspect.padEnd(7)} quadro ${`${real.width}×${real.height}`.padEnd(11)}` +
+          ` sujeito ${`${sujeito.width}×${sujeito.height}`.padEnd(11)}` +
+          ` (conteúdo ${conteudo.width}×${conteudo.height})` +
           ` ${ampliou ? "AMPLIOU ✗" : "sem ampliar ✓"}` +
           ` ${cortou ? "CORTOU ✗" : "sem cortar ✓"}` +
           ` ${(elapsedMs / 1000).toFixed(1)}s` +
-          ` ${d.meetsTarget ? "" : "[ABAIXO DO ALVO]"}`,
+          `${plan.meetsTarget ? "" : "  [ABAIXO DO ALVO]"}`,
       );
-      if (d.shortfall) console.log(`        ↳ ${d.shortfall}`);
     }
   }
 
-  console.log("\n\n=== TABELA (Fase 2.4) ===");
   console.log(
-    "insumo   | formato | quadro previsto→real      | sujeito previsto→real     | h master | ampliou | cortou | tempo",
+    `\n${"=".repeat(78)}\n${ampliaram} ampliaram, ${cortaram} cortaram. ` +
+      `Tempo total ${tempoTotal.toFixed(1)}s. Saídas em ${OUT_DIR} ` +
+      `(${(await readdir(OUT_DIR)).length} arquivo(s)).`,
   );
-  for (const l of linhas) {
-    console.log(
-      `${l.insumo} | ${l.aspect.padEnd(7)} | ${l.quadroPrevisto.padEnd(11)}→${l.quadroReal.padEnd(11)} | ` +
-        `${l.sujeitoPrevisto.padEnd(11)}→${l.sujeitoReal.padEnd(11)} | ${String(l.alturaMaster).padStart(8)} | ` +
-        `${l.ampliou ? "SIM ✗" : "não ✓"}   | ${l.cortou ? "SIM ✗" : "não ✓"}  | ${l.segundos.toFixed(1)}s`,
-    );
-  }
 
-  const ampliaram = linhas.filter((l) => l.ampliou);
-  const cortaram = linhas.filter((l) => l.cortou);
-  console.log(
-    `\n${linhas.length} derivação(ões): ${ampliaram.length} ampliaram, ${cortaram.length} cortaram.`,
-  );
-  console.log(`Tempo total ${linhas.reduce((s, l) => s + l.segundos, 0).toFixed(1)}s.`);
-  console.log(`Saídas em ${OUT_DIR}: ${(await readdir(OUT_DIR)).length} arquivo(s).`);
-
-  if (ampliaram.length > 0 || cortaram.length > 0) process.exit(1);
+  if (ampliaram > 0 || cortaram > 0) process.exit(1);
 }
 
 main().catch((err) => {

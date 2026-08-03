@@ -155,14 +155,20 @@ export const RESOLUTION_SHORT_EDGE: Record<string, number> = {
  * do ffmpeg; sem o escape, `boxblur` recebe metade da expressão e a outra
  * metade vira um filtro inexistente.
  */
-export function buildDerivationFilter(canvas: Resolution): string {
+export function buildDerivationFilter(canvas: Resolution, sourceCrop?: CropBox | null): string {
   const { width: W, height: H } = canvas;
   return [
-    `[0:v]split=2[bg][fg]`,
+    `[0:v]${cropPrefix(sourceCrop)}split=2[bg][fg]`,
     `[bg]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},` +
       `boxblur=luma_radius=min(h\\,w)/20:luma_power=1:chroma_radius=min(cw\\,ch)/20:chroma_power=1[bg2]`,
     `[fg]${subjectScaleExpression(canvas)}[fg2]`,
-    `[bg2][fg2]overlay=(W-w)/2:(H-h)/2`,
+    // `setsar=1` fecha a cadeia, e não é detalhe cosmético. O `scale` com
+    // `force_original_aspect_ratio` compensa o arredondamento das dimensões
+    // mexendo no SAR: medido, uma derivação 720×1280 saiu com SAR 5120:5121 e
+    // DAR 320:569 em vez de 9:16. O arquivo tem os pixels certos e MENTE sobre
+    // a proporção, então o player estica de leve — o tipo de defeito que
+    // ninguém vê na revisão e todo mundo vê no vídeo pronto.
+    `[bg2][fg2]overlay=(W-w)/2:(H-h)/2,setsar=1`,
   ].join(";");
 }
 
@@ -179,6 +185,33 @@ export function subjectScaleExpression(canvas: Resolution): string {
   return `scale=${canvas.width}:${canvas.height}:force_original_aspect_ratio=decrease:flags=lanczos`;
 }
 
+/** Recorte do preenchimento do fornecedor, medido por `paddingProbe.ts`. */
+export interface CropBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * O RECORTE VEM PRIMEIRO — e a ordem é a coisa mais importante desta cadeia.
+ *
+ * O preenchimento sai antes de qualquer decisão de enquadramento, de modo que
+ * tudo o que vem depois trabalhe só sobre imagem: o fundo desfocado é feito do
+ * conteúdo (e não de uma barra branca esticada), o `decrease` do sujeito mede a
+ * imagem real, e o `overlay` centraliza o que interessa.
+ *
+ * Fazer o recorte depois — ou não fazer — produz o defeito de 02/08: uma
+ * moldura desfocada desenhada em volta de um quadro que já era moldura.
+ *
+ * Sem recorte a cadeia fica idêntica à anterior, byte a byte. Um vídeo sem
+ * preenchimento não paga nada por esta mudança.
+ */
+function cropPrefix(crop?: CropBox | null): string {
+  if (!crop) return "";
+  return `crop=${crop.width}:${crop.height}:${crop.x}:${crop.y},`;
+}
+
 /**
  * Argumentos que produzem SÓ o sujeito escalado, sem fundo e sem overlay.
  *
@@ -186,7 +219,12 @@ export function subjectScaleExpression(canvas: Resolution): string {
  * `ffprobe` diga qual altura o ffmpeg de fato deu ao sujeito. É a diferença
  * entre afirmar a invariante e constatá-la.
  */
-export function buildSubjectProbeArgs(input: string, output: string, canvas: Resolution): string[] {
+export function buildSubjectProbeArgs(
+  input: string,
+  output: string,
+  canvas: Resolution,
+  sourceCrop?: CropBox | null,
+): string[] {
   return [
     "-y",
     "-v", "error",
@@ -194,7 +232,11 @@ export function buildSubjectProbeArgs(input: string, output: string, canvas: Res
     // o arquivo inteiro para medir uma altura desperdiçaria minutos por formato.
     "-i", input,
     "-frames:v", "1",
-    "-vf", subjectScaleExpression(canvas),
+    // A sonda passa pelo MESMO recorte da derivação. Medir o sujeito sem ele
+    // compararia coisas diferentes — a altura sairia inflada pela barra, e a
+    // invariante "não ampliou" passaria a ser verificada contra um número que
+    // não corresponde a nada entregue.
+    "-vf", `${cropPrefix(sourceCrop)}${subjectScaleExpression(canvas)}`,
     output,
   ];
 }
@@ -208,12 +250,17 @@ export function buildSubjectProbeArgs(input: string, output: string, canvas: Res
  * `-c:a copy` sem exceção: o áudio é a voz clonada e sai bit a bit igual.
  * Recodificá-lo custaria qualidade em troca de nada.
  */
-export function buildDerivationArgs(input: string, output: string, canvas: Resolution): string[] {
+export function buildDerivationArgs(
+  input: string,
+  output: string,
+  canvas: Resolution,
+  sourceCrop?: CropBox | null,
+): string[] {
   return [
     "-y",
     "-v", "error",
     "-i", input,
-    "-filter_complex", buildDerivationFilter(canvas),
+    "-filter_complex", buildDerivationFilter(canvas, sourceCrop),
     "-c:v", "libx264",
     "-crf", "18",
     "-preset", "slow",

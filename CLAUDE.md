@@ -503,7 +503,19 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-03 — Bloco 5E, fases 0 a 4 (a Fase 5 NÃO foi
+**Última atualização:** 2026-08-03 — Bloco 5F, Parte A (a Parte B está ARMADA e
+NÃO disparada). **Preenchimento do fornecedor deixou de ser tratado como
+conteúdo.** A sonda mede a barra por perfil de luminância — `cropdetect` não
+serve, porque procura borda preta e a nossa é branca. *MEDIDO:* o master 9:16 de
+02/08 tem **57,8% de barra** e conteúdo útil de 720×540 (proporção 1,3333, 4:3
+exato); o master 16:9 tem 0%. A régua passou a medir o **conteúdo**, e com isso
+**dois alvos que constavam como atendidos (16:9 e 1:1) passaram a reprovar** —
+eram aprovados com pixels de barra branca. O recorte entra antes do
+enquadramento, e o ativo de 02/08 foi reprocessado **ao lado**, sem substituir
+nada. Dois defeitos achados ao verificar: o SAR saía **5120:5121** (DAR 320:569
+em vez de 9:16, player esticando de leve) e o arredondamento para dimensão par
+**comia a última linha de imagem**. 90 mutantes. Ver o bloco próprio no fim.
+Antes dele, o Bloco 5E, fases 0 a 4 (a Fase 5 NÃO foi
 iniciada). **Dois achados mudam decisões abertas.** Primeiro: a constante de
 custo estava errada — a cobrança é por **segundo INTEIRO truncado**, 3 unidades
 cada, e as três medições já registradas fecham exatas nessa regra (sobre a
@@ -1464,6 +1476,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-03 | **5F Parte A** | **Sonda de preenchimento por luminância (57,8% de barra no master de 02/08); régua passa a medir o conteúdo e 2 alvos mudam de veredito; recorte antes do enquadramento; `setsar=1` conserta DAR mentiroso; ativo reprocessado ao lado. Parte B armada e não disparada. 90 mutantes. Ver abaixo.** |
 | 08-03 | **5E fases 0–4** | **Custo por segundo inteiro truncado (3 medições exatas); tabela de formatos derivada da âncora de lado curto; filter_complex provado nos arquivos (0 ampliou, 0 cortou); job de derivação + schema master/variantes; lote nativo com N=N=N. ACHADO: o 9:16 da HeyGen é 57% barra branca. Fase 5 não iniciada. 85 mutantes. Ver abaixo.** |
 | 08-02 | **5D fases 1-bis a 2** | **Badge ancorado na LIGAÇÃO (não só na presença); predicado ÚNICO de prontidão consumido pela rota e pela tela; artefato do fornecedor persistido no nosso disco; `model_id` explícito no TTS; cronômetro de gravação vira meta; 2ª passada live 9:16. 74 mutantes. Ver abaixo.** |
 | 08-02 | **5D fases 0 e 1** | **Percurso dos 6 passos catalogado; fixture passa a valer para os provedores de TEXTO (não valia); vídeo reproduzível na Biblioteca; custo no passo 4; ledger negativo medido e NÃO alterado; telas que mentiam. 64 mutantes. Ver abaixo.** |
@@ -3400,3 +3413,223 @@ que a integração é trabalho que resta.
   nossa saiu fora de 720p.
 - A constante de custo contra FATURA (só contra saldo e quota da API).
 - Comportamento de cobrança abaixo de 1 segundo.
+
+### Bloco 5F — preenchimento não é conteúdo (Parte A concluída; Parte B ARMADA)
+
+Ambiente em `fixture` do começo ao fim, `PROVIDER_LIVE_CONFIRM` vazia, **zero
+chamadas a fornecedor**. A Parte B está pronta e **NÃO foi disparada**.
+
+#### O que a sonda mede, e por que não é `cropdetect`
+
+`cropdetect` procura borda **preta**; a nossa é branca, e foi por isso que ele
+devolveu "sem preenchimento" quando tentado no 5E — um falso negativo que teria
+encerrado a investigação. O que funciona é o perfil de luminância, e em
+[paddingProbe.ts](backend/src/services/video/paddingProbe.ts) ele é feito de uma
+vez: o quadro sai do ffmpeg como luminância crua (`-pix_fmt gray -f rawvideo`) e
+a varredura acontece em memória — uma chamada de ffmpeg por quadro amostrado, em
+vez de uma por faixa.
+
+Três quadros são amostrados e precisam **concordar**: preenchimento é estático,
+e fronteira que se move entre quadros é imagem sendo confundida com barra.
+
+**O veredito tem três valores, e o terceiro é o que protege.** `clean` (sem
+barra), `padded` (barra sólida e estável — recortável) e **`pending`**, que
+significa "há borda, mas não confio na fronteira": gradiente, textura, ou
+medição que falhou. **`pending` NÃO recorta.** Falhar fechado aqui entrega o
+vídeo como estava antes deste bloco, em vez de arriscar um recorte sobre
+fronteira inventada — recortar a mais come rosto, e isso não tem volta.
+
+*MEDIDO:*
+
+| Arquivo | Veredito | Quadro | Conteúdo | Barra |
+|---|---|---|---|---|
+| master 9:16 de 02/08 | `padded` | 720×1280 | **720×540** (4:3 exato) | **57,8%** |
+| master 16:9 do LIVE-1 | `clean` | 1280×720 | 1280×720 | 0% |
+| fixture 9:16 | `clean` | 360×640 | 360×640 | 0% |
+
+A proporção do conteúdo do master 9:16 é **1,3333 — exatamente 4:3**, o que
+confirma a leitura do 5E: a HeyGen recebeu uma imagem 4:3 e completou o vertical
+com barras.
+
+#### A régua trocou de referência, e dois alvos mudaram de veredito
+
+Os alvos passaram a ser calculados sobre a resolução **útil**. *MEDIDO no master
+de 02/08:*
+
+| Formato | Régua antiga (quadro 720×1280) | Régua nova (conteúdo 720×540) |
+|---|---|---|
+| 16:9 | 1920×1080 — **atende** | 960×540 — **NÃO** ← mudou |
+| 9:16 | 720×1280 — não | 720×1280 — não |
+| 4:5 | 1024×1280 — não | 720×900 — **NÃO** ← mudou |
+| 1:1 | 1080×1080 — **atende** | 720×720 — **NÃO** ← mudou |
+
+**Dois alvos eram dados como atendidos com base em pixels de barra branca.** O
+aviso "abaixo da especificação" estava medindo a moldura.
+
+#### A ordem da cadeia: sonda → recorte → decrease → fundo → overlay
+
+O recorte vem **primeiro**, e a ordem é o ponto: tudo depois dele trabalha só
+sobre imagem. O fundo desfocado passa a ser feito do conteúdo, e não de uma
+barra branca esticada. Sem recorte a cadeia fica idêntica à anterior — um vídeo
+limpo não paga nada por esta mudança, e a guarda verifica isso.
+
+**`setsar=1` fecha a cadeia, e não é cosmético.** *MEDIDO:* uma derivação
+720×1280 saiu com SAR **5120:5121** e DAR **320:569** em vez de 9:16 — o `scale`
+com `force_original_aspect_ratio` compensa o arredondamento das dimensões
+mexendo no SAR. O arquivo tem os pixels certos e **mente sobre a proporção**,
+então o player estica de leve. Depois da correção: SAR 1:1, DAR 9:16.
+
+#### O ativo de 02/08 reprocessado
+
+Guardado **ao lado**, sem substituir nada e sem tocar em `output_url`:
+`uploads/c77a5b8a…/5f77229e-…-5f-recortado-9x16.mp4`. Mesma duração (16,983 s),
+mesmo áudio (aac 48 kHz estéreo, `-c:a copy`), mesmo quadro 720×1280 — e as
+barras brancas viraram extensão desfocada do próprio conteúdo, com o sujeito
+idêntico (720×540, sem ampliar e sem cortar). Frames comparativos em
+`uploads/_5e-prova/` (fora do git).
+
+#### Defeito de arredondamento achado ao verificar
+
+O ajuste para dimensão par estava **encolhendo pelo lado do conteúdo**. Com o
+conteúdo em 271 linhas (ímpar), o recorte entregava 270 e **comia a última linha
+de imagem**. Agora `evenSpan()` cresce para fora: o pior caso passa a ser um
+pixel a mais de barra, que o enquadramento cobre. Os dois erros não são
+simétricos — um perde imagem, o outro não perde nada.
+
+#### Guardas (5 mutantes, todos provados)
+
+[checkPaddingPolicy.ts](backend/src/scripts/checkPaddingPolicy.ts), sobre uma
+fixture versionada com preenchimento conhecido
+(`simulated-video-padded-9x16.mp4`, quadro 360×640 e imagem 360×270). Os quatro
+defeitos, cada um com mutante: sonda cega; régua medindo o quadro; recorte
+avançando sobre o conteúdo; e cadeia enquadrando sem passar pela sonda. Mais o
+contraponto (amostrar em outros instantes segue verde — a medida é de uma
+propriedade estática).
+
+**Os números da fixture são MEDIDOS por leitura direta da luminância, não pelo
+que o comando de geração pediu:** o `pad` foi pedido em y=185 e o arquivo
+codificado tem conteúdo a partir de **y=184**, por sangramento de croma do
+`yuv420p`. Conferir a sonda contra a intenção, e não contra o arquivo, teria
+produzido um falso erro de 1 px.
+
+**A fixture nova exigiu `docker compose build backend`** — `backend/fixtures/`
+entra pelo `COPY` do Dockerfile, não pelo bind mount. Gotcha já registrado, que
+custou uma execução.
+
+**Sexta ocorrência do `expect` mal recortado:** a mensagem diz "o filtro de
+derivação **NÃO** leva o recorte" e o `expect` dizia "não leva o recorte" — o
+arnês compara diferenciando maiúscula, e a guarda saudável apareceu como
+AMBÍGUA.
+
+#### Parte B — rodada de controle, ARMADA e NÃO DISPARADA
+
+Tudo em [controlRun.ts](backend/src/scripts/controlRun.ts), que **não chama
+fornecedor nenhum**: `--payloads` imprime o que sairia, `--measure` mede o que
+voltou. Ver a seção "PLANO DA RODADA DE CONTROLE" logo abaixo.
+
+#### A lacuna entre a Fase 4 do 5E e o produto
+
+O lote nativo (`nativeBatch.ts`) está **provado e não ligado**: o planejador e o
+executor têm guarda e mutantes, mas nada em `POST /videos` os chama. Nenhum lote
+pode ser disparado pela interface hoje. É trabalho a agendar, não um defeito.
+
+#### NÃO VERIFICADO ao fim do 5F
+
+- Se o preenchimento em 9:16 é regra do fornecedor. **É o que a Parte B
+  responde** — os dois masters comparados até aqui são de avatares diferentes.
+- Se a HeyGen aceita `resolution: "1080p"` na nossa conta.
+- Se a sonda se comporta bem com preenchimento **não** branco (barra preta,
+  cinza) ou com cena clara encostando na borda. O caminho `pending` existe para
+  isso e **nunca foi exercitado contra um caso real** — só contra a fixture.
+- O quarto ponto do truncamento.
+
+### PLANO DA RODADA DE CONTROLE (5F Parte B) — ARMADO, NÃO DISPARADO
+
+Escrito antes de precisar dele. **Nada aqui foi executado.** Uma rodada
+responde três perguntas de uma vez, e todas as três só têm resposta em live.
+
+**Desenho:** mesmo avatar (Mário, o de 02/08), mesmo roteiro, duas gerações —
+`9:16` e `16:9` —, ambas em `1080p`. A única variável é a proporção; foi a
+falta desse controle que impediu o 5F de concluir de quem é o preenchimento.
+
+**Roteiro (idêntico nas duas), 32 caracteres:**
+
+```
+Olá. Este é um teste de formato.
+```
+
+Curto porque a cobrança trunca em segundo inteiro: ~2,7 s pela taxa observada
+no 5D (206 caracteres → 17,6 s). Custo esperado **US$ 0,20 a 0,30 no total**.
+
+**Os dois payloads exatos, montados pelo montador REAL** (`buildHeygenVideoPayload`):
+
+```json
+{ "type": "avatar", "avatar_id": "45528bb8bf914899b12403e6d50cb780",
+  "audio_asset_id": "<devolvido pelo upload do TTS>",
+  "aspect_ratio": "9:16", "resolution": "1080p" }
+
+{ "type": "avatar", "avatar_id": "45528bb8bf914899b12403e6d50cb780",
+  "audio_asset_id": "<devolvido pelo upload do TTS>",
+  "aspect_ratio": "16:9", "resolution": "1080p" }
+```
+
+Sem `engine`: a flag `explicit_avatar_engine` continua desligada, porque a
+ligação entre `supported_api_engines` e `engine.type` é dedução e um valor
+recusado derruba a geração.
+
+**Se 1080p for recusado, a recusa é a resposta.** Registre e **pare** — não caia
+para 720p sem aval.
+
+**Sequência (só com aval explícito):**
+
+```bash
+docker compose exec backend npm run preflight:live
+```
+
+1. No `.env`: `PROVIDER_MODE=live`, `PROVIDER_LIVE_CONFIRM=<a frase exata>`,
+   `PROVIDER_LIVE_MAX_GENERATIONS=2`. Margem zero, de propósito.
+2. `docker compose up -d backend` — **`restart` NÃO recarrega variável de
+   ambiente**, só `up -d` recria o container.
+3. Ler a quota ANTES (guardar o número).
+4. Gerar **9:16 primeiro** — é a que responde a pergunta central.
+5. Baixar o artefato **imediatamente**: a URL da HeyGen é assinada e expira.
+6. Gerar 16:9. Baixar.
+7. Ler a quota DEPOIS.
+
+```bash
+docker compose logs backend | Out-File -Encoding utf8 controle-5f.log
+```
+
+`Out-File -Encoding utf8`, nunca `>` — no PowerShell o `>` grava UTF-16LE e
+`grep` não acha nada dentro.
+
+**Medição (script pronto e exercitado em fixture):**
+
+```bash
+docker compose exec backend npx tsx src/scripts/controlRun.ts --measure /app/uploads/<tenant>/<9x16>.mp4 /app/uploads/<tenant>/<16x9>.mp4
+```
+
+Ele imprime, por arquivo: veredito de preenchimento e percentual, quadro,
+conteúdo útil, e os segundos cobrados contra os entregues — mais a previsão de
+unidades para conferir contra a quota lida.
+
+**O que cada resultado significa:**
+
+| 9:16 | 16:9 | Conclusão |
+|---|---|---|
+| com barra | limpo | O preenchimento é do FORNECEDOR. A política do master 9:16 precisa ser revista |
+| limpo | limpo | O master de 02/08 era atípico; a política se sustenta |
+| com barra | com barra | O preenchimento vem da foto do avatar, não da proporção |
+
+**Se uma falhar:** `docker compose restart backend` devolve o contador do teto
+sem sair do modo live (é variável de módulo, por processo). O crédito é
+estornado sozinho e o teto de gasto volta — só a tentativa não volta.
+
+**Desarme, ao terminar:**
+
+```bash
+docker compose up -d backend
+```
+
+com `PROVIDER_MODE=fixture` e `PROVIDER_LIVE_CONFIRM` vazia no `.env`. Conferir
+no log: `{"event":"provider_mode","mode":"fixture","billable":false,...}`.

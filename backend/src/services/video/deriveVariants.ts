@@ -35,8 +35,10 @@ import {
   buildSubjectProbeArgs,
   deriveFormat,
   targetForAspect,
+  type CropBox,
   type Resolution,
 } from "../providers/formatDerivation.js";
+import { probePadding, type PaddingProbeResult } from "./paddingProbe.js";
 
 /**
  * Lado curto do quadro de entrega. É o teto do fornecedor — a mesma âncora que
@@ -86,14 +88,58 @@ export function localPathForUpload(url: string): string {
  * afirmar — que o sujeito não foi ampliado, e custa uma fração de segundo
  * contra os segundos da transcodificação completa.
  */
+/**
+ * A CADEIA, num lugar só: sonda → régua sobre o conteúdo → argumentos.
+ *
+ * Existe como função exportada porque é o que a guarda precisa exercitar. Um
+ * caminho em que a sonda é chamada por fora e o resultado entregue pronto
+ * seria impossível de testar de verdade — o teste passaria a sonda que quisesse
+ * e nunca perceberia que a produção deixou de chamá-la.
+ *
+ * Ela sonda a cada formato em vez de receber a sondagem de fora. São três
+ * quadros extras por formato, algo como meio segundo; a alternativa era um
+ * parâmetro opcional que, quando omitido, silenciosamente pularia a sonda —
+ * exatamente o defeito que o mutante (d) descreve.
+ */
+export interface DerivationPlan {
+  padding: PaddingProbeResult;
+  /** Resolução ÚTIL: o que sobra depois do preenchimento sair. */
+  content: Resolution;
+  crop: CropBox | null;
+  canvas: Resolution;
+  meetsTarget: boolean;
+  shortfall: string | null;
+}
+
+export async function planDerivation(masterPath: string, aspectRatio: string): Promise<DerivationPlan> {
+  const padding = await probePadding(masterPath);
+  const content: Resolution = { width: padding.content.width, height: padding.content.height };
+  const target = targetForAspect(aspectRatio, DELIVERY_SHORT_EDGE);
+
+  // A régua mede o CONTEÚDO, nunca o quadro. Medida sobre o quadro, um master
+  // 720×1280 com 58% de branco "atende" alvos que a imagem de 720×540 não
+  // alcança — medido: 16:9 e 1:1 passavam de aprovados a reprovados quando a
+  // régua trocou de referência.
+  const format = deriveFormat(content, { aspectRatio, target });
+
+  return {
+    padding,
+    content,
+    crop: padding.crop,
+    canvas: format.canvas,
+    meetsTarget: format.meetsTarget,
+    shortfall: format.shortfall,
+  };
+}
+
 export async function deriveOneVariant(
   masterPath: string,
-  master: Resolution,
   aspectRatio: string,
   tenantId: string,
 ): Promise<DerivedVariant> {
-  const target = targetForAspect(aspectRatio, DELIVERY_SHORT_EDGE);
-  const plan = deriveFormat(master, { aspectRatio, target });
+  const plan = await planDerivation(masterPath, aspectRatio);
+  const master = plan.content;
+  const sourceCrop = plan.crop;
 
   const tenantDir = path.join(config.uploadsDir, tenantId);
   await mkdir(tenantDir, { recursive: true });
@@ -103,13 +149,16 @@ export async function deriveOneVariant(
   const probePath = path.join(tenantDir, `.subject-${randomUUID()}.png`);
 
   const { elapsedMs } = await runFfmpeg(
-    buildDerivationArgs(masterPath, outPath, plan.canvas),
+    buildDerivationArgs(masterPath, outPath, plan.canvas, sourceCrop),
     `derive ${aspectRatio}`,
   );
 
   let subject: Resolution;
   try {
-    await runFfmpeg(buildSubjectProbeArgs(masterPath, probePath, plan.canvas), `subject ${aspectRatio}`);
+    await runFfmpeg(
+      buildSubjectProbeArgs(masterPath, probePath, plan.canvas, sourceCrop),
+      `subject ${aspectRatio}`,
+    );
     const probed = await probeVideo(probePath);
     subject = { width: probed.width, height: probed.height };
   } finally {
@@ -176,37 +225,32 @@ export async function deriveVariantsForVideo(input: {
   aspectRatios: readonly string[];
 }): Promise<DerivedVariant[]> {
   const masterPath = localPathForUpload(input.masterUrl);
-  const probed = await probeVideo(masterPath);
-  const master: Resolution = { width: probed.width, height: probed.height };
-
   const out: DerivedVariant[] = [];
 
   for (const aspectRatio of input.aspectRatios) {
-    if (aspectRatio === input.masterAspectRatio) {
-      const target = targetForAspect(aspectRatio, DELIVERY_SHORT_EDGE);
-      const plan = deriveFormat(master, { aspectRatio, target });
-      await recordVariant(input.videoId, input.tenantId, {
+    const plan = await planDerivation(masterPath, aspectRatio);
+
+    // Reaproveitar o arquivo do master só é honesto quando ele NÃO tem
+    // preenchimento. Com barra, o master não atende bem nem a proporção que
+    // declara: quem pede 9:16 receberia 58% de branco, enquanto o
+    // reenquadramento com fundo desfocado usa o quadro inteiro. Então, havendo
+    // preenchimento, toda proporção é derivada — inclusive a do próprio quadro.
+    if (aspectRatio === input.masterAspectRatio && plan.crop === null) {
+      const variant: DerivedVariant = {
         aspectRatio,
-        width: master.width,
-        height: master.height,
+        width: plan.content.width,
+        height: plan.content.height,
         outputUrl: input.masterUrl,
-        subject: master,
+        subject: plan.content,
         elapsedMs: 0,
         shortfall: plan.shortfall,
-      }, "generated");
-      out.push({
-        aspectRatio,
-        width: master.width,
-        height: master.height,
-        outputUrl: input.masterUrl,
-        subject: master,
-        elapsedMs: 0,
-        shortfall: plan.shortfall,
-      });
+      };
+      await recordVariant(input.videoId, input.tenantId, variant, "generated");
+      out.push(variant);
       continue;
     }
 
-    const variant = await deriveOneVariant(masterPath, master, aspectRatio, input.tenantId);
+    const variant = await deriveOneVariant(masterPath, aspectRatio, input.tenantId);
     await recordVariant(input.videoId, input.tenantId, variant, "derived");
     out.push(variant);
   }
