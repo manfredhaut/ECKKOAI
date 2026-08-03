@@ -504,7 +504,8 @@ rodada:
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
 **Última atualização:** 2026-08-03 — Bloco APRESENTACAO-1: o arnês fechou em
-**90/90 MEDIDO** (781 s), com os 5 mutantes de preenchimento provados
+**90/90 MEDIDO** (781 s), com os 4 mutantes de preenchimento que PROVAM a
+guarda (86–89) mais 1 controle de robustez (90, que passa verde) provados
 nominalmente, e o ativo da Biblioteca foi **repontado** para a cópia sem barra
 branca. Ver o bloco próprio no fim. Antes dele, o Bloco 5F, Parte A (a Parte B
 continua ARMADA e NÃO disparada). **Preenchimento do fornecedor deixou de ser
@@ -1479,7 +1480,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
-| 08-03 | **APRESENTACAO-1** | **Arnês 90/90 MEDIDO (781 s), com os 5 mutantes de preenchimento provados nominalmente pela linha de falha de cada um; prova preservada em `_prova/5f-e1e47cc/` com manifesto; ativo da Biblioteca repontado para a cópia sem barra (UPDATE 1, com REVERTER.txt); rota estática provada por curl ANTES do UPDATE; confirmado no navegador. `video_variants` não comporta duas variantes 9:16 — nada inserido. Ver abaixo.** |
+| 08-03 | **APRESENTACAO-1** | **Arnês 90/90 MEDIDO (781 s), com os 4 mutantes de preenchimento que provam a guarda mais 1 controle, nominais pela linha de falha de cada um; prova preservada em `_prova/5f-e1e47cc/` com manifesto; ativo da Biblioteca repontado para a cópia sem barra (UPDATE 1, com REVERTER.txt); rota estática provada por curl ANTES do UPDATE; confirmado no navegador. `video_variants` não comporta duas variantes 9:16 — nada inserido. Ver abaixo.** |
 | 08-03 | **5F Parte A** | **Sonda de preenchimento por luminância (57,8% de barra no master de 02/08); régua passa a medir o conteúdo e 2 alvos mudam de veredito; recorte antes do enquadramento; `setsar=1` conserta DAR mentiroso; ativo reprocessado ao lado. Parte B armada e não disparada. 90 mutantes. Ver abaixo.** |
 | 08-03 | **5E fases 0–4** | **Custo por segundo inteiro truncado (3 medições exatas); tabela de formatos derivada da âncora de lado curto; filter_complex provado nos arquivos (0 ampliou, 0 cortou); job de derivação + schema master/variantes; lote nativo com N=N=N. ACHADO: o 9:16 da HeyGen é 57% barra branca. Fase 5 não iniciada. 85 mutantes. Ver abaixo.** |
 | 08-02 | **5D fases 1-bis a 2** | **Badge ancorado na LIGAÇÃO (não só na presença); predicado ÚNICO de prontidão consumido pela rota e pela tela; artefato do fornecedor persistido no nosso disco; `model_id` explícito no TTS; cronômetro de gravação vira meta; 2ª passada live 9:16. 74 mutantes. Ver abaixo.** |
@@ -3650,8 +3651,12 @@ um registro.
 resultado que **não** exercita a guarda do 5F. Vale como regra ao ler um log
 truncado deste arnês: contagem parcial não diz nada sobre o 5F.
 
-**Os 5 provados NOMINALMENTE**, cada um com a linha que o reprovou, e todos
-citando a asserção de preenchimento (nenhum reprovou pelo `tsc`):
+**4 PROVAS + 1 CONTROLE, todos NOMINAIS.** A distinção não é preciosismo:
+quem PROVA a guarda é o mutante que a faz reprovar (86–89, cada um com a linha
+de falha citando a asserção de preenchimento, nenhum vindo do `tsc`). O 90 é
+**controle de robustez** — ele passa verde de propósito, e o que demonstra é
+que a guarda não reprova qualquer coisa. Chamar controle de prova infla a
+contagem e esconde quantas asserções de fato têm defeito exercitado.
 
 | Mutante | Linha de falha (recorte) |
 |---|---|
