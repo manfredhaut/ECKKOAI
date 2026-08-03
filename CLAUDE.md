@@ -546,15 +546,16 @@ rodada:
 > CONFIRM vazio, 4 pastas de prova em disco. **Nada em andamento, nada pela
 > metade, nenhuma geração pendente.** Pode começar do zero.
 >
-> **Uma única coisa ficou aberta desta sessão, e ela NÃO custa nada:** o delta
-> de créditos de voz do ElevenLabs. A base **698 / 64.917** está registrada; só
-> falta o operador ler o painel DEPOIS e informar o número. Isso decide entre
-> **+180** (cobra por caractere) e **+187** (por byte) — o **+360** do fallback
-> já está descartado pelo log. O contador não anda sozinho, então a leitura
-> continua válida a qualquer momento. Ver o fim do bloco **LIVE-3**.
+> **O que estava aberto FECHOU em 03/08:** o custo da voz do ElevenLabs foi
+> **MEDIDO diretamente no painel** — 1 chamada, 180 caracteres, **90 créditos**,
+> **US$ 0,018**. A cobrança é **por CARACTERE**; a hipótese "por byte" está
+> reprovada (os 7 acentos UTF-8 não foram cobrados). Não foi preciso calcular
+> delta, então **a base 698 / 64.917 é OBSOLETA, não é mais pendência.** Ver a
+> subseção "O custo da voz" no bloco **LIVE-3**.
 >
-> **Não é preciso refazer medição nenhuma** para retomar: custo, artefato,
-> ritmo de fala e forma da resposta de voz estão todos medidos e no LIVE-3.
+> **Não é preciso refazer medição nenhuma** para retomar: custo de vídeo, custo
+> de voz, artefato, ritmo de fala e forma da resposta de voz estão todos
+> medidos e no LIVE-3.
 
 **Última atualização:** 2026-08-03 — **bloco LIVE-3: a segunda passada live
 horizontal, medida e fechada.** Um vídeo, um clique, **US$ 0,70** pelo delta de
@@ -565,7 +566,12 @@ medido (**137,8 wpm · 12,16 car/s**, n=1); a **régua de cobrança é a duraç�
 FORNECEDOR**, não o nosso `ffprobe`, e as duas divergem em 0,0177 s (aqui sem
 consequência, mas vale US$ 0,05 perto de um inteiro); e a **forma real da
 resposta do ElevenLabs** foi observada pela primeira vez, fechando um NÃO
-VERIFICADO do LIVE-2. Ver o bloco próprio no fim. Antes dele, o **bloco
+VERIFICADO do LIVE-2. **E o custo da voz fechou em 03/08, por leitura direta do
+painel e não por delta:** 180 caracteres → 90 créditos → **US$ 0,018**, ou seja
+cobrança **por CARACTERE** (a hipótese "por byte" está reprovada: os 7 acentos
+não foram cobrados), com a coerência independente de 180 ÷ 14,807 s = 12,16 c/s
+batendo o ritmo do artefato. **A voz é 2,5% do custo da geração.** Ver o bloco
+próprio no fim. Antes dele, o **bloco
 RETOMADA-1: rodada de LEITURA
 depois de uma troca de conta no meio do rearme.** Fecha a pergunta "houve
 disparo?" com **não**, medido contra o fornecedor e contra o banco, e nomeia o
@@ -951,8 +957,8 @@ o próprio comentário que a explicava).
 | Gravar HeyGen/ElevenLabs da plataforma (opcional) | **usuário** | Só habilita validação e leitura de saldo; a geração continua na credencial do cliente |
 | Rotacionar as senhas de `admin@eckkoai.com` e `demo@eckko.ai` | **usuário** | Mesmo motivo; via `npm run dev:seed-access` |
 | Pôr saldo no HeyGen | **usuário** | US$ 13,85 / 831 unidades ⇒ ~19 vídeos de 15 s. Ver tabela de cota |
-| **Ler o painel do ElevenLabs e fechar o delta de voz** | **usuário** | Base **698 / 64.917** registrada; falta a leitura de DEPOIS. Decide entre +180 (por caractere) e +187 (por byte) — ver LIVE-3 |
-| **Conceder `user_read` à chave do ElevenLabs** | **usuário** | Sem ela, `GET /v1/user/subscription` dá 401 e o consumo de voz só é legível a olho no painel |
+| ~~Ler o painel do ElevenLabs e fechar o delta de voz~~ | — | **FECHADO em 03/08**: medição direta no painel, 180 car → 90 créditos → US$ 0,018, cobrança **por caractere**. A base 698 / 64.917 é obsoleta — ver LIVE-3 |
+| **Conceder `user_read` à chave do ElevenLabs** | **usuário** | Sem ela, `GET /v1/user/subscription` dá 401 e o consumo de voz só é legível a olho no painel. **Continua valendo**: o custo de 03/08 foi lido a olho, e sem `user_read` toda medição futura também será |
 | Billing/cota do Gemini (sair do free tier) | **usuário** | Criar projeto novo a cada teto batido não escala |
 | Conferir os 9 valores de `provider_cost_rates` | **usuário** | São placeholder; toda tela já mostra banner de estimativa |
 | Escrever o Bloco 2B | próxima sessão | Insumo pronto na tabela de lacunas |
@@ -1445,7 +1451,7 @@ não preenche `draftAvatar`) — ver o aviso no topo da seção TELA-1.
 |---|---|---|
 | **HeyGen** | `billing_type: wallet`, saldo **US$ 13,85**, `remaining_quota` **831** (medido em 03/08 21:29 UTC, depois da passada do LIVE-3) | ~19 vídeos de 15 s como o medido (US$ 0,70 cada), ou ~277 s de vídeo. Deixou de ser o gargalo |
 | **Gemini** | Free tier, ~20 requisições/dia, compartilhado com o copiloto | Um roteiro custa 1–2 requisições. Cabem poucos ensaios por dia |
-| **ElevenLabs** | Chave sem permissão `user_read` — **não dá para consultar a própria cota pela API**. *MEDIDO no LIVE-3:* `GET /v1/user/subscription` → **401** `"missing the permission user_read"`. É permissão faltando, **não** chave inválida | TTS funciona normalmente. O painel é a única fonte: base de **698 / 64.917** créditos utilizados, lida em 03/08 antes da passada. Uma síntese de 180 caracteres já aconteceu desde então, e o delta **não foi lido** |
+| **ElevenLabs** | Chave sem permissão `user_read` — **não dá para consultar a própria cota pela API**. *MEDIDO no LIVE-3:* `GET /v1/user/subscription` → **401** `"missing the permission user_read"`. É permissão faltando, **não** chave inválida | TTS funciona normalmente. O painel é a única fonte, e ele **discrimina por chamada**: *MEDIDO em 03/08* — 180 caracteres = **90 créditos** = **US$ 0,018**, ou seja **0,5 crédito por caractere**. O teto do plano é 64.917 créditos ⇒ ~129.800 caracteres no total, ou **~720 roteiros** do tamanho do LIVE-3 (DEDUZIDO da razão; o consumo acumulado atual não foi lido). **A voz não é gargalo de nada** |
 
 **A unidade de `remaining_quota` deixou de ser mistério: 60 unidades por
 dólar.** O registro anterior dizia que as duas leituras (quota e carteira)
@@ -1588,7 +1594,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
-| 08-03 | **LIVE-3** | **Passada live de 15 s em 16:9 (o operador chama de "LIVE-1"; aqui é LIVE-3 porque já existe um LIVE-1 de 08-01). Vídeo `8d28fd47`, UM clique, medido 12→13 linhas sem duplicata, `ready` em ~12 s. CUSTO: cota 873→**831** (−42 un), carteira 14,55→**13,85** (−**US$ 0,70**) — a previsão comprometida ANTES do tiro (14 s → 42 un → 0,70) bateu EXATA, 4ª confirmação do segundo inteiro truncado; razão 60,0 pela 6ª vez. Artefato 1280×720 SAR 1:1 DAR 16:9 25 fps 14,807 s, `clean` 0% de barra, md5 `cf0b7bb4…`. RITMO deixou de ser suposto: **137,8 wpm · 12,16 car/s** (n=1) — mas os 12,16 foram AJUSTADOS nesse ponto, então reproduzir 14,80 s é CIRCULARIDADE, não previsão; só um 2º roteiro dá evidência preditiva. A régua de cobrança é a duração do FORNECEDOR (14,7893), não o nosso ffprobe (14,807) — aqui ambas truncam para 14, mas perto de um inteiro divergem em US$ 0,05. Tela: estimativa 0,75 (duração PEDIDA) × real 0,7 com **42 unidades batendo o delta de cota**; estimar pelo roteiro daria 0,70 exato — melhoria POSSÍVEL, NÃO feita. VOZ: 1 chamada, ramo `synthesizeWithTimestamps`, fallback NÃO disparou, 180 car sem truncagem; **1ª resposta real de voz observada em log**, fechando um NÃO VERIFICADO do LIVE-2 (elisão: 325.005 bytes → registro curto). Delta de créditos de voz EM ABERTO (base 698 registrada; leitura de depois não informada). Ambiente desarmado por 5 critérios. Ver abaixo.** |
+| 08-03 | **LIVE-3** | **Passada live de 15 s em 16:9 (o operador chama de "LIVE-1"; aqui é LIVE-3 porque já existe um LIVE-1 de 08-01). Vídeo `8d28fd47`, UM clique, medido 12→13 linhas sem duplicata, `ready` em ~12 s. CUSTO: cota 873→**831** (−42 un), carteira 14,55→**13,85** (−**US$ 0,70**) — a previsão comprometida ANTES do tiro (14 s → 42 un → 0,70) bateu EXATA, 4ª confirmação do segundo inteiro truncado; razão 60,0 pela 6ª vez. Artefato 1280×720 SAR 1:1 DAR 16:9 25 fps 14,807 s, `clean` 0% de barra, md5 `cf0b7bb4…`. RITMO deixou de ser suposto: **137,8 wpm · 12,16 car/s** (n=1) — mas os 12,16 foram AJUSTADOS nesse ponto, então reproduzir 14,80 s é CIRCULARIDADE, não previsão; só um 2º roteiro dá evidência preditiva. A régua de cobrança é a duração do FORNECEDOR (14,7893), não o nosso ffprobe (14,807) — aqui ambas truncam para 14, mas perto de um inteiro divergem em US$ 0,05. Tela: estimativa 0,75 (duração PEDIDA) × real 0,7 com **42 unidades batendo o delta de cota**; estimar pelo roteiro daria 0,70 exato — melhoria POSSÍVEL, NÃO feita. VOZ: 1 chamada, ramo `synthesizeWithTimestamps`, fallback NÃO disparou, 180 car sem truncagem; **1ª resposta real de voz observada em log**, fechando um NÃO VERIFICADO do LIVE-2 (elisão: 325.005 bytes → registro curto). CUSTO DA VOZ FECHADO em 03/08 por leitura DIRETA do painel (não por delta): 1 chamada, 180 car, **90 créditos**, **US$ 0,018** ⇒ cobrança **por CARACTERE**, hipótese "por byte" REPROVADA (7 acentos não cobrados) e "+360 do fallback" já descartado pelo log; base 698/64.917 vira OBSOLETA, não pendência; coerência independente 180÷14,807 = **12,16 c/s**, idêntico ao ritmo do artefato; voz é **2,5%** do custo da geração. DEDUZIDO: 0,5 crédito/car (90/180 e 535/1070) aponta classe **Flash/Turbo**, não `eleven_multilingual_v2` — evidência indireta sobre o `model_id`, que segue fora do log por desenho. Ambiente desarmado por 5 critérios. Ver abaixo.** |
 | 08-03 | **RETOMADA-1** | **Rodada de LEITURA pós-troca de conta. Ambiente = REARMADO NO ARQUIVO, NÃO APLICADO: `printenv`=fixture (CONFIRM len 0, ATTEMPTS 2) × `docker compose config`=live (CONFIRM 28 car., ATTEMPTS 6), `.env` alterado 1h31 DEPOIS do boot, `RestartCount=0`, boot único em fixture ⇒ qualquer `up -d` arma o modo pago sem nova pergunta. NÃO HOUVE DISPARO, medido pelas DUAS pontas: HeyGen cota **873** / carteira **US$ 14,55** (inalteradas, 5º ponto de 60 un/US$) e banco com 0 vídeos e 0 `provider_usage` desde 0627af4 — as 2 linhas de ledger novas são `grant +1` (reposição), saldo video=**3**. Teto do polling MEDIDO: 90 × 5 s = **450 s**, confirma o registro, com a precisão de que é piso de parede (setInterval async não serializa). `quotaBaseline.ts` PROMOVIDO do scratchpad efêmero (2ª vez em 2 dias que um instrumento sustentava número registrado fora do git). ACHADO: `/v3/users/me` NÃO está no `endpointCatalog.ts` — o freio deriva do catálogo, então o substituto do sunset de 2026-10-31 não é barrado nem confirmado. CORRIGIDO o recorte de `provider_usage`: geração de vídeo é 7 linhas e **100% classificável**; o "93%" misturava 3 populações que nunca teriam `video_id`. Zero `up -d`/`restart`/`stop`. Ver abaixo.** |
 | 08-03 | **FIXTURE-1** | **Ambiente DESARMADO (3 critérios). Linha de base MEDIDA contra a HeyGen: cota 873, carteira US$ 14,55 — previsão bateu exata, nada gasto desde 02/08. Fixture NÃO exercita o TTS (`generateVideo` volta antes de `requireAudio`), então `audio_duration_source=tts_timestamps` em fixture é RÓTULO, não medição. TTS exercitado com fetch substituído: 180 chars sem truncagem, 1 chamada (2 no fallback), `eleven_multilingual_v2`. Tetos são GLOBAIS da sessão; falha antes do aceite devolve gasto e crédito, NUNCA a tentativa ⇒ sobra 1 tentativa. `provider_usage` NÃO tem coluna `simulated` e 93% das linhas são inclassificáveis (conserto PROPOSTO, não feito). Parte B do 5F RESPONDIDA de graça: Mário 16:9 `clean` × Mário 9:16 `padded` 57,8% ⇒ preenchimento é do FORNECEDOR. Ensaio consumiu 1 crédito. Ver abaixo.** |
 | 08-03 | **TELA-1** | **Diagnostico da tela "Criar video": 12 defeitos ordenados por visibilidade, NENHUM corrigido. Parte A da rodada live entregue e PARADA na 1. 2 lacunas novas: voice_id nao entra no predicado mas requireAudio exige; 3 campos diferentes descrevem "voz" no mesmo card. Zero gasto. Ver abaixo.** |
@@ -2645,6 +2651,16 @@ primeira**.
 ficaram órfãos** em `uploads/c77a5b8a-…/` e NÃO foram apagados.
 
 ### Procedimento: ler o consumo do ElevenLabs (item 3.2)
+
+> **ATUALIZAÇÃO 03/08/2026 — prefira o PAINEL a este procedimento de delta.**
+> **Desenvolvedores → Análises → Uso** discrimina **por chamada** (contagem,
+> caracteres, créditos, duração, custo em dólar) numa janela escolhida, então
+> não é preciso ler antes e depois nem subtrair nada. Foi assim que o custo da
+> voz foi fechado (ver LIVE-3): 180 car → 90 créditos → US$ 0,018. O método de
+> delta abaixo continua válido e tem uma vantagem própria — é automatizável —,
+> mas depende da permissão `user_read`, que a chave **não tem**, e é frágil
+> exatamente onde o painel é forte: qualquer síntese de terceiro na janela
+> entra no delta sem aparecer.
 
 **Endpoint de leitura, NÃO tarifado:** `GET /v1/user/subscription`. Devolve
 `character_count` e `character_limit`. Rode **antes e depois** da passada; a
@@ -5114,25 +5130,61 @@ despejaria ~325 KB no log.
 **Roteiro enviado, medido no navegador antes do envio:** 180 caracteres, 187
 bytes UTF-8, 34 palavras, `identico_ao_aprovado: true`. **Sem truncagem.**
 
-#### O delta de créditos de voz: EM ABERTO
+#### O custo da voz: FECHADO — cobrança por CARACTERE
 
-A linha de base do painel **existe e está registrada: 698 de 64.917 créditos
-utilizados**, lida pelo operador imediatamente antes do disparo. **A leitura de
-DEPOIS não foi informada** — o campo veio como placeholder não preenchido em
-três mensagens seguidas —, então o delta não foi calculado e **a hipótese
-vencedora continua indeterminada**:
+*MEDIDO em 03/08/2026. Fonte: painel ElevenLabs → Desenvolvedores → Análises →
+Uso, janela 03/08/2026 00:00–19:03 UTC-3.*
 
-| Delta | Significaria |
+| Campo do painel | Valor |
 |---|---|
-| **+180** | o ElevenLabs cobra por CARACTERE |
-| **+187** | cobra por BYTE UTF-8 |
-| +360 | o fallback teria disparado — **já descartado pelo log**, que registra uma única chamada |
+| Contagem (chamadas) | **1** |
+| Caracteres | **180** |
+| Créditos | **90** |
+| Duração | **15 s** |
+| Custo | **US$ 0,018** |
 
-**O que ESTÁ medido:** uma chamada, ramo `synthesizeWithTimestamps`, 180
-caracteres enviados sem truncagem, fallback não disparado. **O que falta é só o
-número do painel**, e ele continua obtível: o contador não anda sozinho, e
-nenhuma síntese nova aconteceu desde então. Uma leitura fecha isto sem gastar
-nada.
+**A cobrança é por CARACTERE.** A hipótese "+187 por byte" está **REPROVADA**:
+o roteiro tem 180 caracteres e 187 bytes UTF-8, e os **7 acentos não foram
+cobrados**. O "+360 do fallback" já estava descartado pelo log, que registra
+**uma única** chamada no ramo `synthesizeWithTimestamps`.
+
+**Isto é medição DIRETA, não delta.** O painel discrimina a chamada, então não
+foi preciso subtrair leituras. **A base 698 / 64.917 fica registrada como
+OBSOLETA, não como pendência** — ela era o instrumento de um método que deixou
+de ser necessário, e mantê-la na fila de pendências faria alguém ir buscar um
+número que já não decide nada.
+
+**Coerência com o LIVE-3, e ela fecha por um caminho independente:**
+180 ÷ 14,807 s = **12,16 caracteres/s** — idêntico ao ritmo de fala medido no
+artefato. O painel e o `ffprobe` chegam ao mesmo número sem se consultarem.
+
+*Nota de precisão, sem consequência:* o painel reporta **15 s** onde o nosso
+`ffprobe` mede 14,807 s e a HeyGen declara 14,7893 s. Os 15 s do ElevenLabs
+não entram em conta nenhuma — quem paga vídeo é a HeyGen, e a régua dela é a
+duração do fornecedor de vídeo (ver o item (b) acima).
+
+**Ordem de grandeza que vale guardar:** US$ 0,018 de voz contra **US$ 0,70** de
+vídeo na mesma geração — a voz é **2,5%** do custo. Otimizar caractere de
+roteiro para economizar dinheiro é esforço mal empregado; o que o comprimento
+do roteiro move de verdade é a **duração**, e é a duração que a HeyGen cobra.
+
+**DEDUZIDO — a razão de créditos é evidência indireta sobre o `model_id`.**
+O painel cobrou **0,5 crédito por caractere** (90 ÷ 180), e a mesma razão
+aparece numa segunda linha da janela (535 ÷ 1070). Meio crédito por caractere é
+a tarifa da **classe Flash/Turbo** do fornecedor, não a da família
+`eleven_multilingual_v2`, que é o default declarado em
+`ELEVENLABS_TTS_MODEL`. Ou seja: há indício de que o modelo efetivamente usado
+**não** é o que o código pensa estar pedindo.
+
+Três ressalvas que impedem isto de virar conclusão: a razão é uma propriedade
+da **tarifa**, não uma identificação do modelo; o mapeamento razão → família
+vem da tabela pública do fornecedor, não de resposta a uma chamada nossa; e o
+corpo da requisição **não é registrado por desenho** (o LOG-1 registra só a
+RESPOSTA), então nada no nosso log confirma ou desmente o que foi enviado.
+**Continua NÃO VERIFICADO**, agora com evidência indireta apontando numa
+direção — o que é diferente de não ter evidência nenhuma. Fechá-lo é barato e
+não passa por gerar áudio: basta um caminho que registre o `model_id` enviado
+(campo próprio no evento, não o corpo inteiro, que traz o texto do cliente).
 
 **Por que o painel é a única fonte:** a chave em uso **não** lê
 `GET /v1/user/subscription` — *MEDIDO:* HTTP **401**,
@@ -5184,7 +5236,18 @@ fora é ação do operador.
 
 #### Continua NÃO VERIFICADO
 
-- **O delta de créditos de voz** — ver acima; falta uma leitura do painel.
+- **As outras 4 chamadas de `/v1/text-to-speech/{voice_id}/with-timestamps`** na
+  janela de 7 dias do painel. A leitura que fechou o custo é da janela de
+  **03/08 00:00–19:03 UTC-3**, onde há **1** chamada — a nossa. As outras 4 da
+  janela larga não têm origem identificada: não se sabe de qual sessão, de qual
+  roteiro nem de qual voz vieram, e nada no nosso log as alcança (o log do
+  container é zerado a cada `up -d`). Fechá-las exige a janela de 7 dias
+  discriminada por dia, do mesmo painel.
+- **Se os 5 erros 401 do painel são todos de `/v1/user/subscription`.** É a
+  hipótese natural — a chave não tem `user_read`, e esse endpoint foi
+  exercitado —, mas o painel não discrimina o endpoint que falhou. Enquanto
+  isso não for conferido, **não se pode afirmar que nenhum 401 veio do caminho
+  de síntese**; um 401 em TTS teria outro significado inteiramente.
 - **Se a HeyGen aceita `1080p` nesta conta.** Não foi pedido nesta rodada, e
   continua sendo a única forma de saber se os 2,25× de pixels úteis medidos no
   INSTRUMENTOS-1 estão disponíveis pelo mesmo preço.
@@ -5198,3 +5261,6 @@ fora é ação do operador.
 - **`model_id` efetivamente enviado ao ElevenLabs.** Não aparece no log **por
   desenho** — só a RESPOSTA é registrada, nunca o corpo da requisição. O default
   do código é `eleven_multilingual_v2`, já aceito pelo fornecedor no 5D.
+  **Deixou de ser ausência total de evidência:** a razão de 0,5 crédito por
+  caractere medida no painel aponta para a classe Flash/Turbo — ver o DEDUZIDO
+  na subseção do custo da voz, acima.
