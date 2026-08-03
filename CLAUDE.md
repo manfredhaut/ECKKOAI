@@ -503,9 +503,12 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-03 — Bloco 5F, Parte A (a Parte B está ARMADA e
-NÃO disparada). **Preenchimento do fornecedor deixou de ser tratado como
-conteúdo.** A sonda mede a barra por perfil de luminância — `cropdetect` não
+**Última atualização:** 2026-08-03 — Bloco APRESENTACAO-1: o arnês fechou em
+**90/90 MEDIDO** (781 s), com os 5 mutantes de preenchimento provados
+nominalmente, e o ativo da Biblioteca foi **repontado** para a cópia sem barra
+branca. Ver o bloco próprio no fim. Antes dele, o Bloco 5F, Parte A (a Parte B
+continua ARMADA e NÃO disparada). **Preenchimento do fornecedor deixou de ser
+tratado como conteúdo.** A sonda mede a barra por perfil de luminância — `cropdetect` não
 serve, porque procura borda preta e a nossa é branca. *MEDIDO:* o master 9:16 de
 02/08 tem **57,8% de barra** e conteúdo útil de 720×540 (proporção 1,3333, 4:3
 exato); o master 16:9 tem 0%. A régua passou a medir o **conteúdo**, e com isso
@@ -1476,6 +1479,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-03 | **APRESENTACAO-1** | **Arnês 90/90 MEDIDO (781 s), com os 5 mutantes de preenchimento provados nominalmente pela linha de falha de cada um; prova preservada em `_prova/5f-e1e47cc/` com manifesto; ativo da Biblioteca repontado para a cópia sem barra (UPDATE 1, com REVERTER.txt); rota estática provada por curl ANTES do UPDATE; confirmado no navegador. `video_variants` não comporta duas variantes 9:16 — nada inserido. Ver abaixo.** |
 | 08-03 | **5F Parte A** | **Sonda de preenchimento por luminância (57,8% de barra no master de 02/08); régua passa a medir o conteúdo e 2 alvos mudam de veredito; recorte antes do enquadramento; `setsar=1` conserta DAR mentiroso; ativo reprocessado ao lado. Parte B armada e não disparada. 90 mutantes. Ver abaixo.** |
 | 08-03 | **5E fases 0–4** | **Custo por segundo inteiro truncado (3 medições exatas); tabela de formatos derivada da âncora de lado curto; filter_complex provado nos arquivos (0 ampliou, 0 cortou); job de derivação + schema master/variantes; lote nativo com N=N=N. ACHADO: o 9:16 da HeyGen é 57% barra branca. Fase 5 não iniciada. 85 mutantes. Ver abaixo.** |
 | 08-02 | **5D fases 1-bis a 2** | **Badge ancorado na LIGAÇÃO (não só na presença); predicado ÚNICO de prontidão consumido pela rota e pela tela; artefato do fornecedor persistido no nosso disco; `model_id` explícito no TTS; cronômetro de gravação vira meta; 2ª passada live 9:16. 74 mutantes. Ver abaixo.** |
@@ -3633,3 +3637,105 @@ docker compose up -d backend
 
 com `PROVIDER_MODE=fixture` e `PROVIDER_LIVE_CONFIRM` vazia no `.env`. Conferir
 no log: `{"event":"provider_mode","mode":"fixture","billable":false,...}`.
+
+### Bloco APRESENTACAO-1 — arnês provado e ativo repontado (2026-08-03)
+
+Ambiente em `fixture` do começo ao fim, `PROVIDER_LIVE_CONFIRM` vazia, **zero
+chamadas a fornecedor**. Nada foi construído: este bloco fecha provas e reponta
+um registro.
+
+**O arnês: 90/90 MEDIDO, não esperado.** Saída 0, **781 s** de parede
+(10:02:38 → 10:15:39 UTC). Os 5 mutantes de preenchimento estão nas posições
+**86–90** — no fim da lista, então qualquer interrupção antes disso produz um
+resultado que **não** exercita a guarda do 5F. Vale como regra ao ler um log
+truncado deste arnês: contagem parcial não diz nada sobre o 5F.
+
+**Os 5 provados NOMINALMENTE**, cada um com a linha que o reprovou, e todos
+citando a asserção de preenchimento (nenhum reprovou pelo `tsc`):
+
+| Mutante | Linha de falha (recorte) |
+|---|---|
+| sonda devolve o quadro inteiro | "a sonda **não enxergou o preenchimento** … 58% é barra branca" |
+| alvo volta a derivar do quadro | "a régua **mediu o QUADRO em vez do conteúdo** — 16:9 saiu 1136×640; sobre a imagem real é 480×270" |
+| recorte come duas linhas | "o recorte **avançou sobre o conteúdo** — pediu y=186 360×268, a imagem ocupa y=184 360×270" |
+| enquadramento sem recorte | "o filtro de derivação **NÃO leva o recorte**, mesmo com a sonda acusando barra" |
+| outros instantes (contraponto) | gate **verde** com "preenchimento: sonda conferida" presente |
+
+O `expect` obrigatório é o que separa isto de "reprovou de algum jeito": o
+arnês classifica como AMBÍGUO todo mutante que reprova sem a mensagem da
+guarda. **O que ele NÃO faz é imprimir essa linha quando o veredito é `ok`** —
+foi preciso um script à parte para colhê-la, e ele foi **descartado** em vez de
+mantido: um segundo aplicador de mutações ao lado do arnês diverge com o tempo,
+e o que divergir é o que vai mentir. Se a capacidade valer, o lugar dela é uma
+flag `--why` dentro de `run-mutants.mjs`, reusando `applyMutation`/`runGate`.
+
+**(a) Prova é write-once, nomeada por bloco E commit.** Vive em
+`uploads/_prova/<bloco>-<sha>/`, com `MANIFESTO.txt` (md5 + bytes + ffprobe de
+cada arquivo, mais o que foi medido e o que não foi). **Nenhum bloco novo
+escreve em diretório de prova de bloco fechado.** O deste bloco é
+`uploads/_prova/5f-e1e47cc/`. `uploads/*` é ignorado pelo git, então prova só
+existe **neste disco** — copiar para fora é parte de fechar um bloco, não
+zelo opcional.
+
+**(b) O schema do 5E não comporta o resultado do 5F.**
+`video_variants_video_aspect_uniq (video_id, aspect_ratio)` assume **uma
+variante por proporção**. O produto do 5F é a **mesma** proporção com conteúdo
+diferente — 9:16 com barra e 9:16 recortado, ambos 720×1280. Por isso o par de
+linhas (`generated` + `derived`) não cabe, e **nada foi inserido**: uma variante
+apontando o original com barra, ao lado de um `output_url` apontando o
+reprocessado, criaria duas fontes de verdade que se contradizem, que é pior que
+não ter registro. Chave provável: `(video_id, aspect_ratio, origin)`. **Tratar
+DEPOIS da apresentação** — é migration, não ajuste.
+
+**(c) `uploads/_5e-prova/` já não guarda a prova do 5E.** Os 4 derivados lá
+estão na **régua nova** (16:9 → 960×540, 4:5 → 720×900, 1:1 → 720×720), e os do
+master 16:9 do LIVE-1 não estão mais lá. A prova do 5E (85/85) **não é mais
+reconferível em disco**. O nome do diretório engana quem for reconferir a tabela
+daquele bloco — foi este caso que originou a regra (a).
+
+**(d) O ativo da apresentação foi repontado.** `videos.output_url` do registro
+`9d39c5ef-c8cf-4d54-b42c-79788c823250` (tenant `dev-c77a5b`, 9:16,
+`simulated=f`) passou a apontar `…-5f-recortado-9x16.mp4`. **`UPDATE 1`, um
+registro só**; nada mais tocado. O SQL exato que desfaz está em
+`uploads/_prova/5f-e1e47cc/REVERTER.txt`, e o valor anterior em
+`output_url-original.txt`.
+
+*Verificado ANTES do UPDATE, porque banco correto com rota que não serve o
+arquivo dá 404 com healthcheck verde:* a rota estática entrega o nome **com
+sufixo** — HTTP 200, `video/mp4`, `Accept-Ranges: bytes`,
+`Content-Length: 2716141` — nos dois hosts, inclusive
+`dev-c77a5b.twinai.localhost`, que é onde a Biblioteca roda. A rota serve
+`output_url` cru, sem validar contra padrão de UUID.
+
+*Verificado DEPOIS, no navegador e não no banco:* player com `readyState 4`,
+**720×1280**, `aspect-ratio` computado **9/16**, `seekable 0–16.983`,
+**159.076 bytes de áudio decodificados**, console sem erros, e — com os olhos —
+fundo desfocado no lugar da barra branca, sem badge SIMULADO.
+
+**Não existe miniatura no produto, e isto foi medido em três lugares:** a
+tabela `videos` não tem coluna de poster; o `<video>` do `VideoPlayer` não tem
+atributo `poster` (confirmado em execução: `poster === null`); e a Biblioteca é
+uma **tabela textual**, não uma grade — o player só aparece ao clicar em "Ver".
+Logo, não há imagem que possa ficar apontando para o arquivo antigo. Por
+precaução foi medido também o **primeiro quadro** (t=0) do reprocessado: **0% de
+barra**.
+
+**Nenhuma coluna derivada do arquivo ficou desatualizada.** `videos` não tem
+`size`/`bytes` nem `width`/`height`; `aspect_ratio` e `resolution` valem para os
+dois (mesmo quadro); as durações são idênticas (16,983 s). `duration_seconds=15`
+é o valor **pedido na tela** e já divergia antes deste bloco. E o rastro do
+fornecedor não dependia do `output_url`: `provider_output_url` guarda a URL
+assinada da HeyGen desde a migration 040 — ela **expira**, então serve como
+identificação, não como acesso.
+
+**(e) `GET /v2/user/remaining_quota` tem sunset em 2026-10-31** — quebra com
+data marcada, já detalhada na lacuna 3 do LIVE-1. Depois dessa data os dois
+caminhos vivos (`checkHeygenConnection` e o probe do painel) passam a falhar, e
+o sintoma será "chave inválida", que é o diagnóstico errado. Substituto:
+`GET /v3/users/me`, já exercitado com sucesso.
+
+**Continua NÃO VERIFICADO:** se o preenchimento em 9:16 é regra do fornecedor
+(só a Parte B responde, e ela segue **armada e não disparada**); se a HeyGen
+aceita `1080p` na nossa conta; e como a sonda se comporta com preenchimento não
+branco ou cena clara encostando na borda — o caminho `pending` existe para isso
+e nunca foi exercitado contra um caso real.
