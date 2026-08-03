@@ -1,5 +1,26 @@
-// tools/fov-compare.mjs — corte vs recomposição. Custo zero, só leitura.
+// tools/fov-compare.mjs — sonda de geometria de quadro. Custo zero, só leitura.
 // uso: node tools/fov-compare.mjs <master16x9.mp4> <master9x16.mp4>
+//
+// ESTE SCRIPT NÃO DECIDE corte vs recomposição. Ele já tentou, e errou.
+// O INSTRUMENTO DO VEREDITO É tools/scale-match.mjs.
+//
+// O QUE VALE AQUI: barFrac (fração de barra de preenchimento), conteudo e
+// razaoConteudo. São medições diretas de perfil de luminância, conferidas
+// contra fixture de preenchimento conhecido na guarda do 5F.
+// Sanidade no par de masters do FOV-1: 57,8% de barra e razão 1,3333 (4:3).
+//
+// O QUE NÃO VALE: headroom, sujeitoV e sujeitoH, marcados _NAO_CONFIAVEL na
+// tabela. Eles derivam de `edges()`, que devolve o primeiro/último ponto com
+// desvio-padrão acima de um limiar relativo — e nestes masters isso é mobília e
+// parede, não a pessoa. Prova de que não isolam sujeito nenhum: o bounding box
+// que eles chamam de sujeito muda de proporção 1,80 → 0,94 entre dois vídeos da
+// MESMA sala. Com eles, o veredito saía "anômalo", contradizendo a medição por
+// casamento de escala. Ficam expostos porque são o insumo de um diagnóstico
+// futuro (onde a borda de luminância está), nunca de um veredito de campo.
+//
+// O limiar EDGE_K não foi ajustado para produzir veredito nenhum: a métrica foi
+// desqualificada. Ajustar limiar até o resultado agradar é como se fabrica uma
+// medição falsa que passa por boa.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -75,12 +96,12 @@ function measure(f, tag) {
         barFrac:+(bd.barFrac*100).toFixed(1),
         conteudo: p.w+'x'+bh,
         razaoConteudo:+(p.w/bh).toFixed(4),
-        // fração da altura do conteúdo que fica ACIMA do sujeito
-        headroom:+(er.a/bh).toFixed(4),
-        // fração da altura ocupada pelo sujeito
-        sujeitoV:+((er.z-er.a)/bh).toFixed(4),
-        // fração da largura ocupada pelo sujeito
-        sujeitoH:+((ec.z-ec.a)/p.w).toFixed(4)
+        // As três abaixo NÃO medem o sujeito — ver o cabeçalho. O sufixo está
+        // no nome de propósito: é onde o aviso é lido, já que a tabela costuma
+        // ser copiada para fora sem o cabeçalho vir junto.
+        headroom_NAO_CONFIAVEL:+(er.a/bh).toFixed(4),
+        sujeitoV_NAO_CONFIAVEL:+((er.z-er.a)/bh).toFixed(4),
+        sujeitoH_NAO_CONFIAVEL:+((ec.z-ec.a)/p.w).toFixed(4)
       });
     }
   } finally { rmSync(dir,{recursive:true,force:true}); }
@@ -97,15 +118,18 @@ const A = measure(a,'a'), B = measure(b,'b');
 console.log('MASTER 16:9', a); console.log(A.probe); console.table(A.amostras);
 console.log('MASTER 9:16', b); console.log(B.probe); console.table(B.amostras);
 
-const hA = A.amostras.map(x=>x.headroom), hB = B.amostras.map(x=>x.headroom);
-const okA = agree(hA,0.04), okB = agree(hB,0.04);
-const mA = hA.reduce((s,v)=>s+v,0)/hA.length, mB = hB.reduce((s,v)=>s+v,0)/hB.length;
-const d = mB-mA;
+// Preenchimento é estático: os três quadros têm de concordar. Fronteira que se
+// move entre quadros é imagem sendo confundida com barra — mesmo critério da
+// sonda do 5F, e o único juízo que este script está em posição de emitir.
+for (const [rot, X] of [['16:9', A], ['9:16', B]]) {
+  const bf = X.amostras.map(x=>x.barFrac);
+  const m = bf.reduce((s,v)=>s+v,0)/bf.length;
+  console.log(`\npreenchimento ${rot} = ${m.toFixed(1)}% ` +
+    (agree(bf,0.5) ? '(3 quadros concordam)'
+                   : '(DIVERGEM — não conclua, pode ser imagem, não barra)'));
+  console.log(`  conteúdo ${X.amostras[0].conteudo} · razão ` +
+    `${X.amostras[0].razaoConteudo}`);
+}
 
-console.log('\nheadroom 16:9 =', mA.toFixed(4), okA?'(3 quadros concordam)':'(DIVERGEM)');
-console.log('headroom 9:16 =', mB.toFixed(4), okB?'(3 quadros concordam)':'(DIVERGEM)');
-console.log('delta =', d.toFixed(4));
-if (!okA || !okB) console.log('VEREDITO: pending — os quadros nao concordam, nao conclua.');
-else if (Math.abs(d) <= 0.03) console.log('VEREDITO: CORTE — extensao vertical preservada.');
-else if (d > 0.03) console.log('VEREDITO: RECOMPOSICAO — o 9:16 tem mais campo vertical.');
-else console.log('VEREDITO: anomalo — o 9:16 tem MENOS campo vertical que o 16:9.');
+console.log('\nCorte vs recomposição NÃO se responde aqui. Rode:');
+console.log(`  node tools/scale-match.mjs ${process.argv[2]} ${process.argv[3]} --ss <seg>`);
