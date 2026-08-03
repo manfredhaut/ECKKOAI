@@ -1342,6 +1342,17 @@ Também não entre em `/admin` pela barra de endereço: o `AdminAuthProvider`
 não revalida a sessão e cada volta consome uma das 5 tentativas/15min do
 rate limiter, fazendo parecer "senha errada".
 
+**Armadilha de PALCO no passo 1, e é a mais cara do fluxo da demo:** ao lado da
+grade de avatares existe o botão **"Novo avatar"**
+([AvatarSetupStep.tsx:259](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:259)).
+Em live, o caminho que ele abre dispara **treino de avatar** — **US$ 1,00** de
+`photo_avatar` mais **1 crédito de avatar** ([avatars.ts:212](backend/src/routes/avatars.ts:212)
+e [:193](backend/src/routes/avatars.ts:193)) — **antes** de qualquer clonagem de
+voz, ou seja **~6× o custo do vídeo planejado**, e no mesmo passo que a
+apresentação percorre. **Regra: no passo 1, clicar APENAS no card do Mário.**
+Selecionar um avatar existente nunca alcança esse caminho (é `onSelectAvatar`, e
+não preenche `draftAvatar`) — ver o aviso no topo da seção TELA-1.
+
 ### Cota de cada fornecedor — o que dá para ensaiar
 
 | Fornecedor | Estado em 2026-08-01 | O que isso permite |
@@ -4161,3 +4172,116 @@ só existe para a guarda do 5F e não entra no fluxo. O job fica 12 s em
 **Zero strings sem tradução:** as 142 chaves `t()` estáticas do fluxo existem em
 pt-BR e en, e não há literal de texto em JSX fora de `t()`. Os defeitos 2, 3, 5
 e 7 são textos **traduzidos e errados**, não faltantes.
+
+#### NÃO VERIFICADO — em aberto
+
+Três itens, cada um com o motivo de continuar aberto. Nenhum é bug: são coisas
+que ninguém provou, e a diferença entre "não provado" e "provado que funciona"
+é o que este bloco existe para preservar.
+
+**1. O ElevenLabs recusando um `voice_id` inválido com 4xx — leitura de código,
+NUNCA observado.** O ramo existe e está lido: `with-timestamps` não-ok cai no
+fallback ([voiceProvider.ts:219](backend/src/services/providers/voiceProvider.ts:219))
+e um 4xx ali lança `VoiceProviderError`
+([:242](backend/src/services/providers/voiceProvider.ts:242)) — em nenhum
+desfecho há criação de voz. O que falta é uma resposta real do fornecedor nessa
+forma.
+
+**Fechar isso hoje ficou CARO, e o encarecimento veio de outra medição desta
+mesma rodada:** a síntese roda **DENTRO** do `withLiveBudget` de `generateVideo`
+([avatarProvider.ts:655](backend/src/services/providers/avatarProvider.ts:655)),
+então um teste deliberado exige o ambiente em **live** e **consome uma TENTATIVA
+do teto** — que, medido no item 1e desta rodada, **não volta** (`attempted` é
+incrementado em [liveGuard.ts:193](backend/src/services/providers/liveGuard.ts:193)
+e nenhuma linha do módulo o decrementa; `releaseLiveGeneration` mexe só em `used`
+e `consumedBy`, [:218-219](backend/src/services/providers/liveGuard.ts:218)).
+**Não testar com o crédito de vídeo em 2** — a tentativa gasta é margem da
+apresentação, e o teste não entrega vídeo nenhum.
+
+**2. Tensão `liveGuard.ts:255` × `avatarProvider.ts:659` — FECHADO.** Não eram
+duas verdades sobre pontos diferentes: a segunda é **registro obsoleto**. Hoje
+[avatarProvider.ts:659](backend/src/services/providers/avatarProvider.ts:659) é
+**linha vazia**, entre o fim de `generateVideo` ([:658](backend/src/services/providers/avatarProvider.ts:658))
+e `pollVideoJob` ([:660](backend/src/services/providers/avatarProvider.ts:660));
+o `consumeLiveGeneration` que existia ali saiu no bloco TETO-1 e hoje tem **um
+único** call site em produção, dentro de `withLiveBudget`
+([liveGuard.ts:248](backend/src/services/providers/liveGuard.ts:248)) — nenhuma
+rota ou provider o chama direto.
+
+Falha do fornecedor **antes do aceite**, dentro de `generateVideoHeygen`:
+
+| O quê | Desfecho | Linha |
+|---|---|---|
+| Gasto do teto | **VOLTA** | [liveGuard.ts:255](backend/src/services/providers/liveGuard.ts:255) → decremento em [:219](backend/src/services/providers/liveGuard.ts:219) |
+| Tentativa do teto | **NÃO VOLTA** | incrementada em [liveGuard.ts:193](backend/src/services/providers/liveGuard.ts:193); nenhum decremento existe |
+| Crédito `video` | **VOLTA (estorno)** | débito [videos.ts:589](backend/src/routes/videos.ts:589), estorno [:657](backend/src/routes/videos.ts:657) |
+| `provider_usage` | **linha NOVA de falha**, `unit_count = 0` | [videos.ts:688](backend/src/routes/videos.ts:688) → [usageTracking.ts:95](backend/src/services/billing/usageTracking.ts:95) |
+
+**O que NENHUMA das duas afirmações cobre, e continua aberto:** as falhas
+**depois do aceite** — polling, artefato inválido, timeout. Elas rodam em
+`pollJob` (`setInterval`), **fora** do `withLiveBudget`, que já retornou: o gasto
+não volta, o crédito **não** é estornado (fronteira deliberada do ESTORNO-1) e
+`provider_usage` grava falha. Deliberado. **O que não é deliberado é o desfecho
+E do 4A:** se o processo reiniciar entre a criação e o polling, o `setInterval`
+morre e o vídeo fica preso em `queued` **para sempre, sem linha de falha**.
+
+**E um caso de fronteira que o próprio módulo declara** ([liveGuard.ts:207-213](backend/src/services/providers/liveGuard.ts:207)):
+se a síntese de voz teve SUCESSO e a criação do vídeo falhou depois, o gasto é
+devolvido embora tenha havido custo parcial real — e a linha de voz já gravada em
+[avatarProvider.ts:166](backend/src/services/providers/avatarProvider.ts:166)
+**não** é revertida. O teto é trava de segurança, não contabilidade.
+
+**O teto é estado em MEMÓRIA do processo** — `let used` / `let attempted`
+([liveGuard.ts:103](backend/src/services/providers/liveGuard.ts:103) e
+[:114](backend/src/services/providers/liveGuard.ts:114)), sem `pool.query` nem
+escrita em arquivo em nenhum ponto do módulo. Portanto **SIM**:
+`docker compose restart backend` **zera os dois contadores**, porque o processo é
+novo e o módulo é recarregado. É por isso que reiniciar é a saída documentada
+quando as tentativas acabam no meio de uma passada.
+
+**3. Backup em máquina única — bundle gerado, e ele AINDA NÃO é backup.**
+Bundle completo do repositório em 03/08, HEAD `163d17a`:
+
+```
+C:\Users\manfr\AppData\Local\Temp\eckkoai-163d17a-20260803.bundle
+9.198.904 bytes · md5 bceb3b4a0912687a5a7b25e0a86b3795
+```
+
+`git bundle verify`: *is okay*, **história completa**, 2 refs
+(`refs/heads/master` + `HEAD`), sha1 — e `git tag` devolve **0**, então `--all`
+não deixou ref de fora. **Ele só vira backup depois de SAIR desta máquina:
+copiá-lo para outro disco é ação do operador, não da sessão** — hoje o bundle
+está no mesmo disco que o repositório que ele deveria proteger.
+
+**O que o bundle NÃO contém:** `uploads/` inteiro, exceto `uploads/.gitkeep` —
+é o único arquivo versionado ali. **58 MB** ignorados ficam de fora, incluindo as
+duas provas que nenhum outro lugar guarda: **`uploads/_prova/5f-e1e47cc/` (14 MB,
+11 arquivos)** e **`uploads/_prova/fov/` (1,8 MB, 3 arquivos)**, mais
+`uploads/_5e-prova/` (13 MB, já sobrescrito e não mais reconferível) e
+`uploads/c77a5b8a-…/` (29 MB, onde vivem os masters reais e o ativo repontado da
+apresentação). **Bundle e prova são dois backups distintos; este item cobre só o
+primeiro.**
+
+#### Extrato apresentação 03/08/2026
+
+Texto aprovado para a lacuna do fornecedor de áudio. Escrito em linguagem de
+negócio de propósito — é para ser lido em voz alta ou colado num slide, não para
+orientar código.
+
+> **Lacuna registrada: recusa de voz inválida pelo fornecedor de áudio.**
+> Não provamos, contra o fornecedor real, o que acontece quando a voz configurada
+> é inválida — temos só a leitura do código, que mostra o erro sendo capturado e a
+> geração interrompida, sem criar voz nova
+> ([voiceProvider.ts:242](backend/src/services/providers/voiceProvider.ts:242)).
+> Não provamos hoje porque outra medição desta mesma rodada encareceu o teste: a
+> síntese de voz roda dentro do mesmo limite de segurança que protege a geração de
+> vídeo ([avatarProvider.ts:655](backend/src/services/providers/avatarProvider.ts:655)),
+> de modo que forçar a recusa exige ambiente de produção e consome uma tentativa
+> desse limite — que não é devolvida e não entrega vídeo nenhum.
+> A lacuna está registrada e classificada como "não verificado, em aberto", com o
+> caminho de fechamento escrito. Não é um item esquecido: é um item datado.
+
+**Legenda de uma frase:** *A recusa de voz inválida está verificada no nosso
+código, mas nunca contra o fornecedor real — e provar isso passou a exigir
+ambiente de produção, então a lacuna ficou registrada e classificada, não
+esquecida.*
