@@ -503,7 +503,13 @@ rodada:
 
 ## 7. Status atual (atualize ao FIM de cada sessão)
 
-**Última atualização:** 2026-08-03 — Bloco APRESENTACAO-1: o arnês fechou em
+**Última atualização:** 2026-08-03 — **Bloco TELA-1 (sessão interrompida a
+pedido do usuário; troca de conta).** Se você acabou de assumir este projeto,
+**vá direto à seção TELA-1, no fim deste arquivo**: ela tem o diagnóstico da
+tela "Criar vídeo" (12 defeitos, nenhum corrigido) e a rodada live **ARMADA e
+NÃO disparada**, parada na PARADA 1 por 3 decisões do usuário — a primeira
+sendo que **10 s não existe no seletor, o mínimo é 15 s**. Zero gasto, ambiente
+em `fixture`. Antes dele, INSTRUMENTOS-1 e APRESENTACAO-1: o arnês fechou em
 **90/90 MEDIDO** (781 s), com os 4 mutantes de preenchimento que PROVAM a
 guarda (86–89) mais 1 controle de robustez (90, que passa verde) provados
 nominalmente, e o ativo da Biblioteca foi **repontado** para a cópia sem barra
@@ -1481,6 +1487,7 @@ só para responder "isso já foi feito?".
 | 07-31 | PENDENCIAS-1 (parcial) | Galeria `/dev/steps`, proteção da carteira contra `live` acidental. **Partes 3, 4 e 5 não feitas** |
 | 08-01 | CHAVES-1 | `npm run set-key`: grava chave no `.env` por stdin, sem eco |
 | 08-01 | **CHAVES-2** | **Chaves da plataforma cifradas no banco, resolvidas por requisição, com tela no admin. Ver abaixo.** |
+| 08-03 | **TELA-1** | **Diagnostico da tela "Criar video": 12 defeitos ordenados por visibilidade, NENHUM corrigido. Parte A da rodada live entregue e PARADA na 1 — 3 decisoes travam a partida (10 s nao existe, minimo 15 s). 2 lacunas novas: voice_id nao entra no predicado mas requireAudio exige; 3 campos diferentes descrevem "voz" no mesmo card. Zero gasto. Ver abaixo.** |
 | 08-03 | **INSTRUMENTOS-1** | **`tools/scale-match.mjs` commitado (vivia em scratchpad efemero); headroom/sujeitoV/sujeitoH do fov-compare DESQUALIFICADOS (bounding box muda 1,80→0,94 na mesma sala) e o veredito automatico removido; barFrac passa a cobrar concordancia de 3 quadros. Sanidade 57,8/1,3333 batendo nos dois. Achado: existem DOIS masters 16:9 de 1280x720 e o do FOV-1 e o de 33,696 s (`61caaab1`), nao o do LIVE-1. MEDIDO que 1080p daria 2,25x mais pixels uteis pelo mesmo preco e que seus alvos sao os 4 numeros da politica do 5E — nada alterado. Ver abaixo.** |
 | 08-03 | **FOV-1** | **O 9:16 e RECOMPOSICAO, nao corte — MEDIDO por casamento de escala em dois masters que ja estavam em disco, custo zero: mesma largura de campo, 33% mais campo vertical. A chave do catalogo e (avatar, formato_pedido) e a migration por combinacao E necessaria. 2 dos 4 videos do Mario ja dao 403: a evidencia do fornecedor apodrece. Ver abaixo.** |
 | 08-03 | **APRESENTACAO-1** | **Arnês 90/90 MEDIDO (781 s), com os 4 mutantes de preenchimento que provam a guarda mais 1 controle, nominais pela linha de falha de cada um; prova preservada em `_prova/5f-e1e47cc/` com manifesto; ativo da Biblioteca repontado para a cópia sem barra (UPDATE 1, com REVERTER.txt); rota estática provada por curl ANTES do UPDATE; confirmado no navegador. `video_variants` não comporta duas variantes 9:16 — nada inserido. Ver abaixo.** |
@@ -3897,3 +3904,149 @@ decisão — mudá-la altera o que se pede ao fornecedor em toda geração.
 Copiá-lo para fora da máquina é **responsabilidade do usuário** e continua
 **PENDENTE**. Precedente que mostra o custo: `uploads/_5e-prova/` foi
 sobrescrito e a prova do 5E já **não é reconferível em disco**.
+
+### TELA-1 — diagnóstico de "Criar vídeo" + rodada live ARMADA (2026-08-03)
+
+**LEIA ISTO PRIMEIRO SE VOCÊ ACABOU DE TROCAR DE CONTA.** Esta seção é o fio da
+meada de uma sessão interrompida a pedido do usuário ("pare tudo"), na véspera
+de uma apresentação. **Nada foi gasto, nada foi disparado, nada foi corrigido.**
+
+Ambiente ao fim: `PROVIDER_MODE=fixture`, `PROVIDER_LIVE_CONFIRM` vazia, árvore
+limpa, gate verde, **zero chamadas a fornecedor**. Crédito do tenant de demo
+intacto (`video=2`), 5 avatares, 9 vídeos — nada gerado, nada excluído.
+
+#### A rodada live está ARMADA e NÃO disparada — 3 decisões travam a partida
+
+O usuário planejou **um único vídeo real** (HeyGen + a voz já clonada do Mário)
+com paradas obrigatórias: Parte A (leitura) → **PARADA 1** → Parte B (pré-voo) →
+**PARADA 2, em que O USUÁRIO vira o `.env` para live** → Parte C (disparo) →
+Parte D (medição) → **PARADA 3, em que O USUÁRIO devolve `fixture`**.
+
+**A Parte A foi entregue. Paramos na PARADA 1.** Três respostas faltam, e sem
+elas não se passa para a Parte B:
+
+1. **A duração: 10 s NÃO EXISTE.** O seletor do passo 4 oferece `15 | 30 | 60`
+   ([DurationStep.tsx:4](frontend/src/pages/CreateVideo/steps/DurationStep.tsx:4)),
+   sem campo livre. O mínimo é **15 s** (estimativa US$ 0,75). O usuário pediu
+   um diretório de prova chamado `live-10s-03082026/` — precisa confirmar 15 s.
+2. **O nome do diretório de prova**, por causa do item 1: `live-10s-…` diria
+   10 s com um vídeo de 15 s dentro. **Nada foi criado em `uploads/_prova/`.**
+3. **O roteiro.** Proposta de 35 palavras (o alvo do próprio sistema para 15 s),
+   pendente de aprovação.
+
+**Regras que o usuário fixou para essa rodada:** não clicar em "Gerar com IA"
+(em live chama o Gemini de verdade); **se falhar, PARAR e não retentar**; baixar
+o mp4 ANTES de medir qualquer coisa (o `output_url` é CDN e expira — 2 vídeos
+deste tenant já morreram em 403); e não pedir 9:16, 4:5, 1:1 nem 1080p.
+
+#### Parte A — o levantamento, todo MEDIDO
+
+**Predicado nos 5 avatares** (`evaluateGenerationReadiness` executado de
+verdade, não lido):
+
+| Avatar | Blockers | Liberado |
+|---|---|---|
+| **Mário** (`983c7de4`) | — | **sim** |
+| **TESTE REAL 15:40 01/08** (`7557957c`) | — | **sim** |
+| test um · teste 12 · teste | `avatar_not_trained` | não |
+
+Mário: `provider_avatar_id=45528bb8bf914899b12403e6d50cb780`,
+`voice_id=wAd9MJ2IK71FGs1FWjIX`, `provider_engines` NULL.
+Reserva TESTE REAL: `6f60dca9f15b4ef48b6f137cfb0734ce` /
+`5Qfze6o4PjDKPpAI4Ux4`. **Serve como reserva TÉCNICA** (passa os 8 blockers);
+como reserva **de qualidade é desconhecida** — voz nunca escutada em registro
+nenhum, e se o avatar ainda existe no fornecedor é NÃO VERIFICADO.
+
+**Payload com YouTube — MEDIDO no montador real** (`resolveVideoFormat`):
+`{"platform":"youtube","aspectRatio":"16:9","resolution":"720p"}`. Sem `engine`
+(flag desligada + `provider_engines` NULL ⇒ razão `default_no_declaration`).
+
+**Custo:** estimativa = `billedSecondsFor(pedido) × US$ 0,05`. Medido:
+15 s → **US$ 0,75** · 30 s → 1,50 · 60 s → 3,00. Truncagem conferida:
+`14,6 s → 14` e `15,9 s → 15`. A cobrança usa a duração **ENTREGUE**
+(`unit_count` + `unit_source`, com `requested_unit_count` ao lado).
+
+**Crédito:** debitado em [videos.ts:589](backend/src/routes/videos.ts:589),
+**antes** de `generateVideo`, e **igual em live** — `isFixtureMode()` só decide
+a coluna `simulated` do ledger, nunca o `delta`. Depois do disparo sobra **1**.
+Reposição consistente: `npm run dev:grant-credits -- --slug dev-c77a5b --video N`
+(saldo + ledger na mesma transação). `UPDATE` manual é o que desalinha, e é a
+causa do ledger de vídeo em **−2** deste banco.
+
+**Voz — o fluxo de vídeo NÃO pode clonar.** `cloneVoice` tem **um único** call
+site em todo o backend: [avatars.ts:266](backend/src/routes/avatars.ts:266),
+dentro de `POST /avatars/:id/reference-video`. `requireAudio` usa o `voiceId`
+existente ([avatarProvider.ts:165](backend/src/services/providers/avatarProvider.ts:165)).
+Caminho feliz: **1** chamada ao ElevenLabs (a 2ª é fallback condicional), mais
+`POST /v3/assets` + `POST /v3/videos` + N pollings no HeyGen. A síntese roda
+**dentro** do `withLiveBudget` de `generateVideo`
+([avatarProvider.ts:655](backend/src/services/providers/avatarProvider.ts:655)):
+o disparo custa **1 unidade de gasto + 1 tentativa**, não duas.
+
+**Premissa DEDUZIDA que precisa ficar visível:** `wordsPerMinute: 140`
+([scriptDuration.ts:35](backend/src/services/script/scriptDuration.ts:35)), que
+o próprio código chama de "o número mais chutado dos três". As duas medições
+reais de TTS do projeto divergem 27% entre si (206 car → 17,6 s = 11,7 car/s;
+50 car → 3,372 s = 14,8 car/s), então 35 palavras dá uma faixa esperada de
+**12,8 a 16,2 s** ⇒ US$ 0,60 a 0,80 contra estimativa de 0,75.
+
+#### DUAS LACUNAS NOVAS, achadas na Parte A e NÃO corrigidas
+
+1. **`voice_id` não é verificado pelo predicado, mas `requireAudio` exige.** O
+   selo "Voz clonada" lê `a.voice_id`; `evaluateGenerationReadiness` **não** o
+   consulta (o comentário diz que voz é opcional por desenho), e
+   [avatarProvider.ts:160](backend/src/services/providers/avatarProvider.ts:160)
+   **lança** sem ele. Consequência: um avatar treinado sem `voice_id` passa o
+   predicado, o botão libera, e a geração falha **depois de debitar crédito**.
+   Não afeta o disparo planejado (os dois liberados têm voz).
+2. **Três campos diferentes descrevem "voz" no MESMO card.** A linha
+   `"3/3 fotos · voz pronta"` usa `a.reference_video_url`
+   ([AvatarSetupStep.tsx:302](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:302)),
+   o selo "Voz clonada" usa `a.voice_id`
+   ([:313](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:313)), e o
+   servidor não olha nenhum dos dois. O selo "Avatar treinado" (`provider_avatar_id`)
+   **é** o mesmo campo do servidor e concorda.
+
+#### Diagnóstico da tela "Criar vídeo" — 12 defeitos, ordenados por o que a PLATEIA vê
+
+Rodada de diagnóstico anterior, **sem nenhuma correção aplicada** por decisão
+do usuário. Tudo MEDIDO no navegador em fixture.
+
+| # | Defeito | Onde | Min | Tipo |
+|---|---|---|---|---|
+| 1 | **4 avatares de teste na grade e o Mário em ÚLTIMO** (a lista vem do mais recente para o mais antigo) | passo 1 | ~3 | **dados** — excluir é irreversível (ver abaixo) |
+| 2 | Parágrafo promete **"escolha um fundo e ajuste a intensidade"**; não existe controle nesta tela e a flag está desligada | passo 1 (2 telas) | ~2 | **texto** |
+| 3 | **"Selecione um avatar acima"** — os avatares estão ABAIXO do botão (`nextButton` é renderizado na [linha 263](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:263), antes da grade) | passo 1 | ~1 | **texto** |
+| 4 | **"Gerar com IA" escreve jargão sobre `PROVIDER_MODE`** no roteiro que a plateia lê ([fixtureProvider.ts:336](backend/src/services/providers/fixtureProvider.ts:336)) | passo 2, se clicado | ~5 | **texto** |
+| 5 | Tela **nega que o vertical foi conferido** em vídeo real — foi, em 02/08 (`publish.notVerified`) | passo 5 | ~3 | **texto** |
+| 6 | **"US$ 1.5"** em vez de "US$ 1,50" (função `usd` em `VideoCostPanel`) | passos 4 e 6 | ~5 | comportamento |
+| 7 | Dois rótulos **"Enviar imagem de referência"** idênticos, cada um ANTES do campo que diz a qual coluna pertence | passo 3 | ~3 | **texto** |
+| 8 | Avatar inválido percorre **5 passos** e só é barrado no 6 | 1→6 | ~20 | comportamento |
+| 9 | **"Excluir" sempre visível no card**; `DELETE /avatars/:id` faz hard delete **e dá `unlink` nos arquivos** ([avatars.ts:105](backend/src/routes/avatars.ts:105)), sem `deleted_at` | passo 1 | ~15 | comportamento |
+| 10 | **F5 perde o progresso** (estado em `useState`) | qualquer | ~40 | comportamento |
+| 11 | Cards e chips **sem nome acessível** (`<button>` aninhado em `div role="button"`) | passos 1 e 5 | ~10 | comportamento |
+| 12 | Painel de custo **desaparece sem aviso** se a rota falhar (`if (!cost) return null`) | passos 4 e 6 | ~5 | comportamento |
+
+Os cinco defeitos de **texto** (2, 3, 4, 5, 7) somam ~14 min, são reversíveis, e
+**nenhum exige `docker compose build`** — frontend pede `restart frontend` se o
+HMR não pegar; o nº 4 é backend e pede `restart backend`.
+
+**Fatos estruturais MEDIDOS da tela, que valem como referência:** as abas do
+`step-indicator` **não são clicáveis** (`<div>`, `role: null`, `tabIndex: -1`,
+sem `onClick`) e `goNext/goBack` são ±1 com clamp — **não há como pular para o
+passo 6**. O card de avatar é selecionado pelo **card inteiro**
+([:293](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:293)), sem
+controle próprio, com `stopPropagation` no Excluir. Selecionado, ele ganha borda
+verde `#9CEE06`, `borderLeftWidth: 8px` e halo — medido, com `borderWidth`
+saindo **2,4px** onde o código pede 3px (causa não investigada).
+
+**Em fixture, o artefato entregue com YouTube é
+`backend/fixtures/simulated-video-16x9.mp4`** (640×360), escolhido **só** pela
+proporção — **nenhuma relação com o roteiro digitado**. Medido com a sonda real
+(`probePadding`): veredito `clean`, **0% de barra**. A fixture `padded` (57,8%)
+só existe para a guarda do 5F e não entra no fluxo. O job fica 12 s em
+`processing`, com polling de 2 s.
+
+**Zero strings sem tradução:** as 142 chaves `t()` estáticas do fluxo existem em
+pt-BR e en, e não há literal de texto em JSX fora de `t()`. Os defeitos 2, 3, 5
+e 7 são textos **traduzidos e errados**, não faltantes.
