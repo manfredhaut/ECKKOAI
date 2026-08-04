@@ -14,7 +14,13 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
 import { loadDocsFor } from "../services/docs.js";
-import { DOCS_EXCLUDED, DOCS_MANIFEST, type DocAudience } from "../services/docsManifest.js";
+import {
+  DOCS_EXCLUDED,
+  DOCS_EXCLUDED_PREFIXES,
+  DOCS_MANIFEST,
+  isDocExcluded,
+  type DocAudience,
+} from "../services/docsManifest.js";
 import { checkEnvironmentPolicy } from "./checkEnvironmentPolicy.js";
 import { checkProviderPolicy } from "./checkProviderPolicy.js";
 import { checkPlatformKeyPolicy } from "./checkPlatformKeyPolicy.js";
@@ -65,6 +71,19 @@ export const MUTANTS: Mutant[] = [
     find: `  "screens/painel.md": "tenant",`,
     replace: "",
     expect: "não está em DOCS_MANIFEST nem em DOCS_EXCLUDED",
+  },
+  {
+    guard: "classificação de docs",
+    name: "arquivo do histórico é classificado e vaza para o copiloto",
+    kind: "esperto",
+    // A guarda de "todo arquivo classificado ou excluído" continua verde: o
+    // arquivo passa a estar CLASSIFICADO, que é uma das duas saídas que ela
+    // aceita. Só a asserção 1b — a que proíbe classificar sob prefixo
+    // excluído — separa "está catalogado" de "pode ser lido pelo copiloto".
+    file: "backend/src/services/docsManifest.ts",
+    find: `  "screens/painel.md": "tenant",`,
+    replace: `  "screens/painel.md": "tenant",\n  "historico/03-blocos-fechados.md": "admin",`,
+    expect: "vive sob",
   },
   {
     guard: "deny-list",
@@ -181,7 +200,7 @@ async function main(): Promise<void> {
 
   // --- 1. every file on disk is classified or explicitly excluded --------
   for (const file of onDisk) {
-    if (!(file in DOCS_MANIFEST) && !DOCS_EXCLUDED.includes(file)) {
+    if (!(file in DOCS_MANIFEST) && !isDocExcluded(file)) {
       fail(
         "classificação",
         `docs/${file} não está em DOCS_MANIFEST nem em DOCS_EXCLUDED. ` +
@@ -189,7 +208,27 @@ async function main(): Promise<void> {
       );
     }
   }
-  note(`${onDisk.length} arquivos em docs/, ${Object.keys(DOCS_MANIFEST).length} classificados, ${DOCS_EXCLUDED.length} excluídos de propósito`);
+  // --- 1b. nada sob prefixo excluído pode estar CLASSIFICADO -------------
+  //
+  // O buraco que a exclusão por prefixo abriria: `historico/` deixa de exigir
+  // classificação um por um, e alguém "resolve" um vermelho futuro
+  // classificando o arquivo — que é exatamente como o conteúdo chegaria ao
+  // copiloto. O prefixo economiza manutenção; esta asserção é o que impede que
+  // ele vire porta de entrada.
+  for (const classificado of Object.keys(DOCS_MANIFEST)) {
+    const prefixo = DOCS_EXCLUDED_PREFIXES.find((p) => classificado.startsWith(p));
+    if (prefixo) {
+      fail(
+        "classificação",
+        `docs/${classificado} está em DOCS_MANIFEST, mas vive sob "${prefixo}", que é excluído de ` +
+          "todo copiloto. Esse diretório guarda memória de ENGENHARIA — medições de custo, nomes de " +
+          "variáveis de chave, defeitos em aberto — e não documentação de produto. Classificar um " +
+          "arquivo dali o entrega ao copiloto.",
+      );
+    }
+  }
+
+  note(`${onDisk.length} arquivos em docs/, ${Object.keys(DOCS_MANIFEST).length} classificados, ${DOCS_EXCLUDED.length} excluído(s) por nome e ${DOCS_EXCLUDED_PREFIXES.length} diretório(s) por prefixo (${DOCS_EXCLUDED_PREFIXES.join(", ")})`);
 
   // --- 2. no manifest entry points at a file that does not exist ---------
   for (const entry of Object.keys(DOCS_MANIFEST)) {

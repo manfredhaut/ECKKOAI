@@ -87,3 +87,27 @@ export const DOCS_EXCLUDED: readonly string[] = [
   // summarizes files at every level, admin included — see the note above.
   "README.md",
 ];
+
+/**
+ * Diretórios inteiros que NUNCA chegam a copiloto nenhum.
+ *
+ * Existe por causa de `historico/`, criado em 2026-08-04 quando o CLAUDE.md foi
+ * partido em duas camadas. São memórias de ENGENHARIA — decisões de custo,
+ * medições contra fornecedor, nomes de variáveis de chave, defeitos em aberto —
+ * e não documentação de produto. O manifesto é uma allowlist, então nada aqui
+ * alcançaria um copiloto de qualquer forma; o que este prefixo faz é impedir
+ * que a guarda de classificação cobre um por um a cada bloco novo, e que
+ * alguém "resolva" o vermelho classificando o arquivo — que é justamente como
+ * o conteúdo vazaria.
+ *
+ * A lição que sustenta isto está registrada no histórico: **um índice é tão
+ * confidencial quanto o item mais confidencial que ele indexa.** Foi assim que
+ * o README de `docs/` chegou a vazar os nomes de `docs/admin/`.
+ */
+export const DOCS_EXCLUDED_PREFIXES: readonly string[] = ["historico/"];
+
+/** Um arquivo de `docs/` está deliberadamente fora de todo copiloto? */
+export function isDocExcluded(relativePath: string): boolean {
+  if (DOCS_EXCLUDED.includes(relativePath)) return true;
+  return DOCS_EXCLUDED_PREFIXES.some((prefixo) => relativePath.startsWith(prefixo));
+}
