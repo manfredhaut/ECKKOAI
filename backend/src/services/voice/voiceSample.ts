@@ -43,15 +43,64 @@ export const RECOMMENDED_SAMPLE_SECONDS = 90;
  * camada invente um segundo número — a divergência entre dois tetos só
  * apareceria com o arquivo já enviado, no 413.
  *
- * NOTA de folga, para quem for mexer: a rota transcodifica a amostra para mp3
- * mono 128 kbps antes de enviar (`normalizeVoiceSample`), e nesse formato 120 s
- * ocupam ~1,9 MB. Ou seja, o teto que morde na prática é o do arquivo QUE
- * CHEGA — um WAV de 2 minutos tem ~10,6 MB e é recusado aqui, mesmo cabendo
- * folgado depois de convertido. Mantido assim de propósito: o teto declarado é
- * o do fornecedor, e afrouxá-lo com base na conversão faria a recusa depender
- * de um passo que ainda não aconteceu.
+ * NOTA de folga — MUDOU no HIGIENE-1 e agora morde dos DOIS lados. Enquanto a
+ * rota convertia para mp3 128 kbps, o arquivo enviado ao fornecedor era sempre
+ * pequeno (120 s ≈ 1,9 MB) e só o arquivo QUE CHEGA podia estourar. Agora a
+ * conversão é para WAV PCM 16 bit sem perda (ver `voiceSampleAudio.ts`), que a
+ * 48 kHz mono ocupa ~5,5 MB por minuto: uma captura webm/opus de 2:33 — leve na
+ * entrada, 2,4 MB, e já exercitada de verdade no E2E-1 — vira ~14,0 MB depois
+ * de convertida e passa a NÃO caber no destino.
+ *
+ * Por isso existe `checkNormalizedSampleSize`, aplicada ao arquivo CONVERTIDO
+ * antes de qualquer chamada ao fornecedor. As duas checagens medem coisas
+ * diferentes e as duas são necessárias: esta protege a banda de quem sobe, a
+ * outra protege o slot.
  */
 export const VOICE_SAMPLE_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * GUARDA D (segunda metade) — o arquivo CONVERTIDO cabe no destino?
+ *
+ * Sem perda tem preço, e o preço é tamanho. A recusa precisa acontecer aqui,
+ * antes da leitura de slots e muito antes da clonagem, por um motivo já pago
+ * neste projeto: a recusa do fornecedor chega como um 4xx indistinguível dos
+ * outros, depois de a tentativa ter sido gasta.
+ *
+ * A mensagem diz a DURAÇÃO a mirar, e não os bytes. Ninguém que acabou de
+ * gravar sabe converter megabyte em segundo de fala, e o único controle que a
+ * pessoa tem na mão é falar menos tempo.
+ */
+export interface NormalizedSizeInput {
+  bytes: number;
+  /** Taxa efetiva da conversão, em Hz. `null` quando não foi possível medir. */
+  sampleRateHz: number | null;
+  maxBytes?: number;
+}
+
+export function checkNormalizedSampleSize(input: NormalizedSizeInput): {
+  ok: boolean;
+  code?: string;
+  message?: string;
+} {
+  const maxBytes = input.maxBytes ?? VOICE_SAMPLE_MAX_BYTES;
+  if (input.bytes <= maxBytes) return { ok: true };
+
+  // Bytes por segundo do formato de saída: 2 bytes por amostra (16 bit), mono.
+  // Sem taxa medida a conta usa 48 kHz, o valor do MediaRecorder — errar para o
+  // lado do formato mais pesado dá um alvo conservador, que é o certo aqui.
+  const hz = input.sampleRateHz ?? 48000;
+  const segundosQueCabem = Math.floor(maxBytes / (hz * 2));
+  return {
+    ok: false,
+    code: "sample_too_large_converted",
+    message:
+      `A gravação é boa, mas não cabe no envio: convertida para áudio sem perda ela fica com ` +
+      `${(input.bytes / (1024 * 1024)).toFixed(1)} MB, e o provedor de voz aceita no máximo ` +
+      `${(maxBytes / (1024 * 1024)).toFixed(0)} MB. Grave até cerca de ${segundosQueCabem} segundos ` +
+      `(o mínimo é ${MIN_SAMPLE_SECONDS} s e o recomendado, ${RECOMMENDED_SAMPLE_SECONDS} s). ` +
+      "A amostra que você acabou de enviar continua salva.",
+  };
+}
 
 /**
  * GUARDA C — vozes que nenhum caminho substitui sem flag explícita.

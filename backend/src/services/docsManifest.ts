@@ -91,20 +91,32 @@ export const DOCS_EXCLUDED: readonly string[] = [
 /**
  * Diretórios inteiros que NUNCA chegam a copiloto nenhum.
  *
- * Existe por causa de `historico/`, criado em 2026-08-04 quando o CLAUDE.md foi
- * partido em duas camadas. São memórias de ENGENHARIA — decisões de custo,
- * medições contra fornecedor, nomes de variáveis de chave, defeitos em aberto —
- * e não documentação de produto. O manifesto é uma allowlist, então nada aqui
- * alcançaria um copiloto de qualquer forma; o que este prefixo faz é impedir
- * que a guarda de classificação cobre um por um a cada bloco novo, e que
- * alguém "resolva" o vermelho classificando o arquivo — que é justamente como
- * o conteúdo vazaria.
+ * **Hoje está vazio, e isso é a notícia boa.** O único ocupante era
+ * `historico/`, criado em 2026-08-04 quando o CLAUDE.md foi partido em duas
+ * camadas: memória de ENGENHARIA — decisões de custo, medições contra
+ * fornecedor, nomes de variáveis de chave, defeitos em aberto — morando dentro
+ * da mesma árvore que a documentação de produto. Em 2026-08-04 (HIGIENE-1) ele
+ * saiu de `docs/` inteiro e virou `docs-internal/`, na RAIZ do repositório.
+ *
+ * A diferença é de natureza, não de grau. Enquanto morava em `docs/`, o
+ * histórico dependia de uma REGRA para não vazar: o manifesto é allowlist, o
+ * prefixo era cinto, a asserção 1b do gate era suspensório. Fora de `docs/`,
+ * ele deixa de estar no caminho de qualquer varredura — o container do backend
+ * monta `./docs:/app/docs:ro` e mais nada, então o arquivo sequer existe do
+ * lado de dentro. Regra que não precisa ser obedecida não pode ser esquecida.
+ *
+ * O mecanismo fica de pé, vazio, por dois motivos: (1) o dia em que um
+ * diretório inteiro precisar ser barrado DENTRO de `docs/`, a barreira já
+ * existe e já é testada; (2) a asserção que proíbe classificar arquivo sob
+ * prefixo excluído continua no gate, agora como redundância declarada e não
+ * como única barreira. O arnês prova que ela não apodreceu — ver o mutante
+ * `prefixo excluído volta a valer sobre um arquivo já classificado`.
  *
  * A lição que sustenta isto está registrada no histórico: **um índice é tão
  * confidencial quanto o item mais confidencial que ele indexa.** Foi assim que
  * o README de `docs/` chegou a vazar os nomes de `docs/admin/`.
  */
-export const DOCS_EXCLUDED_PREFIXES: readonly string[] = ["historico/"];
+export const DOCS_EXCLUDED_PREFIXES: readonly string[] = [];
 
 /** Um arquivo de `docs/` está deliberadamente fora de todo copiloto? */
 export function isDocExcluded(relativePath: string): boolean {

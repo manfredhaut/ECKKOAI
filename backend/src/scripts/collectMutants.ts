@@ -31,6 +31,8 @@ import { MUTANTS as nativeBatchMutants } from "./checkNativeBatchPolicy.js";
 import { MUTANTS as paddingMutants } from "./checkPaddingPolicy.js";
 import { MUTANTS as voiceSampleMutants } from "./checkVoiceSamplePolicy.js";
 import { MUTANTS as stepOneMutants } from "./checkStepOneFlowPolicy.js";
+import { MUTANTS as docsInternalMutants } from "./checkDocsInternalPolicy.js";
+import { MUTANTS as cloneSampleFormatMutants } from "./checkCloneSampleFormatPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 const all: Mutant[] = [
@@ -55,6 +57,8 @@ const all: Mutant[] = [
   ...paddingMutants,
   ...voiceSampleMutants,
   ...stepOneMutants,
+  ...docsInternalMutants,
+  ...cloneSampleFormatMutants,
 ];
 
 // Um mutante malformado só apareceria no meio da execução, com a árvore já

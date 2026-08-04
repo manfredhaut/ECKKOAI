@@ -17,12 +17,17 @@
  *   1. formato e tamanho  — bytes já na mão, custo zero
  *   2. duração            — ffprobe local, custo zero
  *   3. substituição       — linha do banco já lida, custo zero
- *   4. slots              — UMA leitura ao fornecedor (GET, não tarifado)
- *   5. clonagem           — consome o slot IRREVERSÍVEL
+ *   4. conversão e teto   — ffmpeg local, custo zero
+ *   5. slots              — UMA leitura ao fornecedor (GET, não tarifado)
+ *   6. clonagem           — consome o slot IRREVERSÍVEL
  *
- * Inverter 4 e 5 pareceria mais simples (deixar o fornecedor recusar) e seria
+ * Inverter 5 e 6 pareceria mais simples (deixar o fornecedor recusar) e seria
  * pior: a recusa dele chega depois de a tentativa ter sido gasta, e vem como
  * um 4xx indistinguível dos outros na nossa camada.
+ *
+ * O passo 4 entrou no HIGIENE-1 e é o mesmo raciocínio aplicado ao arquivo que
+ * SAI daqui: desde que a conversão é sem perda, uma captura leve pode não caber
+ * nos 10 MB do fornecedor. Converter é CPU local — cabe antes da rede.
  */
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
@@ -39,6 +44,7 @@ import {
   MIN_SAMPLE_SECONDS,
   RECOMMENDED_SAMPLE_SECONDS,
   VOICE_SAMPLE_MAX_BYTES,
+  checkNormalizedSampleSize,
   checkSampleDuration,
   checkSampleFormat,
   checkVoiceReplacement,
@@ -151,7 +157,47 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      // --- 4. GUARDA B: slots --------------------------------------------
+      // --- 4. conversão e teto do arquivo CONVERTIDO ----------------------
+      //
+      // Antes da leitura de slots de propósito, e a razão é a mesma ordem
+      // crescente de custo do cabeçalho: converter é CPU local, custo zero, e
+      // recusar aqui não toca a rede. Desde que a saída é WAV sem perda
+      // (~5,5 MB por minuto a 48 kHz), uma captura leve na entrada pode não
+      // caber no destino — e descobrir isso pelo 4xx do fornecedor gastaria uma
+      // tentativa para dizer o que já dava para saber sem sair da máquina.
+      //
+      // O ORIGINAL é salvo antes de tudo: se qualquer coisa daqui para frente
+      // falhar, o arquivo que a pessoa acabou de gravar continua existindo.
+      // Sem isso, uma falha custa a regravação inteira, no momento em que ela
+      // menos vai querer gravar de novo.
+      const sampleUrl = await saveUpload(req.tenantId, buffer, file.filename || "voice-sample");
+
+      const normalizada = await normalizeVoiceSample(buffer);
+      const tamanhoConvertido = checkNormalizedSampleSize({
+        bytes: normalizada.buffer.length,
+        sampleRateHz: normalizada.sampleRateHz,
+      });
+      if (!tamanhoConvertido.ok) {
+        logEvent("info", "voice_sample_rejected", {
+          reason: tamanhoConvertido.code,
+          inputBytes: buffer.length,
+          convertedBytes: normalizada.buffer.length,
+          sampleRateHz: normalizada.sampleRateHz,
+          durationSeconds: duracao,
+        });
+        return reply.code(413).send({
+          error: tamanhoConvertido.code,
+          message: tamanhoConvertido.message,
+          sample_url: sampleUrl,
+        });
+      }
+
+      // O convertido fica em disco AO LADO do original. É o arquivo que o
+      // fornecedor de fato recebe, e sem ele não há como conferir depois o que
+      // foi enviado — o original prova o que foi gravado, não o que saiu daqui.
+      const normalizedUrl = await saveUpload(req.tenantId, normalizada.buffer, normalizada.filename);
+
+      // --- 5. GUARDA B: slots --------------------------------------------
       // Única chamada ao fornecedor antes da clonagem, e é de leitura.
       let inventario: { total: number; cloned: number };
       try {
@@ -171,15 +217,7 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(409).send({ error: slots.code, message: slots.message });
       }
 
-      // --- 5. clonagem ----------------------------------------------------
-      // Guardar a amostra ANTES de clonar. Se a clonagem falhar, o arquivo que
-      // a pessoa acabou de gravar continua existindo — sem isso, uma falha do
-      // fornecedor custa a regravação inteira, e é o momento em que ela menos
-      // vai querer gravar de novo.
-      const sampleUrl = await saveUpload(req.tenantId, buffer, file.filename || "voice-sample");
-
-      const normalizada = await normalizeVoiceSample(buffer);
-
+      // --- 6. clonagem ----------------------------------------------------
       let voiceId: string;
       try {
         ({ voiceId } = await cloneVoice({
@@ -226,6 +264,8 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send({
         avatar: updated[0],
         sample_url: sampleUrl,
+        // O que o fornecedor recebeu, ao lado do que foi gravado.
+        normalized_url: normalizedUrl,
         duration_seconds: duracao,
         // O aviso da faixa 60–90 s sobe junto com o sucesso, e não como erro:
         // é informação, não recusa.

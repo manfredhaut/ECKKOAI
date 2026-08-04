@@ -100,6 +100,23 @@ export async function loadDocsFor(viewer: DocAudience): Promise<string> {
   return built;
 }
 
+/**
+ * Esvazia o cache por audiência. Existe para o gate, não para produção.
+ *
+ * A guarda `checkDocsInternalPolicy` precisa montar o prompt duas vezes contra
+ * árvores de disco DIFERENTES — a real e uma árvore de prova com arquivos-isca.
+ * Sem isto ela mediria o cache em vez do disco na segunda vez, e um teste que
+ * lê cache passaria verde mesmo com o carregador varrendo o diretório inteiro,
+ * que é exatamente o defeito que ele existe para pegar.
+ *
+ * Em produção nada chama esta função: os docs só mudam com redeploy, e o
+ * redeploy troca o processo.
+ */
+export function resetDocsCache(): void {
+  cache.clear();
+  driftReported = false;
+}
+
 // Anonymous landing-page copilot (routes/public.ts). Public-level docs only.
 export async function loadPublicDocsContent(): Promise<string> {
   return loadDocsFor("public");

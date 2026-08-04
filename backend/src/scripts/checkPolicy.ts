@@ -46,6 +46,8 @@ import { checkNativeBatchPolicy } from "./checkNativeBatchPolicy.js";
 import { checkPaddingPolicy } from "./checkPaddingPolicy.js";
 import { checkVoiceSamplePolicy } from "./checkVoiceSamplePolicy.js";
 import { checkStepOneFlowPolicy } from "./checkStepOneFlowPolicy.js";
+import { checkDocsInternalPolicy } from "./checkDocsInternalPolicy.js";
+import { checkCloneSampleFormatPolicy } from "./checkCloneSampleFormatPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -74,15 +76,24 @@ export const MUTANTS: Mutant[] = [
   },
   {
     guard: "classificação de docs",
-    name: "arquivo do histórico é classificado e vaza para o copiloto",
+    name: "prefixo excluído volta a valer sobre um arquivo já classificado",
     kind: "esperto",
-    // A guarda de "todo arquivo classificado ou excluído" continua verde: o
-    // arquivo passa a estar CLASSIFICADO, que é uma das duas saídas que ela
-    // aceita. Só a asserção 1b — a que proíbe classificar sob prefixo
-    // excluído — separa "está catalogado" de "pode ser lido pelo copiloto".
+    // Este mutante mudou de alvo no HIGIENE-1. Antes ele classificava
+    // `historico/03-blocos-fechados.md`; esse arquivo não mora mais em `docs/`
+    // — foi para `docs-internal/`, na raiz — e DOCS_EXCLUDED_PREFIXES ficou
+    // vazio. Um mutante que aponta para um arquivo inexistente prova a
+    // asserção ERRADA: quem reprovaria seria a seção 2 ("cita docs/X, que não
+    // existe no disco"), e a 1b passaria por ativa sem ter opinado.
+    //
+    // Então ele ataca a 1b pelo outro lado, sem tocar em classificação
+    // nenhuma: liga o mecanismo sobre um prefixo que JÁ cobre arquivos
+    // classificados. Nenhum doc muda, nenhuma audiência muda — só a
+    // contradição entre "está no manifesto" e "vive sob diretório barrado"
+    // aparece, que é exatamente a proposição da 1b. É o que mantém a
+    // asserção testada agora que ela é redundância, e não a única barreira.
     file: "backend/src/services/docsManifest.ts",
-    find: `  "screens/painel.md": "tenant",`,
-    replace: `  "screens/painel.md": "tenant",\n  "historico/03-blocos-fechados.md": "admin",`,
+    find: `export const DOCS_EXCLUDED_PREFIXES: readonly string[] = [];`,
+    replace: `export const DOCS_EXCLUDED_PREFIXES: readonly string[] = ["screens/"];`,
     expect: "vive sob",
   },
   {
@@ -210,25 +221,35 @@ async function main(): Promise<void> {
   }
   // --- 1b. nada sob prefixo excluído pode estar CLASSIFICADO -------------
   //
-  // O buraco que a exclusão por prefixo abriria: `historico/` deixa de exigir
+  // O buraco que a exclusão por prefixo abre: um diretório deixa de exigir
   // classificação um por um, e alguém "resolve" um vermelho futuro
   // classificando o arquivo — que é exatamente como o conteúdo chegaria ao
   // copiloto. O prefixo economiza manutenção; esta asserção é o que impede que
   // ele vire porta de entrada.
+  //
+  // Desde o HIGIENE-1 a lista está VAZIA — o histórico saiu de `docs/` e virou
+  // `docs-internal/`, na raiz, fora de toda varredura. A asserção fica como
+  // redundância declarada, não como única barreira, e segue testada pelo
+  // arnês: ver o mutante `prefixo excluído volta a valer sobre um arquivo já
+  // classificado`, que a dispara sem reclassificar nada.
   for (const classificado of Object.keys(DOCS_MANIFEST)) {
     const prefixo = DOCS_EXCLUDED_PREFIXES.find((p) => classificado.startsWith(p));
     if (prefixo) {
       fail(
         "classificação",
         `docs/${classificado} está em DOCS_MANIFEST, mas vive sob "${prefixo}", que é excluído de ` +
-          "todo copiloto. Esse diretório guarda memória de ENGENHARIA — medições de custo, nomes de " +
-          "variáveis de chave, defeitos em aberto — e não documentação de produto. Classificar um " +
-          "arquivo dali o entrega ao copiloto.",
+          "todo copiloto. Um diretório entra nessa lista quando o que ele guarda não é documentação " +
+          "de produto — medições de custo, nomes de variáveis de chave, defeitos em aberto. " +
+          "Classificar um arquivo dali o entrega ao copiloto.",
       );
     }
   }
 
-  note(`${onDisk.length} arquivos em docs/, ${Object.keys(DOCS_MANIFEST).length} classificados, ${DOCS_EXCLUDED.length} excluído(s) por nome e ${DOCS_EXCLUDED_PREFIXES.length} diretório(s) por prefixo (${DOCS_EXCLUDED_PREFIXES.join(", ")})`);
+  const porPrefixo =
+    DOCS_EXCLUDED_PREFIXES.length === 0
+      ? "nenhum diretório por prefixo (o histórico saiu de docs/ — ver docs-internal/ na raiz)"
+      : `${DOCS_EXCLUDED_PREFIXES.length} diretório(s) por prefixo (${DOCS_EXCLUDED_PREFIXES.join(", ")})`;
+  note(`${onDisk.length} arquivos em docs/, ${Object.keys(DOCS_MANIFEST).length} classificados, ${DOCS_EXCLUDED.length} excluído(s) por nome e ${porPrefixo}`);
 
   // --- 2. no manifest entry points at a file that does not exist ---------
   for (const entry of Object.keys(DOCS_MANIFEST)) {
@@ -498,6 +519,20 @@ async function main(): Promise<void> {
   const stepOne = await checkStepOneFlowPolicy(process.env.REPO_ROOT ?? "/repo");
   stepOne.failures.forEach((f) => failures.push(f));
   stepOne.notes.forEach((n) => note(n));
+
+  // --- 25. a amostra de clonagem não tem perda, provada convertendo -------
+  const cloneFormat = await checkCloneSampleFormatPolicy();
+  cloneFormat.failures.forEach((f) => failures.push(f));
+  cloneFormat.notes.forEach((n) => note(n));
+
+  // --- 26. memória de engenharia fora de todo copiloto, provada montando --
+  //
+  // Última de propósito: ela troca `config.docsDir` por uma árvore de prova e
+  // derruba o cache de documentação. Restaura tudo no `finally`, mas rodar
+  // depois de quem lê docs evita depender dessa restauração.
+  const docsInternal = await checkDocsInternalPolicy();
+  docsInternal.failures.forEach((f) => failures.push(f));
+  docsInternal.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));
