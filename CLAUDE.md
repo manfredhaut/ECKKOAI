@@ -55,7 +55,29 @@ Gate: `docker compose exec -T -e PROVIDER_MODE=fixture backend npm run check` ·
 
 ## 6 · Bloco de retomada — cole numa sessão nova
 
-> **eckko.ai, diretório `TWINAI`. HEAD `84fdae3` + commit de fechamento do HIGIENE-1 (04/08), árvore limpa, `fixture` com `PROVIDER_LIVE_CONFIRM` vazia.** Confirme os 5 critérios do desarme antes de tocar em nada: `printenv` e `docker compose config` podem divergir, e um `up -d` arma o modo pago sem nova pergunta. **`RestartCount` compara-se com o valor pós-boot, não com 0**, e a linha de boot pode estar fora da janela de `--tail 500` — nesse caso o `printenv` é a evidência mais forte, porque em `live` o processo nem sobe sem a confirmação.
+> **eckko.ai, diretório `TWINAI`. HEAD `66e9316` + o commit deste handoff (04/08), árvore limpa, `fixture` com `PROVIDER_LIVE_CONFIRM` vazia — DESARMADO e conferido às 13:01.** Confirme os 5 critérios do desarme antes de tocar em nada: `printenv` e `docker compose config` podem divergir, e um `up -d` arma o modo pago sem nova pergunta. **`RestartCount` compara-se com o valor pós-boot, não com 0**, e a linha de boot pode estar fora da janela de `--tail 500` — nesse caso o `printenv` é a evidência mais forte, porque em `live` o processo nem sobe sem a confirmação.
+>
+> ## ⏸ TIRO FINAL — parado no passo 3 de 10, NADA GASTO
+>
+> Uma clonagem real é a única coisa entre o projeto e a demo. O tiro foi armado, conferido e **desarmado sem gastar** por uma troca de conta. Saldo intacto: **HeyGen 831 un / US$ 13,85** (831/60 = 13,85 exato), lido às 15:57 UTC.
+>
+> **Feito:** log de partida (`uploads/_prova/tiro-final/00-antes.log`, md5 `90f449d1…`); previsão escrita ANTES; alvo escolhido; live armado e a linha de boot confirmada (`"mode":"live","billable":true,"maxGenerationsThisSession":2`); desarmado, com `01-pos-desarme.log`, md5 `3e94c4b0…`.
+>
+> **Alvo decidido pelo operador: avatar `7557957c-d22f-4fba-a1e0-c19f07f47536` ("TESTE REAL 15:40 01/08"), NÃO o Mário.** Ele é treinado e a voz atual (`5Qfze6o4…`) não é protegida, então `replace=true` passa pela GUARDA C legitimamente. Clone e vídeo no mesmo avatar; **o Mário nunca é tocado e `wAd9MJ2IK71FGs1FWjIX` fica intacta.**
+>
+> **Arquivo a clonar, já pronto no disco — não regravar, não reconverter:** `uploads/_prova/fechamento1-24khz/convertido.wav`, 7.338.318 B, md5 `e579a89001676c87450bb27bc0a73c5d`, WAV pcm_s16le mono 24 kHz, 152,88 s.
+>
+> **Previsão (a conferir contra o delta real):** clone US$ 0,00 + 1 slot irreversível · síntese **US$ 0,0087** (87 caracteres medidos, a US$ 0,0001/char) · vídeo **US$ 0,75** se o fornecedor reportar 15 s inteiros, US$ 0,70 se 14,x s. **Total US$ 0,76.**
+>
+> **Rearmar (o `.env` não é editado; as variáveis vão na invocação):**
+> ```
+> PROVIDER_MODE=live PROVIDER_LIVE_CONFIRM=eu-autorizo-gastar-cota-real PROVIDER_LIVE_MAX_GENERATIONS=2 docker compose up -d backend
+> ```
+> **2 é obrigatório:** `consumeLiveGeneration()` roda em `cloneVoice()` **e** em `generateVideo()` — com o default de 1, a clonagem come a única unidade e o vídeo é recusado por nós mesmos (foi o que matou a primeira passada live, bloco DEMO-4). **Observado e NÃO VERIFICADO:** `maxgen=2` sobreviveu ao desarme, então vem de fora da invocação; não confirmei a origem.
+>
+> **O bloqueio que sobra é de PESSOA, não de código: a rota `POST /avatars/:id/voice-sample` exige sessão autenticada, e o assistente não faz login com a senha do operador.** Não há o que consertar — a tela tem `<input type="file">` ([VoiceSampleRecorder.tsx:306](frontend/src/pages/CreateVideo/VoiceSampleRecorder.tsx:306)), então o operador entra no tenant `dev-c77a5b`, abre o avatar `7557957c`, escolhe o WAV acima, e confirma a substituição. Leva ~2 min e é o caminho de produção de verdade, com as guardas ativas.
+>
+> **Três coisas que o roteiro do tiro pedia e o código NÃO faz — decididas, não reabrir:** (1) a rota clona com `name: avatar.name`, então não existe nomear a voz "MARIO-OPERADOR" sem renomear um avatar; (2) a rota clona e grava o `voice_id` no MESMO request, então não cabe portão de aprovação entre clonar e prender — por isso o alvo é `7557957c` e não o Mário; (3) os créditos do ElevenLabs **não são legíveis** (401 por falta de `user_read`), então o delta da voz só terá o lado de fora.
 >
 > **Gotchas:** (1) `docker compose logs` sem `--tail 500` devolve log rotacionado e congelado — nunca conclua ausência de evidência com ele; (2) código novo exige `restart backend`/`restart frontend`, e `vite.config.ts`/`package.json`/`Dockerfile` exigem `build`; (3) `restart` não recarrega `.env`; (4) **ligar/desligar o PC reinicia o backend**, e o polling em `setInterval` não é retomado no boot.
 >
