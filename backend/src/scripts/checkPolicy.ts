@@ -39,6 +39,7 @@ import { checkDerivationPolicy } from "./checkDerivationPolicy.js";
 import { checkNativeBatchPolicy } from "./checkNativeBatchPolicy.js";
 import { checkPaddingPolicy } from "./checkPaddingPolicy.js";
 import { checkVoiceSamplePolicy } from "./checkVoiceSamplePolicy.js";
+import { checkStepOneFlowPolicy } from "./checkStepOneFlowPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -453,6 +454,11 @@ async function main(): Promise<void> {
   const voiceResult = await checkVoiceSamplePolicy(process.env.REPO_ROOT ?? "/repo");
   voiceResult.failures.forEach((f) => failures.push(f));
   voiceResult.notes.forEach((n) => note(n));
+
+  // --- 24. fluxo do passo 1: a ordem em que a coluna é lida ---------------
+  const stepOne = await checkStepOneFlowPolicy(process.env.REPO_ROOT ?? "/repo");
+  stepOne.failures.forEach((f) => failures.push(f));
+  stepOne.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

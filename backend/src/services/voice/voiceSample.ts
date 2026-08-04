@@ -232,6 +232,31 @@ export interface SampleVerdict {
 
 const OK: SampleVerdict = { ok: true };
 
+/**
+ * Identificador de voz ENCURTADO, para o log.
+ *
+ * POR QUE ISTO EXISTE — o defeito está medido (bloco E2E-1, 04/08/2026): o
+ * evento `voice_id_replaced` saía com `previousVoiceId:"***REDACTED***"` e
+ * `newVoiceId:"***REDACTED***"`. O sumidouro de log redige por FORMA, e o
+ * padrão genérico de "bloco opaco de 40+ caracteres" casa com um
+ * `fixture-voice-<uuid>`, que tem 49. O evento existe exatamente para
+ * preservar o id antigo no instante em que ele é sobrescrito — a coluna guarda
+ * um valor só — e a redação apagava justamente isso.
+ *
+ * A correção NÃO afrouxa a redação, e é deliberado: mexer em `safeLog` para
+ * deixar passar "ids de voz" exigiria distinguir id de chave por forma, e as
+ * duas são material opaco. Uma exceção ali abriria caminho para chave real
+ * vazar por parecer id.
+ *
+ * Em vez disso, o log passa a receber MENOS: 8 caracteres bastam para
+ * reconhecer qual voz era, não casam com padrão de segredo nenhum, e não
+ * reconstroem um identificador utilizável contra o fornecedor.
+ */
+export function voiceIdForLog(voiceId: string | null | undefined): string | null {
+  if (!voiceId) return null;
+  return `${voiceId.slice(0, 8)}…`;
+}
+
 /** "1:15" — para ler numa tela, não para calcular. */
 export function formatSeconds(seconds: number): string {
   const total = Math.floor(seconds);

@@ -13,6 +13,7 @@ import { useFeature } from "../../../features/FeatureFlagContext";
 import { MAX_IMAGE_BYTES, MAX_REFERENCE_VIDEO_BYTES, formatBytes } from "../../../uploadLimits";
 import { RecordingProgress } from "../RecordingProgress";
 import { VoiceSampleRecorder } from "../VoiceSampleRecorder";
+import { AvatarReadinessNotice } from "../AvatarReadinessNotice";
 
 export function AvatarSetupStep({
   selectedAvatarId,
@@ -265,8 +266,6 @@ export function AvatarSetupStep({
           {t("createVideo.avatarSetup.newAvatarButton")}
         </button>
 
-        {nextButton && <div style={{ marginBottom: 20 }}>{nextButton}</div>}
-
         <div className="card-title">{t("createVideo.avatarSetup.yourAvatars")}</div>
         {avatars.length === 0 ? (
           <p className="text-muted" style={{ marginBottom: 16 }}>
@@ -351,6 +350,17 @@ export function AvatarSetupStep({
             }
           />
         )}
+
+        {/* ORDEM DO PASSO 1, e ela é o ponto deste bloco.
+            O `Avançar` ficava LOGO ABAIXO de "Novo avatar", antes da grade —
+            então o caminho natural (ler, avançar) nunca passava pelos
+            avatares nem pelo bloco de voz, que ficavam abaixo da dobra. Agora
+            o botão fecha a coluna: texto → novo avatar → grade → voz →
+            avançar. Quem lê de cima para baixo vê o bloco de voz por
+            construção, sem precisar rolar procurando. */}
+        {selectedAvatar && <AvatarReadinessNotice avatarId={selectedAvatar.id} />}
+
+        {nextButton && <div style={{ marginTop: 20 }}>{nextButton}</div>}
       </div>
     );
   }

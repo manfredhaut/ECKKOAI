@@ -523,7 +523,9 @@
       "recordingTooLarge": "A {{size}} recording is over the {{max}} limit. Record at 1080p instead of 4K, or record a shorter take.",
       "fileTooLarge": "The file is {{size}} and the limit is {{max}}. Record at 1080p instead of 4K — that usually fixes it without shortening the video. If it still exceeds, record a shorter take.",
       "referenceGuidance": "HeyGen works best with 1080p at 30fps and 2 to 5 minutes of continuous speech. 30 seconds already works, with simpler results.",
-      "imageTooLarge": "The image is {{size}} and the limit is {{max}}. Reduce the image resolution before uploading, or use a compressed copy instead of the camera original."
+      "imageTooLarge": "The image is {{size}} and the limit is {{max}}. Reduce the image resolution before uploading, or use a compressed copy instead of the camera original.",
+      "readinessTitle": "This avatar still has pending items:",
+      "readinessCanProceed": "You can move on anyway — generation in step 6 is what will refuse."
     },
     "script": {
       "title": "Script",
@@ -599,7 +601,7 @@
     },
     "voiceSample": {
       "title": "Avatar voice",
-      "hint": "Record {{min}} to {{recommended}} of natural speech in a quiet room. A short sample produces a clone that talks fast and with unstable intonation.",
+      "hint": "At least {{min}}. From {{recommended}} on the result improves — you can record more, there is no cap.",
       "alreadyCloned": "This avatar already has a cloned voice. Sending another sample replaces the current one, and the previous voice cannot be recovered.",
       "record": "Record",
       "recordAgain": "Record again",
@@ -617,7 +619,11 @@
       "replaceConfirm": "Replace anyway",
       "micDenied": "The browser blocked the microphone. Allow microphone access for this site and try again, or upload an audio file.",
       "micUnavailable": "Could not access the microphone. Check that a microphone is connected, or upload an audio file.",
-      "genericError": "Could not complete the operation. Please try again in a moment."
+      "genericError": "Could not complete the operation. Please try again in a moment.",
+      "hintLoading": "Loading duration limits…",
+      "scope": "This voice belongs to the avatar, not to this video: replacing it changes every video you generate with it from now on. Already-generated videos keep the old voice.",
+      "changeVoice": "Change voice",
+      "recordNow": "Record voice"
     }
   },
   "knowledge": {

@@ -14,6 +14,7 @@
  * NÃO protege contra amostra curta: ele entrega um clone pior e cobra o slot.
  */
 import type { Mutant } from "./mutants.js";
+import { redactText } from "../services/log/safeLog.js";
 import {
   ALLOWED_CLONE_FIELDS,
   CATALOG_LABEL_FIELDS,
@@ -26,6 +27,7 @@ import {
   checkVoiceReplacement,
   checkVoiceSlots,
   sniffAudioFormat,
+  voiceIdForLog,
 } from "../services/voice/voiceSample.js";
 
 export interface VoiceSampleCheckResult {
@@ -195,6 +197,43 @@ export const MUTANTS: Mutant[] = [
     find: "  if (isFixtureMode()) return cloneVoiceFixture();",
     replace: "  // desviado",
     expect: "não desvia para fixture",
+  },
+  // --- 7a: o evento preserva os ids, e a redação de CHAVE continua firme ---
+  {
+    guard: "voz: o evento de troca preserva os ids",
+    name: "volta a logar o voice_id inteiro",
+    kind: "obvio",
+    // O id inteiro tem 49 caracteres num `fixture-voice-<uuid>`, casa com o
+    // padrão genérico de bloco opaco, e o evento volta a sair com os dois
+    // campos como ***REDACTED*** — exatamente o defeito medido no E2E-1.
+    file: "backend/src/routes/voice.ts",
+    find: "          previousVoiceId: voiceIdForLog(avatar.voice_id),",
+    replace: "          previousVoiceId: avatar.voice_id,",
+    expect: "o id de voz é redigido dentro do próprio evento",
+  },
+  {
+    guard: "voz: o evento de troca preserva os ids",
+    name: "o encurtador devolve o id inteiro",
+    kind: "esperto",
+    // A rota continua chamando `voiceIdForLog`, o import continua lá, e a
+    // superfície inspecionada não muda em nada. Só o encurtamento some — e
+    // com ele a proteção contra a redação, sem que nada no call site denuncie.
+    file: "backend/src/services/voice/voiceSample.ts",
+    find: "  return `${voiceId.slice(0, 8)}…`;",
+    replace: "  return voiceId;",
+    expect: "o id de voz é redigido dentro do próprio evento",
+  },
+  {
+    guard: "voz: o evento de troca preserva os ids",
+    name: "a redação de CHAVE é afrouxada para deixar o id passar",
+    kind: "esperto",
+    // O contraponto que impede o conserto errado: alguém poderia "consertar" o
+    // evento afrouxando o padrão genérico do sumidouro. Isso faria o id
+    // aparecer — e faria uma CHAVE de fornecedor aparecer junto.
+    file: "backend/src/services/log/safeLog.ts",
+    find: "  { nome: \"opaco\", re: /\\b[A-Za-z0-9+/_-]{40,}={0,2}\\b/g },",
+    replace: "  { nome: \"opaco\", re: /\\b[A-Za-z0-9+/_-]{400,}={0,2}\\b/g },",
+    expect: "material opaco longo deixou de ser redigido",
   },
   {
     guard: "voz: clonagem respeita o modo",
@@ -534,6 +573,148 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
   }
 
   notes.push("voz: o caminho antigo (reference-video) pula a clonagem quando já existe voz, em vez de sobrescrever");
+
+  // --- 7a: o evento de troca preserva os ids, e a redação segue firme -----
+  //
+  // Duas asserções que puxam em direções OPOSTAS de propósito. Uma sozinha
+  // seria satisfeita pelo conserto errado: afrouxar o padrão genérico do
+  // sumidouro faria o id aparecer no evento — e faria uma chave de fornecedor
+  // aparecer junto, que é o oposto do que o LOG-1 existe para garantir.
+  const idFixture = "fixture-voice-f1f29a46-01f0-4b83-bd5f-3114e5093ccd";
+  const idReal = "wAd9MJ2IK71FGs1FWjIX";
+
+  for (const [rotulo, id] of [
+    ["fixture", idFixture],
+    ["real", idReal],
+  ] as const) {
+    const curto = voiceIdForLog(id);
+    if (curto === null) {
+      failures.push(`voz: voiceIdForLog devolveu null para um id ${rotulo} não vazio.`);
+      continue;
+    }
+    if (redactText(curto) !== curto) {
+      failures.push(
+        `voz: o id de voz é redigido dentro do próprio evento (${rotulo}). ` +
+          `"${curto}" saiu como "${redactText(curto)}". O evento voice_id_replaced existe para ` +
+          "preservar o id ANTIGO no instante em que ele é sobrescrito — a coluna guarda um valor " +
+          "só, e o id antigo não fica em lugar nenhum deste sistema. Redigido, o evento não serve " +
+          "para nada.",
+      );
+    }
+    if (!id.startsWith(curto.replace("…", ""))) {
+      failures.push(`voz: o id encurtado (${rotulo}) não é prefixo do original — não identifica nada.`);
+    }
+  }
+
+  // O contraponto: a redação de material opaco longo CONTINUA ativa. Se
+  // alguém "consertar" o evento afrouxando o sumidouro, esta asserção quebra.
+  const chaveFalsa = "sk-" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0";
+  if (redactText(chaveFalsa) === chaveFalsa) {
+    failures.push(
+      "voz: material opaco longo deixou de ser redigido. Encurtar o id de voz é o conserto certo; " +
+        "afrouxar a redação para deixá-lo passar faria uma CHAVE de fornecedor passar junto.",
+    );
+  }
+  const opacoLongo = "Zm9vYmFyYmF6cXV4Y29ycmdlZ3JhdWx0aGVsbG93b3JsZGFiY2RlZmc";
+  if (redactText(opacoLongo) === opacoLongo) {
+    failures.push(
+      "voz: material opaco longo deixou de ser redigido (padrão genérico). É ele que pega chave de " +
+        "formato desconhecido — o caso `AQ.` deste projeto começou assim.",
+    );
+  }
+
+  // E — o que faltava, flagrado pelo arnês — QUEM CHAMA. As asserções acima
+  // exercitam `voiceIdForLog` e `redactText` diretamente, e por isso passavam
+  // verdes com a rota logando `avatar.voice_id` inteiro: o mecanismo continuava
+  // perfeito e o sistema, desprotegido. É a mesma classe de defeito do LIVE-2
+  // (helper correto, chamador descoberto) e do GUARDAS-1 (teto testado sem quem
+  // o consome). Testar o mecanismo não é testar quem o usa.
+  const relVoiceRoute = "backend/src/routes/voice.ts";
+  let rotaSource: string;
+  try {
+    rotaSource = await readFile(path.join(repoRoot, relVoiceRoute), "utf-8");
+  } catch {
+    failures.push(`voz: não consegui ler ${relVoiceRoute} — verificador cego é pior que reprovar.`);
+    return { failures, notes };
+  }
+  const rotaCode = rotaSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  const eventoIdx = rotaCode.indexOf('"voice_id_replaced"');
+  if (eventoIdx === -1) {
+    failures.push(
+      `voz: ${relVoiceRoute} não emite mais o evento voice_id_replaced. Ele é o único registro do id ` +
+        "ANTIGO — a coluna guarda um valor só, e depois do UPDATE ele não existe em lugar nenhum.",
+    );
+  } else {
+    const bloco = rotaCode.slice(eventoIdx, eventoIdx + 400);
+    for (const campo of ["previousVoiceId", "newVoiceId"]) {
+      const usaEncurtador = new RegExp(`${campo}:\\s*voiceIdForLog\\(`).test(bloco);
+      if (!usaEncurtador) {
+        failures.push(
+          `voz: o id de voz é redigido dentro do próprio evento — ${relVoiceRoute} passa \`${campo}\` ` +
+            "sem voiceIdForLog(). O id inteiro casa com o padrão genérico de bloco opaco do sumidouro " +
+            "e sai como ***REDACTED***, apagando exatamente o que o evento existe para preservar.",
+        );
+      }
+    }
+  }
+
+  notes.push(
+    `voz: id de troca encurtado (${voiceIdForLog(idFixture)}) atravessa o sumidouro intacto, a ROTA ` +
+      "usa o encurtador nos dois campos, e material opaco longo continua sendo redigido",
+  );
+
+  // --- 7b: o texto de duração DERIVA da política, não de números fixos ----
+  const relRecorder = "frontend/src/pages/CreateVideo/VoiceSampleRecorder.tsx";
+  let recorderSource: string;
+  try {
+    recorderSource = await readFile(path.join(repoRoot, relRecorder), "utf-8");
+  } catch {
+    failures.push(`voz: não consegui ler ${relRecorder} — verificador cego é pior que reprovar.`);
+    return { failures, notes };
+  }
+  const recorderCode = recorderSource
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ \t]*\/\/.*$/gm, "");
+
+  // Fallback numérico é o defeito: com a política fora do ar, a tela
+  // afirmaria com confiança um número que não veio de lugar nenhum — e foi
+  // assim que "1:00 a 1:30" virou uma faixa fechada que a política não tem.
+  const fallbackFixo = /policy\?\.(min_seconds|recommended_seconds)\s*\?\?\s*\d/.test(recorderCode);
+  if (fallbackFixo) {
+    failures.push(
+      `voz: ${relRecorder} volta a ter número de duração FIXO como retaguarda da política. ` +
+        "Sem política, a tela não pode afirmar limite nenhum — afirmar um número que não veio do " +
+        "servidor é como o texto passou a prometer uma faixa fechada que a política não tem.",
+    );
+  }
+
+  // E o texto tem de INTERPOLAR, não citar. Um `hint` sem placeholder é
+  // literal por definição.
+  for (const loc of ["pt-BR", "en"]) {
+    const relLoc = `frontend/src/locales/${loc}.json`;
+    let dicionario: any;
+    try {
+      dicionario = JSON.parse(await readFile(path.join(repoRoot, relLoc), "utf-8"));
+    } catch {
+      failures.push(`voz: não consegui ler ${relLoc}.`);
+      continue;
+    }
+    const hint: string = dicionario?.createVideo?.voiceSample?.hint ?? "";
+    if (!hint.includes("{{min}}") || !hint.includes("{{recommended}}")) {
+      failures.push(
+        `voz: o texto de duração em ${relLoc} voltou a ser LITERAL — não interpola {{min}} e ` +
+          `{{recommended}} da política. Recebido: "${hint}"`,
+      );
+    }
+    if (/\b\d+:\d{2}\b/.test(hint)) {
+      failures.push(
+        `voz: o texto de duração em ${relLoc} traz um horário fixo ("${hint}"). Ele tem de vir da ` +
+          "política; um número escrito à mão diverge dela na primeira mudança e ninguém percebe.",
+      );
+    }
+  }
+
+  notes.push("voz: o texto de duração interpola min/recommended da política, sem número fixo nem fallback");
 
   return { failures, notes };
 }

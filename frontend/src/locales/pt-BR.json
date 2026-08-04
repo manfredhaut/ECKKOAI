@@ -523,7 +523,9 @@
       "recordingTooLarge": "Gravação de {{size}} passa do limite de {{max}}. Grave em 1080p em vez de 4K, ou grave um trecho mais curto.",
       "fileTooLarge": "O arquivo tem {{size}} e o limite é {{max}}. Grave em 1080p em vez de 4K — costuma resolver sozinho, sem encurtar o vídeo. Se ainda passar, grave um trecho mais curto.",
       "referenceGuidance": "A HeyGen trabalha melhor com 1080p a 30fps e 2 a 5 minutos de fala contínua. 30 segundos já funcionam, com resultado mais simples.",
-      "imageTooLarge": "A imagem tem {{size}} e o limite é {{max}}. Reduza a resolução da imagem antes de enviar, ou use uma cópia comprimida em vez do arquivo original da câmera."
+      "imageTooLarge": "A imagem tem {{size}} e o limite é {{max}}. Reduza a resolução da imagem antes de enviar, ou use uma cópia comprimida em vez do arquivo original da câmera.",
+      "readinessTitle": "Este avatar ainda tem pendências:",
+      "readinessCanProceed": "Você pode avançar assim mesmo — a geração no passo 6 é que vai recusar."
     },
     "script": {
       "title": "Roteiro",
@@ -599,7 +601,7 @@
     },
     "voiceSample": {
       "title": "Voz do avatar",
-      "hint": "Grave de {{min}} a {{recommended}} falando naturalmente, num ambiente silencioso. Amostra curta produz um clone que fala rápido e com entonação instável.",
+      "hint": "No mínimo {{min}}. A partir de {{recommended}} o resultado melhora — pode gravar mais, não há limite.",
       "alreadyCloned": "Este avatar já tem uma voz clonada. Enviar outra amostra substitui a atual, e a anterior não pode ser recuperada.",
       "record": "Gravar",
       "recordAgain": "Regravar",
@@ -617,7 +619,11 @@
       "replaceConfirm": "Substituir mesmo assim",
       "micDenied": "O navegador bloqueou o microfone. Libere o acesso ao microfone para este site e tente de novo, ou envie um arquivo de áudio.",
       "micUnavailable": "Não foi possível acessar o microfone. Verifique se há um microfone conectado, ou envie um arquivo de áudio.",
-      "genericError": "Não foi possível concluir a operação. Tente novamente em alguns instantes."
+      "genericError": "Não foi possível concluir a operação. Tente novamente em alguns instantes.",
+      "hintLoading": "Carregando os limites de duração…",
+      "scope": "Esta voz pertence ao avatar, não a este vídeo: trocá-la muda todos os vídeos que você gerar com ele daqui em diante. Os já gerados continuam com a voz antiga.",
+      "changeVoice": "Trocar voz",
+      "recordNow": "Gravar voz"
     }
   },
   "knowledge": {

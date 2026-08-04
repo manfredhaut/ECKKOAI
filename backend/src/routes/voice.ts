@@ -43,6 +43,7 @@ import {
   checkSampleFormat,
   checkVoiceReplacement,
   checkVoiceSlots,
+  voiceIdForLog,
   voiceSlotLimit,
 } from "../services/voice/voiceSample.js";
 import {
@@ -208,8 +209,12 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       if (avatar.voice_id) {
         logEvent("info", "voice_id_replaced", {
           avatarId: avatar.id,
-          previousVoiceId: avatar.voice_id,
-          newVoiceId: voiceId,
+          // ENCURTADOS, e não inteiros: o sumidouro redige material opaco de
+          // 40+ caracteres por forma, e um `fixture-voice-<uuid>` tem 49 — o
+          // evento saía com os dois ids como `***REDACTED***`, apagando
+          // exatamente o que ele existe para preservar. Ver voiceIdForLog().
+          previousVoiceId: voiceIdForLog(avatar.voice_id),
+          newVoiceId: voiceIdForLog(voiceId),
         });
       }
 

@@ -69,6 +69,29 @@ export function VoiceSampleRecorder({
   // "substituir" sempre visível é um convite a marcar sem ler — e o que está
   // do outro lado é irreversível.
   const [replaceOffered, setReplaceOffered] = useState(false);
+  /**
+   * RECOLHIDO quando já existe voz, ABERTO quando falta — e o default é a
+   * proteção, não a estética.
+   *
+   * Este bloco vive dentro do fluxo de CRIAR VÍDEO, que é percorrido muitas
+   * vezes por avatar. Com ele sempre aberto, o botão "Gravar" fica no caminho
+   * de quem só queria escolher um avatar e seguir — e uma amostra gravada por
+   * engano, confirmada na tela seguinte, substitui a voz do avatar de forma
+   * IRRECUPERÁVEL: a coluna guarda um valor só, e o id antigo não fica em
+   * lugar nenhum deste sistema.
+   *
+   * Quando `voice_id` é nulo, o bloco abre: aí ele não é risco, é a única
+   * coisa que falta.
+   */
+  const [expanded, setExpanded] = useState(!avatar.voice_id);
+
+  // Trocar de avatar tem de reavaliar o default. Sem isto, abrir um avatar sem
+  // voz e depois clicar num que TEM voz deixaria o bloco aberto — o estado
+  // ficaria descrevendo o avatar anterior.
+  useEffect(() => {
+    setExpanded(!avatar.voice_id);
+    setReplaceOffered(false);
+  }, [avatar.id, avatar.voice_id]);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -200,30 +223,72 @@ export function VoiceSampleRecorder({
     }
   }
 
-  const min = policy?.min_seconds ?? 60;
-  const recommended = policy?.recommended_seconds ?? 90;
+  /**
+   * Os limites vêm da POLÍTICA do servidor, e não há número de duração
+   * literal neste arquivo — nem como fallback.
+   *
+   * O defeito medido no ensaio E2E (04/08): o texto dizia "Grave de 1:00 a
+   * 1:30", que se lê como faixa FECHADA, enquanto a política não tem teto —
+   * uma amostra de 2:33 passou como "boa duração", sem aviso nenhum. Quem
+   * grava 2:30 acha que errou.
+   *
+   * Um fallback `?? 60` reintroduziria o mesmo problema por outra porta: com
+   * a política fora do ar, a tela afirmaria com confiança um número que não
+   * veio de lugar nenhum. Sem política, ela não afirma nada.
+   */
+  const min = policy?.min_seconds ?? null;
+  const recommended = policy?.recommended_seconds ?? null;
   // Só bloqueia o que a tela SABE ser curto. Um arquivo enviado tem
   // `elapsed === 0` sem ser curto — quem mede aquele caso é o servidor, e
   // bloquear aqui por ignorância impediria o envio de um arquivo perfeitamente
   // válido.
-  const gravouCurto = elapsed > 0 && elapsed < min;
+  const gravouCurto = min !== null && elapsed > 0 && elapsed < min;
   const podeEnviar = blob !== null && !sending && !gravouCurto;
 
-  const faixa = elapsed === 0 ? "none" : elapsed < min ? "short" : elapsed < recommended ? "workable" : "good";
+  const faixa =
+    elapsed === 0 || min === null || recommended === null
+      ? "none"
+      : elapsed < min
+        ? "short"
+        : elapsed < recommended
+          ? "workable"
+          : "good";
 
   return (
     <section className="voice-sample" data-testid="voice-sample-recorder">
       <h4>{t("createVideo.voiceSample.title")}</h4>
-      <p className="voice-sample__hint">
-        {t("createVideo.voiceSample.hint", {
-          min: formatDuration(min),
-          recommended: formatDuration(recommended),
-        })}
-      </p>
+
+      {/* ESCOPO, sempre visível — inclusive com o bloco recolhido.
+          A voz é do AVATAR (`avatars.voice_id`), não deste vídeo: trocá-la
+          muda todos os vídeos futuros daquele avatar, e os já gerados
+          continuam com a voz antiga porque o áudio já foi renderizado. Sem
+          esta frase, um bloco que aparece dentro de "Criar vídeo" se lê como
+          escolha DAQUELE vídeo — que é a leitura errada, e a mais natural. */}
+      <p className="voice-sample__scope">{t("createVideo.voiceSample.scope")}</p>
 
       {avatar.voice_id && (
         <p className="voice-sample__existing">{t("createVideo.voiceSample.alreadyCloned")}</p>
       )}
+
+      {/* Recolhido: mostra só o estado e o caminho para expandir. */}
+      {!expanded && (
+        <button type="button" className="btn btn-outline" onClick={() => setExpanded(true)}>
+          {avatar.voice_id
+            ? t("createVideo.voiceSample.changeVoice")
+            : t("createVideo.voiceSample.recordNow")}
+        </button>
+      )}
+
+      {expanded && (
+        <>
+      <p className="voice-sample__hint">
+        {min !== null && recommended !== null
+          ? t("createVideo.voiceSample.hint", {
+              min: formatDuration(min),
+              recommended: formatDuration(recommended),
+            })
+          : t("createVideo.voiceSample.hintLoading")}
+      </p>
 
       <div className="voice-sample__controls">
         {!recording ? (
@@ -247,9 +312,9 @@ export function VoiceSampleRecorder({
           {formatDuration(elapsed)}
           {" · "}
           {faixa === "short"
-            ? t("createVideo.voiceSample.tooShort", { missing: min - elapsed })
+            ? t("createVideo.voiceSample.tooShort", { missing: (min ?? 0) - elapsed })
             : faixa === "workable"
-              ? t("createVideo.voiceSample.workable", { missing: recommended - elapsed })
+              ? t("createVideo.voiceSample.workable", { missing: (recommended ?? 0) - elapsed })
               : t("createVideo.voiceSample.good")}
         </p>
       )}
@@ -273,7 +338,7 @@ export function VoiceSampleRecorder({
         {/* Condição ao lado do botão desabilitado, e não só na cor: o mesmo
             padrão adotado no passo 6 depois de o botão inoperante sem
             explicação ter custado uma sessão. */}
-        {gravouCurto && (
+        {gravouCurto && min !== null && (
           <span className="voice-sample__blocker">
             {t("createVideo.voiceSample.blockedShort", { min: formatDuration(min) })}
           </span>
@@ -287,6 +352,8 @@ export function VoiceSampleRecorder({
             {t("createVideo.voiceSample.replaceConfirm")}
           </button>
         </div>
+      )}
+        </>
       )}
     </section>
   );
