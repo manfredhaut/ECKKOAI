@@ -17,6 +17,7 @@ import { sendAttachment, contentTypeForExtension } from "../services/downloadPro
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 import { logEvent } from "../services/log/safeLog.js";
+import { checkVoiceReplacement } from "../services/voice/voiceSample.js";
 
 export async function avatarRoutes(app: FastifyInstance): Promise<void> {
   app.get("/avatars", async (req) => {
@@ -261,6 +262,38 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     );
 
     const voiceCredential = await getCredential(req.tenantId, "voice");
+
+    // GUARDA C aplicada TAMBÉM aqui, e é este o caminho que o defeito tinha.
+    //
+    // Esta rota fazia `UPDATE avatars SET voice_id = ...` incondicional: enviar
+    // um vídeo de referência de novo trocava a voz aprovada por outra, sem
+    // perguntar, e o id antigo não ficava guardado em lugar nenhum. Como ela
+    // não tem — nem deve ter — uma flag de substituição (o cliente aqui está
+    // configurando um avatar, não decidindo sobre voz), a regra é a mais
+    // conservadora possível: com voz já existente, PULA a clonagem.
+    //
+    // Pular em vez de recusar a requisição inteira é deliberado: o treino do
+    // avatar acima JÁ aconteceu e JÁ custou US$ 1,00 ao fornecedor. Derrubar a
+    // resposta agora jogaria fora um trabalho pago por causa de uma proteção de
+    // voz — e a pessoa refaria o treino inteiro para chegar ao mesmo lugar.
+    const substituicaoDeVoz = checkVoiceReplacement({
+      currentVoiceId: existing[0].voice_id,
+      replace: false,
+    });
+
+    if (voiceCredential && !substituicaoDeVoz.ok) {
+      logEvent("info", "voice_clone_skipped", {
+        avatarId: req.params.id,
+        reason: substituicaoDeVoz.code,
+      });
+      return reply.code(200).send({
+        ...trained[0],
+        voice_notice:
+          `${substituicaoDeVoz.message} O avatar foi treinado normalmente e a voz atual foi mantida. ` +
+          "Para gravar uma voz nova, use a captura de voz dedicada.",
+      });
+    }
+
     if (voiceCredential) {
       try {
         const cloned = await cloneVoice({

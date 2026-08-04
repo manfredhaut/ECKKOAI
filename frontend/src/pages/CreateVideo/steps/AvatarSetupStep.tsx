@@ -12,6 +12,7 @@ import type { QualityOptions } from "../imageQuality/applyQualityTreatment";
 import { useFeature } from "../../../features/FeatureFlagContext";
 import { MAX_IMAGE_BYTES, MAX_REFERENCE_VIDEO_BYTES, formatBytes } from "../../../uploadLimits";
 import { RecordingProgress } from "../RecordingProgress";
+import { VoiceSampleRecorder } from "../VoiceSampleRecorder";
 
 export function AvatarSetupStep({
   selectedAvatarId,
@@ -49,6 +50,10 @@ export function AvatarSetupStep({
 
   const camera = useCamera();
   const recorder = useMediaRecorderCapture();
+  // Derivado da lista, e não guardado num estado próprio: dois estados para a
+  // mesma verdade divergem no primeiro `refreshAvatars()`, e o que divergiria
+  // aqui é a voz que a tela acha que o avatar tem.
+  const selectedAvatar = avatars.find((a) => a.id === selectedAvatarId) ?? null;
   const referenceFileInput = useRef<HTMLInputElement | null>(null);
   const photoFileInput = useRef<HTMLInputElement | null>(null);
 
@@ -329,6 +334,22 @@ export function AvatarSetupStep({
               </div>
             ))}
           </div>
+        )}
+
+        {/* Captura de voz do avatar SELECIONADO.
+            Fica atrás da seleção de propósito: aparece só depois de a pessoa
+            escolher um avatar, e nunca ao lado de "Novo avatar" — aquele botão
+            abre o caminho que treina um avatar novo (US$ 1,00 mais 1 crédito),
+            e vizinhança visual entre os dois convidaria justamente à confusão
+            que este bloco existe para evitar. Aqui nada é treinado e nenhum
+            crédito é debitado: o único recurso consumido é o slot de voz. */}
+        {selectedAvatar && (
+          <VoiceSampleRecorder
+            avatar={selectedAvatar}
+            onCloned={(updated) =>
+              setAvatars((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
+            }
+          />
         )}
       </div>
     );

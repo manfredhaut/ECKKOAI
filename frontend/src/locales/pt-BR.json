@@ -596,6 +596,28 @@
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",
       "writeScript": "Escreva o roteiro para continuar."
+    },
+    "voiceSample": {
+      "title": "Voz do avatar",
+      "hint": "Grave de {{min}} a {{recommended}} falando naturalmente, num ambiente silencioso. Amostra curta produz um clone que fala rápido e com entonação instável.",
+      "alreadyCloned": "Este avatar já tem uma voz clonada. Enviar outra amostra substitui a atual, e a anterior não pode ser recuperada.",
+      "record": "Gravar",
+      "recordAgain": "Regravar",
+      "stop": "Parar",
+      "orUploadFile": "ou enviar um arquivo de áudio",
+      "listenFirst": "Ouça antes de enviar — depois de clonada, a voz consome um slot que não pode ser devolvido.",
+      "tooShort": "curto demais — faltam {{missing}}s para o mínimo",
+      "workable": "já dá para clonar — faltam {{missing}}s para o recomendado",
+      "good": "boa duração",
+      "send": "Clonar voz",
+      "sending": "Clonando…",
+      "blockedShort": "A amostra precisa de pelo menos {{min}}.",
+      "cloned": "Voz clonada. A conta ficou com {{used}} de {{limit}} vozes em uso.",
+      "replaceExplain": "Confirmar substitui a voz atual deste avatar por uma nova. A voz anterior continua na conta do provedor, mas deixa de estar ligada a este avatar aqui.",
+      "replaceConfirm": "Substituir mesmo assim",
+      "micDenied": "O navegador bloqueou o microfone. Libere o acesso ao microfone para este site e tente de novo, ou envie um arquivo de áudio.",
+      "micUnavailable": "Não foi possível acessar o microfone. Verifique se há um microfone conectado, ou envie um arquivo de áudio.",
+      "genericError": "Não foi possível concluir a operação. Tente novamente em alguns instantes."
     }
   },
   "knowledge": {

@@ -7,6 +7,7 @@ import { logVendorBinaryResponse, logVendorResponse } from "./vendorResponseLog.
 import {
   checkVoiceConnectionFixture,
   cloneVoiceFixture,
+  listVoicesFixture,
   synthesizeSpeechFixture,
 } from "./fixtureProvider.js";
 const ELEVENLABS_ADD_VOICE_URL = "https://api.elevenlabs.io/v1/voices/add";
@@ -83,6 +84,57 @@ export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResu
     if (!data.voice_id) throw new VoiceProviderError("ElevenLabs API returned no voice_id");
     return { voiceId: data.voice_id };
   });
+}
+
+export interface VoiceInventory {
+  /** Quantas vozes existem hoje na conta do fornecedor. */
+  total: number;
+  /** Quantas delas são clones — subconjunto de `total`. */
+  cloned: number;
+}
+
+/**
+ * Inventário de vozes da conta, LIDO do fornecedor.
+ *
+ * Existe para a guarda de slots (`checkVoiceSlots`): clonar consome um slot
+ * irreversível, e este produto não tem caminho de exclusão, então a decisão de
+ * "cabe mais uma?" precisa de um número real e não de um palpite.
+ *
+ * `GET /v1/voices` é leitura e NÃO é tarifado — é o mesmo endpoint que o teste
+ * de credencial e o probe do painel já usam. O que ele NÃO traz é o TETO da
+ * conta: `voice_limit` vive em `/v1/user/subscription`, que responde 401 com
+ * esta chave por falta da permissão `user_read` (medido no LIVE-3). Por isso o
+ * teto entra por ambiente e só o usado é medido — ver voiceSample.ts.
+ */
+export async function listVoices(apiKey: string): Promise<VoiceInventory> {
+  if (isFixtureMode()) return listVoicesFixture();
+  let res: Response;
+  try {
+    res = await fetch(ELEVENLABS_VOICES_URL, {
+      method: "GET",
+      headers: { "xi-api-key": apiKey },
+    });
+  } catch (err) {
+    logProviderNetworkError("voiceProvider.listVoices", err);
+    throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
+  }
+  const data = (await readVoiceJson(res, "elevenlabs.listVoices")) as {
+    voices?: { category?: string }[];
+  };
+  // Forma inesperada NÃO vira zero. Zero passaria pela guarda de slots como
+  // "conta vazia, pode clonar" — o veredito mais perigoso possível a partir de
+  // uma resposta que não entendemos.
+  if (!Array.isArray(data.voices)) {
+    throw new VoiceProviderError(
+      `elevenlabs.listVoices: esperado data.voices como lista, recebido ${JSON.stringify(
+        Object.keys(data ?? {}),
+      )}`,
+    );
+  }
+  return {
+    total: data.voices.length,
+    cloned: data.voices.filter((v) => v?.category === "cloned").length,
+  };
 }
 
 // Cheap authenticated call used by POST /credentials/voice/test — lists the

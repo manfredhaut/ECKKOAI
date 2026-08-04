@@ -38,6 +38,7 @@ import { checkCostPolicy } from "./checkCostPolicy.js";
 import { checkDerivationPolicy } from "./checkDerivationPolicy.js";
 import { checkNativeBatchPolicy } from "./checkNativeBatchPolicy.js";
 import { checkPaddingPolicy } from "./checkPaddingPolicy.js";
+import { checkVoiceSamplePolicy } from "./checkVoiceSamplePolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -447,6 +448,11 @@ async function main(): Promise<void> {
   const paddingResult = await checkPaddingPolicy();
   paddingResult.failures.forEach((f) => failures.push(f));
   paddingResult.notes.forEach((n) => note(n));
+
+  // --- 23. captura de voz: o slot é irreversível --------------------------
+  const voiceResult = await checkVoiceSamplePolicy(process.env.REPO_ROOT ?? "/repo");
+  voiceResult.failures.forEach((f) => failures.push(f));
+  voiceResult.notes.forEach((n) => note(n));
 
   console.log("\nResumo:");
   notes.forEach((n) => console.log(n));

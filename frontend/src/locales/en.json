@@ -596,6 +596,28 @@
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",
       "writeScript": "Write the script to continue."
+    },
+    "voiceSample": {
+      "title": "Avatar voice",
+      "hint": "Record {{min}} to {{recommended}} of natural speech in a quiet room. A short sample produces a clone that talks fast and with unstable intonation.",
+      "alreadyCloned": "This avatar already has a cloned voice. Sending another sample replaces the current one, and the previous voice cannot be recovered.",
+      "record": "Record",
+      "recordAgain": "Record again",
+      "stop": "Stop",
+      "orUploadFile": "or upload an audio file",
+      "listenFirst": "Listen before sending — once cloned, the voice uses a slot that cannot be given back.",
+      "tooShort": "too short — {{missing}}s to go before the minimum",
+      "workable": "long enough to clone — {{missing}}s to go before the recommended length",
+      "good": "good length",
+      "send": "Clone voice",
+      "sending": "Cloning…",
+      "blockedShort": "The sample needs to be at least {{min}}.",
+      "cloned": "Voice cloned. The account now has {{used}} of {{limit}} voices in use.",
+      "replaceExplain": "Confirming replaces this avatar's current voice with a new one. The previous voice stays in the provider account, but is no longer linked to this avatar here.",
+      "replaceConfirm": "Replace anyway",
+      "micDenied": "The browser blocked the microphone. Allow microphone access for this site and try again, or upload an audio file.",
+      "micUnavailable": "Could not access the microphone. Check that a microphone is connected, or upload an audio file.",
+      "genericError": "Could not complete the operation. Please try again in a moment."
     }
   },
   "knowledge": {

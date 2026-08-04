@@ -21,7 +21,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { saveUpload } from "../storage.js";
 import type { AvatarProviderStatus, GenerateVideoInput, GenerateVideoResult, PollResult, TrainAvatarResult } from "./avatarProvider.js";
-import type { CloneVoiceResult, SynthesizedSpeech } from "./voiceProvider.js";
+import type { CloneVoiceResult, SynthesizedSpeech, VoiceInventory } from "./voiceProvider.js";
 import { HEYGEN_ASPECT_RATIOS, type AspectRatio } from "./videoFormat.js";
 import { selectEngine } from "./videoEngine.js";
 import { logEvent } from "../log/safeLog.js";
@@ -301,6 +301,24 @@ export function checkAvatarConnectionFixture(): void {
 
 export function cloneVoiceFixture(): CloneVoiceResult {
   return { voiceId: `fixture-voice-${randomUUID()}` };
+}
+
+/**
+ * Inventário simulado.
+ *
+ * Devolve UMA voz em uso, e não zero: zero descreveria uma conta virgem, que
+ * não é o estado real de nenhuma conta em que este produto rode, e faria a
+ * guarda de slots passar por vacuidade em toda execução em fixture. Um número
+ * baixo e diferente de zero exercita a comparação de verdade sem barrar o
+ * fluxo simulado.
+ *
+ * Deliberadamente NÃO configurável: a guarda de slots é exercitada com números
+ * injetados diretamente (`checkVoiceSlots`), que é onde os casos de fronteira
+ * pertencem. Tornar isto ajustável convidaria a "testar o teto" mexendo na
+ * fixture, e o que seria testado é a fixture, não a política.
+ */
+export function listVoicesFixture(): VoiceInventory {
+  return { total: 1, cloned: 1 };
 }
 
 export async function synthesizeSpeechFixture(): Promise<SynthesizedSpeech> {

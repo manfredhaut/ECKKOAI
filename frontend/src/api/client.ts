@@ -60,8 +60,24 @@ export const api = {
       handle<T>(res),
     );
   },
-  upload<T>(path: string, file: Blob, filename: string): Promise<T> {
+  /**
+   * `fields` viaja no MESMO multipart do arquivo, e não em query string.
+   *
+   * O primeiro campo a usar isto é a flag de substituição de voz, e ela é uma
+   * autorização: numa query string ela apareceria no log de acesso do proxy e
+   * no histórico do navegador, e ficaria a um copiar-e-colar de ser repetida
+   * sem o arquivo que a justificava.
+   *
+   * A ORDEM importa: os campos entram antes do arquivo, porque o
+   * `@fastify/multipart` só expõe em `file.fields` o que chegou ANTES da parte
+   * do arquivo — invertida, a flag chega tarde demais e a rota a lê como
+   * ausente, ou seja, falha fechado. Falhar fechado é o desfecho certo, mas
+   * pelo motivo errado, e o sintoma seria "cliquei em substituir e ele diz que
+   * a voz já existe".
+   */
+  upload<T>(path: string, file: Blob, filename: string, fields?: Record<string, string>): Promise<T> {
     const form = new FormData();
+    for (const [key, value] of Object.entries(fields ?? {})) form.append(key, value);
     form.append("file", file, filename);
     return fetch(`${BASE_URL}${path}`, {
       method: "POST",

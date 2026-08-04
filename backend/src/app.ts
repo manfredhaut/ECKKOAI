@@ -18,6 +18,7 @@ import { adminCopilotRoutes } from "./routes/adminCopilot.js";
 import { adminPlatformCredentialRoutes } from "./routes/adminPlatformCredentials.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { avatarRoutes } from "./routes/avatars.js";
+import { voiceRoutes } from "./routes/voice.js";
 import { videoRoutes } from "./routes/videos.js";
 import { credentialRoutes } from "./routes/credentials.js";
 import { scriptRoutes } from "./routes/scripts.js";
@@ -77,6 +78,7 @@ export async function buildApp() {
   await app.register(async (protectedApp) => {
     protectedApp.addHook("preHandler", requireAuth);
     await protectedApp.register(avatarRoutes);
+    await protectedApp.register(voiceRoutes);
     await protectedApp.register(videoRoutes);
     await protectedApp.register(credentialRoutes);
     await protectedApp.register(uploadRoutes);

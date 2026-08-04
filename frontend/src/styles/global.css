@@ -1456,3 +1456,126 @@ th {
   padding: 28px 24px;
   max-width: 960px;
 }
+
+/* --- Captura de voz (VoiceSampleRecorder) -------------------------------
+   Separada visualmente do resto do passo 1 por borda própria: a ação daqui
+   consome um slot IRREVERSÍVEL na conta do fornecedor, enquanto tudo o mais
+   naquele passo é reversível. Um bloco que se parece com os vizinhos convida
+   a clicar com o mesmo grau de atenção. */
+.voice-sample {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--color-primary) 4%, transparent);
+}
+
+.voice-sample h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.voice-sample__hint,
+.voice-sample__existing {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+.voice-sample__existing {
+  color: #a86f00;
+  font-weight: 600;
+}
+
+.voice-sample__controls,
+.voice-sample__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.voice-sample__actions {
+  margin-top: 12px;
+}
+
+.voice-sample__file {
+  font-size: 13px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.voice-sample__timer {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* As três faixas usam as MESMAS cores do indicador de gravação de vídeo, de
+   propósito: são a mesma ideia (curto / dá para usar / bom) em outro lugar do
+   produto, e duas paletas para o mesmo conceito ensinariam a ler cada tela do
+   zero. */
+.voice-sample__timer--short {
+  color: var(--color-tertiary);
+  font-weight: 600;
+}
+
+.voice-sample__timer--workable {
+  color: #a86f00;
+}
+
+.voice-sample__playback {
+  margin-top: 12px;
+}
+
+.voice-sample__playback p {
+  font-size: 13px;
+  margin: 0 0 6px;
+}
+
+.voice-sample__playback audio {
+  width: 100%;
+  max-width: 420px;
+}
+
+.voice-sample__error,
+.voice-sample__notice {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-card);
+}
+
+.voice-sample__error {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-tertiary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-tertiary) 40%, transparent);
+}
+
+.voice-sample__notice {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+
+/* A condição fica ao lado do botão desabilitado, sempre visível e sem hover —
+   mesmo padrão do passo 6. */
+.voice-sample__blocker {
+  font-size: 13px;
+  color: var(--color-tertiary);
+}
+
+.voice-sample__replace {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-card);
+  border: 1px dashed var(--color-tertiary);
+}
+
+.voice-sample__replace p {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
