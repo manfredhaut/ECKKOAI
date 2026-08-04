@@ -10,6 +10,7 @@ import {
   listVoicesFixture,
   synthesizeSpeechFixture,
 } from "./fixtureProvider.js";
+import { countOwnedVoices } from "../voice/voiceSample.js";
 const ELEVENLABS_ADD_VOICE_URL = "https://api.elevenlabs.io/v1/voices/add";
 const ELEVENLABS_VOICES_URL = "https://api.elevenlabs.io/v1/voices";
 
@@ -87,9 +88,15 @@ export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResu
 }
 
 export interface VoiceInventory {
-  /** Quantas vozes existem hoje na conta do fornecedor. */
+  /**
+   * Quantos itens a resposta trouxe, INCLUINDO as `premade` da biblioteca do
+   * fornecedor. Serve para diagnóstico e para o log — nunca para a guarda de
+   * slots. Usá-lo ali foi o defeito de 04/08: 25 aqui contra 4 vozes reais.
+   */
   total: number;
-  /** Quantas delas são clones — subconjunto de `total`. */
+  /** Quantas OCUPAM slot da conta. É ESTE o número que a guarda consome. */
+  owned: number;
+  /** Quantas delas são clones — subconjunto de `owned`. */
   cloned: number;
 }
 
@@ -131,8 +138,15 @@ export async function listVoices(apiKey: string): Promise<VoiceInventory> {
       )}`,
     );
   }
+  // A contagem que a guarda consome mora na política pura (`voiceSample.ts`),
+  // e não aqui, pelo mesmo motivo das outras quatro guardas: assim ela é
+  // exercitável com um inventário construído em memória, sem chave e sem rede.
+  // Enquanto ela era um `.length` embutido nesta função, o único jeito de
+  // conferi-la era chamando o fornecedor — e foi por isso que o defeito das
+  // vozes `premade` sobreviveu até aparecer numa tentativa real.
   return {
     total: data.voices.length,
+    owned: countOwnedVoices(data.voices),
     cloned: data.voices.filter((v) => v?.category === "cloned").length,
   };
 }

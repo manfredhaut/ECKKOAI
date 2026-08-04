@@ -195,6 +195,38 @@ export function voiceSlotLimit(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 /**
+ * GUARDA B (contagem) — quais vozes do inventário OCUPAM um slot da conta.
+ *
+ * DEFEITO MEDIDO em 04/08, e é a razão desta função existir: `GET /v1/voices`
+ * devolveu **25** itens para uma conta cujo painel mostra **4** vozes. A
+ * contagem somava o array inteiro, a guarda comparou 25 com o teto de 10, e uma
+ * clonagem perfeitamente legítima foi recusada com "25 de 10 vozes em uso".
+ * Nada foi gasto — a recusa acontece antes da clonagem — mas a operação válida
+ * ficou barrada, e neste projeto guarda que acusa uso legítimo se corrige.
+ *
+ * A diferença são as vozes `premade`: a biblioteca padrão que toda conta
+ * ElevenLabs enxerga. Elas não são da pessoa e não consomem slot dela.
+ *
+ * POR QUE "NÃO É premade" E NÃO "É cloned", que é o campo que já existia:
+ * contar só `cloned` deixaria de fora as vozes criadas por voice design e as
+ * profissionais, que OCUPAM slot. Isso subestimaria o uso e falharia ABERTO —
+ * recusaríamos tarde, com a tentativa já gasta. Excluir `premade` erra para o
+ * outro lado: uma categoria nova e desconhecida do fornecedor passa a contar
+ * como ocupada, e o pior desfecho é uma recusa cedo demais, que não custa slot.
+ * É a mesma escolha declarada em `DEFAULT_VOICE_SLOT_LIMIT`: falhar fechado é
+ * preferível quando o recurso protegido é irreversível.
+ *
+ * A string "premade" é DEDUZIDA da resposta do fornecedor, não documentada por
+ * ele em lugar nenhum deste repositório — ver o relatório do bloco. O código já
+ * dependia do mesmo vocabulário de `category` para calcular `cloned`.
+ */
+export const PREMADE_VOICE_CATEGORY = "premade";
+
+export function countOwnedVoices(voices: readonly { category?: string }[]): number {
+  return voices.filter((v) => v?.category !== PREMADE_VOICE_CATEGORY).length;
+}
+
+/**
  * LACUNA REGISTRADA, e ela é a razão de a GUARDA B existir.
  *
  * Esta aplicação NÃO tem caminho de exclusão de voz. Não há rota, botão nem

@@ -32,6 +32,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
 import type { Avatar } from "../types.js";
+import type { VoiceInventory } from "../services/providers/voiceProvider.js";
 import { cloneVoice, listVoices } from "../services/providers/voiceProvider.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { takeUpload } from "../services/uploadLimits.js";
@@ -203,7 +204,11 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
 
       // --- 5. GUARDA B: slots --------------------------------------------
       // Única chamada ao fornecedor antes da clonagem, e é de leitura.
-      let inventario: { total: number; cloned: number };
+      // O tipo vem do provider em vez de ser reescrito aqui: a cópia à mão
+      // deixou de ter `owned` quando o campo nasceu, e o `tsc` só acusou
+      // porque ela era explícita. Uma cópia que acompanha por acaso é pior —
+      // ela diverge em silêncio.
+      let inventario: VoiceInventory;
       try {
         inventario = await listVoices(voiceCredential.apiKey);
       } catch (err) {
@@ -211,11 +216,18 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
       }
       const limite = voiceSlotLimit();
-      const slots = checkVoiceSlots({ used: inventario.total, limit: limite });
+      // `owned`, NUNCA `total`: a resposta do fornecedor inclui as vozes
+      // `premade` da biblioteca dele, que não são da pessoa e não ocupam slot.
+      // Usar `total` aqui recusou uma clonagem legítima em 04/08 com "25 de 10
+      // vozes em uso", numa conta que tinha 4.
+      const slots = checkVoiceSlots({ used: inventario.owned, limit: limite });
       if (!slots.ok) {
         logEvent("error", "voice_sample_rejected", {
           reason: slots.code,
-          used: inventario.total,
+          used: inventario.owned,
+          // O bruto vai junto: sem ele, uma recusa futura não deixa distinguir
+          // "a conta encheu" de "a contagem voltou a somar a biblioteca".
+          totalNoInventario: inventario.total,
           limit: limite,
         });
         return reply.code(409).send({ error: slots.code, message: slots.message });
@@ -274,7 +286,7 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         // O aviso da faixa 60–90 s sobe junto com o sucesso, e não como erro:
         // é informação, não recusa.
         warning: veredictoDuracao.warning ?? null,
-        voice_slots: { used: inventario.total + 1, limit: limite },
+        voice_slots: { used: inventario.owned + 1, limit: limite },
       });
     },
   );

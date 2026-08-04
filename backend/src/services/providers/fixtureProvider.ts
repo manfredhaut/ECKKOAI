@@ -318,7 +318,13 @@ export function cloneVoiceFixture(): CloneVoiceResult {
  * fixture, e o que seria testado é a fixture, não a política.
  */
 export function listVoicesFixture(): VoiceInventory {
-  return { total: 1, cloned: 1 };
+  // `total` maior que `owned` DE PROPÓSITO, desde 04/08: a conta real traz as
+  // vozes `premade` da biblioteca do fornecedor junto com as da pessoa, e
+  // enquanto a fixture devolvia os dois números iguais o defeito de contagem
+  // não tinha como aparecer em fixture — ele só apareceu numa tentativa real,
+  // com 25 contra 4. Aqui os três números discordam de propósito, para que
+  // qualquer código que confunda um com o outro fique visível sem rede.
+  return { total: 21, owned: 1, cloned: 1 };
 }
 
 export async function synthesizeSpeechFixture(): Promise<SynthesizedSpeech> {

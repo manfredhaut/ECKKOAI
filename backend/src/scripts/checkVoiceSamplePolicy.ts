@@ -21,6 +21,8 @@ import {
   CLONE_SAMPLE_RATE_HZ,
   MAX_SAMPLE_SECONDS,
   MIN_SAMPLE_SECONDS,
+  PREMADE_VOICE_CATEGORY,
+  countOwnedVoices,
   PROTECTED_VOICE_IDS,
   RECOMMENDED_SAMPLE_SECONDS,
   VOICE_SAMPLE_MAX_BYTES,
@@ -92,6 +94,22 @@ export const MUTANTS: Mutant[] = [
     find: "  if (input.used >= input.limit) {",
     replace: "  if (false) {",
     expect: "uma conta CHEIA passou pela guarda de slots",
+  },
+  {
+    guard: "voz: slots do fornecedor",
+    name: "a contagem volta a somar a biblioteca do fornecedor",
+    kind: "esperto",
+    // O defeito REAL de 04/08, e o que ele ensina: o teto, a comparação e a
+    // mensagem estavam todos certos. O que estava errado era o número que
+    // chegava — `GET /v1/voices` devolve as vozes `premade` da biblioteca
+    // junto com as da pessoa, e somar o array inteiro deu 25 numa conta de 4.
+    // A clonagem foi recusada com "25 de 10 vozes em uso". Nenhum dos dois
+    // mutantes vizinhos pega isto: eles mutam a COMPARAÇÃO, e aqui ela nunca
+    // chega a ser consultada com o valor certo.
+    file: "backend/src/services/voice/voiceSample.ts",
+    find: "  return voices.filter((v) => v?.category !== PREMADE_VOICE_CATEGORY).length;",
+    replace: "  return voices.length;",
+    expect: "premade",
   },
   {
     guard: "voz: slots do fornecedor",
@@ -382,7 +400,54 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
     );
   }
 
-  notes.push("voz: 10/10 e 11/10 barrados, 3/10 liberado — e a recusa diz onde liberar o slot");
+  // A CONTAGEM, e não só a comparação. Foi aqui que a guarda B falhou de
+  // verdade em 04/08: o teto e o `>=` estavam certos, e mesmo assim uma
+  // clonagem legítima foi recusada — porque o número que chegava já vinha
+  // errado. Testar a comparação sem testar a contagem é a mesma classe de
+  // defeito do LIVE-2 e do GUARDAS-1: o mecanismo certo, alimentado errado.
+  //
+  // O inventário abaixo tem a forma da resposta real: a biblioteca `premade`
+  // do fornecedor misturada com as vozes da pessoa.
+  const inventarioReal = [
+    { category: "premade" },
+    { category: "premade" },
+    { category: "premade" },
+    { category: "cloned" },
+    { category: "professional" },
+    { category: "generated" },
+  ];
+  const ocupam = countOwnedVoices(inventarioReal);
+  if (ocupam !== 3) {
+    failures.push(
+      `voz: a contagem de slots devolveu ${ocupam} para um inventário com 3 vozes da pessoa e 3 ` +
+        `\`premade\` da biblioteca do fornecedor. As \`premade\` não são dela e não ocupam slot — ` +
+        "somá-las recusou uma clonagem legítima em 04/08 com \"25 de 10 vozes em uso\", numa conta " +
+        "que tinha 4. Guarda que acusa uso legítimo se corrige, não se tolera.",
+    );
+  }
+
+  // O outro lado: `cloned` sozinho não serve de contagem. Voice design e
+  // profissional OCUPAM slot, e contar só clones subestimaria o uso — a guarda
+  // falharia ABERTO, recusando tarde, com a tentativa já gasta.
+  const soClones = inventarioReal.filter((v) => v.category === "cloned").length;
+  if (ocupam <= soClones) {
+    failures.push(
+      `voz: a contagem de slots (${ocupam}) não é maior que a de clones (${soClones}) num inventário ` +
+        "que tem voz profissional e de voice design. Essas ocupam slot: contar só `cloned` " +
+        "subestima o uso e faz a guarda falhar ABERTO, que é o oposto do que ela protege.",
+    );
+  }
+
+  const contaVazia = countOwnedVoices([]);
+  if (contaVazia !== 0) {
+    failures.push(`voz: inventário vazio contou ${contaVazia} voz(es) em uso.`);
+  }
+
+  notes.push(
+    `voz: 10/10 e 11/10 barrados, 3/10 liberado — e a recusa diz onde liberar o slot; a contagem ` +
+      `ignora \`${PREMADE_VOICE_CATEGORY}\` e soma as ${ocupam} da pessoa (clone, profissional e ` +
+      "voice design), sem tocar a rede",
+  );
 
   // --- GUARDA C: substituição e voz protegida -----------------------------
   const semVoz = checkVoiceReplacement({ currentVoiceId: null, replace: false });
