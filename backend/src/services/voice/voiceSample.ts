@@ -36,6 +36,24 @@ export const MIN_SAMPLE_SECONDS = 60;
 export const RECOMMENDED_SAMPLE_SECONDS = 90;
 
 /**
+ * Taxa de amostragem da amostra que vai ao fornecedor. **24 kHz desde o
+ * FECHAMENTO-1**, e é a fonte única das duas réguas deste arquivo.
+ *
+ * Por que 24 e não 48: clonagem de voz não usa banda acima de ~10 kHz, e
+ * 24 kHz já carrega até 12 kHz (Nyquist) — sobra sobre a fala e nada do que
+ * importa é perdido. Os 48 kHz do HIGIENE-1 dobravam o arquivo para carregar
+ * banda que a clonagem descarta, e isso criou uma colisão real: a captura de
+ * 2:33 do E2E-1 passou a NÃO caber nos 10 MiB do fornecedor.
+ *
+ * Ela mora aqui, na política pura, e não no módulo do ffmpeg, porque é dela
+ * que sai o teto de DURAÇÃO — e as duas réguas precisam ser a mesma conta.
+ */
+export const CLONE_SAMPLE_RATE_HZ = 24000;
+
+/** Bytes por segundo do formato de saída: 16 bit (2 bytes) × 1 canal. */
+const CLONE_BYTES_PER_SECOND = CLONE_SAMPLE_RATE_HZ * 2;
+
+/**
  * GUARDA D — teto de tamanho.
  *
  * 10 MB é o limite do FORNECEDOR, não uma escolha nossa: é o que a tela de
@@ -43,13 +61,16 @@ export const RECOMMENDED_SAMPLE_SECONDS = 90;
  * camada invente um segundo número — a divergência entre dois tetos só
  * apareceria com o arquivo já enviado, no 413.
  *
- * NOTA de folga — MUDOU no HIGIENE-1 e agora morde dos DOIS lados. Enquanto a
- * rota convertia para mp3 128 kbps, o arquivo enviado ao fornecedor era sempre
- * pequeno (120 s ≈ 1,9 MB) e só o arquivo QUE CHEGA podia estourar. Agora a
- * conversão é para WAV PCM 16 bit sem perda (ver `voiceSampleAudio.ts`), que a
- * 48 kHz mono ocupa ~5,5 MB por minuto: uma captura webm/opus de 2:33 — leve na
- * entrada, 2,4 MB, e já exercitada de verdade no E2E-1 — vira ~14,0 MB depois
- * de convertida e passa a NÃO caber no destino.
+ * NOTA de folga — a conversão é sem perda (WAV PCM 16 bit, ver
+ * `voiceSampleAudio.ts`), então o arquivo que SAI daqui é maior que o que
+ * chega, e o teto morde dos dois lados. A 24 kHz mono são 48 kB/s, ou ~2,8 MB
+ * por minuto: os 10 MiB comportam `MAX_SAMPLE_SECONDS` de fala.
+ *
+ * Histórico que explica a constante abaixo, porque ela já custou um caso real:
+ * no HIGIENE-1 a saída era 48 kHz, o dobro, e a captura de 2:33 do E2E-1 — leve
+ * na entrada, 2,4 MB — virava 14,0 MB e passava a ser RECUSADA. O
+ * FECHAMENTO-1 desceu para 24 kHz (banda de sobra para voz) e a colisão
+ * desapareceu.
  *
  * Por isso existe `checkNormalizedSampleSize`, aplicada ao arquivo CONVERTIDO
  * antes de qualquer chamada ao fornecedor. As duas checagens medem coisas
@@ -57,6 +78,30 @@ export const RECOMMENDED_SAMPLE_SECONDS = 90;
  * outra protege o slot.
  */
 export const VOICE_SAMPLE_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * GUARDA A (teto) — duração máxima, DERIVADA e não escolhida.
+ *
+ * Este número não é uma opinião sobre quanto tempo é bom gravar: é o teto de
+ * bytes do fornecedor dividido pelo custo por segundo do formato de saída. Ele
+ * é calculado, e não escrito, por um motivo medido no HIGIENE-1 — lá as duas
+ * réguas eram independentes, e abriu-se uma faixa (109 s a 120 s) em que
+ * `checkSampleDuration` aceitava "limpa" uma amostra que
+ * `checkNormalizedSampleSize` recusaria logo depois. A pessoa via um aviso
+ * verde e um erro em seguida, pelo mesmo arquivo.
+ *
+ * Derivando as duas da MESMA conta, essa faixa não pode voltar a existir: para
+ * abri-la seria preciso mudar a fórmula, não esquecer de atualizar um número.
+ *
+ * A conta é função e não expressão solta justamente para que a recusa por
+ * TAMANHO possa chamá-la com o teto que recebeu: as duas réguas passam pelo
+ * mesmo corpo, e não por duas cópias que só por hábito dão o mesmo resultado.
+ */
+export function maxSampleSecondsFor(maxBytes: number): number {
+  return Math.floor(maxBytes / CLONE_BYTES_PER_SECOND);
+}
+
+export const MAX_SAMPLE_SECONDS = maxSampleSecondsFor(VOICE_SAMPLE_MAX_BYTES);
 
 /**
  * GUARDA D (segunda metade) — o arquivo CONVERTIDO cabe no destino?
@@ -72,8 +117,6 @@ export const VOICE_SAMPLE_MAX_BYTES = 10 * 1024 * 1024;
  */
 export interface NormalizedSizeInput {
   bytes: number;
-  /** Taxa efetiva da conversão, em Hz. `null` quando não foi possível medir. */
-  sampleRateHz: number | null;
   maxBytes?: number;
 }
 
@@ -85,11 +128,14 @@ export function checkNormalizedSampleSize(input: NormalizedSizeInput): {
   const maxBytes = input.maxBytes ?? VOICE_SAMPLE_MAX_BYTES;
   if (input.bytes <= maxBytes) return { ok: true };
 
-  // Bytes por segundo do formato de saída: 2 bytes por amostra (16 bit), mono.
-  // Sem taxa medida a conta usa 48 kHz, o valor do MediaRecorder — errar para o
-  // lado do formato mais pesado dá um alvo conservador, que é o certo aqui.
-  const hz = input.sampleRateHz ?? 48000;
-  const segundosQueCabem = Math.floor(maxBytes / (hz * 2));
+  // A taxa NÃO é mais parâmetro, e a remoção dela é a correção estrutural do
+  // FECHAMENTO-1. Enquanto a conversão preservava a taxa da entrada, este
+  // número variava com o navegador de quem gravou e a duração a mirar era
+  // calculada com um valor que `checkSampleDuration` não conhecia — foi assim
+  // que a faixa 109–120 s existiu. A conversão agora IMPÕE a taxa
+  // (`CLONE_SAMPLE_RATE_HZ`), então o alvo é a mesma função que produz
+  // `MAX_SAMPLE_SECONDS`, e não há por onde os dois divergirem.
+  const segundosQueCabem = maxSampleSecondsFor(maxBytes);
   return {
     ok: false,
     code: "sample_too_large_converted",
@@ -270,6 +316,7 @@ export interface SampleVerdict {
     | "sample_not_audio"
     | "sample_too_large"
     | "sample_too_short"
+    | "sample_too_long"
     | "voice_protected"
     | "voice_exists"
     | "voice_slots_full";
@@ -373,6 +420,28 @@ export function checkSampleDuration(durationSeconds: number | null): SampleVerdi
         "entonação instável — foi o que aconteceu com a voz gravada com 15 segundos nesta conta. " +
         `A clonagem consome um slot que não pode ser devolvido, então ela é recusada aqui em vez de ` +
         "gastar o slot com um resultado ruim.",
+    };
+  }
+
+  // O teto. Ele vem DEPOIS do piso de propósito: uma amostra de 0 s satisfaz
+  // as duas condições, e a mensagem útil é a do piso — é ela que explica por
+  // que amostra curta estraga o clone.
+  //
+  // A recusa é por DURAÇÃO e não por bytes porque é aqui, antes da conversão,
+  // que ela sai mais barata: o ffmpeg nem roda. O `checkNormalizedSampleSize`
+  // continua existindo como a segunda metade da mesma régua — ele mede o
+  // arquivo real, e pega o caso em que a conta e os bytes discordam.
+  if (durationSeconds > MAX_SAMPLE_SECONDS) {
+    return {
+      ok: false,
+      code: "sample_too_long",
+      message:
+        `A amostra tem ${formatSeconds(durationSeconds)} e o máximo é ` +
+        `${formatSeconds(MAX_SAMPLE_SECONDS)}. Convertida para áudio sem perda ela passaria dos ` +
+        `${(VOICE_SAMPLE_MAX_BYTES / (1024 * 1024)).toFixed(0)} MB que o provedor de voz aceita, e a ` +
+        "recusa dele chegaria depois de a tentativa já ter sido gasta. Grave um trecho mais curto — o " +
+        `mínimo é ${formatSeconds(MIN_SAMPLE_SECONDS)} e o recomendado, ` +
+        `${formatSeconds(RECOMMENDED_SAMPLE_SECONDS)}.`,
     };
   }
 

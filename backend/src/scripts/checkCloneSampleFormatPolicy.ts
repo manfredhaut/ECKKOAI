@@ -28,7 +28,14 @@ import { readFile, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Mutant } from "./mutants.js";
-import { checkNormalizedSampleSize, VOICE_SAMPLE_MAX_BYTES } from "../services/voice/voiceSample.js";
+import {
+  CLONE_SAMPLE_RATE_HZ,
+  MAX_SAMPLE_SECONDS,
+  MIN_SAMPLE_SECONDS,
+  VOICE_SAMPLE_MAX_BYTES,
+  checkNormalizedSampleSize,
+  checkSampleDuration,
+} from "../services/voice/voiceSample.js";
 import { normalizeVoiceSample } from "../services/voice/voiceSampleAudio.js";
 
 export interface CloneSampleFormatResult {
@@ -62,24 +69,29 @@ export const MUTANTS: Mutant[] = [
     kind: "esperto",
     // O mutante que separa "sem perda" de "sem PERDER". O codec continua
     // `pcm_s16le`, a profundidade continua 16 bit, o arquivo continua sendo um
-    // WAV legítimo e uma guarda que só olhasse o codec ficaria verde. Mas
-    // metade da banda foi jogada fora antes de o fornecedor ver o áudio — e
-    // para clonagem é justamente a banda alta que carrega o que distingue um
-    // timbre. É a mesma classe de defeito do LIVE-2: o mecanismo certo,
-    // aplicado sobre a entrada errada.
+    // WAV legítimo e uma guarda que só olhasse o codec ficaria verde. Mas a
+    // saída deixa de estar na taxa de clonagem, e 22,05 kHz corta em 11 kHz —
+    // já dentro da banda que a fala usa, ao contrário dos 12 kHz de 24 kHz.
+    // É a mesma classe de defeito do LIVE-2: o mecanismo certo, aplicado sobre
+    // a entrada errada.
+    //
+    // AJUSTADO no FECHAMENTO-1: até o HIGIENE-1 a taxa era preservada da
+    // entrada e o mutante injetava um `-ar` que não existia; agora o `-ar` é
+    // fixo, e o mutante troca o VALOR dele. O defeito exercitado é o mesmo.
     file: "backend/src/services/voice/voiceSampleAudio.ts",
-    find: `      ...(sampleRateHz === null ? [] : ["-ar", String(sampleRateHz)]),`,
-    replace: `      "-ar",\n      "22050",`,
+    find: `      String(CLONE_SAMPLE_RATE_HZ),`,
+    replace: `      "22050",`,
     expect: "reamostrou",
   },
   {
     guard: "voz: amostra de clonagem sem perda",
     name: "o teto do arquivo CONVERTIDO deixa de barrar",
     kind: "obvio",
-    // Sem esta metade, a mudança para sem-perda cria um defeito novo: a captura
-    // de 2:33 do E2E-1 é leve na entrada (2,4 MB) e vira ~14,0 MB convertida.
-    // O fornecedor recusaria com um 4xx indistinguível de qualquer outro,
-    // depois de a tentativa ter sido gasta.
+    // Sem esta metade, a mudança para sem-perda cria um defeito novo: uma
+    // captura leve na entrada vira muitos megabytes convertida, e o fornecedor
+    // recusaria com um 4xx indistinguível de qualquer outro, depois de a
+    // tentativa ter sido gasta. A 24 kHz o caso concreto de 2:33 do E2E-1 passou
+    // a caber, mas o teto continua existindo — só mudou de lugar (218 s).
     file: "backend/src/services/voice/voiceSample.ts",
     find: "  if (input.bytes <= maxBytes) return { ok: true };",
     replace: "  if (true) return { ok: true };",
@@ -270,11 +282,13 @@ export async function checkCloneSampleFormatPolicy(): Promise<CloneSampleFormatR
         "informação estéreo útil, e o segundo canal só dobra o arquivo contra o teto de 10 MB.",
     );
   }
-  if (saida.sampleRate < entrada.sampleRate) {
+  if (saida.sampleRate !== CLONE_SAMPLE_RATE_HZ) {
     failures.push(
-      `voz: a conversão reamostrou de ${entrada.sampleRate} Hz para ${saida.sampleRate} Hz. Reduzir a ` +
-        "taxa joga fora a banda alta — que é justamente onde mora o que distingue um timbre — e não " +
-        "compensa nada: o arquivo já é PCM, não há codificador a agradar. Preserve a taxa da entrada.",
+      `voz: a conversão reamostrou de ${entrada.sampleRate} Hz para ${saida.sampleRate} Hz, e a taxa de ` +
+        `clonagem é ${CLONE_SAMPLE_RATE_HZ} Hz. A asserção é de IGUALDADE porque os dois desvios custam: ` +
+        "abaixo corta banda que a fala usa (22,05 kHz já corta em 11 kHz); acima dobra o arquivo para " +
+        "transportar banda que a clonagem descarta, e foi assim que uma captura boa de 2:33 passou a não " +
+        "caber nos 10 MiB do fornecedor. É a mesma constante de que sai o teto de duração da amostra.",
     );
   }
 
@@ -286,12 +300,17 @@ export async function checkCloneSampleFormatPolicy(): Promise<CloneSampleFormatR
       `${convertida.filename}`,
   );
 
-  // --- 2. a taxa é PRESERVADA, não fixada --------------------------------
+  // --- 2. a taxa de saída é INVARIANTE em relação à entrada ---------------
   //
-  // Três taxas, e a de 22,05 kHz é a que importa: se o código fixasse 44,1 kHz
-  // (o valor antigo), esta entrada seria AUMENTADA — o que não perde informação
-  // e passaria despercebido pela asserção de "não reduziu". A asserção é de
-  // IGUALDADE por isso.
+  // Três taxas de entrada, uma acima da de clonagem, uma entre e uma abaixo. A
+  // de 22,05 kHz é a que importa mais: ela obriga a conversão a SUBIR, e uma
+  // implementação que só limitasse ("no máximo 24 kHz") passaria pelas outras
+  // duas sem nunca ser flagrada — deixando o resto do sistema calcular o teto
+  // de duração com uma taxa que o arquivo não tem.
+  //
+  // Que subir de 22,05 kHz não acrescenta informação é verdade e não é o ponto:
+  // o que se está garantindo aqui é que o formato de saída seja UM só, porque é
+  // dele que a régua de duração é derivada.
   for (const taxa of [48000, 44100, 22050]) {
     const amostra = wavTom(taxa, 1);
     const convertidaN = await normalizeVoiceSample(amostra);
@@ -300,37 +319,45 @@ export async function checkCloneSampleFormatPolicy(): Promise<CloneSampleFormatR
       failures.push(`voz: ffprobe não leu a saída de ${taxa} Hz.`);
       continue;
     }
-    if (sondada.sampleRate !== taxa) {
+    if (sondada.sampleRate !== CLONE_SAMPLE_RATE_HZ) {
       failures.push(
-        `voz: a conversão reamostrou ${taxa} Hz para ${sondada.sampleRate} Hz. A taxa de saída tem de ` +
-          "ser a da ENTRADA: fixar um número converte para cima quem gravou pior (bytes à toa) e para " +
-          "baixo quem gravou melhor (perda gratuita).",
+        `voz: uma entrada de ${taxa} Hz saiu a ${sondada.sampleRate} Hz, e a taxa de clonagem é ` +
+          `${CLONE_SAMPLE_RATE_HZ} Hz. A saída não pode depender do navegador de quem gravou: o teto de ` +
+          "duração da amostra é calculado a partir dessa taxa, e uma saída variável faria a régua " +
+          "prometer uma duração que o arquivo não cumpre.",
       );
     }
-    if (convertidaN.sampleRateHz !== taxa) {
+    if (convertidaN.sampleRateHz !== sondada.sampleRate) {
       failures.push(
         `voz: a conversão DECLARA ${convertidaN.sampleRateHz} Hz mas o arquivo tem ${sondada.sampleRate} Hz ` +
           `para uma entrada de ${taxa} Hz. O campo que o resto do sistema lê precisa bater com os bytes.`,
       );
     }
+    if (convertidaN.inputSampleRateHz !== taxa) {
+      failures.push(
+        `voz: a conversão registra ${convertidaN.inputSampleRateHz} Hz como taxa de ENTRADA para um ` +
+          `arquivo de ${taxa} Hz. É o único campo que permite auditar depois de onde a amostra veio — ` +
+          "sem ele, uma saída a 24 kHz não distingue reamostragem de origem.",
+      );
+    }
   }
 
-  notes.push("voz: taxa de amostragem preservada em 48000, 44100 e 22050 Hz — nem reduz nem infla");
+  notes.push(
+    `voz: entradas de 48000, 44100 e 22050 Hz saem todas a ${CLONE_SAMPLE_RATE_HZ} Hz, e a taxa de ` +
+      "origem fica registrada",
+  );
 
   // --- 3. o teto do arquivo CONVERTIDO ------------------------------------
   //
   // O defeito que a própria mudança para sem-perda cria. Sem esta asserção,
   // a captura de 2:33 já exercitada no E2E-1 passaria daqui e morreria no
   // fornecedor, com a tentativa gasta.
-  const grande = checkNormalizedSampleSize({
-    bytes: VOICE_SAMPLE_MAX_BYTES + 1,
-    sampleRateHz: 48000,
-  });
+  const grande = checkNormalizedSampleSize({ bytes: VOICE_SAMPLE_MAX_BYTES + 1 });
   if (grande.ok) {
     failures.push(
       "voz: uma amostra convertida ACIMA do teto do fornecedor não foi barrada antes de chegar ao " +
-        `fornecedor. WAV 16 bit mono a 48 kHz ocupa ~5,5 MB por minuto, então a captura de 2:33 do ` +
-        "E2E-1 — leve na entrada, 2,4 MB — vira ~14,0 MB convertida. A recusa dele chega como um 4xx " +
+        `fornecedor. WAV 16 bit mono a ${CLONE_SAMPLE_RATE_HZ} Hz ocupa ~2,8 MB por minuto, então ` +
+        "gravações longas estouram os 10 MiB mesmo chegando leves aqui. A recusa dele chega como um 4xx " +
         "indistinguível dos outros, com a tentativa já gasta.",
     );
   } else if (!/\d+\s*segundos/.test(grande.message ?? "")) {
@@ -338,9 +365,16 @@ export async function checkCloneSampleFormatPolicy(): Promise<CloneSampleFormatR
       `voz: a recusa por tamanho convertido não diz quantos SEGUNDOS gravar. Ninguém que acabou de ` +
         `gravar converte megabyte em segundo de fala. Recebida: "${grande.message}"`,
     );
+  } else if (!grande.message?.includes(`${MAX_SAMPLE_SECONDS} segundos`)) {
+    failures.push(
+      `voz: a recusa por tamanho manda gravar até uma duração que NÃO é o teto da política ` +
+        `(${MAX_SAMPLE_SECONDS} s). Os dois números têm de sair da mesma conta — quando não saíam, ` +
+        `abriu-se a faixa em que a duração era aceita "limpa" e o tamanho recusava o mesmo arquivo logo ` +
+        `depois. Recebida: "${grande.message}"`,
+    );
   }
 
-  const cabe = checkNormalizedSampleSize({ bytes: 1024 * 1024, sampleRateHz: 48000 });
+  const cabe = checkNormalizedSampleSize({ bytes: 1024 * 1024 });
   if (!cabe.ok) {
     failures.push(
       "voz: uma amostra convertida de 1 MB foi barrada. Guarda que recusa uso legítimo é desligada na " +
@@ -348,10 +382,55 @@ export async function checkCloneSampleFormatPolicy(): Promise<CloneSampleFormatR
     );
   }
 
-  const segundosNoTeto = Math.floor(VOICE_SAMPLE_MAX_BYTES / (48000 * 2));
+  // --- 4. as duas réguas não podem discordar ------------------------------
+  //
+  // A asserção que o FECHAMENTO-1 existe para tornar impossível de quebrar. O
+  // defeito não era um número errado: era DOIS números, cada um certo sozinho.
+  // `checkSampleDuration` aceitava 120 s "limpa" enquanto o arquivo convertido
+  // de 120 s era recusado por tamanho — a pessoa via um aviso verde e um erro
+  // em seguida, pelo mesmo áudio.
+  //
+  // A direção importa. Uma duração RECUSADA cujo arquivo caberia é apenas
+  // conservadorismo do arredondamento, e falha para o lado seguro. O que não
+  // pode existir é o contrário: aceitar a duração e recusar os bytes.
+  const HEADER_WAV = 44;
+  const discordantes: number[] = [];
+  for (let d = MIN_SAMPLE_SECONDS; d <= MAX_SAMPLE_SECONDS + 30; d += 1) {
+    const porDuracao = checkSampleDuration(d);
+    const porTamanho = checkNormalizedSampleSize({
+      bytes: HEADER_WAV + d * CLONE_SAMPLE_RATE_HZ * 2,
+    });
+    if (porDuracao.ok && !porTamanho.ok) discordantes.push(d);
+  }
+  if (discordantes.length > 0) {
+    const faixa =
+      discordantes.length === 1
+        ? `${discordantes[0]} s`
+        : `${discordantes[0]}–${discordantes[discordantes.length - 1]} s`;
+    failures.push(
+      `voz: existe faixa em que a duração é ACEITA e o arquivo convertido é RECUSADO (${faixa}, ` +
+        `${discordantes.length} valor(es)). É o defeito exato do HIGIENE-1: a pessoa recebe o aviso ` +
+        "verde da duração e o erro de tamanho logo depois, pela mesma gravação. As duas réguas têm de " +
+        "sair da mesma constante — se esta asserção quebrou, alguém voltou a escrever um dos números " +
+        "à mão.",
+    );
+  }
+
+  const noTeto = checkSampleDuration(MAX_SAMPLE_SECONDS);
+  if (!noTeto.ok) {
+    failures.push(
+      `voz: a amostra de ${MAX_SAMPLE_SECONDS} s — exatamente o teto — foi recusada. Sem este ` +
+        "contraponto, uma política que recusasse tudo satisfaria a asserção de coerência acima sem " +
+        "distinguir nada.",
+    );
+  }
+
   notes.push(
-    `voz: teto do arquivo CONVERTIDO aplicado antes da rede — a ${(VOICE_SAMPLE_MAX_BYTES / (1024 * 1024)).toFixed(0)} MB ` +
-      `do fornecedor cabem ~${segundosNoTeto} s de WAV 16 bit mono a 48 kHz, e a recusa diz a duração a mirar`,
+    `voz: teto do arquivo CONVERTIDO aplicado antes da rede — a ` +
+      `${(VOICE_SAMPLE_MAX_BYTES / (1024 * 1024)).toFixed(0)} MB do fornecedor cabem ` +
+      `${MAX_SAMPLE_SECONDS} s de WAV 16 bit mono a ${CLONE_SAMPLE_RATE_HZ} Hz; duração e tamanho ` +
+      `concordam em todos os ${MAX_SAMPLE_SECONDS + 31 - MIN_SAMPLE_SECONDS} segundos varridos, e a ` +
+      "recusa diz a duração a mirar",
   );
 
   return { failures, notes };

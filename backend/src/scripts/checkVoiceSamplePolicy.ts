@@ -18,6 +18,8 @@ import { redactText } from "../services/log/safeLog.js";
 import {
   ALLOWED_CLONE_FIELDS,
   CATALOG_LABEL_FIELDS,
+  CLONE_SAMPLE_RATE_HZ,
+  MAX_SAMPLE_SECONDS,
   MIN_SAMPLE_SECONDS,
   PROTECTED_VOICE_IDS,
   RECOMMENDED_SAMPLE_SECONDS,
@@ -327,9 +329,30 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
     );
   }
 
+  // O TETO, do FECHAMENTO-1. Ele não é uma opinião sobre quanto tempo é bom
+  // gravar: é o teto de bytes do fornecedor dividido pelo custo por segundo do
+  // formato de saída, e recusar por aqui é mais barato porque o ffmpeg nem
+  // chega a rodar. A recusa precisa dizer o alvo, pelo mesmo motivo da recusa
+  // por tamanho: o único controle que a pessoa tem na mão é falar menos tempo.
+  const acimaDoTeto = checkSampleDuration(MAX_SAMPLE_SECONDS + 1);
+  if (acimaDoTeto.ok) {
+    failures.push(
+      `voz: uma amostra de ${MAX_SAMPLE_SECONDS + 1} s foi ACEITA, acima do teto de ` +
+        `${MAX_SAMPLE_SECONDS} s. Convertida sem perda ela não cabe nos ` +
+        `${(VOICE_SAMPLE_MAX_BYTES / (1024 * 1024)).toFixed(0)} MB do fornecedor, e a recusa dele ` +
+        "chegaria como um 4xx indistinguível dos outros, com a tentativa já gasta.",
+    );
+  } else if (!acimaDoTeto.message?.includes("máximo")) {
+    failures.push(
+      `voz: a recusa por amostra longa não diz qual é o máximo. Recebida: "${acimaDoTeto.message}"`,
+    );
+  }
+
   notes.push(
-    `voz: amostra de 10 s recusada, 75 s aceita com aviso, 120 s aceita limpa, duração ilegível recusada ` +
-      `(mínimo ${MIN_SAMPLE_SECONDS}s, recomendado ${RECOMMENDED_SAMPLE_SECONDS}s)`,
+    `voz: amostra de 10 s recusada, 75 s aceita com aviso, 120 s aceita limpa, ` +
+      `${MAX_SAMPLE_SECONDS + 1} s recusada por exceder o teto, duração ilegível recusada ` +
+      `(mínimo ${MIN_SAMPLE_SECONDS}s, recomendado ${RECOMMENDED_SAMPLE_SECONDS}s, máximo ` +
+      `${MAX_SAMPLE_SECONDS}s — derivado de ${CLONE_SAMPLE_RATE_HZ} Hz e do teto de bytes)`,
   );
 
   // --- GUARDA B: slots ----------------------------------------------------

@@ -161,10 +161,14 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       //
       // Antes da leitura de slots de propósito, e a razão é a mesma ordem
       // crescente de custo do cabeçalho: converter é CPU local, custo zero, e
-      // recusar aqui não toca a rede. Desde que a saída é WAV sem perda
-      // (~5,5 MB por minuto a 48 kHz), uma captura leve na entrada pode não
-      // caber no destino — e descobrir isso pelo 4xx do fornecedor gastaria uma
+      // recusar aqui não toca a rede. A saída é WAV sem perda (~2,8 MB por
+      // minuto a 24 kHz), então uma captura leve na entrada ainda pode não caber
+      // no destino — e descobrir isso pelo 4xx do fornecedor gastaria uma
       // tentativa para dizer o que já dava para saber sem sair da máquina.
+      //
+      // Na prática a GUARDA A já barrou o caso por duração, com a mesma conta e
+      // sem rodar o ffmpeg. Esta continua aqui porque mede o arquivo REAL: é a
+      // única que pega o dia em que os bytes e a conta discordarem.
       //
       // O ORIGINAL é salvo antes de tudo: se qualquer coisa daqui para frente
       // falhar, o arquivo que a pessoa acabou de gravar continua existindo.
@@ -175,7 +179,6 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       const normalizada = await normalizeVoiceSample(buffer);
       const tamanhoConvertido = checkNormalizedSampleSize({
         bytes: normalizada.buffer.length,
-        sampleRateHz: normalizada.sampleRateHz,
       });
       if (!tamanhoConvertido.ok) {
         logEvent("info", "voice_sample_rejected", {
@@ -183,6 +186,7 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
           inputBytes: buffer.length,
           convertedBytes: normalizada.buffer.length,
           sampleRateHz: normalizada.sampleRateHz,
+          inputSampleRateHz: normalizada.inputSampleRateHz,
           durationSeconds: duracao,
         });
         return reply.code(413).send({
