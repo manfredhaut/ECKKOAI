@@ -578,7 +578,8 @@
       "difference": "Diferença",
       "factor": "a estimativa foi {{factor}}× o custo real",
       "failed": "A tentativa falhou: {{reason}}",
-      "simulated": "Geração simulada — nenhum valor foi cobrado. Os números mostram o que teria custado."
+      "simulated": "Geração simulada — nenhum valor foi cobrado. Os números mostram o que teria custado.",
+      "detailsToggle": "Ver detalhes da medição"
     },
     "publish": {
       "title": "Onde este vídeo vai ser publicado",

@@ -35,8 +35,16 @@ export const MUTANTS: Mutant[] = [
     // Mutante (a) do enunciado: o vínculo entre o botão e o predicado some. A
     // tela volta ao estado de antes deste bloco — clicar e descobrir.
     file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
-    find: "            disabled={submitting || blocked}",
-    replace: "            disabled={submitting}",
+    // A âncora inclui `className` e `onClick` porque `disabled={submitting ||
+    // blocked}` sozinho passou a ocorrer DUAS vezes desde que o DEMO-2 trouxe o
+    // botão "gerar novamente" — MEDIDO: 2 ocorrências, e o arnês aborta em
+    // substituição ambígua. O código de produto está certo: os dois botões
+    // disparam geração e os dois devem obedecer ao predicado. Era a declaração
+    // do mutante que precisava distinguir qual dos dois ela muta.
+    //
+    // O alvo é o botão PRINCIPAL. As três linhas juntas ocorrem 1 vez.
+    find: '            className="btn btn-primary"\n            onClick={handleGenerate}\n            disabled={submitting || blocked}',
+    replace: '            className="btn btn-primary"\n            onClick={handleGenerate}\n            disabled={submitting}',
     expect: "não desabilita o botão de gerar a partir do predicado",
   },
   {

@@ -578,7 +578,8 @@
       "difference": "Difference",
       "factor": "the estimate was {{factor}}× the actual cost",
       "failed": "The attempt failed: {{reason}}",
-      "simulated": "Simulated generation — nothing was charged. The numbers show what it would have cost."
+      "simulated": "Simulated generation — nothing was charged. The numbers show what it would have cost.",
+      "detailsToggle": "See measurement details"
     },
     "publish": {
       "title": "Where will this video be published",

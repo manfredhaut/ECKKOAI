@@ -55,7 +55,19 @@ export const MUTANTS: Mutant[] = [
     // um roteiro de 58 s vira um vídeo de 63 s cobrados.
     find: "  return estimatedSeconds * CONFIRM_MARGIN > CONFIRM_ABOVE_SECONDS;",
     replace: "  return estimatedSeconds > CONFIRM_ABOVE_SECONDS;",
-    expect: "sem margem",
+    // O `expect` casa a frase EXATA da falha, com a caixa exata.
+    //
+    // Este mutante aparecia como guarda inerte, e o diagnóstico corrente era
+    // que o gate reprovava "por outro motivo". Medido: ele reprova pelo motivo
+    // certo, com a mensagem certa — a comparação do arnês é sensível a caixa, e
+    // o `expect` dizia "sem margem" enquanto a guarda escreve "Sem margem" no
+    // começo da segunda frase. Uma letra, e a guarda constava como morta.
+    //
+    // A frase escolhida é a que descreve a PROPOSIÇÃO ("a estimativa crua
+    // passa"), e não a palavra "margem" solta: qualquer reescrita da mensagem
+    // que mantenha o sentido mantém este casamento, e uma que troque o sentido
+    // deve mesmo quebrá-lo.
+    expect: "Sem margem, a estimativa crua passa",
   },
   {
     guard: "gasto: a cena escolhida chega ao payload",

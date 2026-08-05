@@ -162,16 +162,32 @@ export function VideoCostPanel({
         </p>
       )}
 
-      {/* Duas procedências, e nenhuma escondida: de onde vem a DURAÇÃO
-          estimada e de onde vem o PREÇO por segundo. Foram medidas em
-          passadas diferentes, e um número sem origem é indistinguível de um
-          palpite — foi assim que a estimativa de 0,42× passou por fato. */}
-      <p className="text-muted" style={{ fontSize: 11, marginTop: 8, marginBottom: 0 }}>
-        {cost.pacing}
-      </p>
-      <p className="text-muted" style={{ fontSize: 11, marginTop: 4, marginBottom: 0 }}>
-        {cost.basis}
-      </p>
+      {/* Duas procedências: de onde vem a DURAÇÃO estimada e de onde vem o
+          PREÇO por segundo. Foram medidas em passadas diferentes, e um número
+          sem origem é indistinguível de um palpite — foi assim que a estimativa
+          de 0,42× passou por fato.
+
+          RECOLHIDAS, não removidas. Os textos citam ffprobe, a variação de
+          `remaining_quota` e sob quais proporções a medição foi feita: é
+          exatamente o que se quer poder abrir quando alguém pergunta de onde
+          saiu o número, e exatamente o que não se quer na frente de um
+          investidor lendo a tela pela primeira vez.
+
+          O que fica SEMPRE visível é o que decide: a estimativa, o custo e o
+          aviso de geração simulada logo acima. Nenhum dos três entra aqui —
+          esconder o aviso de simulação atrás de um clique seria apresentar um
+          vídeo simulado como real por omissão. */}
+      <details style={{ marginTop: 8 }}>
+        <summary className="text-muted" style={{ fontSize: 11, cursor: "pointer" }}>
+          {t("createVideo.cost.detailsToggle")}
+        </summary>
+        <p className="text-muted" style={{ fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+          {cost.pacing}
+        </p>
+        <p className="text-muted" style={{ fontSize: 11, marginTop: 4, marginBottom: 0 }}>
+          {cost.basis}
+        </p>
+      </details>
     </div>
   );
 }
