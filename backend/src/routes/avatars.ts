@@ -19,6 +19,7 @@ import { toClientVendorError, vendorErrorStatus } from "../services/providers/ve
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 import { logEvent } from "../services/log/safeLog.js";
 import { checkVoiceReplacement } from "../services/voice/voiceSample.js";
+import { criarLook, listarLooks } from "../services/avatar/looks.js";
 
 export async function avatarRoutes(app: FastifyInstance): Promise<void> {
   app.get("/avatars", async (req) => {
@@ -63,13 +64,73 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       return { looks: [], canChoose: false, simulated: isFixtureMode() };
     }
 
-    const looks = await listAvatarLooks(
+    const doFornecedor = await listAvatarLooks(
       credential.apiKey,
       credential.vendor as AvatarVendor,
       avatar.provider_avatar_id,
     );
+
+    // Os trajes criados AQUI entram na mesma lista, depois dos do fornecedor.
+    const looks = await listarLooks(req.tenantId, avatar.id, doFornecedor);
+
     return { looks, canChoose: looks.length > 1, simulated: isFixtureMode() };
   });
+
+  /**
+   * CRIAR um traje novo para este avatar.
+   *
+   * O passo 1 já coletava traje — upload de imagem e um prompt — desde antes do
+   * DEMO-2, e nada disso alimentava geração nenhuma: depois que
+   * `corpoDaGeracao()` passou a montar o corpo de `POST /videos`, os campos
+   * pararam até de sair da tela. Esta rota é o destino que faltava para aquele
+   * formulário.
+   *
+   * ---------------------------------------------------------------------------
+   * O CAMINHO LIVE NASCE FECHADO, E ISSO É DELIBERADO
+   *
+   * O endpoint de criação de look do fornecedor NÃO é conhecido. Descobri-lo
+   * exigiria um POST de sondagem — que gasta — e nenhum contrato lido por GET
+   * declara essa operação. Escolher um path plausível e mandar seria o pior dos
+   * mundos: pareceria implementado, e o erro só apareceria com dinheiro em jogo.
+   *
+   * Há um segundo motivo, independente do primeiro: criar avatar ou look no
+   * fornecedor custa da ordem de US$ 1,00 — cerca de seis vezes um vídeo de
+   * 15 s. Um botão que gasta isso não pode nascer ligado por acidente.
+   *
+   * Em `fixture` o caminho é inteiro e de verdade: a linha é persistida, o traje
+   * aparece no seletor do passo Cena, e o id escolhido chega ao payload como
+   * qualquer outro look.
+   */
+  app.post<{ Params: { id: string }; Body: { name?: string; imageUrl?: string; prompt?: string } }>(
+    "/avatars/:id/looks",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const { rows } = await pool.query<Avatar>(
+        "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
+        [req.params.id, req.tenantId],
+      );
+      const avatar = rows[0];
+      if (!avatar) return reply.code(404).send({ error: "Avatar not found" });
+
+      // O veredito inteiro — forma do corpo E recusa do modo pago — vem de
+      // `criarLook()`. A rota não decide nada sobre traje; se decidisse, a
+      // recusa do live só seria alcançável subindo a aplicação, e uma regra que
+      // custa US$ 1,00 por engano precisa ser exercitável no gate.
+      const resultado = await criarLook({
+        tenantId: req.tenantId,
+        avatarId: avatar.id,
+        providerAvatarId: avatar.provider_avatar_id,
+        name: req.body?.name ?? "",
+        prompt: req.body?.prompt ?? null,
+        imageUrl: req.body?.imageUrl ?? null,
+      });
+
+      if (!resultado.ok) {
+        return reply.code(resultado.status).send({ error: resultado.code, message: resultado.message });
+      }
+      return reply.code(201).send({ look: resultado.look, simulated: true });
+    },
+  );
 
   // Downloads the reference video/audio used to train this avatar — the
   // one asset with a real counterpart to a video's output_url (a single

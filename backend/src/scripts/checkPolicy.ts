@@ -50,6 +50,7 @@ import { checkDocsInternalPolicy } from "./checkDocsInternalPolicy.js";
 import { checkCloneSampleFormatPolicy } from "./checkCloneSampleFormatPolicy.js";
 import { checkSpendControlPolicy } from "./checkSpendControlPolicy.js";
 import { checkRehearsalCreditPolicy } from "./checkRehearsalCreditPolicy.js";
+import { checkOutfitPolicy } from "./checkOutfitPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -540,6 +541,11 @@ async function main(): Promise<void> {
   const rehearsal = await checkRehearsalCreditPolicy(process.env.REPO_ROOT ?? "/repo");
   rehearsal.failures.forEach((f) => failures.push(f));
   rehearsal.notes.forEach((n) => note(n));
+
+  // --- 25d. traje é look criado, e criar look não gasta sem avisar --------
+  const outfit = await checkOutfitPolicy(process.env.REPO_ROOT ?? "/repo");
+  outfit.failures.forEach((f) => failures.push(f));
+  outfit.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

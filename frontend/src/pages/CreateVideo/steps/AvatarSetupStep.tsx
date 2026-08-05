@@ -48,6 +48,13 @@ export function AvatarSetupStep({
   const [intensity, setIntensity] = useState(1);
   const [quality, setQualityState] = useState<QualityOptions>(DEFAULT_QUALITY);
   const [targetLufsDraft, setTargetLufsDraft] = useState(-16);
+  // "Adicionar traje": cria um look novo para o avatar já selecionado.
+  const [lookName, setLookName] = useState("");
+  const [lookPrompt, setLookPrompt] = useState("");
+  const [lookImageUrl, setLookImageUrl] = useState<string | null>(null);
+  const [lookSaving, setLookSaving] = useState(false);
+  const [lookMessage, setLookMessage] = useState<string | null>(null);
+  const [lookError, setLookError] = useState(false);
 
   const camera = useCamera();
   const recorder = useMediaRecorderCapture();
@@ -256,6 +263,42 @@ export function AvatarSetupStep({
     onDefaultsChange({ ...defaults, [kind]: url });
   }
 
+  async function handleLookImage(file: File) {
+    const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
+    setLookImageUrl(url);
+  }
+
+  /**
+   * Cria o traje e o deixa disponível no passo Cena.
+   *
+   * O erro do servidor é mostrado como veio: em live esta rota devolve 501 com
+   * a explicação de que o endpoint de criação de look do fornecedor não é
+   * conhecido e que criar look custa cerca de US$ 1,00. Traduzir isso para um
+   * "algo deu errado" genérico esconderia justamente a informação que decide se
+   * vale insistir.
+   */
+  async function handleCreateLook() {
+    if (!selectedAvatar) return;
+    setLookSaving(true);
+    setLookError(false);
+    setLookMessage(null);
+    try {
+      const criado = await api.post<{ look: { id: string; name: string } }>(
+        `/avatars/${selectedAvatar.id}/looks`,
+        { name: lookName.trim(), imageUrl: lookImageUrl, prompt: lookPrompt.trim() || undefined },
+      );
+      setLookMessage(t("createVideo.avatarSetup.addLookCreated", { name: criado.look.name }));
+      setLookName("");
+      setLookPrompt("");
+      setLookImageUrl(null);
+    } catch (err) {
+      setLookError(true);
+      setLookMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLookSaving(false);
+    }
+  }
+
   if (!creating) {
     return (
       <div className="card">
@@ -349,6 +392,71 @@ export function AvatarSetupStep({
               setAvatars((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
             }
           />
+        )}
+
+        {/* ADICIONAR TRAJE — o destino que o formulário órfão nunca teve.
+            Fica aqui, e não no fluxo de criação, por uma razão medida: traje é
+            LOOK do avatar, e look exige um avatar já treinado no fornecedor. No
+            fluxo de criação o rascunho ainda não tem `provider_avatar_id`, e a
+            rota recusaria — o formulário voltaria a ser decorativo, que é
+            exatamente o defeito que este bloco desfaz.
+            Mesmo lugar e mesma lógica do bloco de voz: aparece depois da
+            seleção, longe de "Novo avatar", e não debita crédito nenhum. */}
+        {selectedAvatar && (
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-title">{t("createVideo.avatarSetup.addLookTitle")}</div>
+            <p className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
+              {t("createVideo.avatarSetup.addLookHelp")}
+            </p>
+            <div style={{ maxWidth: 420 }}>
+              <Field label={t("createVideo.avatarSetup.lookNameLabel")}>
+                <input
+                  value={lookName}
+                  onChange={(e) => setLookName(e.target.value)}
+                  placeholder={t("createVideo.avatarSetup.lookNamePlaceholder")}
+                />
+              </Field>
+              <Field label={t("createVideo.avatarSetup.lookImageLabel")}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => e.target.files?.[0] && handleLookImage(e.target.files[0])}
+                />
+              </Field>
+              {lookImageUrl && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
+                  {t("createVideo.avatarSetup.imageSaved")}
+                </p>
+              )}
+              <Field
+                label={t("createVideo.avatarSetup.lookPromptLabel")}
+                help={t("createVideo.avatarSetup.lookPromptHelp")}
+              >
+                <input
+                  value={lookPrompt}
+                  onChange={(e) => setLookPrompt(e.target.value)}
+                  placeholder={t("createVideo.avatarSetup.lookPromptPlaceholder")}
+                />
+              </Field>
+              <button
+                className="btn btn-outline"
+                onClick={handleCreateLook}
+                disabled={lookSaving || !lookName.trim() || (!lookPrompt.trim() && !lookImageUrl)}
+              >
+                {lookSaving
+                  ? t("createVideo.avatarSetup.addLookSaving")
+                  : t("createVideo.avatarSetup.addLookButton")}
+              </button>
+              {lookMessage && (
+                <p
+                  className="text-muted"
+                  style={{ fontSize: 12, marginTop: 10, color: lookError ? "var(--color-danger)" : undefined }}
+                >
+                  {lookMessage}
+                </p>
+              )}
+            </div>
+          </div>
         )}
 
         {/* ORDEM DO PASSO 1, e ela é o ponto deste bloco.
@@ -758,35 +866,17 @@ export function AvatarSetupStep({
                 />
               </Field>
             </div>
-            <div>
-              <div className="card-title">{t("createVideo.avatarSetup.outfitTitle")}</div>
-              <Field
-                label={t("createVideo.avatarSetup.uploadImageLabel")}
-                help={t("createVideo.avatarSetup.outfitHelp")}
-              >
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => e.target.files?.[0] && handleAssetUpload("outfit", e.target.files[0])}
-                />
-              </Field>
-              {defaults.outfit && (
-                <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
-                  {t("createVideo.avatarSetup.imageSaved")}
-                </p>
-              )}
-              <Field
-                label={t("createVideo.avatarSetup.generateViaAiLabel")}
-                help={t("createVideo.avatarSetup.outfitPromptHelp")}
-                helpPrompt={t("createVideo.avatarSetup.outfitHelpPrompt")}
-              >
-                <input
-                  placeholder={t("createVideo.avatarSetup.outfitPlaceholder")}
-                  value={defaults.outfitPrompt}
-                  onChange={(e) => onDefaultsChange({ ...defaults, outfitPrompt: e.target.value })}
-                />
-              </Field>
-            </div>
+            {/* O traje SAIU daqui, e não foi movido: foi substituído.
+                Este bloco era um upload de imagem mais um prompt que ninguém
+                lia — os campos iam para `defaults.outfit`/`outfitPrompt`, o
+                estado existia, e `corpoDaGeracao()` nunca os incluiu no corpo
+                de POST /videos. Coletava arquivo do cliente e não alimentava
+                geração nenhuma.
+                O substituto é "Adicionar traje", na área do avatar já
+                selecionado, que cria um LOOK de verdade — que é o que o
+                contrato do fornecedor entende por traje — e aparece no seletor
+                do passo Cena. Ele precisa de um avatar treinado, e por isso não
+                cabia aqui, onde o rascunho ainda não tem `provider_avatar_id`. */}
           </div>
 
           <button
