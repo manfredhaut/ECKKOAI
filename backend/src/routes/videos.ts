@@ -8,7 +8,7 @@ import { getCredential } from "../services/credentialLookup.js";
 import { createNotification } from "../services/notifications.js";
 import { recordFailedProviderUsage, recordProviderUsage } from "../services/billing/usageTracking.js";
 import { costBasisNote, costFor, estimateVideoCost } from "../services/billing/providerCost.js";
-import { debitCredit, refundCredit } from "../services/billing/creditGate.js";
+import { contaDe, debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { persistRemoteArtifact, probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.js";
 import { ARTIFACT_INVALID_MESSAGE, InvalidArtifactError, validateVideoArtifact } from "../services/videoArtifact.js";
@@ -429,9 +429,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get("/dashboard-summary", async (req) => {
     const [{ rows: creditRows }, { rows: usageRows }] = await Promise.all([
+      // Só as contas EM VIGOR no modo atual (migration 043 criou seis linhas
+      // por tenant: três reais e três de ensaio). Devolver as seis faria o card
+      // do painel mostrar o saldo real enquanto o portão de geração consome o
+      // de ensaio — a tela diria "0 créditos" ao lado de um botão que gera sem
+      // reclamar, que é a divergência entre duas leituras do mesmo fato.
       pool.query<{ credit_type: string; balance: number }>(
-        "SELECT credit_type, balance FROM tenant_credits WHERE tenant_id = $1 ORDER BY credit_type",
-        [req.tenantId],
+        `SELECT credit_type, balance FROM tenant_credits
+          WHERE tenant_id = $1 AND credit_type = ANY($2) ORDER BY credit_type`,
+        [req.tenantId, [contaDe("video"), contaDe("script"), contaDe("avatar")]],
       ),
       pool.query<{ provider: string; vendor: string; unit_type: string; unit_count: string }>(
         `SELECT provider, vendor, unit_type, unit_count FROM provider_usage
@@ -459,7 +465,14 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     }
 
     return {
-      credits: creditRows.map((r) => ({ creditType: r.credit_type, balance: Number(r.balance) })),
+      // O sufixo `_rehearsal` sai aqui: o contrato de `GET /dashboard-summary`
+      // continua sendo os três nomes de sempre, e a tela continua procurando
+      // por `"video"`. Qual balde está em vigor é decisão do servidor, e
+      // `simulated` logo abaixo já diz à tela em que modo o número foi lido.
+      credits: creditRows.map((r) => ({
+        creditType: r.credit_type.replace(/_rehearsal$/, ""),
+        balance: Number(r.balance),
+      })),
       costThisMonth: {
         // `null`, e não 0, quando nada foi medido: zero afirmaria que o mês
         // saiu de graça.
@@ -795,7 +808,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       );
       return reply.code(403).send({
         error: "plan_limit_reached",
-        message: "Créditos esgotados — adicione créditos ou aguarde a renovação mensal do seu plano.",
+        // Mesmo par de textos de `evaluateGenerationReadiness`, pelo mesmo
+        // motivo: em `fixture` nada foi cobrado, e mandar comprar crédito não
+        // destravaria — a compra cai no balde real, que não é o que o ensaio
+        // consome.
+        message: isFixtureMode()
+          ? "Saldo de ENSAIO esgotado. Este é o crédito do modo simulado — nenhuma cobrança aconteceu e o " +
+            "saldo real não foi tocado. São 500 por tipo, semeados pela migration 043; chegar a zero " +
+            "significa 500 gerações simuladas, o que costuma ser laço e não uso."
+          : "Créditos esgotados — adicione créditos ou aguarde a renovação mensal do seu plano.",
       });
     }
 

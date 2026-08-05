@@ -36,6 +36,7 @@
  */
 import { pool } from "../db/pool.js";
 import type { Avatar } from "../types.js";
+import { contaDe } from "./billing/creditGate.js";
 import { getCredential } from "./credentialLookup.js";
 import { isFixtureMode } from "./providers/providerMode.js";
 import {
@@ -177,9 +178,15 @@ export async function evaluateGenerationReadiness(
   //
   // Leitura simples, sem lock: é um retrato para a tela poder avisar antes.
   // A autoridade continua sendo o `FOR UPDATE` de `debitCredit()`.
+  // A CONTA sai de `contaDe()`, a mesma função que o débito usa. Ler `'video'`
+  // literal aqui foi o que manteve o portão travado enquanto o saldo de ensaio
+  // existia e estava cheio: este retrato recusa ANTES de `debitCredit()`, então
+  // uma correção que trocasse a conta só no débito não destrava tela nenhuma —
+  // devolveria 403 com o balde de ensaio intocado.
+  const conta = contaDe("video");
   const { rows: creditRows } = await pool.query<{ balance: string }>(
-    "SELECT balance FROM tenant_credits WHERE tenant_id = $1 AND credit_type = 'video'",
-    [input.tenantId],
+    "SELECT balance FROM tenant_credits WHERE tenant_id = $1 AND credit_type = $2",
+    [input.tenantId, conta],
   );
   // Linha ausente conta como zero, e não como erro: é o mesmo tratamento de
   // `debitCredit()`, que falha fechado quando o tenant nunca foi provisionado.
@@ -188,7 +195,14 @@ export async function evaluateGenerationReadiness(
     blockers.push({
       code: "plan_limit_reached",
       status: 403,
-      message: "Créditos esgotados — adicione créditos ou aguarde a renovação mensal do seu plano.",
+      // Qual saldo acabou, dito com o nome certo. Em ensaio, "adicione créditos"
+      // mandaria a pessoa comprar crédito para destravar algo que não cobra
+      // nada — e comprar não destravaria, porque a compra vai para o balde real.
+      message: isFixtureMode()
+        ? "Saldo de ENSAIO esgotado. Este é o crédito do modo simulado — nenhuma cobrança aconteceu e o " +
+          "saldo real não foi tocado. São 500 por tipo, semeados pela migration 043; chegar a zero " +
+          "significa 500 gerações simuladas, o que costuma ser laço e não uso."
+        : "Créditos esgotados — adicione créditos ou aguarde a renovação mensal do seu plano.",
     });
   }
 

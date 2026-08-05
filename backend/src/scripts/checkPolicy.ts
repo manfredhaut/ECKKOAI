@@ -49,6 +49,7 @@ import { checkStepOneFlowPolicy } from "./checkStepOneFlowPolicy.js";
 import { checkDocsInternalPolicy } from "./checkDocsInternalPolicy.js";
 import { checkCloneSampleFormatPolicy } from "./checkCloneSampleFormatPolicy.js";
 import { checkSpendControlPolicy } from "./checkSpendControlPolicy.js";
+import { checkRehearsalCreditPolicy } from "./checkRehearsalCreditPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -530,6 +531,15 @@ async function main(): Promise<void> {
   const spend = await checkSpendControlPolicy(process.env.REPO_ROOT ?? "/repo");
   spend.failures.forEach((f) => failures.push(f));
   spend.notes.forEach((n) => note(n));
+
+  // --- 25c. ensaiar em fixture não debita o saldo que paga vídeo real -----
+  //
+  // Depois da 25b e antes da 26: esta troca `pool.connect`/`pool.query` por
+  // duplos e mexe em `PROVIDER_MODE`. Restaura tudo no `finally`, mas rodar
+  // perto do fim reduz o que dependeria dessa restauração.
+  const rehearsal = await checkRehearsalCreditPolicy(process.env.REPO_ROOT ?? "/repo");
+  rehearsal.failures.forEach((f) => failures.push(f));
+  rehearsal.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

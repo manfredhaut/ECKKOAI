@@ -77,6 +77,26 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         );
       }
 
+      // Os baldes de ENSAIO nascem junto (migration 043). Um tenant criado
+      // depois dela sem estas linhas encontraria saldo 0 em `fixture` e seria
+      // recusado pelo portão de prontidão — o mesmo defeito que a migration
+      // conserta, reaparecendo só para quem se cadastrou depois.
+      //
+      // Ao contrário dos três acima, estes vêm com saldo e por isso EXIGEM
+      // lançamento: `balance` é um cache do que o ledger soma, e semear 500 sem
+      // a linha correspondente colocaria todo cadastro novo na lista de
+      // divergências que `preflightLive` confere antes de cada passada paga.
+      for (const creditType of ["video_rehearsal", "script_rehearsal", "avatar_rehearsal"]) {
+        await client.query(
+          "INSERT INTO tenant_credits (tenant_id, credit_type, balance) VALUES ($1, $2, 500)",
+          [tenant.id, creditType],
+        );
+        await client.query(
+          "INSERT INTO credit_ledger (tenant_id, credit_type, delta, reason) VALUES ($1, $2, 500, 'grant')",
+          [tenant.id, creditType],
+        );
+      }
+
       const { rows: userRows } = await client.query<User>(
         "INSERT INTO users (tenant_id, email, password_hash) VALUES ($1, $2, $3) RETURNING *",
         [tenant.id, email, passwordHash],

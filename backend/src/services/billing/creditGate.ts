@@ -3,6 +3,46 @@ import { isFixtureMode } from "../providers/providerMode.js";
 
 export type CreditType = "video" | "script" | "avatar";
 
+/**
+ * O nome da CONTA onde o movimento é escrito — que não é a mesma coisa que o
+ * tipo de crédito pedido.
+ *
+ * Existem seis contas e três tipos: cada tipo tem a conta real, que é dinheiro,
+ * e a conta de ENSAIO, que é o que o modo `fixture` consome (migration 043).
+ *
+ * POR QUE ISTO É UM TIPO SEPARADO, e não `CreditType` ampliado com mais três
+ * valores: ampliar o tipo público faria `grantPurchasedCredit()` — que é compra
+ * via Stripe — e `applyGrant()` — que é a concessão mensal do plano — passarem a
+ * ACEITAR contas de ensaio nas suas assinaturas. Nenhuma das duas deve poder
+ * tocar um balde de ensaio: uma cobra cartão, a outra reflete o plano
+ * contratado, e as duas movimentam valor real. Mantendo `CreditType` com três
+ * valores, quem impede o engano é o compilador, e não a lembrança de quem
+ * estiver editando o arquivo às pressas.
+ */
+type LedgerCreditType = CreditType | `${CreditType}_rehearsal`;
+
+/**
+ * A conta a movimentar para um tipo de crédito, decidida pelo MODO.
+ *
+ * Em `fixture` nada é enviado a fornecedor e nada é cobrado, então debitar o
+ * saldo real seria cobrar por um ensaio. Foi o que aconteceu até 05/08: o
+ * tenant de desenvolvimento chegou a `video: 0` ensaiando, e saldo zero é
+ * recusa no portão de prontidão — ensaiar de graça ficou impossível.
+ *
+ * Isto é chamado em exatamente três lugares, e os três estão listados aqui de
+ * propósito, porque a lista é a parte fácil de errar:
+ *   1. `debitCredit()`      — logo abaixo;
+ *   2. `refundCredit()`     — só como base, ver a nota lá sobre o ledger;
+ *   3. `evaluateGenerationReadiness()` — o retrato que a rota e a tela leem.
+ *
+ * O terceiro é o que faz a diferença entre corrigir e parecer corrigir: o
+ * portão recusa ANTES do débito, então trocar a conta só no débito deixaria a
+ * geração barrada com 403 enquanto o balde de ensaio ficava intocado.
+ */
+export function contaDe(creditType: CreditType, fixture = isFixtureMode()): LedgerCreditType {
+  return fixture ? `${creditType}_rehearsal` : creditType;
+}
+
 export interface DebitCreditInput {
   tenantId: string;
   creditType: CreditType;
@@ -28,13 +68,16 @@ export type DebitCreditResult =
 // write fails after the other.
 export async function debitCredit(input: DebitCreditInput): Promise<DebitCreditResult> {
   const amount = input.amount ?? 1;
+  // A conta, não o tipo: em `fixture` o movimento inteiro — leitura, desconto e
+  // lançamento — acontece no balde de ensaio, e o saldo real não é tocado.
+  const conta = contaDe(input.creditType);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     const { rows: balanceRows } = await client.query<{ balance: number }>(
       "SELECT balance FROM tenant_credits WHERE tenant_id = $1 AND credit_type = $2 FOR UPDATE",
-      [input.tenantId, input.creditType],
+      [input.tenantId, conta],
     );
     const currentBalance = balanceRows[0]?.balance ?? 0;
 
@@ -47,7 +90,7 @@ export async function debitCredit(input: DebitCreditInput): Promise<DebitCreditR
       `UPDATE tenant_credits SET balance = balance - $3, updated_at = now()
        WHERE tenant_id = $1 AND credit_type = $2
        RETURNING balance`,
-      [input.tenantId, input.creditType, amount],
+      [input.tenantId, conta, amount],
     );
 
     // `simulated` é lido do modo do provedor, não recebido como parâmetro:
@@ -64,7 +107,7 @@ export async function debitCredit(input: DebitCreditInput): Promise<DebitCreditR
        VALUES ($1, $2, $3, 'consumption', $4, $5, $6, $7)`,
       [
         input.tenantId,
-        input.creditType,
+        conta,
         -amount,
         simulated,
         input.relatedVideoId ?? null,
@@ -226,9 +269,31 @@ export async function refundCredit(input: RefundCreditInput): Promise<RefundCred
   try {
     await client.query("BEGIN");
 
+    // A CONTA VEM DO DÉBITO, NÃO DO MODO ATUAL.
+    //
+    // O débito e o estorno não acontecem no mesmo instante: entre um e outro
+    // cabe a chamada ao fornecedor e, na prática deste projeto, cabe também um
+    // `restart` — que é rotina aqui, porque código novo não entra sem ele. Se o
+    // modo mudar nesse intervalo, decidir a conta por `contaDe()` devolveria o
+    // crédito ao balde errado: um ensaio debitado em `fixture` viraria crédito
+    // real em `live`, o que é criar dinheiro, e o inverso apagaria saldo pago.
+    //
+    // O lançamento de consumo já diz em que conta o débito caiu. Ele é a
+    // resposta, e é a única que não depende de o ambiente ter ficado parado.
+    // Sem lançamento (débito que nunca existiu) cai-se no modo atual, que é o
+    // melhor palpite disponível e não pode piorar nada: não havendo débito, o
+    // `UPDATE` abaixo também não encontra o que devolver.
+    const { rows: contaRows } = await client.query<{ credit_type: LedgerCreditType }>(
+      `SELECT credit_type FROM credit_ledger
+        WHERE reason = 'consumption' AND ${column} = $1
+        ORDER BY created_at ASC LIMIT 1`,
+      [value],
+    );
+    const conta = contaRows[0]?.credit_type ?? contaDe(input.creditType);
+
     const { rows: balanceRows } = await client.query<{ balance: number }>(
       "SELECT balance FROM tenant_credits WHERE tenant_id = $1 AND credit_type = $2 FOR UPDATE",
-      [input.tenantId, input.creditType],
+      [input.tenantId, conta],
     );
 
     const { rows: existing } = await client.query(
@@ -244,7 +309,7 @@ export async function refundCredit(input: RefundCreditInput): Promise<RefundCred
       `UPDATE tenant_credits SET balance = balance + $3, updated_at = now()
        WHERE tenant_id = $1 AND credit_type = $2
        RETURNING balance`,
-      [input.tenantId, input.creditType, amount],
+      [input.tenantId, conta, amount],
     );
     // Linha de tenant_credits ausente é o mesmo caso defensivo de
     // debitCredit(): sem linha não houve débito, então não há o que devolver.
@@ -253,16 +318,20 @@ export async function refundCredit(input: RefundCreditInput): Promise<RefundCred
       return { refunded: false, reason: "no_reference" };
     }
 
-    // `simulated` pela mesma regra do débito: lido do modo, nunca recebido do
-    // chamador. Um estorno simulado precisa aparecer ao lado do débito
-    // simulado, senão as duas listas do painel deixam de bater.
-    const simulated = isFixtureMode() && (input.creditType === "video" || input.creditType === "avatar");
+    // `simulated` nunca é recebido do chamador — mas aqui ele sai da CONTA, e
+    // não do modo. Pela mesma razão do bloco acima: se o modo mudou entre o
+    // débito e o estorno, ler o modo marcaria como real o estorno de um débito
+    // simulado, e as duas listas do painel deixariam de bater exatamente no
+    // caso que elas existem para mostrar.
+    const emEnsaio = conta !== input.creditType;
+    const simulated =
+      (emEnsaio || isFixtureMode()) && (input.creditType === "video" || input.creditType === "avatar");
 
     await client.query(
       `INSERT INTO credit_ledger
          (tenant_id, credit_type, delta, reason, simulated, ${column})
        VALUES ($1, $2, $3, 'refund', $4, $5)`,
-      [input.tenantId, input.creditType, amount, simulated, value],
+      [input.tenantId, conta, amount, simulated, value],
     );
 
     await client.query("COMMIT");
