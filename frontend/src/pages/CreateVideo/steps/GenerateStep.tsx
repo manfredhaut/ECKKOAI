@@ -8,6 +8,40 @@ import type { WizardState } from "../types";
 import { VideoPlayer } from "../../../features/VideoPlayer";
 import { VideoCostPanel } from "../VideoCostPanel";
 
+/**
+ * O corpo de `POST /videos`, montado num lugar só.
+ *
+ * Existe como função, e não inline no clique, porque "gerar novamente" tem de
+ * repetir EXATAMENTE os mesmos parâmetros — e duas montagens do mesmo corpo em
+ * dois lugares divergem na primeira vez que alguém acrescenta um campo. O
+ * fornecedor declara que o mesmo prompt com o mesmo áudio pode dar resultados
+ * diferentes, então repetir é caminho normal, não exceção.
+ *
+ * **Campo vazio não vai.** Texto em branco vira `null`, nunca `""`: uma
+ * instrução de movimento vazia não é a mesma coisa que não instruir, e nós não
+ * sabemos como o fornecedor lê a diferença. O servidor normaliza de novo, mas
+ * mandar limpo daqui é o que mantém o corpo legível no log de prova.
+ */
+export function corpoDaGeracao(wizard: WizardState) {
+  return {
+    avatar_id: wizard.avatarId,
+    script: wizard.script,
+    // `duration_seconds` NÃO vai: o servidor deriva a duração do roteiro, e
+    // mandar um número daqui ofereceria a ele uma segunda resposta para a
+    // mesma pergunta — era a errada.
+    background: wizard.background
+      ? { type: wizard.background.type, value: wizard.background.value }
+      : null,
+    motion_prompt: wizard.motionPrompt.trim() || null,
+    expressiveness: wizard.expressiveness,
+    avatar_look_id: wizard.avatarLookId,
+    // Vai SEMPRE. O servidor tem padrão para corpo sem este campo, mas depender
+    // do padrão dele aqui reproduziria, um andar acima, a mesma omissão que o
+    // bloco de formato tirou do payload do fornecedor.
+    publish_platform: wizard.publishPlatform,
+  };
+}
+
 const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   queued: 15,
   processing: 65,
@@ -101,21 +135,7 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
     setSubmitting(true);
     setError(null);
     try {
-      const created = await api.post<Video>("/videos", {
-        avatar_id: wizard.avatarId,
-        script: wizard.script,
-        scenario: wizard.scenario || null,
-        outfit: wizard.outfit || null,
-        scenario_prompt: wizard.scenarioPrompt || null,
-        outfit_prompt: wizard.outfitPrompt || null,
-        // `duration_seconds` NÃO vai mais. O servidor deriva a duração do
-        // roteiro; mandar um número daqui apenas ofereceria a ele uma segunda
-        // resposta para a mesma pergunta — e era a errada.
-        // Vai SEMPRE. O servidor tem padrão para corpo sem este campo, mas
-        // depender do padrão dele aqui reproduziria, um andar acima, a mesma
-        // omissão que o bloco tirou do payload do fornecedor.
-        publish_platform: wizard.publishPlatform,
-      });
+      const created = await api.post<Video>("/videos", corpoDaGeracao(wizard));
       setVideo(created);
       pollRef.current = window.setInterval(async () => {
         const latest = await api.get<Video>(`/videos/${created.id}`);
@@ -228,6 +248,28 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
                   Duas implementações divergem, e a que divergir será a que
                   mostra fixture sem aviso numa apresentação. */}
               <VideoPlayer video={video} />
+
+              {/* GERAR NOVAMENTE — o fornecedor declara que o mesmo prompt com
+                  o mesmo áudio pode produzir resultados diferentes, então
+                  repetir é uso normal e não conserto de erro.
+
+                  Repete os MESMOS parâmetros: mesmo roteiro, mesmo fundo,
+                  mesma interpretação, mesmo look, mesmo formato. O roteiro não
+                  é reescrito e a voz não é re-sintetizada por decisão de tela —
+                  o corpo enviado é idêntico, e é o servidor que reaproveita o
+                  que já existe. Cada tentativa consome do teto diário e
+                  aparece na galeria. */}
+              <button
+                className="btn btn-outline"
+                style={{ marginTop: 12 }}
+                onClick={() => void handleGenerate()}
+                disabled={submitting || blocked}
+              >
+                {submitting ? t("createVideo.generate.submitting") : t("createVideo.generate.again")}
+              </button>
+              <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                {t("createVideo.generate.againHelp")}
+              </p>
               {/* O resultado vive em useState: sair desta tela o torna
                   inalcançável. Sem este caminho, quem fecha o wizard não tem
                   como descobrir que o vídeo continua no produto. */}

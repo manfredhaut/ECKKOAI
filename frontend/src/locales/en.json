@@ -435,13 +435,11 @@
     "steps": {
       "avatarSetup": "Avatar setup",
       "script": "Script",
-      "assets": "Assets",
-      "duration": "Duration",
-      "publish": "Publishing",
-      "generate": "Generate"
+      "generate": "Generate",
+      "scene": "Scene"
     },
     "avatarSetup": {
-      "scopeNote": "This screen sets up your reusable avatar (photos, reference video, and voice) — it's not where you customize the scenario, outfit, or script for this specific video. That happens in the next steps. Pick a background and adjust the intensity to make the face stand out better, depending on the room's lighting and the clothes worn.",
+      "scopeNote": "This screen sets up your reusable avatar: photos, reference video and voice. It applies to every video you generate with it. What changes from video to video — script, background, performance, outfit and format — lives in the next steps. The virtual background here only affects the avatar PHOTO, to make the face stand out; the video background is chosen in the Scene step.",
       "yourAvatars": "Your avatars",
       "noAvatarsYet": "No avatars saved yet. Set one up once, then reuse it for every video.",
       "photosVoiceStatus": "{{count}}/3 photos · {{voiceStatus}}",
@@ -598,7 +596,9 @@
       "avatarTraining": "The avatar is still training at the provider. This takes a few minutes and happens only once, right after creating it — refresh the page shortly.",
       "checking": "Checking whether everything is ready to generate…",
       "openLibrary": "Open in video library →",
-      "longConfirm": "This script produces about {{seconds}}s of video, above the {{limit}}s threshold where we ask for confirmation. Billing is per delivered second and there is no refund once the vendor accepts the job. I confirm I want to generate it."
+      "longConfirm": "This script produces about {{seconds}}s of video, above the {{limit}}s threshold where we ask for confirmation. Billing is per delivered second and there is no refund once the vendor accepts the job. I confirm I want to generate it.",
+      "again": "Generate again",
+      "againHelp": "Repeats the same parameters — script, already synthesised voice, background, performance, outfit and format. The service may produce a different result from the same input. Each attempt counts against the daily limit and shows up in the Library."
     },
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",
@@ -629,6 +629,32 @@
       "scope": "This voice belongs to the avatar, not to this video: replacing it changes every video you generate with it from now on. Already-generated videos keep the old voice.",
       "changeVoice": "Change voice",
       "recordNow": "Record voice"
+    },
+    "scene": {
+      "title": "Scene",
+      "backgroundLabel": "Background",
+      "backgroundHelp": "Pick a solid colour or upload an image. With no choice, the vendor keeps the background from the avatar photo.",
+      "backgroundNone": "No new background",
+      "backgroundColor": "Solid colour",
+      "backgroundImage": "Upload image",
+      "backgroundPreview": "Preview of the chosen background",
+      "backgroundNotImage": "That file is not an image. Upload JPG, PNG or WebP.",
+      "backgroundNoVideo": "Video backgrounds are not available: the video service accepts colour and image only.",
+      "motionLabel": "Performance",
+      "motionHelp": "Describe how the person should move and express themselves while narrating.",
+      "motionHelpPrompt": "One idea per line tends to work best: body part, action and emotion. For example, “open hands at chest height, calm gesture”.",
+      "motionPlaceholder": "open hands at chest height, calm gesture\nlook straight at the camera, light smile",
+      "motionCounter": "{{used}} of {{max}} characters",
+      "motionOurAdvice": "This writing guidance is our recommendation, not the video service’s: it accepts free text and publishes a single example, with no formatting rules.",
+      "expressivenessLabel": "Expressiveness",
+      "expressivenessHelp": "How much the face and body follow the speech. With no choice, the service uses the low level.",
+      "expressiveness_low": "Low",
+      "expressiveness_medium": "Medium",
+      "expressiveness_high": "High",
+      "lookLabel": "Outfit",
+      "lookHelp": "Which look of the avatar goes into this video.",
+      "lookDefault": "Avatar default look",
+      "lookSingle": "This avatar has a single look. Looks are created on the avatar, not on the video — each new outfit is a variation saved with it."
     }
   },
   "knowledge": {

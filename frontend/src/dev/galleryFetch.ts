@@ -134,6 +134,21 @@ function respond(method: string, path: string): Response | null {
   // é o que expõe o bloco de fundo virtual sem precisar de câmera.
   if (method === "POST" && path.endsWith("/avatars")) return json(FAKE_AVATAR, 201);
 
+  // Looks do avatar. TRÊS, como o fixture do backend devolve: a galeria
+  // precisa exercitar o seletor de traje HABILITADO, que é o estado que a
+  // conta real não produz (ela tem um look só).
+  if (method === "GET" && /\/avatars\/[^/]+\/looks$/.test(path)) {
+    return json({
+      looks: [
+        { id: "gallery-look-1", name: "Traje atual", previewImageUrl: null },
+        { id: "gallery-look-2", name: "Formal", previewImageUrl: null },
+        { id: "gallery-look-3", name: "Casual", previewImageUrl: null },
+      ],
+      canChoose: true,
+      simulated: true,
+    });
+  }
+
   // Custo: estimativa (antes de gerar) e medição (depois). Os dois com a
   // MESMA forma, como no backend — a galeria precisa exercitar o painel real,
   // e um formato próprio aqui esconderia justamente o caminho de renderização.

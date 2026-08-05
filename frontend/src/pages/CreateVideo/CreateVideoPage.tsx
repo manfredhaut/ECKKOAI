@@ -3,27 +3,46 @@ import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { AvatarSetupStep } from "./steps/AvatarSetupStep";
 import { ScriptStep } from "./steps/ScriptStep";
-import { ChooseAssetsStep } from "./steps/ChooseAssetsStep";
-import { DurationStep } from "./steps/DurationStep";
-import { PublishStep } from "./steps/PublishStep";
+import { SceneStep } from "./steps/SceneStep";
 import { GenerateStep } from "./steps/GenerateStep";
 import { DEFAULT_PUBLISH_PLATFORM } from "./publishPlatforms";
 import type { AssetDefaults, WizardState } from "./types";
 
+/**
+ * Criar vídeo, em QUATRO passos: Avatar · Roteiro · Cena · Gerar.
+ *
+ * Eram seis, e dois saíram por motivos diferentes:
+ *
+ *  · **Recursos** (o antigo passo 3) coletava cenário e traje como imagens que
+ *    nunca chegavam ao fornecedor, e trazia um seletor de avatar redundante com
+ *    o passo 1. Foi substituído por **Cena**, onde cada controle existe porque
+ *    há campo para ele do outro lado.
+ *  · **Duração** oferecia 15/30/60 s e não limitava nada — nenhum campo de
+ *    duração chega ao fornecedor. A duração continua sendo calculada, agora
+ *    como linha informativa dentro de Gerar.
+ *
+ * **Publicação** saiu do fluxo de criação: ela nunca publicou nada: era um
+ * seletor de plataforma que servia para derivar a proporção. A proporção é
+ * decisão de cena, e é lá que ela está agora.
+ */
 export function CreateVideoPage() {
   const { t } = useTranslation();
   const STEPS = [
     t("createVideo.steps.avatarSetup"),
     t("createVideo.steps.script"),
-    t("createVideo.steps.assets"),
-    t("createVideo.steps.duration"),
-    // "Publicação" vem depois de duração e antes de gerar: é a última decisão
-    // que muda o arquivo produzido, e a proporção só faz sentido escolher com
-    // o conteúdo já definido.
-    t("createVideo.steps.publish"),
+    t("createVideo.steps.scene"),
     t("createVideo.steps.generate"),
   ];
   const [step, setStep] = useState(0);
+  /**
+   * HERANÇA do passo 1: cenário e traje "padrão" do avatar.
+   *
+   * Continua aqui porque o passo 1 ainda desenha esse bloco, e continua sendo
+   * estado local porque ele NÃO alimenta mais geração nenhuma — o fundo que
+   * chega ao fornecedor é o do passo Cena, e traje é look. Enquanto o bloco
+   * existir na tela do avatar, ele é o último resto do defeito que este bloco
+   * fechou: coleta que não vai a lugar nenhum.
+   */
   const [defaults, setDefaults] = useState<AssetDefaults>({
     scenario: "",
     outfit: "",
@@ -33,25 +52,16 @@ export function CreateVideoPage() {
   const [wizard, setWizard] = useState<WizardState>({
     avatarId: null,
     script: "",
-    scenario: "",
-    outfit: "",
-    scenarioPrompt: "",
-    outfitPrompt: "",
     estimatedSeconds: null,
     confirmAboveSeconds: null,
+    background: null,
+    motionPrompt: "",
+    expressiveness: null,
+    avatarLookId: null,
     publishPlatform: DEFAULT_PUBLISH_PLATFORM,
   });
 
   function goNext() {
-    if (step === 0) {
-      setWizard((w) => ({
-        ...w,
-        scenario: defaults.scenario,
-        outfit: defaults.outfit,
-        scenarioPrompt: defaults.scenarioPrompt,
-        outfitPrompt: defaults.outfitPrompt,
-      }));
-    }
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   }
 
@@ -62,19 +72,16 @@ export function CreateVideoPage() {
   const canProceed =
     (step === 0 && wizard.avatarId !== null) ||
     (step === 1 && wizard.script.trim().length > 0) ||
-    step === 2 ||
-    step === 3 ||
-    // Publicação sempre tem uma plataforma escolhida (nasce no padrão), então
-    // não há como travar aqui.
-    step === 4;
+    // Cena nunca trava: todos os controles dela são opcionais, e nenhum campo
+    // vazio vai para o payload.
+    step === 2;
 
   /**
    * O que falta para poder avançar, em uma linha.
    *
    * Um botão cinza sem explicação obriga a adivinhar — e nos dois passos que
    * travam a condição não é óbvia: no 1 dá para ter cinco avatares salvos e
-   * nenhum selecionado, e no 2 dá para ter digitado só espaços. `null` nos
-   * passos que nunca travam, para não inventar aviso onde não há bloqueio.
+   * nenhum selecionado, e no 2 dá para ter digitado só espaços.
    */
   const blockedReason = canProceed
     ? null
@@ -120,40 +127,21 @@ export function CreateVideoPage() {
         <ScriptStep script={wizard.script} onChange={(script) => setWizard((w) => ({ ...w, script }))} />
       )}
       {step === 2 && (
-        <ChooseAssetsStep
+        <SceneStep
           avatarId={wizard.avatarId}
-          onAvatarChange={(avatarId) => setWizard((w) => ({ ...w, avatarId }))}
-          scenario={wizard.scenario}
-          onScenarioChange={(scenario) => setWizard((w) => ({ ...w, scenario }))}
-          outfit={wizard.outfit}
-          onOutfitChange={(outfit) => setWizard((w) => ({ ...w, outfit }))}
-          scenarioPrompt={wizard.scenarioPrompt}
-          onScenarioPromptChange={(scenarioPrompt) => setWizard((w) => ({ ...w, scenarioPrompt }))}
-          outfitPrompt={wizard.outfitPrompt}
-          onOutfitPromptChange={(outfitPrompt) => setWizard((w) => ({ ...w, outfitPrompt }))}
+          background={wizard.background}
+          onBackgroundChange={(background) => setWizard((w) => ({ ...w, background }))}
+          motionPrompt={wizard.motionPrompt}
+          onMotionPromptChange={(motionPrompt) => setWizard((w) => ({ ...w, motionPrompt }))}
+          expressiveness={wizard.expressiveness}
+          onExpressivenessChange={(expressiveness) => setWizard((w) => ({ ...w, expressiveness }))}
+          avatarLookId={wizard.avatarLookId}
+          onAvatarLookChange={(avatarLookId) => setWizard((w) => ({ ...w, avatarLookId }))}
+          publishPlatform={wizard.publishPlatform}
+          onPublishPlatformChange={(publishPlatform) => setWizard((w) => ({ ...w, publishPlatform }))}
         />
       )}
-      {step === 3 && (
-        <DurationStep
-          script={wizard.script}
-          onEstimate={({ estimatedSeconds, confirmAboveSeconds }) =>
-            setWizard((w) =>
-              // Só grava se mudou: `onEstimate` dispara a cada resposta da rota
-              // e um `setWizard` incondicional aqui re-renderiza o passo em laço.
-              w.estimatedSeconds === estimatedSeconds && w.confirmAboveSeconds === confirmAboveSeconds
-                ? w
-                : { ...w, estimatedSeconds, confirmAboveSeconds },
-            )
-          }
-        />
-      )}
-      {step === 4 && (
-        <PublishStep
-          platform={wizard.publishPlatform}
-          onChange={(publishPlatform) => setWizard((w) => ({ ...w, publishPlatform }))}
-        />
-      )}
-      {step === 5 && <GenerateStep wizard={wizard} />}
+      {step === 3 && <GenerateStep wizard={wizard} />}
 
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
         {step > 0 && (

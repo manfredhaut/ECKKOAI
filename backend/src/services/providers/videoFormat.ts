@@ -71,12 +71,19 @@ export interface PublishPlatform {
 export const PUBLISH_PLATFORMS = [
   { id: "youtube", label: "YouTube (horizontal)", aspectRatio: "16:9", resolution: MEASURED_RESOLUTION },
   { id: "reels_tiktok", label: "Reels, TikTok, Shorts e Facebook Reels (vertical)", aspectRatio: "9:16", resolution: MEASURED_RESOLUTION },
-  { id: "instagram_feed", label: "Feed do Instagram (retrato)", aspectRatio: "4:5", resolution: MEASURED_RESOLUTION },
-  // Entrada PRÓPRIA, mesmo compartilhando a proporção com o feed do Instagram.
-  // O catálogo mapeia plataforma → proporção, e plataformas diferentes pedindo
-  // a mesma proporção é o caso normal, não uma duplicação a ser eliminada:
-  // quem publica no Facebook procura "Facebook" na lista, não "4:5".
-  { id: "facebook", label: "Feed do Facebook (retrato)", aspectRatio: "4:5", resolution: MEASURED_RESOLUTION },
+  // ---------------------------------------------------------------------
+  // 4:5 RETIRADO no DEMO-2, e a razão é medida: o único 4:5 real que este
+  // produto entregou tem 40% do quadro em barra sólida (vídeo de 05/08, sonda
+  // `padded`, conteúdo 720×540 num quadro 720×900). O formato herda a barra do
+  // master, e derivá-lo localmente — a infraestrutura existe — só se prova com
+  // uma geração paga. Oferecer um destino que sai com 40% de branco é pior que
+  // não oferecê-lo.
+  //
+  // Instagram e Facebook saíram junto porque eram exatamente as duas entradas
+  // 4:5 do catálogo. Vídeos antigos com essas plataformas continuam no banco e
+  // continuam legíveis: `resolveVideoFormat` cai no padrão declarado para
+  // plataforma desconhecida.
+  // ---------------------------------------------------------------------
   { id: "linkedin", label: "LinkedIn e feed quadrado", aspectRatio: "1:1", resolution: MEASURED_RESOLUTION },
 ] as const satisfies readonly PublishPlatform[];
 

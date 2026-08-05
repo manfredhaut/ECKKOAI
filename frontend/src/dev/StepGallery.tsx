@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AvatarSetupStep } from "../pages/CreateVideo/steps/AvatarSetupStep";
 import { ScriptStep } from "../pages/CreateVideo/steps/ScriptStep";
-import { ChooseAssetsStep } from "../pages/CreateVideo/steps/ChooseAssetsStep";
-import { DurationStep } from "../pages/CreateVideo/steps/DurationStep";
-import { PublishStep } from "../pages/CreateVideo/steps/PublishStep";
+import { SceneStep } from "../pages/CreateVideo/steps/SceneStep";
 import { GenerateStep } from "../pages/CreateVideo/steps/GenerateStep";
 import { DEFAULT_PUBLISH_PLATFORM } from "../pages/CreateVideo/publishPlatforms";
 import { ContentPage } from "../pages/Content/ContentPage";
@@ -49,10 +47,8 @@ const STATES: StepState[] = ["vazio", "preenchido", "carregando", "erro"];
 const STEPS = [
   { id: "passo1-avatar", label: "1 · Avatar" },
   { id: "passo2-roteiro", label: "2 · Roteiro" },
-  { id: "passo3-recursos", label: "3 · Recursos" },
-  { id: "passo4-duracao", label: "4 · Duração" },
-  { id: "passo5-publicacao", label: "5 · Publicação" },
-  { id: "passo6-gerar", label: "6 · Gerar" },
+  { id: "passo3-cena", label: "3 · Cena" },
+  { id: "passo4-gerar", label: "4 · Gerar" },
   // Telas fora do wizard, pedidas junto: a de Conteúdo (onde o selo
   // SIMULADO aparece por linha) e o Painel admin (onde consumo real e
   // simulado ficam separados, e as flags são alternadas).
@@ -258,6 +254,13 @@ function StepUnderGlass({
       outfitPrompt: state === "vazio" ? "" : FILLED_DEFAULTS.outfitPrompt,
       estimatedSeconds: null,
       confirmAboveSeconds: null,
+      // CENA preenchida no estado "preenchido": a galeria existe para mostrar
+      // o que a tela faz, e um passo Cena vazio esconderia justamente os
+      // controles que o DEMO-2 acrescentou.
+      background: state === "vazio" ? null : ({ type: "color", value: "#1B2A4A" } as const),
+      motionPrompt: state === "vazio" ? "" : "mãos abertas na altura do peito, gesto calmo",
+      expressiveness: state === "vazio" ? null : ("medium" as const),
+      avatarLookId: null,
       // O estado "vazio" recebe o padrão, e não string vazia: a plataforma
       // nasce escolhida no wizard real, e uma galeria que mostrasse o passo
       // sem seleção retrataria um estado que o produto não produz.
@@ -278,34 +281,26 @@ function StepUnderGlass({
       );
     case "passo2-roteiro":
       return <ScriptStep script={state === "vazio" ? "" : SAMPLE_SCRIPT} onChange={noop} />;
-    case "passo3-recursos":
+    case "passo3-cena":
+      // O passo que substituiu Recursos, Duração e Publicação. `key` no
+      // suporte de formato porque o seletor embutido consulta o vendor.
       return (
-        <ChooseAssetsStep
+        <SceneStep
+          key={`scene-${vendorHonors}`}
           avatarId={state === "vazio" ? null : "gallery-avatar-1"}
-          onAvatarChange={noop}
-          scenario={state === "vazio" ? "" : FILLED_DEFAULTS.scenario}
-          onScenarioChange={noop}
-          outfit={state === "vazio" ? "" : FILLED_DEFAULTS.outfit}
-          onOutfitChange={noop}
-          scenarioPrompt={state === "vazio" ? "" : FILLED_DEFAULTS.scenarioPrompt}
-          onScenarioPromptChange={noop}
-          outfitPrompt={state === "vazio" ? "" : FILLED_DEFAULTS.outfitPrompt}
-          onOutfitPromptChange={noop}
+          background={wizard.background}
+          onBackgroundChange={noop}
+          motionPrompt={wizard.motionPrompt}
+          onMotionPromptChange={noop}
+          expressiveness={wizard.expressiveness}
+          onExpressivenessChange={noop}
+          avatarLookId={wizard.avatarLookId}
+          onAvatarLookChange={noop}
+          publishPlatform={state === "vazio" ? DEFAULT_PUBLISH_PLATFORM : "reels_tiktok"}
+          onPublishPlatformChange={noop}
         />
       );
-    case "passo4-duracao":
-      return <DurationStep script={wizard.script} />;
-    case "passo5-publicacao":
-      // O estado "vazio" mostra o padrão selecionado, não nenhum: é o que o
-      // wizard real produz ao entrar no passo.
-      return (
-        <PublishStep
-          key={`publish-${vendorHonors}`}
-          platform={state === "vazio" ? DEFAULT_PUBLISH_PLATFORM : "reels_tiktok"}
-          onChange={noop}
-        />
-      );
-    case "passo6-gerar":
+    case "passo4-gerar":
       return <GenerateStep wizard={wizard} />;
     case "tela-conteudo":
       return <ContentPage />;

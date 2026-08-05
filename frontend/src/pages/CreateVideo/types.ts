@@ -5,27 +5,38 @@ export interface AssetDefaults {
   outfitPrompt: string;
 }
 
+/**
+ * Fundo escolhido no passo Cena.
+ *
+ * `value` é hex quando `color` e o caminho do nosso upload quando `image` — a
+ * mesma forma que o corpo de `POST /videos` aceita. Não existe `video`: o
+ * fornecedor enumera exatamente estes dois tipos.
+ */
+export type SceneBackground = { type: "color"; value: string } | { type: "image"; value: string };
+
 export interface WizardState {
   avatarId: string | null;
   script: string;
-  scenario: string;
-  outfit: string;
-  scenarioPrompt: string;
-  outfitPrompt: string;
   /**
    * O QUE O SERVIDOR ESTIMOU a partir do roteiro, e não uma escolha da tela.
    *
-   * Era `15 | 30 | 60`, um chip do passo 4 que nunca chegou ao fornecedor. Fica
-   * aqui só para o passo 6 saber se precisa pedir confirmação; o número que
-   * vale é sempre o que o servidor derivar do roteiro na hora de gerar.
-   * `null` enquanto a estimativa não voltou.
+   * Era `15 | 30 | 60`, um chip que nunca chegou ao fornecedor. Fica aqui só
+   * para o passo Gerar saber se precisa pedir confirmação; o número que vale é
+   * sempre o que o servidor derivar do roteiro na hora de gerar.
    */
   estimatedSeconds: number | null;
-  /** Teto declarado pelo servidor, acima do qual o passo 6 confirma. */
+  /** Teto declarado pelo servidor, acima do qual o passo Gerar confirma. */
   confirmAboveSeconds: number | null;
+  /** CENA — os controles que o fornecedor de fato aceita. */
+  background: SceneBackground | null;
+  motionPrompt: string;
+  expressiveness: "low" | "medium" | "high" | null;
+  /** Look do avatar. `null` = o look padrão, que é o que sempre valeu. */
+  avatarLookId: string | null;
   /**
    * Plataforma de publicação. É dela que sai a proporção enviada ao
-   * fornecedor — ver `publishPlatforms.ts` e o catálogo do backend.
+   * fornecedor — ver `publishPlatforms.ts` e o catálogo do backend. Desde o
+   * DEMO-2 ela é escolhida dentro do passo Cena, e não num passo próprio.
    */
   publishPlatform: string;
 }

@@ -435,13 +435,11 @@
     "steps": {
       "avatarSetup": "Configurar avatar",
       "script": "Roteiro",
-      "assets": "Recursos",
-      "duration": "Duração",
-      "publish": "Publicação",
-      "generate": "Gerar"
+      "generate": "Gerar",
+      "scene": "Cena"
     },
     "avatarSetup": {
-      "scopeNote": "Esta tela configura seu avatar reutilizável (fotos, vídeo de referência e voz) — não é aqui que você personaliza cenário, traje ou roteiro para este vídeo específico. Isso é feito nos próximos passos. Escolha um fundo e ajuste a intensidade para destacar melhor o rosto, conforme a luz do ambiente e a roupa usada.",
+      "scopeNote": "Esta tela configura seu avatar reutilizável: fotos, vídeo de referência e voz. Ela vale para todos os vídeos que você gerar com ele. O que muda de vídeo para vídeo — roteiro, fundo, interpretação, traje e formato — fica nos passos seguintes. O fundo virtual daqui é só da FOTO do avatar, para destacar o rosto; o fundo do vídeo é escolhido no passo Cena.",
       "yourAvatars": "Seus avatares",
       "noAvatarsYet": "Nenhum avatar salvo ainda. Configure um avatar uma vez e reutilize-o em todos os vídeos.",
       "photosVoiceStatus": "{{count}}/3 fotos · {{voiceStatus}}",
@@ -598,7 +596,9 @@
       "avatarTraining": "O avatar ainda está em treino no fornecedor. Isso leva alguns minutos e acontece uma vez só, logo depois de criá-lo — atualize a página em instantes.",
       "checking": "Conferindo se está tudo pronto para gerar…",
       "openLibrary": "Ver na Biblioteca de vídeos →",
-      "longConfirm": "Este roteiro produz cerca de {{seconds}} s de vídeo, acima dos {{limit}} s a partir dos quais pedimos confirmação. A cobrança é por segundo entregue e não há estorno depois que o fornecedor aceita. Confirmo que quero gerar assim."
+      "longConfirm": "Este roteiro produz cerca de {{seconds}} s de vídeo, acima dos {{limit}} s a partir dos quais pedimos confirmação. A cobrança é por segundo entregue e não há estorno depois que o fornecedor aceita. Confirmo que quero gerar assim.",
+      "again": "Gerar novamente",
+      "againHelp": "Repete os mesmos parâmetros — roteiro, voz já sintetizada, fundo, interpretação, traje e formato. O serviço pode produzir um resultado diferente com a mesma entrada. Cada tentativa consome do limite diário e aparece na Biblioteca."
     },
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",
@@ -629,6 +629,32 @@
       "scope": "Esta voz pertence ao avatar, não a este vídeo: trocá-la muda todos os vídeos que você gerar com ele daqui em diante. Os já gerados continuam com a voz antiga.",
       "changeVoice": "Trocar voz",
       "recordNow": "Gravar voz"
+    },
+    "scene": {
+      "title": "Cena",
+      "backgroundLabel": "Fundo",
+      "backgroundHelp": "Escolha uma cor sólida ou envie uma imagem. Sem escolha, o fornecedor usa o fundo da foto do avatar.",
+      "backgroundNone": "Sem fundo novo",
+      "backgroundColor": "Cor sólida",
+      "backgroundImage": "Enviar imagem",
+      "backgroundPreview": "Prévia do fundo escolhido",
+      "backgroundNotImage": "Esse arquivo não é uma imagem. Envie JPG, PNG ou WebP.",
+      "backgroundNoVideo": "Fundo por vídeo não está disponível: o serviço de vídeo aceita apenas cor e imagem.",
+      "motionLabel": "Interpretação",
+      "motionHelp": "Descreva como a pessoa deve se mover e se expressar enquanto narra.",
+      "motionHelpPrompt": "Uma ideia por linha costuma funcionar melhor: parte do corpo, ação e emoção. Por exemplo, “mãos abertas na altura do peito, gesto calmo”.",
+      "motionPlaceholder": "mãos abertas na altura do peito, gesto calmo\nolhar direto para a câmera, sorriso leve",
+      "motionCounter": "{{used}} de {{max}} caracteres",
+      "motionOurAdvice": "Esta orientação de escrita é recomendação nossa, não do serviço de vídeo: ele aceita texto livre e publica um único exemplo, sem regras de formato.",
+      "expressivenessLabel": "Expressividade",
+      "expressivenessHelp": "Quanto o rosto e o corpo acompanham a fala. Sem escolha, o serviço usa o nível baixo.",
+      "expressiveness_low": "Baixa",
+      "expressiveness_medium": "Média",
+      "expressiveness_high": "Alta",
+      "lookLabel": "Traje",
+      "lookHelp": "Qual visual do avatar entra neste vídeo.",
+      "lookDefault": "Traje padrão do avatar",
+      "lookSingle": "Este avatar tem um traje só. Trajes são criados no avatar, não no vídeo — cada novo traje é uma variação salva junto dele."
     }
   },
   "knowledge": {
