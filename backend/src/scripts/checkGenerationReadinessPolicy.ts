@@ -48,6 +48,22 @@ export const MUTANTS: Mutant[] = [
     expect: "não desabilita o botão de gerar a partir do predicado",
   },
   {
+    guard: "prontidão: o botão obedece ao predicado",
+    name: "o botão de gerar novamente escapa do predicado",
+    kind: "esperto",
+    // O IRMÃO do mutante acima, e a razão de a guarda ter ficado inerte: com
+    // dois botões de geração na tela, verificar "existe um `disabled` ligado ao
+    // predicado" deixa o outro descoberto. Este mutante solta o segundo e
+    // mantém o primeiro — se a guarda voltar a procurar presença em vez de
+    // cobertura, ele passa e o defeito volta pela porta que já foi usada uma
+    // vez. "Gerar novamente" não é menos caro que gerar: cada tentativa consome
+    // do teto diário.
+    file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
+    find: "                onClick={() => void handleGenerate()}\n                disabled={submitting || blocked}",
+    replace: "                onClick={() => void handleGenerate()}\n                disabled={submitting}",
+    expect: "não desabilita o botão de gerar a partir do predicado",
+  },
+  {
     guard: "prontidão: o predicado enxerga os bloqueios",
     name: "o predicado passa a devolver lista de bloqueios sempre vazia",
     kind: "esperto",
@@ -426,11 +442,38 @@ export async function checkGenerationReadinessPolicy(repoRoot: string): Promise<
           "sozinha o que impede gerar, com uma lista menor que a da rota.",
       );
     }
-    if (!/disabled=\{submitting \|\| blocked\}/.test(tela)) {
+    // TODO botão que dispara geração, e não "existe um em algum lugar".
+    //
+    // A versão anterior testava `/disabled=\{submitting \|\| blocked\}/` contra
+    // o arquivo inteiro, e ficou INERTE no dia em que o DEMO-2 acrescentou
+    // "gerar novamente": passaram a existir dois botões de gerar, e o segundo
+    // fazia o regex casar mesmo com o primeiro solto. MEDIDO — desabilitar o
+    // predicado no botão principal mantinha o gate verde.
+    //
+    // A ambiguidade escondia isso: o arnês abortava por "2 ocorrências" antes
+    // de chegar a rodar o gate, então a guarda constava como não-verificável em
+    // vez de morta. Agora conta-se cobertura: quantos botões disparam geração e
+    // quantos desses obedecem ao predicado.
+    const botoesDeGerar = tela
+      .split("<button")
+      .slice(1)
+      .map((fatia) => fatia.slice(0, 500))
+      .filter((atributos) => /onClick=\{(?:\(\)\s*=>\s*(?:void\s*)?)?handleGenerate/.test(atributos));
+
+    const soltos = botoesDeGerar.filter((b) => !/disabled=\{submitting \|\| blocked\}/.test(b));
+
+    if (botoesDeGerar.length === 0) {
       failures.push(
-        `prontidão: ${TELA} não desabilita o botão de gerar a partir do predicado. O botão volta a ficar ` +
-          "clicável com crédito zerado, teto esgotado ou credencial ausente — e a recusa volta a ser um " +
-          "erro vermelho depois do clique.",
+        `prontidão: ${TELA} não tem mais nenhum botão chamando \`handleGenerate\`. Ou a geração saiu da ` +
+          "tela, ou o nome mudou — e nos dois casos esta guarda deixou de vigiar o que dizia vigiar.",
+      );
+    } else if (soltos.length > 0) {
+      failures.push(
+        `prontidão: ${TELA} não desabilita o botão de gerar a partir do predicado — ${soltos.length} de ` +
+          `${botoesDeGerar.length} botão(ões) que disparam geração está(ão) sem \`disabled={submitting || ` +
+          "blocked}`. O botão volta a ficar clicável com crédito zerado, teto esgotado ou credencial " +
+          "ausente, e a recusa volta a ser um erro vermelho depois do clique. Vale para TODOS os botões " +
+          "que geram, inclusive \"gerar novamente\": cada tentativa consome do teto diário.",
       );
     }
     // O motivo tem de ser RENDERIZADO, não só recebido. Ancorado no JSX pela
