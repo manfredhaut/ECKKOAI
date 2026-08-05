@@ -33,6 +33,7 @@ import { MUTANTS as voiceSampleMutants } from "./checkVoiceSamplePolicy.js";
 import { MUTANTS as stepOneMutants } from "./checkStepOneFlowPolicy.js";
 import { MUTANTS as docsInternalMutants } from "./checkDocsInternalPolicy.js";
 import { MUTANTS as cloneSampleFormatMutants } from "./checkCloneSampleFormatPolicy.js";
+import { MUTANTS as spendControlMutants } from "./checkSpendControlPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 const all: Mutant[] = [
@@ -59,6 +60,7 @@ const all: Mutant[] = [
   ...stepOneMutants,
   ...docsInternalMutants,
   ...cloneSampleFormatMutants,
+  ...spendControlMutants,
 ];
 
 // Um mutante malformado só apareceria no meio da execução, com a árvore já

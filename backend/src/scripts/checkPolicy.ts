@@ -48,6 +48,7 @@ import { checkVoiceSamplePolicy } from "./checkVoiceSamplePolicy.js";
 import { checkStepOneFlowPolicy } from "./checkStepOneFlowPolicy.js";
 import { checkDocsInternalPolicy } from "./checkDocsInternalPolicy.js";
 import { checkCloneSampleFormatPolicy } from "./checkCloneSampleFormatPolicy.js";
+import { checkSpendControlPolicy } from "./checkSpendControlPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -524,6 +525,11 @@ async function main(): Promise<void> {
   const cloneFormat = await checkCloneSampleFormatPolicy();
   cloneFormat.failures.forEach((f) => failures.push(f));
   cloneFormat.notes.forEach((n) => note(n));
+
+  // --- 25b. teto diário, margem do portão, e a cena chegando ao payload ---
+  const spend = await checkSpendControlPolicy();
+  spend.failures.forEach((f) => failures.push(f));
+  spend.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

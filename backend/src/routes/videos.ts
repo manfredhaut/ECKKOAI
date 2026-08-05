@@ -23,10 +23,16 @@ import {
   CONFIRM_ABOVE_SECONDS,
   estimateSecondsFromChars,
   estimateSecondsFromScript,
+  requiresLongVideoConfirmation,
   scriptDurationBasis,
 } from "../services/video/scriptDuration.js";
 import { isExpressiveness, normalizeScene, type SceneBackground } from "../services/providers/videoScene.js";
 import { isHeygenEngine } from "../services/providers/videoEngine.js";
+import {
+  DailyGenerationLimitError,
+  assertDailyGenerationBudget,
+  readDailyBudget,
+} from "../services/billing/dailyGenerationLimit.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -360,11 +366,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // O teto vem do SERVIDOR, junto do veredito. Uma tela que reimplementa a
       // comparação passa a discordar do servidor no dia em que o teto mudar.
       confirmAboveSeconds: CONFIRM_ABOVE_SECONDS,
-      requiresConfirmation: estimatedSeconds > CONFIRM_ABOVE_SECONDS,
+      requiresConfirmation: requiresLongVideoConfirmation(estimatedSeconds),
       estimate: {
         costUsd: estimate.known ? estimate.usd : null,
         costUnknownReason: estimate.known ? null : estimate.explanation,
       },
+      // O teto DIÁRIO viaja com a estimativa para a tela poder avisar antes do
+      // clique, e não depois do 429. É leitura: quem recusa continua sendo o
+      // servidor, na rota de criação.
+      dailyBudget: await readDailyBudget(),
       actual: null,
       difference: null,
       failure: null,
@@ -532,7 +542,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       scriptChars: video.script.length,
       pacing: scriptDurationBasis(),
       confirmAboveSeconds: CONFIRM_ABOVE_SECONDS,
-      requiresConfirmation: estimatedSeconds > CONFIRM_ABOVE_SECONDS,
+      requiresConfirmation: requiresLongVideoConfirmation(estimatedSeconds),
       estimate: {
         costUsd: estimate.known ? estimate.usd : null,
         costUnknownReason: estimate.known ? null : estimate.explanation,
@@ -690,6 +700,28 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       return reply
         .code(primeiro.status)
         .send({ error: primeiro.code, message: primeiro.message, blockers: readiness.blockers });
+    }
+
+    // TETO DIÁRIO — no servidor, antes do débito e antes de qualquer chamada.
+    //
+    // Só vale para geração PAGA: em fixture nada é cobrado e nada é contado. O
+    // teto de sessão (`liveGuard`) continua existindo e não substitui este —
+    // aquele vive na memória do processo e um `restart` devolve o orçamento
+    // inteiro, o que neste projeto acontece toda vez que entra código novo.
+    if (!isFixtureMode()) {
+      try {
+        await assertDailyGenerationBudget();
+      } catch (err) {
+        if (err instanceof DailyGenerationLimitError) {
+          return reply.code(429).send({
+            error: "daily_generation_limit",
+            message: err.message,
+            used: err.used,
+            max: err.max,
+          });
+        }
+        throw err;
+      }
     }
 
     // Reconsultados aqui porque o predicado devolve o VEREDITO, não os objetos

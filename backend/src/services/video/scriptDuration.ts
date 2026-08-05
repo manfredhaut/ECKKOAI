@@ -94,6 +94,33 @@ export const CHARS_PER_SECOND =
 export const CONFIRM_ABOVE_SECONDS = 60;
 
 /**
+ * MARGEM sobre a estimativa, aplicada só ao veredito de confirmação.
+ *
+ * A régua de 12,8151 c/s vem de UM ponto medido, e o segundo ponto que existe a
+ * contradiz: 87 caracteres do mesmo dia saíram a 13,9871 c/s. Quer dizer que a
+ * dispersão real entre roteiros é da ordem de 8%, e uma estimativa de 58 s pode
+ * virar 63 s entregues sem que nada esteja errado.
+ *
+ * Os 10% cobrem essa dispersão do lado que importa: perto do teto, é melhor
+ * pedir uma confirmação desnecessária do que deixar passar sem aviso um vídeo
+ * que custa mais do que se esperava. A margem NÃO entra no custo mostrado —
+ * inflar o preço na tela seria mentir para o lado seguro, e a estimativa
+ * continua sendo a conta pura.
+ */
+export const CONFIRM_MARGIN = 1.1;
+
+/**
+ * O veredito, num lugar só.
+ *
+ * A tela e as duas rotas de custo consomem esta função em vez de repetirem a
+ * comparação: uma cópia da regra que esquecesse a margem passaria despercebida
+ * justamente na faixa em que ela existe para proteger.
+ */
+export function requiresLongVideoConfirmation(estimatedSeconds: number): boolean {
+  return estimatedSeconds * CONFIRM_MARGIN > CONFIRM_ABOVE_SECONDS;
+}
+
+/**
  * Duração estimada, em segundos FRACIONÁRIOS, a partir da CONTAGEM de
  * caracteres.
  *
