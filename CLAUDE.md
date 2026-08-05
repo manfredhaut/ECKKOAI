@@ -14,6 +14,23 @@ SaaS multi-tenant de vídeo com avatar digital. Docker Compose: `traefik` (únic
 
 **GUARDA B — os DOIS lados estavam sem medição; só o "usado" foi corrigido (04/08).** Ela compara `usado >= teto` e os dois números eram supostos. **Usado — CORRIGIDO:** contava `data.voices.length`, e `GET /v1/voices` traz a biblioteca `premade` do fornecedor junto com as vozes da pessoa. Numa conta de **4** vozes ele devolveu **25**, e uma clonagem legítima foi recusada com "25 de 10 vozes em uso" (nada gasto — a recusa é antes da clonagem). Agora `countOwnedVoices()` conta o que **não** é `premade`. **A categoria deixou de ser deduzida em 05/08:** o inventário real traz **26 itens = 21 `premade` + 5 `cloned`**, e os 21 batem exatamente com a aritmética 25−4 de antes. A correção está provada em produção — a clonagem que antes era recusada com "25 de 10" passou avaliando **4 de 10**. **Substituir a voz de um avatar NÃO libera o slot da antiga:** o fornecedor ficou com as duas, com o mesmo nome, e a conta foi de 4 para 5. **Teto — SEGUE SUPOSTO:** `DEFAULT_VOICE_SLOT_LIMIT = 10` é declarado, e o real vive em `/v1/user/subscription`, que responde **401** sem `user_read`. Não foi tocado. Enquanto o teto for palpite, esta guarda pode barrar cedo demais de novo — só que agora pelo lado que ainda não foi medido.
 
+**VÍDEO REAL DE 05/08 — o que ficou MEDIDO.** Um vídeo pago saiu pelo produto (`8e7941d1`, avatar `7557957c`, voz clonada `5Yeum4QN…`).
+- **Ritmo: 474 caracteres ÷ 36,9876 s = 12,8151 c/s** — venceu a hipótese de 13,0 (erro 0,185). **A pontuação desacelera 8,4%**: 13,9871 c/s em 87 caracteres contra 12,8151 em 474, mesma voz e modelo. Era DEDUZIDO, agora é MEDIDO.
+- **Régua, 5ª confirmação, ao centavo:** 36,9876 → 36 → 108 un → **US$ 1,80**. Saldo 831 → 723, carteira 13,85 → 12,05.
+- **Primeira vez que a régua do FORNECEDOR mudou o resultado:** nosso `ffprobe` deu 37,000000 s, ele deu 36,9876 s. Truncados, **37 e 36** — cobrar pelo nosso número teria errado 3 un / US$ 0,05 para cima. Antes as duas réguas só coincidiam.
+- **Sonda: `padded`** — quadro 720×900 (4:5), conteúdo 720×540 (**4:3**), **40,0% preenchido**, recorte x=0 y=180. **Primeiro caso real do caminho `padded`**; o caminho `pending` continua sem caso real.
+- **Custo de voz, MEDIDO no painel:** 561 caracteres (87+474) → **280 créditos, US$ 0,056**, contagem 2. Confirma 0,5 crédito/caractere e US$ 0,0001/caractere. **O painel é legível mesmo com o 401** — o item aberto vira "leitura manual", não "impossível".
+- **mp4:** `ba25ab33`, 3.441.685 B, md5 `bebc3ff22e098d2d35b43c8181f662bf`, h264 720×900, 25 fps, 37,000000 s, `simulated=f`.
+
+**OS 5 DEFEITOS DA PASSADA — levantados, NENHUM corrigido.** Ordenados por dano numa demo ao vivo.
+1. **Cenário e traje são coletados, persistidos e NUNCA enviados.** [videos.ts:606](backend/src/routes/videos.ts:606) chama `generateVideo({...})` sem eles, e `grep scenario|outfit` em `avatarProvider.ts` dá **zero**. Perde-se no NOSSO código, no call site. É um passo inteiro do assistente que não faz nada.
+2. **40% do quadro é barra sólida** no 4:5 entregue.
+3. **O passo Duração não limita nada.** [buildHeygenVideoPayload](backend/src/services/providers/avatarProvider.ts:342) não tem campo de duração e não a recebe; não há `slice` sobre `script`. `duration_seconds` só estima, rotula e alimenta `requestedUnitCount`. Pediu-se 15 s, saiu 37 s.
+4. **A estimativa erra 0,42×** — [videos.ts:395](backend/src/routes/videos.ts:395) usa `video.duration_seconds`, não o roteiro. US$ 0,75 estimados contra US$ 1,80 cobrados.
+5. **[VideoPlayer.tsx:76](frontend/src/features/VideoPlayer.tsx:76) mostra a duração PEDIDA, não a entregue** — "4:5 · 15s" num vídeo de 37 s.
+
+**FILA DE TEXTO DE TELA — levantada, não corrigida.** `ficheiro` → `arquivo` (pt-PT em pt-BR, 2× na tela de voz); "Grave de 1:00 a 1:30" usa a régua velha (o teto real é **218 s**).
+
 **1 · DESARME — confirme antes de tudo. Modo `live` gasta dinheiro real.** Exigido `fixture` + `len=0`, nos 5 critérios: `printenv` (o processo) · `docker compose config` (o arquivo — pode divergir, e um `up -d` transforma um no outro) · `StartedAt` · `RestartCount` · linha de boot `"billable":false`.
 
 ```bash
@@ -59,15 +76,13 @@ Gate: `docker compose exec -T -e PROVIDER_MODE=fixture backend npm run check` ·
 
 > **eckko.ai, diretório `TWINAI`. HEAD `66e9316` + o commit deste handoff (04/08), árvore limpa, `fixture` com `PROVIDER_LIVE_CONFIRM` vazia — DESARMADO e conferido às 13:01.** Confirme os 5 critérios do desarme antes de tocar em nada: `printenv` e `docker compose config` podem divergir, e um `up -d` arma o modo pago sem nova pergunta. **`RestartCount` compara-se com o valor pós-boot, não com 0**, e a linha de boot pode estar fora da janela de `--tail 500` — nesse caso o `printenv` é a evidência mais forte, porque em `live` o processo nem sobe sem a confirmação.
 >
-> ## ✅ TIRO FINAL — clonagem e síntese FEITAS em 05/08. Falta só o vídeo.
+> ## ✅ O CAMINHO INTEIRO ESTÁ PROVADO EM PRODUÇÃO (05/08). O que falta é conserto, não descoberta.
 >
-> **A clonagem real passou pelo caminho de produção, com as guardas ativas**, no avatar `7557957c-d22f-4fba-a1e0-c19f07f47536` ("TESTE REAL 15:40 01/08"). **O Mário não foi tocado e `wAd9MJ2IK71FGs1FWjIX` está intacta.**
+> Clonagem real, síntese e **um vídeo pago** saíram pelo produto, no avatar `7557957c` ("TESTE REAL 15:40 01/08"). **O Mário não foi tocado e `wAd9MJ2IK71FGs1FWjIX` está intacta.** Não há mais NÃO VERIFICADO bloqueando a demo — o ElevenLabs aceita nosso WAV, a GUARDA B liberou com a contagem corrigida, e a régua de custo fechou ao centavo pela 5ª vez.
 >
-> **MEDIDO:** `cloneVoice` HTTP **200** → `voice_id` **`5Yeum4QN7o9S5Lc0XVOx`**, `requires_verification:false`, `category=cloned` · GUARDA B avaliou **4 de 10** e liberou · `voice_id_replaced` registrou `5Qfze6o4… → 5Yeum4QN…` · síntese de **87 caracteres** → **100.772 B**, **6,22 s** (`source: elevenlabs_timestamps`), md5 `560454d9…`, em 2.922 ms · **HeyGen inalterado: 831 un / US$ 13,85** — nenhum vídeo.
+> **Saldo hoje: 723 un / US$ 12,05** (~6 vídeos de 37 s, ou ~19 de 15 s). Gasto da passada: **US$ 1,80** de vídeo + **US$ 0,056** de voz + **1 slot irreversível** (4 → 5; substituir a voz não apaga a antiga, e liberar exige o painel).
 >
-> **O único gasto foi 1 slot de voz, e ele NÃO volta.** Substituir a voz do avatar não apaga a antiga no fornecedor: a conta foi de 4 para 5, com duas vozes de mesmo nome. Liberar exige o painel.
->
-> **O que sobra para fechar a demo: 1 vídeo de 15 s, ~US$ 0,75** (3 un/s inteiro truncado, 60 un/US$, régua do FORNECEDOR). Não foi autorizado até aqui.
+> **A demo NÃO está pronta, e a razão são os 5 defeitos acima — nenhum corrigido.** O pior deles é o passo 3 do assistente (cenário e traje) não fazer absolutamente nada: os arquivos sobem, são salvos, e nunca chegam ao fornecedor. Depois vêm os 40% de barra, a duração que não limita, a estimativa 0,42× e o rótulo errado. Numa apresentação ao vivo, os dois primeiros são visíveis a olho nu.
 >
 > **Rearmar (o `.env` não é editado; as variáveis vão na invocação):**
 > ```
