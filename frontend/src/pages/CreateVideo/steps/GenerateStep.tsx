@@ -64,7 +64,32 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
   }, [wizard.avatarId, wizard.script, reloadKey]);
 
   const blockers = readiness?.blockers ?? [];
-  const blocked = readiness === null || !readiness.ready;
+
+  /**
+   * CONFIRMAÇÃO EXPLÍCITA para roteiro longo.
+   *
+   * Não é limite e não recusa nada: o roteiro do cliente não é truncado em
+   * silêncio. É só a exigência de que alguém tenha OLHADO a duração antes de
+   * gastar — o débito acontece antes da chamada ao fornecedor e só estorna
+   * antes do aceite, então um roteiro colado por engano vira dinheiro perdido
+   * sem nenhum ponto de arrependimento no meio.
+   *
+   * O teto e o veredito vêm do servidor (`/video-cost-estimate`), pelo mesmo
+   * motivo do predicado de prontidão: uma tela que reimplementa a regra passa a
+   * discordar do servidor no dia em que a regra mudar.
+   */
+  const [estimate, setEstimate] = useState<{
+    estimatedSeconds: number;
+    requiresConfirmation: boolean;
+    confirmAboveSeconds: number;
+  } | null>(null);
+  const [confirmedLong, setConfirmedLong] = useState(false);
+  // Roteiro novo, confirmação nova: a duração que foi confirmada não é mais a
+  // que vai ser gerada.
+  useEffect(() => setConfirmedLong(false), [wizard.script]);
+
+  const needsConfirm = estimate?.requiresConfirmation === true;
+  const blocked = readiness === null || !readiness.ready || (needsConfirm && !confirmedLong);
 
   useEffect(() => {
     return () => {
@@ -83,7 +108,9 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
         outfit: wizard.outfit || null,
         scenario_prompt: wizard.scenarioPrompt || null,
         outfit_prompt: wizard.outfitPrompt || null,
-        duration_seconds: wizard.durationSeconds,
+        // `duration_seconds` NÃO vai mais. O servidor deriva a duração do
+        // roteiro; mandar um número daqui apenas ofereceria a ele uma segunda
+        // resposta para a mesma pergunta — e era a errada.
         // Vai SEMPRE. O servidor tem padrão para corpo sem este campo, mas
         // depender do padrão dele aqui reproduziria, um andar acima, a mesma
         // omissão que o bloco tirou do payload do fornecedor.
@@ -134,6 +161,28 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
               {t("createVideo.generate.checking")}
             </p>
           )}
+
+          {/* O portão de confirmação vem ANTES do painel de custo por acidente
+              nenhum: ele fala do mesmo número que o painel detalha logo abaixo,
+              e quem lê de cima para baixo encontra primeiro o aviso e depois a
+              conta que o justifica. */}
+          {needsConfirm && estimate && (
+            <label
+              style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 12, fontSize: 13 }}
+            >
+              <input
+                type="checkbox"
+                checked={confirmedLong}
+                onChange={(e) => setConfirmedLong(e.target.checked)}
+              />
+              <span>
+                {t("createVideo.generate.longConfirm", {
+                  seconds: estimate.estimatedSeconds.toFixed(0),
+                  limit: estimate.confirmAboveSeconds,
+                })}
+              </span>
+            </label>
+          )}
           {error && (
             <p className="alert-error" style={{ fontSize: 13, marginTop: 12, marginBottom: 0 }}>
               {error}
@@ -142,7 +191,18 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
           {/* Custo ANTES de gastar. A estimativa aparece ao lado do botão que
               a torna real — mostrá-la só depois seria informar o preço depois
               da compra. */}
-          <VideoCostPanel estimateSeconds={wizard.durationSeconds} />
+          <VideoCostPanel
+            scriptChars={wizard.script.length}
+            onEstimate={(info) =>
+              setEstimate((atual) =>
+                atual &&
+                atual.estimatedSeconds === info.estimatedSeconds &&
+                atual.requiresConfirmation === info.requiresConfirmation
+                  ? atual
+                  : info,
+              )
+            }
+          />
         </>
       ) : (
         <>

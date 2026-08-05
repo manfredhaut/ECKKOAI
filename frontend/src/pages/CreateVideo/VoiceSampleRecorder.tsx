@@ -33,6 +33,12 @@ interface SamplePolicy {
   min_seconds: number;
   recommended_seconds: number;
   max_bytes: number;
+  /**
+   * Teto de duração, derivado dos bytes no servidor. A tela não o calcula: os
+   * 10 MiB do fornecedor e a taxa de 24 kHz vivem na política, e uma segunda
+   * conta aqui divergiria dela na primeira mudança de formato.
+   */
+  max_seconds: number;
 }
 
 interface CloneResponse {
@@ -238,6 +244,7 @@ export function VoiceSampleRecorder({
    */
   const min = policy?.min_seconds ?? null;
   const recommended = policy?.recommended_seconds ?? null;
+  const max = policy?.max_seconds ?? null;
   // Só bloqueia o que a tela SABE ser curto. Um arquivo enviado tem
   // `elapsed === 0` sem ser curto — quem mede aquele caso é o servidor, e
   // bloquear aqui por ignorância impediria o envio de um arquivo perfeitamente
@@ -282,10 +289,11 @@ export function VoiceSampleRecorder({
       {expanded && (
         <>
       <p className="voice-sample__hint">
-        {min !== null && recommended !== null
+        {min !== null && recommended !== null && max !== null
           ? t("createVideo.voiceSample.hint", {
               min: formatDuration(min),
               recommended: formatDuration(recommended),
+              max: formatDuration(max),
             })
           : t("createVideo.voiceSample.hintLoading")}
       </p>

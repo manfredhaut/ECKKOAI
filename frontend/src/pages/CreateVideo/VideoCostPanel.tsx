@@ -14,8 +14,18 @@ import { api } from "../../api/client";
  * nada" e "não sabemos" são afirmações diferentes, e só uma delas é verdade
  * aqui.
  */
-interface CostResponse {
-  requestedSeconds: number;
+export interface CostResponse {
+  /**
+   * Duração ESTIMADA a partir do roteiro. Era `requestedSeconds`, o chip de
+   * 15/30/60 s — que não chegava ao fornecedor e produzia uma estimativa de
+   * 0,42× do cobrado (US$ 0,75 contra US$ 1,80, medido em 05/08).
+   */
+  estimatedSeconds: number;
+  scriptChars: number;
+  /** De onde vem a duração estimada, por extenso. Irmã de `basis`. */
+  pacing: string;
+  confirmAboveSeconds: number;
+  requiresConfirmation: boolean;
   estimate: { costUsd: number | null; costUnknownReason: string | null };
   actual: {
     seconds: number;
@@ -30,18 +40,43 @@ interface CostResponse {
   simulated: boolean;
 }
 
-const usd = (v: number) => `US$ ${v.toFixed(4).replace(/0+$/, "").replace(/\.$/, "")}`;
+/**
+ * Dinheiro em pt-BR, com as duas casas sempre.
+ *
+ * Antes: `toFixed(4)` sem os zeros à direita, que escrevia "US$ 1.5" para um
+ * dólar e cinquenta — ponto de milhar inglês e uma casa só, num produto em
+ * português. A truncagem por segundo inteiro faz todo custo de vídeo ser
+ * múltiplo de US$ 0,05, então duas casas são EXATAS aqui: nenhum valor é
+ * escondido pelo arredondamento.
+ */
+const usd = (v: number) => `US$ ${v.toFixed(2).replace(".", ",")}`;
+
+/** Segundos com duas casas, também em pt-BR: 36,99 s. */
+const secs = (v: number) => v.toFixed(2).replace(".", ",");
 
 export function VideoCostPanel({
   videoId,
-  estimateSeconds,
+  scriptChars,
   refreshKey,
+  onEstimate,
 }: {
   /** Depois de gerar. Quando ausente, o painel mostra só a estimativa. */
   videoId?: string | null;
-  /** Antes de gerar: a duração escolhida na tela. */
-  estimateSeconds?: number;
+  /**
+   * Antes de gerar: o COMPRIMENTO do roteiro, não o roteiro.
+   *
+   * A duração sai dele no servidor, onde vive a única cópia do ritmo medido.
+   * Derivá-la aqui criaria uma segunda verdade sobre quanto tempo um roteiro
+   * dura — o mesmo defeito que o bloco 4A tirou do banco, só que na tela.
+   */
+  scriptChars?: number;
   refreshKey?: unknown;
+  /**
+   * A estimativa, de volta para quem pediu o painel. Existe para o passo 6
+   * poder exigir confirmação acima do teto sem consultar a mesma rota duas
+   * vezes nem reimplementar a comparação.
+   */
+  onEstimate?: (info: Pick<CostResponse, "estimatedSeconds" | "requiresConfirmation" | "confirmAboveSeconds">) => void;
 }) {
   const { t } = useTranslation();
   const [cost, setCost] = useState<CostResponse | null>(null);
@@ -49,12 +84,18 @@ export function VideoCostPanel({
   useEffect(() => {
     // As duas rotas devolvem a MESMA forma, então há um caminho de
     // renderização só — ver o comentário de /video-cost-estimate no backend.
-    const url = videoId ? `/videos/${videoId}/cost` : `/video-cost-estimate?seconds=${estimateSeconds ?? 0}`;
+    const url = videoId ? `/videos/${videoId}/cost` : `/video-cost-estimate?chars=${scriptChars ?? 0}`;
     api
       .get<CostResponse>(url)
-      .then(setCost)
+      .then((r) => {
+        setCost(r);
+        onEstimate?.(r);
+      })
       .catch(() => setCost(null));
-  }, [videoId, estimateSeconds, refreshKey]);
+    // `onEstimate` fora das dependências de propósito: é uma função nova a cada
+    // render do pai, e incluí-la refaria a requisição em laço.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoId, scriptChars, refreshKey]);
 
   if (!cost) return null;
 
@@ -71,7 +112,10 @@ export function VideoCostPanel({
       <div style={{ fontWeight: 600, marginBottom: 8 }}>{t("createVideo.cost.title")}</div>
 
       <Linha
-        rotulo={t("createVideo.cost.estimated", { seconds: cost.requestedSeconds })}
+        rotulo={t("createVideo.cost.estimated", {
+          seconds: secs(cost.estimatedSeconds),
+          chars: cost.scriptChars,
+        })}
         valor={
           cost.estimate.costUsd != null ? usd(cost.estimate.costUsd) : t("createVideo.cost.notMeasured")
         }
@@ -80,7 +124,7 @@ export function VideoCostPanel({
 
       {cost.actual ? (
         <Linha
-          rotulo={t("createVideo.cost.actual", { seconds: cost.actual.seconds })}
+          rotulo={t("createVideo.cost.actual", { seconds: secs(cost.actual.seconds) })}
           valor={cost.actual.costUsd != null ? usd(cost.actual.costUsd) : t("createVideo.cost.notMeasured")}
           detalhe={
             cost.actual.costUnknownReason ??
@@ -118,7 +162,14 @@ export function VideoCostPanel({
         </p>
       )}
 
+      {/* Duas procedências, e nenhuma escondida: de onde vem a DURAÇÃO
+          estimada e de onde vem o PREÇO por segundo. Foram medidas em
+          passadas diferentes, e um número sem origem é indistinguível de um
+          palpite — foi assim que a estimativa de 0,42× passou por fato. */}
       <p className="text-muted" style={{ fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+        {cost.pacing}
+      </p>
+      <p className="text-muted" style={{ fontSize: 11, marginTop: 4, marginBottom: 0 }}>
         {cost.basis}
       </p>
     </div>

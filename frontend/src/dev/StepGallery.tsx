@@ -256,7 +256,8 @@ function StepUnderGlass({
       outfit: state === "vazio" ? "" : FILLED_DEFAULTS.outfit,
       scenarioPrompt: state === "vazio" ? "" : FILLED_DEFAULTS.scenarioPrompt,
       outfitPrompt: state === "vazio" ? "" : FILLED_DEFAULTS.outfitPrompt,
-      durationSeconds: 30 as const,
+      estimatedSeconds: null,
+      confirmAboveSeconds: null,
       // O estado "vazio" recebe o padrão, e não string vazia: a plataforma
       // nasce escolhida no wizard real, e uma galeria que mostrasse o passo
       // sem seleção retrataria um estado que o produto não produz.
@@ -293,7 +294,7 @@ function StepUnderGlass({
         />
       );
     case "passo4-duracao":
-      return <DurationStep duration={30} onChange={noop} />;
+      return <DurationStep script={wizard.script} />;
     case "passo5-publicacao":
       // O estado "vazio" mostra o padrão selecionado, não nenhum: é o que o
       // wizard real produz ao entrar no passo.

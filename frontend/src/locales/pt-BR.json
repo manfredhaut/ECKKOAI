@@ -357,7 +357,10 @@
     "download": "Baixar",
     "watch": "Assistir",
     "hideVideo": "Ocultar",
-    "voiceCloned": "Voz clonada"
+    "voiceCloned": "Voz clonada",
+    "durationDelivered": "{{seconds}} s entregues",
+    "durationEstimated": "~{{seconds}} s estimados",
+    "durationUnknown": "duração não medida"
   },
   "settings": {
     "title": "Configurações",
@@ -557,12 +560,13 @@
       "avatarTraining": "em treino"
     },
     "duration": {
-      "title": "Duração"
+      "title": "Duração",
+      "derived": "A duração vem do roteiro — não há como escolhê-la aqui. Para um vídeo mais curto, volte ao passo 2 e encurte o texto."
     },
     "cost": {
       "title": "Custo",
-      "estimated": "Estimativa ({{seconds}}s pedidos)",
-      "actual": "Custo real ({{seconds}}s entregues)",
+      "estimated": "Estimativa ({{seconds}} s a partir de {{chars}} caracteres)",
+      "actual": "Custo real ({{seconds}} s entregues)",
       "actualLabel": "Custo real",
       "noneYet": "ainda não medido",
       "notMeasured": "sem medição",
@@ -593,7 +597,8 @@
       "failed": "Falha na geração. Tente novamente.",
       "avatarTraining": "O avatar ainda está em treino no fornecedor. Isso leva alguns minutos e acontece uma vez só, logo depois de criá-lo — atualize a página em instantes.",
       "checking": "Conferindo se está tudo pronto para gerar…",
-      "openLibrary": "Ver na Biblioteca de vídeos →"
+      "openLibrary": "Ver na Biblioteca de vídeos →",
+      "longConfirm": "Este roteiro produz cerca de {{seconds}} s de vídeo, acima dos {{limit}} s a partir dos quais pedimos confirmação. A cobrança é por segundo entregue e não há estorno depois que o fornecedor aceita. Confirmo que quero gerar assim."
     },
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",
@@ -601,7 +606,7 @@
     },
     "voiceSample": {
       "title": "Voz do avatar",
-      "hint": "No mínimo {{min}}. A partir de {{recommended}} o resultado melhora — pode gravar mais, não há limite.",
+      "hint": "No mínimo {{min}}. A partir de {{recommended}} o resultado melhora. O teto é {{max}} — acima disso a amostra não cabe no envio ao provedor de voz.",
       "alreadyCloned": "Este avatar já tem uma voz clonada. Enviar outra amostra substitui a atual, e a anterior não pode ser recuperada.",
       "record": "Gravar",
       "recordAgain": "Regravar",

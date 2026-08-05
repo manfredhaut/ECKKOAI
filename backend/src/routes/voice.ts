@@ -42,6 +42,7 @@ import { toClientVendorError, vendorErrorStatus } from "../services/providers/ve
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 import { logEvent } from "../services/log/safeLog.js";
 import {
+  MAX_SAMPLE_SECONDS,
   MIN_SAMPLE_SECONDS,
   RECOMMENDED_SAMPLE_SECONDS,
   VOICE_SAMPLE_MAX_BYTES,
@@ -72,6 +73,12 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
     min_seconds: MIN_SAMPLE_SECONDS,
     recommended_seconds: RECOMMENDED_SAMPLE_SECONDS,
     max_bytes: VOICE_SAMPLE_MAX_BYTES,
+    // O TETO em segundos, derivado dos bytes pela mesma função que a rota usa
+    // para recusar (`maxSampleSecondsFor`). Sem ele a tela dizia "pode gravar
+    // mais, não há limite" — e havia: a 24 kHz cabem 218 s nos 10 MiB do
+    // fornecedor, e o que passa disso é recusado depois de a pessoa ter
+    // gravado.
+    max_seconds: MAX_SAMPLE_SECONDS,
   }));
 
   app.post<{ Params: { id: string } }>(

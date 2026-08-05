@@ -37,7 +37,8 @@ export function CreateVideoPage() {
     outfit: "",
     scenarioPrompt: "",
     outfitPrompt: "",
-    durationSeconds: 30,
+    estimatedSeconds: null,
+    confirmAboveSeconds: null,
     publishPlatform: DEFAULT_PUBLISH_PLATFORM,
   });
 
@@ -134,8 +135,16 @@ export function CreateVideoPage() {
       )}
       {step === 3 && (
         <DurationStep
-          duration={wizard.durationSeconds}
-          onChange={(durationSeconds) => setWizard((w) => ({ ...w, durationSeconds }))}
+          script={wizard.script}
+          onEstimate={({ estimatedSeconds, confirmAboveSeconds }) =>
+            setWizard((w) =>
+              // Só grava se mudou: `onEstimate` dispara a cada resposta da rota
+              // e um `setWizard` incondicional aqui re-renderiza o passo em laço.
+              w.estimatedSeconds === estimatedSeconds && w.confirmAboveSeconds === confirmAboveSeconds
+                ? w
+                : { ...w, estimatedSeconds, confirmAboveSeconds },
+            )
+          }
         />
       )}
       {step === 4 && (

@@ -357,7 +357,10 @@
     "download": "Download",
     "watch": "Watch",
     "hideVideo": "Hide",
-    "voiceCloned": "Voice cloned"
+    "voiceCloned": "Voice cloned",
+    "durationDelivered": "{{seconds}}s delivered",
+    "durationEstimated": "~{{seconds}}s estimated",
+    "durationUnknown": "duration not measured"
   },
   "settings": {
     "title": "Settings",
@@ -557,11 +560,12 @@
       "avatarTraining": "training"
     },
     "duration": {
-      "title": "Duration"
+      "title": "Duration",
+      "derived": "Duration comes from the script — there is nothing to choose here. For a shorter video, go back to step 2 and shorten the text."
     },
     "cost": {
       "title": "Cost",
-      "estimated": "Estimate ({{seconds}}s requested)",
+      "estimated": "Estimate ({{seconds}}s from {{chars}} characters)",
       "actual": "Actual cost ({{seconds}}s delivered)",
       "actualLabel": "Actual cost",
       "noneYet": "not measured yet",
@@ -593,7 +597,8 @@
       "failed": "Generation failed. Please try again.",
       "avatarTraining": "The avatar is still training at the provider. This takes a few minutes and happens only once, right after creating it — refresh the page shortly.",
       "checking": "Checking whether everything is ready to generate…",
-      "openLibrary": "Open in video library →"
+      "openLibrary": "Open in video library →",
+      "longConfirm": "This script produces about {{seconds}}s of video, above the {{limit}}s threshold where we ask for confirmation. Billing is per delivered second and there is no refund once the vendor accepts the job. I confirm I want to generate it."
     },
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",
@@ -601,7 +606,7 @@
     },
     "voiceSample": {
       "title": "Avatar voice",
-      "hint": "At least {{min}}. From {{recommended}} on the result improves — you can record more, there is no cap.",
+      "hint": "At least {{min}}. From {{recommended}} on the result improves. The cap is {{max}} — beyond that the sample no longer fits the upload to the voice provider.",
       "alreadyCloned": "This avatar already has a cloned voice. Sending another sample replaces the current one, and the previous voice cannot be recovered.",
       "record": "Record",
       "recordAgain": "Record again",

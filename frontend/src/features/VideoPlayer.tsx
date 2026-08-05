@@ -40,11 +40,34 @@ const MAX_WIDTH: Record<string, number> = {
   "1:1": 420,
 };
 
+/**
+ * A duração que o rótulo mostra, e de onde ela veio.
+ *
+ * A ordem não é arbitrária e repete a do registro de consumo (videos.ts):
+ *
+ *  (a) o que o FORNECEDOR mediu no vídeo pronto. É a única fonte que não é
+ *      nossa, e é a que cobra: em 05/08 ele declarou 36,9876 s onde o nosso
+ *      `ffprobe` deu 37,000000 — truncados, 36 e 37, três unidades de
+ *      diferença. Por isso a régua dele ganha da nossa.
+ *  (b) a estimativa derivada do roteiro, EXPLICITAMENTE rotulada como
+ *      estimativa enquanto a medição não existe.
+ *
+ * O que NÃO entra aqui é a duração pedida. Era o que este rótulo mostrava, e
+ * ela dizia "15s" num arquivo de 37 s — o número com menos relação possível com
+ * o que estava tocando na tela logo acima.
+ */
+function durationLabel(video: Video): { seconds: number; estimated: boolean } | null {
+  if (video.delivered_seconds != null) return { seconds: video.delivered_seconds, estimated: false };
+  if (video.estimated_seconds != null) return { seconds: video.estimated_seconds, estimated: true };
+  return null;
+}
+
 export function VideoPlayer({ video }: { video: Video }) {
   const { t } = useTranslation();
   if (!video.output_url) return null;
 
   const ratio = video.aspect_ratio ?? "16:9";
+  const duration = durationLabel(video);
   const cssRatio = CSS_ASPECT[ratio];
   const maxWidth = MAX_WIDTH[ratio] ?? 480;
 
@@ -73,7 +96,13 @@ export function VideoPlayer({ video }: { video: Video }) {
           {t("content.download")}
         </a>
         <span className="text-muted" style={{ fontSize: 12 }}>
-          {ratio} · {video.duration_seconds}s
+          {duration
+            ? duration.estimated
+              ? t("content.durationEstimated", { seconds: Math.floor(duration.seconds) })
+              : t("content.durationDelivered", { seconds: duration.seconds.toFixed(2).replace(".", ",") })
+            : t("content.durationUnknown")}
+          {" · "}
+          {ratio}
         </span>
       </div>
     </div>

@@ -19,6 +19,12 @@ import { resolveVideoFormat, vendorFormatSupport, type VideoFormat } from "../se
 import { isFeatureEnabled } from "../services/featureFlagStore.js";
 import { logEvent } from "../services/log/safeLog.js";
 import { evaluateGenerationReadiness } from "../services/generationReadiness.js";
+import {
+  CONFIRM_ABOVE_SECONDS,
+  estimateSecondsFromChars,
+  estimateSecondsFromScript,
+  scriptDurationBasis,
+} from "../services/video/scriptDuration.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -232,6 +238,60 @@ function pollJob(
   }, POLL_INTERVAL_MS);
 }
 
+/**
+ * A linha do vídeo com a duração MEDIDA ao lado, quando ela já existe.
+ *
+ * `videos` não tem coluna de duração entregue: a medição vive em
+ * `provider_usage`, gravada pelo laço de polling noutra requisição. Sem esta
+ * junção, a única duração que chega à tela é `duration_seconds` — que é uma
+ * estimativa e era mostrada como se fosse o vídeo (o player dizia "15s" num
+ * arquivo de 37 s).
+ *
+ * A linha com `unit_source = 'requested'` é DESCARTADA de propósito: ela guarda
+ * o pedido, não uma medição, e trazê-la aqui apenas repetiria a mentira por um
+ * caminho mais comprido.
+ */
+const SELECT_VIDEO_WITH_DELIVERED = `
+  SELECT v.*, u.unit_count AS delivered_seconds, u.unit_source AS delivered_source
+    FROM videos v
+    LEFT JOIN LATERAL (
+      SELECT unit_count, unit_source
+        FROM provider_usage
+       WHERE video_id = v.id
+         AND tenant_id = v.tenant_id
+         AND provider = 'avatar'
+         AND outcome = 'success'
+         AND unit_source IN ('vendor_response', 'tts_timestamps')
+       ORDER BY created_at DESC
+       LIMIT 1
+    ) u ON true`;
+
+interface VideoRow extends Video {
+  /**
+   * `numeric` do Postgres chega como string. Opcional porque as linhas recém
+   * inseridas (`RETURNING *`) passam por aqui sem a junção — e nesse instante a
+   * ausência de medição é a verdade: o vídeo nem foi gerado ainda.
+   */
+  delivered_seconds?: string | number | null;
+  delivered_source?: string | null;
+}
+
+/**
+ * Converte a duração medida e acrescenta a ESTIMADA, derivada do roteiro.
+ *
+ * As duas viajam juntas para que a tela nunca precise escolher entre mostrar um
+ * número errado e não mostrar nada: quando há medição, ela ganha; enquanto não
+ * há, a estimativa aparece rotulada como estimativa.
+ */
+function withDeliveredSeconds(row: VideoRow) {
+  return {
+    ...row,
+    delivered_seconds: row.delivered_seconds != null ? Number(row.delivered_seconds) : null,
+    delivered_source: row.delivered_source ?? null,
+    estimated_seconds: estimateSecondsFromScript(row.script),
+  };
+}
+
 export async function videoRoutes(app: FastifyInstance): Promise<void> {
   /**
    * O provedor conectado a ESTE tenant honra a proporção escolhida?
@@ -261,14 +321,28 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * conceitualmente com `/videos/:id`, e depender da ordem de resolução do
    * roteador para desempatar é o tipo de sutileza que quebra em silêncio.
    */
-  app.get<{ Querystring: { seconds?: string } }>("/video-cost-estimate", async (req) => {
-    const seconds = Number(req.query.seconds);
-    const requestedSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+  app.get<{ Querystring: { chars?: string } }>("/video-cost-estimate", async (req) => {
+    // A CONTAGEM de caracteres, nunca o roteiro. O texto é conteúdo do cliente
+    // e numa query string iria parar no log de acesso, no histórico e no
+    // referer — o mesmo motivo que fez `/videos/readiness` ser POST. Para
+    // estimar duração, o comprimento é tudo o que se precisa.
+    const chars = Number(req.query.chars);
+    const scriptChars = Number.isFinite(chars) && chars > 0 ? Math.floor(chars) : 0;
+    const estimatedSeconds = estimateSecondsFromChars(scriptChars);
     const credential = await getCredential(req.tenantId, "avatar");
-    const estimate = estimateVideoCost(requestedSeconds, credential?.vendor ?? "heygen");
+    const estimate = estimateVideoCost(estimatedSeconds, credential?.vendor ?? "heygen");
 
     return {
-      requestedSeconds,
+      // Estimada, e não pedida: desde o bloco DURAÇÃO-1 não existe mais duração
+      // pedida. O passo 3 do assistente escolhia 15/30/60 s e nada no caminho
+      // até o fornecedor lia esse número.
+      estimatedSeconds,
+      scriptChars,
+      pacing: scriptDurationBasis(),
+      // O teto vem do SERVIDOR, junto do veredito. Uma tela que reimplementa a
+      // comparação passa a discordar do servidor no dia em que o teto mudar.
+      confirmAboveSeconds: CONFIRM_ABOVE_SECONDS,
+      requiresConfirmation: estimatedSeconds > CONFIRM_ABOVE_SECONDS,
       estimate: {
         costUsd: estimate.known ? estimate.usd : null,
         costUnknownReason: estimate.known ? null : estimate.explanation,
@@ -304,11 +378,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.get("/videos", async (req) => {
-    const { rows } = await pool.query<Video>(
-      "SELECT * FROM videos WHERE tenant_id = $1 ORDER BY created_at DESC",
+    const { rows } = await pool.query<VideoRow>(
+      `${SELECT_VIDEO_WITH_DELIVERED} WHERE v.tenant_id = $1 ORDER BY v.created_at DESC`,
       [req.tenantId],
     );
-    return rows;
+    return rows.map(withDeliveredSeconds);
   });
 
   /**
@@ -392,7 +466,17 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     if (!video) return reply.code(404).send({ error: "Video not found" });
 
     const vendor = video.provider_vendor ?? "heygen";
-    const estimate = estimateVideoCost(video.duration_seconds, vendor);
+    // A estimativa sai do ROTEIRO, não de `duration_seconds`.
+    //
+    // Medido em 05/08: a coluna guardava 15 (o chip escolhido no passo 3), o
+    // vídeo entregue teve 36,9876 s, e esta linha mostrava US$ 0,75 ao lado dos
+    // US$ 1,80 que a carteira pagou — a estimativa valia 0,42× do real. O chip
+    // nunca limitou nada: nenhum campo de duração chega ao fornecedor.
+    //
+    // O roteiro é a única entrada que de fato determina a duração, e é ele que
+    // o fornecedor recebe. Ver services/video/scriptDuration.ts.
+    const estimatedSeconds = estimateSecondsFromScript(video.script);
+    const estimate = estimateVideoCost(estimatedSeconds, vendor);
 
     const { rows: usage } = await pool.query<{
       unit_count: string;
@@ -425,7 +509,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         : null;
 
     return {
-      requestedSeconds: video.duration_seconds,
+      // MESMA forma de `/video-cost-estimate` — a tela tem um caminho só.
+      estimatedSeconds,
+      scriptChars: video.script.length,
+      pacing: scriptDurationBasis(),
+      confirmAboveSeconds: CONFIRM_ABOVE_SECONDS,
+      requiresConfirmation: estimatedSeconds > CONFIRM_ABOVE_SECONDS,
       estimate: {
         costUsd: estimate.known ? estimate.usd : null,
         costUnknownReason: estimate.known ? null : estimate.explanation,
@@ -450,12 +539,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get<{ Params: { id: string } }>("/videos/:id", async (req, reply) => {
-    const { rows } = await pool.query<Video>(
-      "SELECT * FROM videos WHERE id = $1 AND tenant_id = $2",
+    const { rows } = await pool.query<VideoRow>(
+      `${SELECT_VIDEO_WITH_DELIVERED} WHERE v.id = $1 AND v.tenant_id = $2`,
       [req.params.id, req.tenantId],
     );
     if (!rows[0]) return reply.code(404).send({ error: "Video not found" });
-    return rows[0];
+    return withDeliveredSeconds(rows[0]);
   });
 
   // Proxies the vendor's output_url through our own server instead of
@@ -503,7 +592,16 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       outfit: string | null;
       scenario_prompt: string | null;
       outfit_prompt: string | null;
-      duration_seconds: number;
+      /**
+       * ACEITO E IGNORADO desde o bloco DURAÇÃO-1.
+       *
+       * Era o chip de 15/30/60 s do passo 3, e ele nunca chegou ao fornecedor:
+       * `buildHeygenVideoPayload` não tem campo de duração e nada corta o
+       * roteiro. Continua no tipo porque um cliente antigo pode mandá-lo, e
+       * recusar por causa de um campo que nunca fez nada seria trocar uma
+       * mentira silenciosa por uma quebra barulhenta.
+       */
+      duration_seconds?: number;
       publish_platform?: string | null;
     };
   }>("/videos", { preHandler: requireActiveTenant }, async (req, reply) => {
@@ -514,9 +612,16 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       outfit,
       scenario_prompt: scenarioPrompt,
       outfit_prompt: outfitPrompt,
-      duration_seconds,
       publish_platform: publishPlatform,
     } = req.body;
+
+    // A duração é DERIVADA do roteiro, aqui e em nenhum outro lugar.
+    //
+    // Inteira porque a coluna é `integer` (migration 002), e TRUNCADA porque é
+    // assim que o fornecedor cobra: 36,9876 s viram 36 s cobrados. Arredondar
+    // para cima inventaria uma unidade que ninguém debitou.
+    const estimatedSeconds = estimateSecondsFromScript(script);
+    const duration_seconds = Math.floor(estimatedSeconds);
 
     // Plataforma → formato, SEMPRE, e antes de qualquer outra coisa. Corpo sem
     // plataforma cai no padrão declarado (YouTube/16:9, que é o que a conta já
@@ -712,9 +817,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // O corpo continua trazendo a linha do vídeo, e não só a mensagem: ela
       // carrega o `error_message` já sanitizado e o id, que é o que permite
       // olhar a tentativa depois na Biblioteca.
+      // A linha CRUA, sem a duração medida ao lado: não há medição nenhuma numa
+      // geração que o fornecedor recusou, e a guarda de erro de vendor confere
+      // esta chamada por forma exata — enfeitá-la aqui a faria deixar de
+      // reconhecer o caminho que ela existe para proteger.
       return reply.code(vendorErrorStatus(failure)).send(errored[0]);
     }
 
-    return reply.code(201).send(video);
+    return reply.code(201).send(withDeliveredSeconds(video));
   });
 }

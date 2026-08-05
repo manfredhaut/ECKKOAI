@@ -56,7 +56,13 @@ const FAKE_VIDEOS: Video[] = [
     outfit: null,
     scenario_prompt: null,
     outfit_prompt: null,
-    duration_seconds: 30,
+    duration_seconds: 36,
+    // MEDIDA pelo fornecedor, e é ela que o player mostra. O número é o do
+    // vídeo pago de 05/08 (36,9876 s), onde o nosso ffprobe dava 37,000000 —
+    // a galeria expõe justamente o caso em que as duas réguas discordam.
+    delivered_seconds: 36.9876,
+    delivered_source: "vendor_response",
+    estimated_seconds: 36.9876,
     status: "ready",
     output_url: "/uploads/exemplo/video.mp4",
     error_message: null,
@@ -133,8 +139,18 @@ function respond(method: string, path: string): Response | null {
   // e um formato próprio aqui esconderia justamente o caminho de renderização.
   if (method === "GET" && path.includes("/video-cost-estimate")) {
     return json({
-      requestedSeconds: 30,
-      estimate: { costUsd: 1.35, costUnknownReason: null },
+      // 474 caracteres → 36,9876 s → 36 s cobrados → 108 unidades → US$ 1,80.
+      // Os números do vídeo pago de 05/08, para a galeria exercitar o painel
+      // com o caso que a régua real produziu.
+      estimatedSeconds: 36.9876,
+      scriptChars: 474,
+      pacing: "Duração estimada a partir do roteiro, a 12,8151 caracteres por segundo, medidos em 2026-08-05.",
+      confirmAboveSeconds: 60,
+      // `false` porque 36,99 s ficam abaixo do teto de 60 s. O estado oposto foi
+      // exercitado aqui em 05/08 com 900 caracteres (70,23 s → US$ 3,50): o
+      // aviso aparece e o botão "Gerar vídeo" só habilita depois de marcado.
+      requiresConfirmation: false,
+      estimate: { costUsd: 1.8, costUnknownReason: null },
       actual: null,
       difference: null,
       failure: null,
@@ -144,10 +160,16 @@ function respond(method: string, path: string): Response | null {
   }
   if (method === "GET" && /\/videos\/[^/]+\/cost$/.test(path)) {
     return json({
-      requestedSeconds: 15,
-      estimate: { costUsd: 0.675, costUnknownReason: null },
-      actual: { seconds: 5, unitSource: "vendor_response", costUsd: 0.225, costUnknownReason: null, vendorUnits: 14 },
-      difference: { usd: -0.45, factor: 3 },
+      estimatedSeconds: 6.788863,
+      scriptChars: 87,
+      pacing: "Duração estimada a partir do roteiro, a 12,8151 caracteres por segundo, medidos em 2026-08-05.",
+      confirmAboveSeconds: 60,
+      requiresConfirmation: false,
+      estimate: { costUsd: 0.3, costUnknownReason: null },
+      actual: { seconds: 5, unitSource: "vendor_response", costUsd: 0.25, costUnknownReason: null, vendorUnits: 15 },
+      // real − estimado = 0,25 − 0,30. Negativo: a estimativa errou para CIMA,
+      // que é o lado esperado em roteiro curto (ver scriptDuration.ts).
+      difference: { usd: -0.05, factor: 1.2 },
       failure: null,
       basis: "Estimativa baseada em uma única medição real (2026-08-01), em 16:9 / 720p.",
       simulated: true,

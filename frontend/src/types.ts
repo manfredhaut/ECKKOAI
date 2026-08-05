@@ -28,7 +28,27 @@ export interface Video {
   outfit: string | null;
   scenario_prompt: string | null;
   outfit_prompt: string | null;
+  /**
+   * Duração ESTIMADA, em segundos inteiros, gravada quando o vídeo nasceu.
+   *
+   * Até o bloco DURAÇÃO-1 isto guardava o chip de 15/30/60 s do passo 3 — um
+   * número que nunca chegou ao fornecedor e que o player exibia como se fosse o
+   * vídeo entregue ("15s" num arquivo de 37 s). Hoje é a estimativa derivada do
+   * roteiro, truncada. Continua sendo estimativa: para o que foi entregue,
+   * `delivered_seconds`.
+   */
   duration_seconds: number;
+  /**
+   * Duração MEDIDA, quando já existe. `null` enquanto o vídeo não ficou pronto.
+   *
+   * Vem de `provider_usage`, e nunca da linha com `unit_source = 'requested'`:
+   * essa guarda o pedido, não uma medição.
+   */
+  delivered_seconds?: number | null;
+  /** De onde saiu `delivered_seconds` — `vendor_response` ou `tts_timestamps`. */
+  delivered_source?: string | null;
+  /** Estimativa fracionária derivada do roteiro, para exibir antes da medição. */
+  estimated_seconds?: number;
   status: VideoStatus;
   output_url: string | null;
   error_message: string | null;
