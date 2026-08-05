@@ -4,7 +4,8 @@ import path from "node:path";
 import { pool } from "../db/pool.js";
 import { config } from "../config.js";
 import type { Avatar } from "../types.js";
-import { trainAvatar, waitForAvatarReady } from "../services/providers/avatarProvider.js";
+import { listAvatarLooks, trainAvatar, waitForAvatarReady } from "../services/providers/avatarProvider.js";
+import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import type { AvatarProviderStatus } from "../services/providers/avatarProvider.js";
 import { cloneVoice, VoiceProviderError } from "../services/providers/voiceProvider.js";
 import { getCredential } from "../services/credentialLookup.js";
@@ -35,6 +36,39 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     );
     if (!rows[0]) return reply.code(404).send({ error: "Avatar not found" });
     return rows[0];
+  });
+
+  /**
+   * Os LOOKS (trajes) deste avatar.
+   *
+   * Devolve `{ looks, canChoose }` em vez de só a lista: com um look — que é o
+   * caso da conta real — a tela precisa mostrar o seletor DESABILITADO com a
+   * explicação de que traje se cria no avatar, e não no vídeo. Deixar a tela
+   * deduzir isso de `looks.length` espalharia a regra por dois lugares.
+   *
+   * Nunca falha: fornecedor mudo devolve lista vazia, e lista vazia leva ao
+   * mesmo estado de um look só. Um erro aqui travaria o passo Cena inteiro por
+   * causa do controle menos importante dele.
+   */
+  app.get<{ Params: { id: string } }>("/avatars/:id/looks", async (req, reply) => {
+    const { rows } = await pool.query<Avatar>(
+      "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.tenantId],
+    );
+    const avatar = rows[0];
+    if (!avatar) return reply.code(404).send({ error: "Avatar not found" });
+
+    const credential = await getCredential(req.tenantId, "avatar");
+    if (!credential || !avatar.provider_avatar_id) {
+      return { looks: [], canChoose: false, simulated: isFixtureMode() };
+    }
+
+    const looks = await listAvatarLooks(
+      credential.apiKey,
+      credential.vendor as AvatarVendor,
+      avatar.provider_avatar_id,
+    );
+    return { looks, canChoose: looks.length > 1, simulated: isFixtureMode() };
   });
 
   // Downloads the reference video/audio used to train this avatar — the

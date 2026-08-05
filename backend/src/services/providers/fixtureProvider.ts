@@ -22,10 +22,30 @@ import { fileURLToPath } from "node:url";
 import { saveUpload } from "../storage.js";
 import type { AvatarProviderStatus, GenerateVideoInput, GenerateVideoResult, PollResult, TrainAvatarResult } from "./avatarProvider.js";
 import { buildHeygenVideoPayload } from "./avatarProvider.js";
+import type { AvatarLook } from "./avatarProvider.js";
 import type { CloneVoiceResult, SynthesizedSpeech, VoiceInventory } from "./voiceProvider.js";
 import { HEYGEN_ASPECT_RATIOS, type AspectRatio } from "./videoFormat.js";
 import { selectEngine } from "./videoEngine.js";
 import { logEvent } from "../log/safeLog.js";
+
+/**
+ * TRÊS looks simulados — e três, não um, de propósito.
+ *
+ * A conta real tem um look só, e com um look o seletor de traje nasce
+ * desabilitado. Se a simulação repetisse esse estado, o caminho habilitado —
+ * escolher um traje diferente e vê-lo chegar ao payload — não teria como ser
+ * exercitado em lugar nenhum antes de alguém criar looks pagando.
+ *
+ * O primeiro é o próprio avatar recebido, para que "não trocar de traje"
+ * continue sendo o comportamento padrão e o id continue sendo o que sempre foi.
+ */
+export function listAvatarLooksFixture(providerAvatarId: string): AvatarLook[] {
+  return [
+    { id: providerAvatarId, name: "Traje atual", previewImageUrl: null },
+    { id: `${providerAvatarId}-look-formal`, name: "Formal", previewImageUrl: null },
+    { id: `${providerAvatarId}-look-casual`, name: "Casual", previewImageUrl: null },
+  ];
+}
 
 /**
  * O asset que o fundo por imagem TERIA, em simulação.

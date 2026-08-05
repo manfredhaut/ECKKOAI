@@ -25,6 +25,7 @@ import { normalizeScene, type SceneInput } from "./videoScene.js";
 import {
   checkAvatarConnectionFixture,
   generateVideoFixture,
+  listAvatarLooksFixture,
   pollVideoJobFixture,
   trainAvatarFixture,
   waitForAvatarReadyFixture,
@@ -772,4 +773,69 @@ export async function pollVideoJob(vendor: AvatarVendor, apiKey: string, jobId: 
 export async function checkAvatarConnection(apiKey: string, vendor: AvatarVendor): Promise<void> {
   if (isFixtureMode()) return checkAvatarConnectionFixture();
   return vendor === "did" ? checkDidConnection(apiKey) : checkHeygenConnection(apiKey);
+}
+
+/**
+ * Os LOOKS de um avatar — o que o produto chama de traje.
+ *
+ * Traje não é parâmetro de geração: é qual look do avatar entra no
+ * `avatar_id`. Foi essa confusão que fez o passo 3 antigo coletar imagem de
+ * roupa por semanas para não mandar nada a lugar nenhum.
+ *
+ * O caminho no fornecedor tem DOIS saltos, e o primeiro é o que não é óbvio:
+ * o id que guardamos é o do LOOK, e a listagem é por GRUPO. Medido em 05/08:
+ * `GET /v3/avatars/{look_id}` responde 404 com "Avatar group … not found" —
+ * aquela rota espera group id. O grupo sai de `GET /v2/photo_avatar/{look_id}`.
+ *
+ * O endpoint de listagem é v2 e tem SUNSET declarado pelo fornecedor para
+ * 2026-10-31, com o aviso mandando migrar para `/v3/avatar_groups`. Essa rota
+ * v3 responde **404 nesta chave** (sondada em 05/08), então migrar agora
+ * trocaria algo que funciona por algo que não existe. É dívida com data.
+ *
+ * Falha NÃO derruba nada: devolve lista vazia, e a tela mostra o seletor
+ * desabilitado — que é o mesmo estado de quem tem um look só.
+ */
+export interface AvatarLook {
+  id: string;
+  name: string;
+  previewImageUrl: string | null;
+}
+
+export async function listAvatarLooks(
+  apiKey: string,
+  vendor: AvatarVendor,
+  providerAvatarId: string,
+): Promise<AvatarLook[]> {
+  if (isFixtureMode()) return listAvatarLooksFixture(providerAvatarId);
+  if (vendor === "did") return [];
+  try {
+    const pa = await fetch(`${HEYGEN_BASE}/v2/photo_avatar/${encodeURIComponent(providerAvatarId)}`, {
+      headers: { "x-api-key": apiKey },
+    });
+    const paData = await fetchJson(pa, "HeyGen", "heygen.photoAvatar");
+    const groupId: string | undefined = paData?.data?.group_id;
+    if (!groupId) return [];
+
+    const res = await fetch(`${HEYGEN_BASE}/v2/avatar_group/${encodeURIComponent(groupId)}/avatars`, {
+      headers: { "x-api-key": apiKey },
+    });
+    const data = await fetchJson(res, "HeyGen", "heygen.listLooks");
+    const lista: unknown = data?.data?.avatar_list;
+    if (!Array.isArray(lista)) return [];
+    return lista
+      .filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null)
+      .map((x) => ({
+        id: String(x.id ?? ""),
+        name: String(x.name ?? ""),
+        previewImageUrl: typeof x.image_url === "string" ? x.image_url : null,
+      }))
+      .filter((l) => l.id.length > 0);
+  } catch (err) {
+    logEvent("error", "looks_unreadable", {
+      context: "heygen.listLooks",
+      detail: err instanceof Error ? err.message : String(err),
+      consequence: "a tela mostra o seletor de traje desabilitado, como se houvesse um look só",
+    });
+    return [];
+  }
 }
