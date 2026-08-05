@@ -67,6 +67,17 @@ export interface EngineSelection {
   reason: EngineReason;
 }
 
+/**
+ * O que veio da tela é um motor que este código conhece?
+ *
+ * Aceita `unknown` porque o chamador é uma rota HTTP: o corpo da requisição não
+ * tem tipo até alguém conferir, e conferir aqui mantém a lista de motores num
+ * lugar só.
+ */
+export function isHeygenEngine(value: unknown): value is HeygenEngine {
+  return typeof value === "string" && isKnownEngine(value);
+}
+
 function isKnownEngine(value: string): value is HeygenEngine {
   return (HEYGEN_ENGINES as readonly string[]).includes(value);
 }

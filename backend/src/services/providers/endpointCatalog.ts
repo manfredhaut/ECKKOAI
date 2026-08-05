@@ -76,7 +76,11 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
     path: "/v3/videos",
     method: "POST",
     billable: true,
-    note: "MEDIDO: US$ 0,15 por 3,372 s (LIVE-1). Caminho de geração.",
+    note:
+      "MEDIDO: US$ 0,15 por 3,372 s (LIVE-1). Caminho de geração. A medição vale para o motor " +
+      "DEFAULT do fornecedor (avatar_iv, que é o que sai quando `engine` não é enviado — e nenhuma " +
+      "geração nossa enviou). Para avatar_iii e avatar_v a tarifação é NÃO MEDIDA: nenhum vídeo " +
+      "saiu por eles, e o fornecedor não declara preço por motor em nenhuma resposta.",
   },
   {
     vendor: "heygen",

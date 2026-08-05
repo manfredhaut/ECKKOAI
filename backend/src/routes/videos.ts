@@ -25,6 +25,8 @@ import {
   estimateSecondsFromScript,
   scriptDurationBasis,
 } from "../services/video/scriptDuration.js";
+import { isExpressiveness, normalizeScene, type SceneBackground } from "../services/providers/videoScene.js";
+import { isHeygenEngine } from "../services/providers/videoEngine.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -236,6 +238,22 @@ function pollJob(
       }
     }
   }, POLL_INTERVAL_MS);
+}
+
+/**
+ * O fundo como veio do corpo da requisição, sem confiar em nada dele.
+ *
+ * Um `type` que não seja `color` nem `image` vira AUSÊNCIA de fundo, e não um
+ * erro: recusar a geração inteira por causa de um campo de cena que o cliente
+ * mandou torto seria caro demais para o que está em jogo — a validação que
+ * importa (hex bem formado) está em `normalizeScene`, e o que ela recusa também
+ * vira ausência.
+ */
+function leBackground(raw: { type?: string | null; value?: string | null } | null | undefined): SceneBackground | null {
+  if (!raw || typeof raw.value !== "string" || raw.value.length === 0) return null;
+  if (raw.type === "color") return { type: "color", value: raw.value };
+  if (raw.type === "image") return { type: "image", uploadUrl: raw.value };
+  return null;
 }
 
 /**
@@ -603,6 +621,19 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
        */
       duration_seconds?: number;
       publish_platform?: string | null;
+      /**
+       * OS CONTROLES DE CENA. Ver `providers/videoScene.ts`.
+       *
+       * `background` aceita `{type:"color", value:"#rrggbb"}` ou
+       * `{type:"image", uploadUrl:"/uploads/…"}`. Fundo por VÍDEO não existe no
+       * contrato do fornecedor e por isso não existe aqui.
+       */
+      background?: { type?: string | null; value?: string | null } | null;
+      motion_prompt?: string | null;
+      expressiveness?: string | null;
+      engine_choice?: string | null;
+      /** Look do avatar. Traje é look; ver o passo Cena. */
+      avatar_look_id?: string | null;
     };
   }>("/videos", { preHandler: requireActiveTenant }, async (req, reply) => {
     const {
@@ -613,7 +644,22 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       scenario_prompt: scenarioPrompt,
       outfit_prompt: outfitPrompt,
       publish_platform: publishPlatform,
+      motion_prompt: motionPromptBruto,
+      expressiveness: expressividadeBruta,
+      engine_choice: engineChoiceBruto,
+      avatar_look_id: avatarLookId,
     } = req.body;
+
+    // A cena é NORMALIZADA aqui, uma vez, e o resultado é o que vai para o
+    // banco E para o fornecedor. Normalizar em dois lugares deixaria o que foi
+    // gravado divergir do que foi enviado — e é justamente a linha do banco que
+    // permite gerar de novo com os mesmos parâmetros.
+    const scene = normalizeScene({
+      background: leBackground(req.body.background),
+      motionPrompt: motionPromptBruto ?? null,
+      expressiveness: isExpressiveness(expressividadeBruta) ? expressividadeBruta : null,
+    });
+    const engineChoice = isHeygenEngine(engineChoiceBruto) ? engineChoiceBruto : null;
 
     // A duração é DERIVADA do roteiro, aqui e em nenhum outro lugar.
     //
@@ -663,8 +709,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
 
     const { rows } = await pool.query<Video>(
       `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated,
-                           publish_platform, aspect_ratio, resolution)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13) RETURNING *`,
+                           publish_platform, aspect_ratio, resolution,
+                           background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
       [
         req.tenantId,
         avatar_id,
@@ -683,6 +730,19 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         format.platform,
         format.aspectRatio,
         format.resolution,
+        // A cena JÁ NORMALIZADA. O que está aqui é exatamente o que vai ao
+        // fornecedor — é isso que torna "gerar de novo com os mesmos
+        // parâmetros" uma repetição de verdade, e não uma reconstrução.
+        scene.background?.type ?? null,
+        scene.background?.type === "color"
+          ? scene.background.value
+          : scene.background?.type === "image"
+            ? scene.background.uploadUrl
+            : null,
+        scene.motionPrompt,
+        scene.expressiveness,
+        engineChoice,
+        avatarLookId ?? null,
       ],
     );
     const video = rows[0];
@@ -711,7 +771,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       const { providerJobId, audioDurationSeconds, audioDurationSource, engine, engineReason } = await generateVideo({
         apiKey: avatarCredential.apiKey,
         vendor: avatarCredential.vendor as AvatarVendor,
-        providerAvatarId: avatar.provider_avatar_id,
+        // O LOOK escolhido no passo Cena, quando há mais de um. Traje é look do
+        // avatar, não parâmetro de vídeo — e sem look escolhido vale o do
+        // avatar, que é o que sempre valeu.
+        providerAvatarId: avatarLookId ?? avatar.provider_avatar_id,
         script,
         elevenLabsApiKey: voiceCredential?.apiKey ?? null,
         voiceId: avatar.voice_id,
@@ -724,6 +787,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // fala com o banco, e é essa ausência de I/O que permite exercitá-lo
         // com `fetch` substituído e mais nada.
         engineEnabled: await isFeatureEnabled("explicit_avatar_engine"),
+        // Aqui é onde cenário e interpretação PARAM de se perder. O defeito
+        // anterior não estava no fornecedor nem no montador de payload: estava
+        // exatamente nesta chamada, que não passava os campos que a tela
+        // coletava e o banco guardava.
+        scene,
+        engineChoice,
       });
       // A duração do áudio é gravada AGORA porque só agora ela é conhecida: o
       // registro de consumo acontece no laço de polling, noutra requisição. O

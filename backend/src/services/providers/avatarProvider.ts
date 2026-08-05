@@ -21,6 +21,7 @@ import { isFixtureMode } from "./providerMode.js";
 import { withLiveBudget } from "./liveGuard.js";
 import { vendorAcceptsFormat, type VideoFormat } from "./videoFormat.js";
 import { readSupportedEngines, selectEngine, type EngineReason, type HeygenEngine } from "./videoEngine.js";
+import { normalizeScene, type SceneInput } from "./videoScene.js";
 import {
   checkAvatarConnectionFixture,
   generateVideoFixture,
@@ -102,6 +103,24 @@ export interface GenerateVideoInput {
    * substituído e mais nada, como a guarda de formato faz.
    */
   engineEnabled: boolean;
+  /**
+   * A CENA escolhida pelo usuário: fundo, movimento e expressividade.
+   *
+   * Opcional porque cena vazia é um estado legítimo — é o que toda geração
+   * deste produto fez até agora. O que não é legítimo é o caminho anterior:
+   * cenário e traje eram coletados na tela, gravados no banco e **nunca**
+   * chegavam aqui, porque este tipo não tinha onde recebê-los.
+   */
+  scene?: SceneInput | null;
+  /**
+   * Motor escolhido na tela. `null` = deixa a preferência decidir.
+   *
+   * A escolha do usuário ganha da preferência automática, mas continua
+   * submetida à mesma flag: o ENVIO de `engine` nunca foi exercitado contra o
+   * fornecedor, e um valor recusado derruba a geração inteira — que é o caminho
+   * caro.
+   */
+  engineChoice?: HeygenEngine | null;
 }
 
 /**
@@ -340,10 +359,20 @@ async function pollAvatarStatusHeygen(apiKey: string, avatarId: string): Promise
  * o defeito corrigido aqui.
  */
 export function buildHeygenVideoPayload(
-  input: Pick<GenerateVideoInput, "providerAvatarId" | "format" | "supportedEngines" | "engineEnabled">,
+  input: Pick<
+    GenerateVideoInput,
+    "providerAvatarId" | "format" | "supportedEngines" | "engineEnabled" | "scene" | "engineChoice"
+  >,
   audioAssetId: string,
+  /**
+   * Asset do fundo já subido, quando a cena tem imagem. Resolvido por quem
+   * chama — igual ao áudio — para que este montador continue sem I/O e possa
+   * ser exercitado com `fetch` substituído e mais nada.
+   */
+  backgroundAssetId?: string | null,
 ): { body: Record<string, unknown>; engine: HeygenEngine | null; engineReason: EngineReason | "flag_off" } {
   const selection = selectEngine(input.supportedEngines);
+  const scene = normalizeScene(input.scene ?? {});
 
   const body: Record<string, unknown> = {
     type: "avatar",
@@ -356,21 +385,99 @@ export function buildHeygenVideoPayload(
     resolution: input.format.resolution,
   };
 
+  // CENÁRIO. Cor vai como valor; imagem vai como asset do fornecedor, e nunca
+  // como a nossa URL: `/uploads/...` é servido por um host que a HeyGen não
+  // alcança, e mandar um endereço inalcançável falharia depois do débito.
+  //
+  // Uma imagem pedida cujo upload não resolveu NÃO vira fundo nenhum — é
+  // melhor um vídeo sem o fundo escolhido do que um campo pela metade, e a
+  // ausência fica registrada no evento de payload.
+  if (scene.background?.type === "color") {
+    body.background = { type: "color", value: scene.background.value };
+  } else if (scene.background?.type === "image" && backgroundAssetId) {
+    body.background = { type: "image", asset_id: backgroundAssetId };
+  }
+
+  // INTERPRETAÇÃO. Os dois campos só existem no corpo quando têm conteúdo:
+  // `normalizeScene` já transformou string vazia em ausência, e mandar
+  // `motion_prompt: ""` seria uma instrução de movimento vazia, que não é a
+  // mesma coisa que não instruir.
+  if (scene.motionPrompt) body.motion_prompt = scene.motionPrompt;
+  if (scene.expressiveness) body.expressiveness = scene.expressiveness;
+
   // O motor é a parte DEDUZIDA (ver videoEngine.ts): a ligação entre
   // `supported_api_engines` e `engine.type` é leitura nossa, não contrato
   // declarado. A seleção acontece de qualquer forma e é registrada de qualquer
   // forma; só o envio depende da flag.
+  //
+  // A escolha explícita da tela ganha da preferência automática — é o usuário
+  // dizendo qual motor quer, e a preferência existe justamente para quando
+  // ninguém disse.
+  const escolhido = input.engineChoice ?? selection.engine;
+  const razao: EngineReason = input.engineChoice ? "declared_preference" : selection.reason;
   if (!input.engineEnabled) {
     return { body, engine: null, engineReason: "flag_off" };
   }
-  body.engine = { type: selection.engine };
-  return { body, engine: selection.engine, engineReason: selection.reason };
+  body.engine = { type: escolhido };
+  return { body, engine: escolhido, engineReason: razao };
+}
+
+/**
+ * Tipo da imagem pela extensão do arquivo que guardamos.
+ *
+ * O upload já foi validado por SNIFF de bytes na rota (`uploadLimits.ts`), então
+ * aqui a extensão é consequência daquela checagem, e não a checagem. O default
+ * é jpeg porque é o que a criação de avatar já manda há três blocos.
+ */
+function mimeTypeDaExtensao(url: string): string {
+  const ext = url.toLowerCase().split(".").pop() ?? "";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  return "image/jpeg";
 }
 
 async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateVideoResult> {
   const audio = await requireAudio(input);
   const audioAssetId = await heygenUploadAsset(input.apiKey, audio.buffer, "audio/mpeg");
-  const { body, engine, engineReason } = buildHeygenVideoPayload(input, audioAssetId);
+
+  // O fundo por IMAGEM vira asset do fornecedor antes do payload, pelo mesmo
+  // caminho do áudio e da foto do avatar. Falhar aqui NÃO derruba a geração: o
+  // débito já aconteceu, e perder o vídeo inteiro por causa do fundo seria
+  // trocar um defeito visível por um prejuízo.
+  let backgroundAssetId: string | null = null;
+  const cena = normalizeScene(input.scene ?? {});
+  if (cena.background?.type === "image") {
+    try {
+      const imagem = await readUpload(cena.background.uploadUrl);
+      backgroundAssetId = await heygenUploadAsset(
+        input.apiKey,
+        imagem,
+        mimeTypeDaExtensao(cena.background.uploadUrl),
+      );
+    } catch (err) {
+      logEvent("error", "background_asset_failed", {
+        context: "heygen.generateVideo",
+        reason: err instanceof Error ? err.message : String(err),
+        consequence: "o vídeo é gerado SEM o fundo escolhido; nada é cobrado a mais por isso",
+      });
+    }
+  }
+
+  const { body, engine, engineReason } = buildHeygenVideoPayload(input, audioAssetId, backgroundAssetId);
+
+  // PROVA do que sai. As chaves do corpo e os valores dos CINCO controles, com
+  // os ids de asset encurtados: um `asset_id` inteiro no log não é segredo, mas
+  // também não é legível, e o que se quer ver aqui é se o campo existe.
+  logEvent("info", "video_payload_built", {
+    context: "heygen.generateVideo",
+    campos: Object.keys(body),
+    background: body.background ? (body.background as { type: string }).type : "ausente",
+    motion_prompt: body.motion_prompt ? "presente" : "ausente",
+    expressiveness: body.expressiveness ?? "ausente",
+    engine: engine ?? "não enviado (flag desligada)",
+    avatar_look: input.providerAvatarId.slice(0, 8) + "…",
+    aspect_ratio: input.format.aspectRatio,
+  });
 
   let res: Response;
   try {

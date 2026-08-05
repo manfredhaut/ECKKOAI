@@ -36,6 +36,15 @@ export interface Video {
   publish_platform: string | null;
   aspect_ratio: string | null;
   resolution: string | null;
+  /** Cena escolhida — ver migration 042. `null` = nada escolhido. */
+  background_type: "color" | "image" | null;
+  background_value: string | null;
+  motion_prompt: string | null;
+  expressiveness: string | null;
+  /** Motor ESCOLHIDO na tela; difere de `provider_engine`, que é o enviado. */
+  engine_choice: string | null;
+  /** Look do avatar usado nesta geração. Traje é look, não parâmetro de vídeo. */
+  avatar_look_id: string | null;
   /** Motor ENVIADO ao fornecedor; NULL quando nenhum foi enviado. */
   provider_engine: string | null;
   /** Por que este motor — gravado inclusive quando nenhum foi enviado. */

@@ -21,10 +21,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { saveUpload } from "../storage.js";
 import type { AvatarProviderStatus, GenerateVideoInput, GenerateVideoResult, PollResult, TrainAvatarResult } from "./avatarProvider.js";
+import { buildHeygenVideoPayload } from "./avatarProvider.js";
 import type { CloneVoiceResult, SynthesizedSpeech, VoiceInventory } from "./voiceProvider.js";
 import { HEYGEN_ASPECT_RATIOS, type AspectRatio } from "./videoFormat.js";
 import { selectEngine } from "./videoEngine.js";
 import { logEvent } from "../log/safeLog.js";
+
+/**
+ * O asset que o fundo por imagem TERIA, em simulação.
+ *
+ * Em live o upload acontece de verdade e devolve um id do fornecedor; aqui
+ * devolver um marcador é o que permite ver o campo `background` montado no
+ * payload. Devolver `null` faria a imagem sumir do payload simulado, e a
+ * simulação passaria a esconder justamente o campo que este bloco existe para
+ * garantir que chega.
+ */
+function fixtureBackgroundAssetId(input: GenerateVideoInput): string | null {
+  return input.scene?.background?.type === "image" ? "fixture-background-asset" : null;
+}
 
 /** Quanto tempo o job simulado passa em `processing` antes de concluir. */
 const SIMULATED_JOB_DURATION_MS = 12_000;
@@ -238,6 +252,30 @@ export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoRe
     aspectRatio: input.format.aspectRatio,
   });
   const selection = selectEngine(input.supportedEngines);
+
+  // O PAYLOAD REAL, montado pelo montador REAL, mesmo sem rede.
+  //
+  // A simulação sempre devolveu um job e mais nada, e isso deixava um buraco
+  // exatamente onde este produto já falhou: cenário e traje chegavam à rota,
+  // eram gravados, e ninguém percebia que morriam antes do payload — porque em
+  // fixture nenhum payload era construído para olhar. Agora a simulação exerce
+  // o montador e imprime o que SAIRIA, com os cinco controles à vista.
+  //
+  // O `audio_asset_id` é um marcador de simulação, e é o único campo falso
+  // aqui: em fixture a síntese não acontece, então não há áudio para subir.
+  const { body } = buildHeygenVideoPayload(input, "fixture-audio-asset", fixtureBackgroundAssetId(input));
+  logEvent("info", "video_payload_built", {
+    context: "fixture.generateVideo",
+    simulado: true,
+    campos: Object.keys(body),
+    background: body.background ?? "ausente",
+    motion_prompt: body.motion_prompt ?? "ausente",
+    expressiveness: body.expressiveness ?? "ausente",
+    engine: body.engine ?? "não enviado (flag desligada)",
+    avatar_look: input.providerAvatarId,
+    aspect_ratio: body.aspect_ratio,
+  });
+
   // Em simulação a síntese não acontece (generateVideo devolve antes de
   // requireAudio), então a duração do áudio é a da fixture de voz. Vai como
   // `tts_timestamps` porque é o papel que ela cumpre no fluxo: a retaguarda
