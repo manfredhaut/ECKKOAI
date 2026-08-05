@@ -527,7 +527,7 @@ async function main(): Promise<void> {
   cloneFormat.notes.forEach((n) => note(n));
 
   // --- 25b. teto diário, margem do portão, e a cena chegando ao payload ---
-  const spend = await checkSpendControlPolicy();
+  const spend = await checkSpendControlPolicy(process.env.REPO_ROOT ?? "/repo");
   spend.failures.forEach((f) => failures.push(f));
   spend.notes.forEach((n) => note(n));
 

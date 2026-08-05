@@ -70,15 +70,29 @@ export const MUTANTS: Mutant[] = [
     replace: "    void scene.background.value;",
     expect: "o fundo escolhido não chegou ao payload",
   },
+  {
+    guard: "gasto: os cinco controles chegam do formulário ao payload",
+    name: "o formulário deixa de propagar a interpretação",
+    kind: "esperto",
+    file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
+    // O campo continua na tela, continua no estado do wizard, continua sendo
+    // digitado e contado. Só não entra no corpo — e o vídeo volta sem a
+    // interpretação pedida, sem erro em lugar nenhum. É o defeito de cenário e
+    // traje reencenado uma camada acima.
+    find: "    motion_prompt: wizard.motionPrompt.trim() || null,",
+    replace: "",
+    expect: "a interpretação não chega ao payload pelo formulário",
+  },
 ];
 
-export async function checkSpendControlPolicy(): Promise<SpendControlCheckResult> {
+export async function checkSpendControlPolicy(repoRoot: string): Promise<SpendControlCheckResult> {
   const failures: string[] = [];
   const notes: string[] = [];
 
   checkTetoDiario(failures, notes);
   checkMargemDoPortao(failures, notes);
   checkCenaChegaAoPayload(failures, notes);
+  await checkCincoControles(repoRoot, failures, notes);
 
   return { failures, notes };
 }
@@ -280,4 +294,69 @@ function checkCenaChegaAoPayload(failures: string[], notes: string[]): void {
     "gasto: cena chega ao payload nos três controles (cor, imagem como asset, interpretação), cena vazia " +
       "não produz campo nenhum, e cor malformada vira ausência",
   );
+}
+
+// --------------------------------------------------------------------- 4 ---
+
+/**
+ * OS CINCO CONTROLES, do formulário ao payload.
+ *
+ * As três checagens acima exercitam o montador com objetos escritos à mão. Esta
+ * exercita o caminho que o USUÁRIO percorre: o corpo que a tela monta a partir
+ * do estado do wizard, e daí para o payload que sai ao fornecedor.
+ *
+ * O defeito que ela congela não é hipotético — é o que aconteceu: a tela
+ * coletava cenário e traje, o corpo da requisição os carregava, o banco os
+ * gravava, e o call site não os passava adiante. Cada camada parecia certa
+ * isoladamente, e nenhuma verificação olhava a corrente inteira.
+ *
+ * A montagem do corpo vive em `GenerateStep.tsx` e é lida como TEXTO: o gate
+ * roda em Node, sem DOM e sem React, e importar um `.tsx` traria a árvore de
+ * componentes junto. Ler o arquivo é o que a guarda de fluxo do passo 1 já faz
+ * pelo mesmo motivo.
+ */
+async function checkCincoControles(repoRoot: string, failures: string[], notes: string[]): Promise<void> {
+  const { readFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const rel = "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx";
+  const fonte = await readFile(path.join(repoRoot, rel), "utf8").catch(() => "");
+
+  if (!fonte) {
+    failures.push(`gasto: ${rel} não foi encontrado — a guarda dos cinco controles não olhou nada.`);
+    return;
+  }
+
+  // O que o formulário TEM de propagar. O nome do campo do corpo ao lado do
+  // nome do estado do wizard: os dois têm de aparecer na mesma montagem, senão
+  // o campo existe no corpo com valor de outro lugar.
+  const controles: { campo: string; origem: string; oQueE: string }[] = [
+    { campo: "script", origem: "wizard.script", oQueE: "o texto narrado" },
+    { campo: "background", origem: "wizard.background", oQueE: "o cenário" },
+    { campo: "motion_prompt", origem: "wizard.motionPrompt", oQueE: "a interpretação" },
+    { campo: "expressiveness", origem: "wizard.expressiveness", oQueE: "a expressividade" },
+    { campo: "avatar_look_id", origem: "wizard.avatarLookId", oQueE: "o traje" },
+  ];
+
+  for (const c of controles) {
+    if (!fonte.includes(`${c.campo}:`) || !fonte.includes(c.origem)) {
+      failures.push(
+        `gasto: ${c.oQueE} não chega ao payload pelo formulário — ${rel} monta o corpo de POST /videos sem ` +
+          `\`${c.campo}\` vindo de \`${c.origem}\`. É a forma exata do defeito anterior: a tela coleta, o ` +
+          "banco grava, e o controle não chega ao fornecedor sem que nada reclame.",
+      );
+    }
+  }
+
+  // Campo vazio não pode virar string vazia no corpo. A tela é o primeiro lugar
+  // onde isso pode ser estragado, e o servidor normalizar depois não desculpa —
+  // o log de prova passaria a mostrar um `motion_prompt` que não existe.
+  if (!/motion_prompt:\s*wizard\.motionPrompt\.trim\(\)\s*\|\|\s*null/.test(fonte)) {
+    failures.push(
+      `gasto: ${rel} deixou de transformar interpretação em branco em \`null\`. Uma instrução de ` +
+        "movimento vazia não é a mesma coisa que não instruir, e nenhuma geração nossa enviou o campo " +
+        "para sabermos como o fornecedor lê a diferença.",
+    );
+  }
+
+  notes.push(`gasto: os 5 controles do formulário chegam ao corpo de POST /videos (${rel})`);
 }
