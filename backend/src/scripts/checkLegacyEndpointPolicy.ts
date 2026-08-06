@@ -53,16 +53,30 @@ export interface LegacyEndpointCheckResult {
 export const MUTANTS: Mutant[] = [
   {
     guard: "endpoints legados: nenhuma chamada v2 fora do inventário",
-    name: "uma chamada v2 volta ao produto sem entrar no inventário",
+    name: "uma chamada v2 volta ao produto por um caminho já declarado",
     kind: "esperto",
-    // É a regressão exata que se acabou de consertar, e ela é ESPERTA porque
-    // continua funcionando: o v2 lê um look v3 com 200 — medido no Jaleco. Nada
-    // quebra hoje. O que muda é a data em que quebra, e a única testemunha
-    // disso é um `warning` dentro de um corpo de resposta que ninguém lê.
+    // É a regressão exata que se acabou de consertar, e ela é ESPERTA por dois
+    // motivos. Primeiro, continua funcionando: o v2 lê um look v3 com 200 —
+    // medido no Jaleco. Nada quebra hoje; o que muda é a data em que quebra.
+    // Segundo, `/v2/photo_avatar` ESTÁ no inventário (a sonda o usa de
+    // propósito), então uma guarda que só olhasse a lista de caminhos passaria
+    // verde. O que a pega é o inventário registrar também o ARQUIVO.
     file: "backend/src/services/providers/avatarProvider.ts",
     find: '    const res = await fetch(`${HEYGEN_BASE}/v3/avatars/looks/${encodeURIComponent(providerLookId)}`, {',
     replace: '    const res = await fetch(`${HEYGEN_BASE}/v2/photo_avatar/${encodeURIComponent(providerLookId)}`, {',
-    expect: "uma chamada a endpoint v2 entrou sem estar no inventário",
+    expect: "endpoints legados: chamada a endpoint v2 fora do inventário",
+  },
+  {
+    guard: "endpoints legados: nenhuma chamada v2 fora do inventário",
+    name: "um caminho v2 inteiramente novo entra sem ser notado",
+    kind: "óbvio",
+    // O outro modo de escapar: não reaproveitar um nome declarado, e sim
+    // acrescentar um endpoint v2 que nunca esteve na lista. É o caso comum de
+    // quem lê a doc do fornecedor, acha um exemplo antigo e copia.
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: "    res = await fetch(`${HEYGEN_BASE}/v2/user/remaining_quota`, { headers: { \"x-api-key\": apiKey } });",
+    replace: "    res = await fetch(`${HEYGEN_BASE}/v2/talking_photo/list`, { headers: { \"x-api-key\": apiKey } });",
+    expect: "endpoints legados: chamada a endpoint v2 fora do inventário",
   },
   {
     guard: "traje: o que sumiu do fornecedor para de ser eterno",
@@ -91,6 +105,15 @@ export const MUTANTS: Mutant[] = [
 ];
 
 // ---------------------------------------------------------------- 1 -------
+
+/**
+ * A frase que atribui a reprovação a ESTA guarda, comum aos dois modos de
+ * escapar do inventário — caminho desconhecido e arquivo não declarado. Sem um
+ * marcador único, o mutante mais realista (uma chamada v2 voltando a um arquivo
+ * de produto) reprovava pelo texto do outro ramo, e o arnês chamava isso de
+ * AMBÍGUO: reprovou, mas não dá para dizer que foi por causa dela.
+ */
+const FORA_DO_INVENTARIO = "endpoints legados: chamada a endpoint v2 fora do inventário";
 
 const RAIZES = ["backend/src", "frontend/src"];
 /** Só esta guarda pode falar de `/v2/` livremente: ela é o inventário em ação. */
@@ -147,7 +170,7 @@ async function checarInventario(repoRoot: string, failures: string[], notes: str
     const entrada = LEGACY_V2_ENDPOINTS.find((e) => casaPorSegmento(achado, e.path));
     if (!entrada) {
       failures.push(
-        `endpoints legados: \`${achado}\` é chamado em ${JSON.stringify([...arquivos])} e NÃO está no ` +
+        `${FORA_DO_INVENTARIO} — \`${achado}\` é chamado em ${JSON.stringify([...arquivos])} e não está no ` +
           "inventário de `legacyEndpoints.ts`. A HeyGen remove os endpoints v2 em " +
           `${HEYGEN_V2_SUNSET} — o corpo de toda resposta v2 diz isso — e uma chamada fora do ` +
           "inventário é uma que ninguém decidiu manter: ela funciona hoje, para nessa data, e a " +
@@ -159,9 +182,10 @@ async function checarInventario(repoRoot: string, failures: string[], notes: str
     const foraDaLista = [...arquivos].filter((f) => !entrada.files.includes(f));
     if (foraDaLista.length > 0) {
       failures.push(
-        `endpoints legados: \`${achado}\` apareceu em ${JSON.stringify(foraDaLista)}, que não está entre ` +
-          `os arquivos declarados para ele. O inventário registra ONDE cada chamada v2 vive; um lugar ` +
-          "novo é uma decisão nova, e ela precisa ser escrita junto com o motivo.",
+        `${FORA_DO_INVENTARIO} — \`${achado}\` apareceu em ${JSON.stringify(foraDaLista)}, que não está ` +
+          "entre os arquivos declarados para ele. O inventário registra ONDE cada chamada v2 vive; um " +
+          "lugar novo é uma decisão nova, e ela precisa ser escrita junto com o motivo. Um caminho já " +
+          `declarado não é salvo-conduto: quem some em ${HEYGEN_V2_SUNSET} é a chamada, não o nome.`,
       );
     }
     const semUso = entrada.files.filter((f) => !arquivos.has(f));
