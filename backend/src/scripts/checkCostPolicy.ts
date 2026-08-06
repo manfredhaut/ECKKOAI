@@ -20,6 +20,7 @@ import type { Mutant } from "./mutants.js";
 import {
   HEYGEN_VIDEO_COST,
   USD_PER_BILLED_SECOND,
+  costDifference,
   costFor,
   estimateVideoCost,
 } from "../services/billing/providerCost.js";
@@ -55,6 +56,19 @@ export const MUTANTS: Mutant[] = [
     // como AMBÍGUO, com razão.
     replace: "  return { known: true, usd: 0, vendorUnits: 0, billedSeconds: 0 };",
     expect: "devolveu custo ZERO para um consumo sem medição",
+  },
+  {
+    guard: "custo: a diferença não existe em geração simulada",
+    name: "a linha de diferença volta a aparecer em geração simulada",
+    kind: "esperto",
+    // O portão do modo some e TODO o resto fica: os dois lados continuam
+    // obrigatórios, a subtração continua certa, a tela continua escondendo a
+    // linha quando vem `null`. O que volta é a comparação contra uma duração
+    // que o simulador inventou — um número com cara de aferição e nada aferido.
+    file: "backend/src/services/billing/providerCost.ts",
+    find: "  if (input.simulated) return null;",
+    replace: "  void input.simulated;",
+    expect: "a linha de diferença voltou a aparecer em geração simulada",
   },
   {
     guard: "custo: a cobrança é por segundo INTEIRO",
@@ -144,6 +158,7 @@ export async function checkCostPolicy(repoRoot: string): Promise<CostCheckResult
   const notes: string[] = [];
 
   checkAbsenceIsNeverZero(failures, notes);
+  checkDifferenceIsSilentWhenSimulated(failures, notes);
   checkCostMatchesRealMeasurements(failures, notes);
   await checkNoCostNumbersOutsideConstant(repoRoot, failures, notes);
   await checkNoLogOutsideSink(repoRoot, failures, notes);
@@ -151,6 +166,69 @@ export async function checkCostPolicy(repoRoot: string): Promise<CostCheckResult
   checkFreioDerivesFromCatalog(failures, notes);
 
   return { failures, notes };
+}
+
+// -------------------------------------------------------------------- 1b ---
+
+/**
+ * A diferença estimativa × real NÃO existe em geração simulada.
+ *
+ * Em `fixture` a duração entregue é constante, produzida pelo simulador. Uma
+ * linha "a estimativa foi 1,3× o custo real" ao lado de um vídeo que nunca foi
+ * gerado não mede o erro da estimativa: mede o simulador. É um número com cara
+ * de aferição e nada aferido — e esta tela já carregou um desses por semanas.
+ *
+ * Exercita a função real, com os dois lados presentes nos dois casos: o que
+ * separa um do outro tem de ser `simulated`, e nada mais.
+ */
+function checkDifferenceIsSilentWhenSimulated(failures: string[], notes: string[]): void {
+  // Contador LOCAL: `failures` é compartilhado com as outras verificações deste
+  // arquivo, e usar o tamanho absoluto faria esta nota sumir por causa de uma
+  // falha alheia — ou pior, aparecer por engano.
+  const antes = failures.length;
+  const doisLadosPresentes = { actualUsd: 1.8, estimateUsd: 2.35 };
+
+  const simulado = costDifference({ simulated: true, ...doisLadosPresentes });
+  if (simulado !== null) {
+    failures.push(
+      "custo: a linha de diferença voltou a aparecer em geração simulada — `costDifference()` devolveu " +
+        `${JSON.stringify(simulado)} com \`simulated: true\` e os dois lados presentes. Em fixture a ` +
+        "duração entregue é constante e vem do simulador, então a diferença não mede a estimativa, mede " +
+        "a fixture. Estimativa e custo real continuam visíveis; o que não pode aparecer é a comparação.",
+    );
+  }
+
+  const real = costDifference({ simulated: false, ...doisLadosPresentes });
+  if (real === null) {
+    failures.push(
+      "custo: a diferença sumiu também na geração REAL, com os dois lados presentes. Silenciar a " +
+        "comparação em tudo esconde justamente o erro da estimativa — que é a única forma de ela " +
+        "melhorar, e a razão de o painel mostrar as duas lado a lado.",
+    );
+  } else if (real.usd !== -0.55) {
+    failures.push(
+      `custo: a diferença em geração real deu US$ ${real.usd}, e 1,8 − 2,35 é −0,55. A conta mudou junto ` +
+        "com a regra de exibição, e o número da tela deixou de ser a subtração que ele afirma ser.",
+    );
+  }
+
+  // Os dois lados continuam obrigatórios, mesmo em geração real: aritmética
+  // com ausência produz um número que parece medida.
+  const semReal = costDifference({ simulated: false, actualUsd: null, estimateUsd: 2.35 });
+  const semEstimativa = costDifference({ simulated: false, actualUsd: 1.8, estimateUsd: null });
+  if (semReal !== null || semEstimativa !== null) {
+    failures.push(
+      "custo: a diferença foi calculada com um dos lados ausente. Subtrair contra `null` devolve um " +
+        "número que parece medida e é aritmética com ausência.",
+    );
+  }
+
+  if (failures.length === antes) {
+    notes.push(
+      "  custo: diferença silenciosa em geração simulada, presente e correta (−0,55) na real, e ausente " +
+        "quando falta um dos lados",
+    );
+  }
 }
 
 // --------------------------------------------------------------------- 1 ---

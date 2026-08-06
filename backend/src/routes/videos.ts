@@ -7,7 +7,7 @@ import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { createNotification } from "../services/notifications.js";
 import { recordFailedProviderUsage, recordProviderUsage } from "../services/billing/usageTracking.js";
-import { costBasisNote, costFor, estimateVideoCost } from "../services/billing/providerCost.js";
+import { costBasisNote, costDifference, costFor, estimateVideoCost } from "../services/billing/providerCost.js";
 import { contaDe, debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { persistRemoteArtifact, probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.js";
@@ -561,16 +561,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         costUnknownReason: estimate.known ? null : estimate.explanation,
       },
       actual,
-      // A diferença só existe quando os dois lados existem. Calculá-la contra
-      // um `null` produziria um número que parece medida e é aritmética com
-      // ausência.
-      difference:
-        actual && actual.costUsd != null && estimate.known
-          ? {
-              usd: Number((actual.costUsd - estimate.usd).toFixed(4)),
-              factor: actual.costUsd > 0 ? Number((estimate.usd / actual.costUsd).toFixed(2)) : null,
-            }
-          : null,
+      // A diferença só existe quando os dois lados existem E a geração foi
+      // real. As duas condições vivem em `costDifference()`, num lugar só.
+      difference: costDifference({
+        simulated: video.simulated,
+        actualUsd: actual?.costUsd ?? null,
+        estimateUsd: estimate.known ? estimate.usd : null,
+      }),
       // Presente mesmo quando não há consumo: é o que a tela mostra em vez de
       // um traço mudo.
       failure: linha && linha.outcome === "failed" ? { reason: linha.failure_reason } : null,

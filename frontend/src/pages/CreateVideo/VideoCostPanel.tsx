@@ -144,6 +144,12 @@ export function VideoCostPanel({
         />
       )}
 
+      {/* Sem checagem de `simulated` aqui, de propósito: quem decide se a
+          diferença significa alguma coisa é `costDifference()`, no servidor, e
+          em geração simulada ela devolve `null`. Repetir a condição nesta linha
+          criaria duas ideias do mesmo fato, e a que ficasse para trás numa
+          mudança futura seria a desta tela. Estimativa e custo real continuam
+          visíveis nos dois modos. */}
       {cost.difference && (
         <Linha
           rotulo={t("createVideo.cost.difference")}

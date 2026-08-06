@@ -204,6 +204,44 @@ export function estimateVideoCost(requestedSeconds: number, vendor: string): Cos
   return costFor({ provider: "avatar", vendor, unitType: "seconds", unitCount: requestedSeconds });
 }
 
+export interface CostDifference {
+  usd: number;
+  factor: number | null;
+}
+
+/**
+ * A diferença entre o que se estimou e o que se pagou — quando ela SIGNIFICA
+ * alguma coisa.
+ *
+ * Duas condições, e a segunda é a que este bloco acrescenta:
+ *
+ *  1. Os dois lados existem. Calcular contra `null` produz um número que parece
+ *     medida e é aritmética com ausência.
+ *  2. A geração NÃO é simulada. Em `fixture` a duração entregue é constante,
+ *     produzida pelo simulador — comparar a estimativa contra ela não mede o
+ *     erro da estimativa, mede o simulador. Uma linha "a estimativa foi 1,3× o
+ *     custo real" ao lado de um vídeo que nunca foi gerado é um número com cara
+ *     de aferição e sem nada aferido, e é exatamente o tipo de número que já
+ *     passou semanas nesta tela sendo lido como fato.
+ *
+ * A regra vive AQUI e não na tela, num lugar só: `VideoCostPanel` já esconde a
+ * linha quando `difference` é `null`, e repetir a condição no componente criaria
+ * duas ideias do mesmo fato — que é a família de defeito que este projeto
+ * persegue. A estimativa e o custo real continuam visíveis nos dois modos.
+ */
+export function costDifference(input: {
+  simulated: boolean;
+  actualUsd: number | null;
+  estimateUsd: number | null;
+}): CostDifference | null {
+  if (input.simulated) return null;
+  if (input.actualUsd == null || input.estimateUsd == null) return null;
+  return {
+    usd: Number((input.actualUsd - input.estimateUsd).toFixed(4)),
+    factor: input.actualUsd > 0 ? Number((input.estimateUsd / input.actualUsd).toFixed(2)) : null,
+  };
+}
+
 /** Ressalva que acompanha toda estimativa na tela. */
 export function costBasisNote(): string {
   const { aspectRatio, resolution } = HEYGEN_VIDEO_COST.measuredUnder;
