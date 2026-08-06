@@ -62,6 +62,20 @@ export const MUTANTS: Mutant[] = [
     expect: "um traje em preparo apareceu no seletor",
   },
   {
+    guard: "traje: em preparo não é escolhível",
+    name: "o preparo escapa pela lista do fornecedor",
+    kind: "esperto",
+    // O irmão do mutante acima, e o defeito que só a medição em live revelou:
+    // o fornecedor LISTA o look assim que o cria, antes de terminar. Filtrar só
+    // as nossas linhas deixa o traje em preparo entrar pela lista dele — e o
+    // vetor "em preparo não é escolhível" passaria verde, porque a linha local
+    // realmente está fora. Foi assim nos 40 s medidos em 06/08.
+    file: "backend/src/services/avatar/looks.ts",
+    find: "  const doFornecedorProntos = doFornecedor.filter((f) => !naoProntosAqui.has(f.id));",
+    replace: "  const doFornecedorProntos = doFornecedor;",
+    expect: "um traje em preparo entrou no seletor pela lista do fornecedor",
+  },
+  {
     guard: "traje: o custo declarado é o medido",
     name: "o custo do traje vira número digitado",
     kind: "esperto",
@@ -278,6 +292,39 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
           "esconder dinheiro gasto é pior que mostrar um andamento.",
       );
     }
+
+    // O FORNECEDOR já lista o look em preparo — medido em 06/08, ele apareceu
+    // na listagem dele durante os ~50 s até concluir. Filtrar só as nossas
+    // linhas deixaria o traje entrar por ali, e este vetor é o que pega isso.
+    const comOFornecedorJaListando = await listarLooks(BASE.tenantId, BASE.avatarId, [
+      ...doFornecedor,
+      { id: "look-novo-1", name: "Terno azul", previewImageUrl: null },
+    ]);
+    if (comOFornecedorJaListando.looks.some((l) => l.id === "look-novo-1")) {
+      failures.push(
+        "traje: um traje em preparo entrou no seletor pela lista do fornecedor. Ele lista o look assim " +
+          "que o cria, antes de terminar — medido em 06/08 —, então filtrar apenas as nossas linhas não " +
+          "basta. Escolher esse look manda para a geração de vídeo, que custa, um traje que ainda não " +
+          "existe.",
+      );
+    }
+
+    // O nome é o que a PESSOA escreveu. Medido: "Jaleco branco" voltou da
+    // listagem do fornecedor como "White Lab Coat, Blue Shirt".
+    linhas[0].status = "completed";
+    linhas[0].provider_look_id = "look-novo-1";
+    const comNome = await listarLooks(BASE.tenantId, BASE.avatarId, [
+      { id: "look-novo-1", name: "White Lab Coat, Blue Shirt", previewImageUrl: null },
+    ]);
+    if (!comNome.looks.some((l) => l.id === "look-novo-1" && l.name === "Terno azul")) {
+      failures.push(
+        "traje: o seletor mostra o nome que o FORNECEDOR devolveu, e não o que a pessoa escreveu. Ele " +
+          "reescreve o nome a partir do prompt (medido: \"Jaleco branco\" virou \"White Lab Coat, Blue " +
+          "Shirt\"), e quem criou o traje procura pelo nome que deu.",
+      );
+    }
+    linhas[0].status = "processing";
+    linhas[0].provider_look_id = "look-novo-1";
 
     // Quando o fornecedor conclui, ele entra no seletor. Sem isto, o vetor
     // acima seria satisfeito por uma listagem que esconde tudo para sempre.

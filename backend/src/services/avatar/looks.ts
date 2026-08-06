@@ -310,11 +310,32 @@ export async function listarLooks(
   // foi pago, e esconder dinheiro gasto é pior que mostrar um erro.
   const prontos = rows.filter((l) => l.status === "completed" && l.provider_look_id);
 
+  // O FORNECEDOR LISTA O LOOK ANTES DE ELE FICAR PRONTO — medido em 06/08:
+  // entre o 200 e o `completed` (≈50 s naquela criação), `listAvatarLooks()` já
+  // devolvia o traje novo. Filtrar só as nossas linhas deixava o traje em
+  // preparo escolhível pela lista dele, que é exatamente o que a regra existe
+  // para impedir: gerar vídeo com um look que o fornecedor ainda não terminou.
+  const naoProntosAqui = new Set(
+    rows.filter((l) => l.status !== "completed" && l.provider_look_id).map((l) => l.provider_look_id as string),
+  );
+  const doFornecedorProntos = doFornecedor.filter((f) => !naoProntosAqui.has(f.id));
+
+  // O NOME é o que a pessoa escreveu, não o que o fornecedor devolveu. Medido:
+  // "Jaleco branco" voltou da listagem dele como "White Lab Coat, Blue Shirt" —
+  // ele reescreve o nome a partir do prompt. Quem criou o traje procura pelo
+  // nome que deu.
+  const nomeLocal = new Map(
+    rows.filter((l) => l.provider_look_id).map((l) => [l.provider_look_id as string, l.name]),
+  );
+  const comNossoNome = doFornecedorProntos.map((f) =>
+    nomeLocal.has(f.id) ? { ...f, name: nomeLocal.get(f.id) as string } : f,
+  );
+
   // Deduplicado pelo id que vai ao fornecedor: um look criado aqui volta na
   // listagem dele assim que fica pronto — medido, o grupo passou a ter 2 looks —
   // e mostrar o mesmo traje duas vezes faz a pessoa achar que criou dois.
   const locais = prontos
-    .filter((l) => !doFornecedor.some((f) => f.id === l.provider_look_id))
+    .filter((l) => !comNossoNome.some((f) => f.id === l.provider_look_id))
     .map((l) => ({ id: l.provider_look_id as string, name: l.name, previewImageUrl: l.preview_image_url }));
 
   // O id do PENDENTE é o da nossa linha quando o fornecedor ainda não devolveu
@@ -328,5 +349,5 @@ export async function listarLooks(
       status: l.status as "processing" | "failed",
     }));
 
-  return { looks: [...doFornecedor, ...locais], pendentes };
+  return { looks: [...comNossoNome, ...locais], pendentes };
 }
