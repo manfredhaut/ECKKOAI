@@ -144,8 +144,15 @@ function respond(method: string, path: string): Response | null {
         { id: "gallery-look-2", name: "Formal", previewImageUrl: null },
         { id: "gallery-look-3", name: "Casual", previewImageUrl: null },
       ],
+      // Um traje EM PREPARO junto dos prontos: é o estado que o passo 1 mostra
+      // depois de criar, e sem ele a galeria não exercitaria o andamento — nem
+      // a regra de que pendente não entra no seletor.
+      pendentes: [{ id: "gallery-look-4", name: "Esportivo", status: "processing" as const }],
       canChoose: true,
       simulated: true,
+      // O custo MEDIDO em 06/08 na conta real, para o aviso de preço aparecer
+      // na galeria com o mesmo número que a tela real mostra.
+      lookCost: { units: 60, usd: 1.0 },
     });
   }
 

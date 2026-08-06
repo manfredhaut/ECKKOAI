@@ -83,9 +83,21 @@ export function dailyPaidGenerationLimit(): number {
  * gastarem dez vezes o limite da mesma conta.
  */
 export async function countPaidGenerationsToday(): Promise<number> {
+  // Vídeos E TRAJES. Um traje custa 60 unidades (US$ 1,00 medidos em 06/08), o
+  // equivalente a 20 segundos de vídeo cobrados — deixá-lo fora deste teto abria
+  // um caminho para esvaziar a carteira sem o freio nunca opinar, que é
+  // exatamente o que este arquivo existe para impedir.
+  //
+  // Contam no MESMO balde, e não em dois tetos separados, porque a carteira é
+  // uma só: dois limites de cinco deixariam gastar o dobro.
   const { rows } = await pool.query<{ n: string }>(
-    `SELECT count(*)::text AS n FROM videos
-      WHERE simulated = false AND created_at >= date_trunc('day', now())`,
+    `SELECT (
+       (SELECT count(*) FROM videos
+         WHERE simulated = false AND created_at >= date_trunc('day', now()))
+       +
+       (SELECT count(*) FROM avatar_looks
+         WHERE simulated = false AND created_at >= date_trunc('day', now()))
+     )::text AS n`,
   );
   return Number(rows[0]?.n ?? 0);
 }

@@ -20,6 +20,7 @@ import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 import { logEvent } from "../services/log/safeLog.js";
 import { checkVoiceReplacement } from "../services/voice/voiceSample.js";
 import { criarLook, listarLooks } from "../services/avatar/looks.js";
+import { HEYGEN_LOOK_COST } from "../services/billing/providerCost.js";
 
 export async function avatarRoutes(app: FastifyInstance): Promise<void> {
   app.get("/avatars", async (req) => {
@@ -71,9 +72,22 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     );
 
     // Os trajes criados AQUI entram na mesma lista, depois dos do fornecedor.
-    const looks = await listarLooks(req.tenantId, avatar.id, doFornecedor);
+    // `pendentes` vai separado: são os que ainda estão em preparo no fornecedor
+    // e por isso NÃO podem ser escolhidos — a tela mostra o andamento deles.
+    const { looks, pendentes } = await listarLooks(req.tenantId, avatar.id, doFornecedor, {
+      apiKey: credential.apiKey,
+      vendor: credential.vendor as AvatarVendor,
+    });
 
-    return { looks, canChoose: looks.length > 1, simulated: isFixtureMode() };
+    return {
+      looks,
+      pendentes,
+      canChoose: looks.length > 1,
+      simulated: isFixtureMode(),
+      // O custo de criar um traje novo, para a tela declarar ANTES do clique.
+      // MEDIDO em 06/08, e não estimado.
+      lookCost: { units: HEYGEN_LOOK_COST.units, usd: HEYGEN_LOOK_COST.usd },
+    };
   });
 
   /**
@@ -116,6 +130,14 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       // `criarLook()`. A rota não decide nada sobre traje; se decidisse, a
       // recusa do live só seria alcançável subindo a aplicação, e uma regra que
       // custa US$ 1,00 por engano precisa ser exercitável no gate.
+      const credential = await getCredential(req.tenantId, "avatar");
+      if (!credential) {
+        return reply.code(400).send({
+          error: "no_avatar_credential",
+          message: "Nenhum provedor de avatar está conectado. Conecte a chave em Configurações.",
+        });
+      }
+
       const resultado = await criarLook({
         tenantId: req.tenantId,
         avatarId: avatar.id,
@@ -123,12 +145,18 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         name: req.body?.name ?? "",
         prompt: req.body?.prompt ?? null,
         imageUrl: req.body?.imageUrl ?? null,
+        apiKey: credential.apiKey,
+        vendor: credential.vendor as AvatarVendor,
       });
 
       if (!resultado.ok) {
         return reply.code(resultado.status).send({ error: resultado.code, message: resultado.message });
       }
-      return reply.code(201).send({ look: resultado.look, simulated: true });
+      return reply.code(201).send({
+        look: resultado.look,
+        status: resultado.status,
+        simulated: resultado.simulated,
+      });
     },
   );
 

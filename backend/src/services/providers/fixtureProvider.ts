@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { saveUpload } from "../storage.js";
 import type { AvatarProviderStatus, GenerateVideoInput, GenerateVideoResult, PollResult, TrainAvatarResult } from "./avatarProvider.js";
 import { buildHeygenVideoPayload } from "./avatarProvider.js";
-import type { AvatarLook } from "./avatarProvider.js";
+import type { AvatarLook, CreatedAvatarLook } from "./avatarProvider.js";
 import type { CloneVoiceResult, SynthesizedSpeech, VoiceInventory } from "./voiceProvider.js";
 import { HEYGEN_ASPECT_RATIOS, type AspectRatio } from "./videoFormat.js";
 import { selectEngine } from "./videoEngine.js";
@@ -45,6 +45,52 @@ export function listAvatarLooksFixture(providerAvatarId: string): AvatarLook[] {
     { id: `${providerAvatarId}-look-formal`, name: "Formal", previewImageUrl: null },
     { id: `${providerAvatarId}-look-casual`, name: "Casual", previewImageUrl: null },
   ];
+}
+
+/**
+ * Criação de traje simulada.
+ *
+ * Devolve `processing`, e não `completed`, pela mesma razão que o job de vídeo
+ * simulado leva alguns segundos: o caminho assíncrono é onde moram os defeitos
+ * — tela que nunca sai do "preparando", look que não aparece no seletor quando
+ * fica pronto, consulta de status que ninguém dispara. Um stub que respondesse
+ * "pronto" de imediato esconderia os três.
+ *
+ * O id tem a MESMA forma dos looks de fixture, para que o payload de geração
+ * não precise distinguir traje criado de traje que já existia.
+ */
+export function createAvatarLookFixture(providerAvatarId: string, name: string): CreatedAvatarLook {
+  return {
+    id: `${providerAvatarId}-look-${randomUUID().slice(0, 8)}`,
+    name,
+    status: "processing",
+    previewImageUrl: null,
+  };
+}
+
+/** Quanto tempo o traje simulado passa em `processing`. */
+const SIMULATED_LOOK_DURATION_MS = 8_000;
+const looksSimulados = new Map<string, number>();
+
+/**
+ * O traje simulado fica pronto depois de {@link SIMULATED_LOOK_DURATION_MS}.
+ *
+ * O relógio começa na PRIMEIRA consulta, e não na criação: sem estado
+ * compartilhado entre os dois pontos, é o que dá um intervalo observável sem
+ * inventar uma tabela só para a simulação.
+ */
+export function readAvatarLookStatusFixture(providerLookId: string): {
+  status: "processing" | "completed" | "failed";
+  previewImageUrl: string | null;
+} {
+  const primeira = looksSimulados.get(providerLookId);
+  if (primeira === undefined) {
+    looksSimulados.set(providerLookId, Date.now());
+    return { status: "processing", previewImageUrl: null };
+  }
+  return Date.now() - primeira >= SIMULATED_LOOK_DURATION_MS
+    ? { status: "completed", previewImageUrl: null }
+    : { status: "processing", previewImageUrl: null };
 }
 
 /**

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
-import type { Avatar } from "../../../types";
+import type { Avatar, AvatarLooksResponse } from "../../../types";
 import { useCamera } from "../hooks/useCamera";
 import { useMediaRecorderCapture } from "../hooks/useMediaRecorder";
 import type { AssetDefaults } from "../types";
@@ -55,6 +55,10 @@ export function AvatarSetupStep({
   const [lookSaving, setLookSaving] = useState(false);
   const [lookMessage, setLookMessage] = useState<string | null>(null);
   const [lookError, setLookError] = useState(false);
+  // O custo por traje e os que ainda estão em preparo vêm do SERVIDOR, nunca
+  // digitados aqui: o número é o medido na conta (60 un / US$ 1,00 em 06/08), e
+  // um valor repetido na tela envelheceria sozinho na primeira mudança de tarifa.
+  const [lookInfo, setLookInfo] = useState<AvatarLooksResponse | null>(null);
 
   const camera = useCamera();
   const recorder = useMediaRecorderCapture();
@@ -84,6 +88,30 @@ export function AvatarSetupStep({
   useEffect(() => {
     if (draftAvatar) setTargetLufsDraft(Number(draftAvatar.audio_treatment_target_lufs));
   }, [draftAvatar?.id]);
+
+  // O custo por traje e os trajes em preparo, do avatar selecionado. Recarrega
+  // ao trocar de avatar: sem isto o bloco mostraria o andamento de outro.
+  useEffect(() => {
+    if (!selectedAvatarId) {
+      setLookInfo(null);
+      return;
+    }
+    let cancelado = false;
+    api
+      .get<AvatarLooksResponse>(`/avatars/${selectedAvatarId}/looks`)
+      .then((r) => {
+        if (!cancelado) setLookInfo(r);
+      })
+      .catch(() => {
+        // Sem esta leitura o bloco de traje some, e o resto do passo 1 — avatar,
+        // voz, avançar — continua utilizável. Travar tudo pelo controle menos
+        // importante seria o inverso da prioridade.
+        if (!cancelado) setLookInfo(null);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [selectedAvatarId]);
 
   function refreshAvatars() {
     api.get<Avatar[]>("/avatars").then(setAvatars);
@@ -277,20 +305,65 @@ export function AvatarSetupStep({
    * "algo deu errado" genérico esconderia justamente a informação que decide se
    * vale insistir.
    */
+  async function refreshLooks(avatarId: string): Promise<AvatarLooksResponse | null> {
+    try {
+      const info = await api.get<AvatarLooksResponse>(`/avatars/${avatarId}/looks`);
+      setLookInfo(info);
+      return info;
+    } catch {
+      // Falha aqui não derruba o passo 1: sem esta informação o bloco de traje
+      // some, e o resto da tela (avatar, voz, avançar) continua utilizável.
+      return null;
+    }
+  }
+
+  /**
+   * Cria o traje e acompanha até ele ficar pronto.
+   *
+   * A criação é ASSÍNCRONA no fornecedor — medido em 06/08: o 200 devolve
+   * `processing` e o look leva alguns segundos para ficar `completed`. Enquanto
+   * isso ele NÃO é escolhível, e é por isso que a tela mostra andamento em vez
+   * de dizer "criado" e deixar a pessoa procurar um traje que ainda não existe.
+   *
+   * A reconciliação acontece no servidor, na própria listagem; aqui basta
+   * pedi-la de novo até o pendente sumir. Sem `setInterval`: um intervalo que
+   * sobrevive à saída da tela continua consultando o fornecedor para ninguém.
+   */
   async function handleCreateLook() {
     if (!selectedAvatar) return;
     setLookSaving(true);
     setLookError(false);
     setLookMessage(null);
     try {
-      const criado = await api.post<{ look: { id: string; name: string } }>(
+      const criado = await api.post<{ look: { id: string; name: string }; status: string }>(
         `/avatars/${selectedAvatar.id}/looks`,
         { name: lookName.trim(), imageUrl: lookImageUrl, prompt: lookPrompt.trim() || undefined },
       );
-      setLookMessage(t("createVideo.avatarSetup.addLookCreated", { name: criado.look.name }));
       setLookName("");
       setLookPrompt("");
       setLookImageUrl(null);
+
+      if (criado.status === "completed") {
+        setLookMessage(t("createVideo.avatarSetup.addLookCreated", { name: criado.look.name }));
+        await refreshLooks(selectedAvatar.id);
+      } else {
+        setLookMessage(t("createVideo.avatarSetup.addLookPreparing", { name: criado.look.name }));
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const info = await refreshLooks(selectedAvatar.id);
+          const aindaEmPreparo = info?.pendentes.some((p) => p.status === "processing");
+          if (!aindaEmPreparo) {
+            const falhou = info?.pendentes.some((p) => p.status === "failed");
+            setLookError(Boolean(falhou));
+            setLookMessage(
+              falhou
+                ? t("createVideo.avatarSetup.addLookFailed")
+                : t("createVideo.avatarSetup.addLookCreated", { name: criado.look.name }),
+            );
+            break;
+          }
+        }
+      }
     } catch (err) {
       setLookError(true);
       setLookMessage(err instanceof Error ? err.message : String(err));
@@ -438,6 +511,34 @@ export function AvatarSetupStep({
                   placeholder={t("createVideo.avatarSetup.lookPromptPlaceholder")}
                 />
               </Field>
+              {/* O CUSTO ANTES DO CLIQUE, e não no extrato depois.
+                  Um traje custa 60 unidades — US$ 1,00 medidos na conta real em
+                  06/08, o mesmo que 20 segundos de vídeo cobrados. O número vem
+                  do servidor; em simulação, o aviso é de que nada será cobrado. */}
+              {lookInfo && (
+                <p
+                  className="text-muted"
+                  style={{ fontSize: 12, marginBottom: 12, fontWeight: lookInfo.simulated ? undefined : 600 }}
+                >
+                  {lookInfo.simulated
+                    ? t("createVideo.avatarSetup.lookCostSimulated")
+                    : t("createVideo.avatarSetup.lookCostLive", {
+                        usd: lookInfo.lookCost.usd.toFixed(2).replace(".", ","),
+                        units: lookInfo.lookCost.units,
+                      })}
+                </p>
+              )}
+              {lookInfo && lookInfo.pendentes.length > 0 && (
+                <ul className="text-muted" style={{ fontSize: 12, marginBottom: 12, paddingLeft: 18 }}>
+                  {lookInfo.pendentes.map((p) => (
+                    <li key={p.id}>
+                      {p.status === "processing"
+                        ? t("createVideo.avatarSetup.lookPending", { name: p.name })
+                        : t("createVideo.avatarSetup.lookFailedItem", { name: p.name })}
+                    </li>
+                  ))}
+                </ul>
+              )}
               <button
                 className="btn btn-outline"
                 onClick={handleCreateLook}

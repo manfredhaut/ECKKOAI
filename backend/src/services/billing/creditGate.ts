@@ -50,6 +50,8 @@ export interface DebitCreditInput {
   relatedVideoId?: string | null;
   relatedScriptGenerationId?: string | null;
   relatedAvatarTrainingId?: string | null;
+  /** Criação de traje (migration 046). Look não é treino: referência própria. */
+  relatedAvatarLookId?: string | null;
 }
 
 export type DebitCreditResult =
@@ -103,8 +105,8 @@ export async function debitCredit(input: DebitCreditInput): Promise<DebitCreditR
 
     await client.query(
       `INSERT INTO credit_ledger
-         (tenant_id, credit_type, delta, reason, simulated, related_video_id, related_script_generation_id, related_avatar_training_id)
-       VALUES ($1, $2, $3, 'consumption', $4, $5, $6, $7)`,
+         (tenant_id, credit_type, delta, reason, simulated, related_video_id, related_script_generation_id, related_avatar_training_id, related_avatar_look_id)
+       VALUES ($1, $2, $3, 'consumption', $4, $5, $6, $7, $8)`,
       [
         input.tenantId,
         conta,
@@ -113,6 +115,7 @@ export async function debitCredit(input: DebitCreditInput): Promise<DebitCreditR
         input.relatedVideoId ?? null,
         input.relatedScriptGenerationId ?? null,
         input.relatedAvatarTrainingId ?? null,
+        input.relatedAvatarLookId ?? null,
       ],
     );
 
@@ -214,6 +217,7 @@ export interface RefundCreditInput {
   relatedVideoId?: string | null;
   relatedScriptGenerationId?: string | null;
   relatedAvatarTrainingId?: string | null;
+  relatedAvatarLookId?: string | null;
 }
 
 export type RefundCreditResult =
@@ -258,6 +262,7 @@ export async function refundCredit(input: RefundCreditInput): Promise<RefundCred
     ["related_video_id", input.relatedVideoId],
     ["related_script_generation_id", input.relatedScriptGenerationId],
     ["related_avatar_training_id", input.relatedAvatarTrainingId],
+    ["related_avatar_look_id", input.relatedAvatarLookId],
   ].filter(([, value]) => value) as [string, string][];
 
   // Sem referência não há chave de idempotência, e um estorno que pode repetir

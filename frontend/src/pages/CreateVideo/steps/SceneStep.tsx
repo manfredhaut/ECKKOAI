@@ -5,6 +5,7 @@ import { MAX_IMAGE_BYTES, formatBytes } from "../../../uploadLimits";
 import { Field } from "../../../components/ui/Field";
 import { PublishStep } from "./PublishStep";
 import type { SceneBackground, WizardState } from "../types";
+import type { AvatarLooksResponse } from "../../../types";
 
 /**
  * O passo CENA: fundo, interpretação, traje e formato.
@@ -35,11 +36,13 @@ const EXPRESSIVENESS = ["low", "medium", "high"] as const;
  */
 const MOTION_PROMPT_MAX = 600;
 
-interface LooksResponse {
-  looks: { id: string; name: string; previewImageUrl: string | null }[];
-  canChoose: boolean;
-  simulated: boolean;
-}
+/**
+ * O contrato mora em `types.ts`, compartilhado com o passo 1 — que é quem CRIA
+ * traje. Manter uma cópia local aqui faria as duas telas discordarem sobre o
+ * que é escolhível na primeira vez que o contrato mudasse, e foi o que
+ * aconteceu quando o passo 1 passou a devolver `pendentes`.
+ */
+type LooksResponse = AvatarLooksResponse;
 
 export function SceneStep({
   avatarId,
@@ -85,7 +88,8 @@ export function SceneStep({
       // tem trajes: o passo inteiro não pode travar pelo controle menos
       // importante dele.
       .catch(() => {
-        if (!cancelled) setLooks({ looks: [], canChoose: false, simulated: false });
+        if (!cancelled)
+          setLooks({ looks: [], pendentes: [], canChoose: false, simulated: false, lookCost: { units: 0, usd: 0 } });
       });
     return () => {
       cancelled = true;

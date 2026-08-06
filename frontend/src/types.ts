@@ -253,3 +253,21 @@ export interface GenerationReadiness {
   ready: boolean;
   blockers: GenerationBlocker[];
 }
+
+/**
+ * Resposta de `GET /avatars/:id/looks` — os trajes do avatar.
+ *
+ * Um tipo só, compartilhado pelo passo 1 (que cria) e pelo passo Cena (que
+ * escolhe): duas cópias do mesmo contrato divergem na primeira mudança, e o que
+ * divergiria aqui é quais trajes a tela considera escolhíveis.
+ */
+export interface AvatarLooksResponse {
+  /** ESCOLHÍVEIS. Um traje em preparo não entra aqui. */
+  looks: { id: string; name: string; previewImageUrl: string | null }[];
+  /** Em preparo ou falhados — aparecem como andamento, nunca como opção. */
+  pendentes: { id: string; name: string; status: "processing" | "failed" }[];
+  canChoose: boolean;
+  simulated: boolean;
+  /** Custo de criar UM traje. MEDIDO no fornecedor, servido pelo backend. */
+  lookCost: { units: number; usd: number };
+}

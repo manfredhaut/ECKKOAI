@@ -26,6 +26,8 @@ import {
   checkAvatarConnectionFixture,
   generateVideoFixture,
   listAvatarLooksFixture,
+  createAvatarLookFixture,
+  readAvatarLookStatusFixture,
   pollVideoJobFixture,
   trainAvatarFixture,
   waitForAvatarReadyFixture,
@@ -799,6 +801,113 @@ export interface AvatarLook {
   id: string;
   name: string;
   previewImageUrl: string | null;
+}
+
+/** O que volta de uma criação de look. `status` é do FORNECEDOR, não nosso. */
+export interface CreatedAvatarLook {
+  id: string;
+  name: string;
+  status: "processing" | "completed" | "failed";
+  previewImageUrl: string | null;
+}
+
+/**
+ * Cria um look NOVO para o mesmo personagem, a partir de um texto.
+ *
+ * CONTRATO MEDIDO em 06/08 na conta real (antes disto era documentação lida, e
+ * o caminho vivia recusando por não se saber qual era):
+ *
+ *   POST /v3/avatars
+ *   { type: "prompt", name, avatar_id: <id do LOOK existente>, prompt }
+ *
+ * Três coisas que só a medição respondeu, e cada uma teria custado um erro:
+ *
+ *  1. `name` é OBRIGATÓRIO. Sem ele vem 400 `invalid_parameter / param: name`.
+ *     Medido: esse 400 não consome nada — quota e wallet ficaram intactas.
+ *  2. `avatar_id` é o id do LOOK, não do grupo, e não se manda
+ *     `avatar_group_id`. O fornecedor resolve o grupo sozinho: a resposta traz
+ *     `avatar_group.id` igual ao grupo do look de origem, com `looks_count`
+ *     incrementado de 1 para 2.
+ *  3. É ASSÍNCRONO. O 200 devolve `status: "processing"`, e o look só fica
+ *     utilizável depois de virar `completed` (medido: ≤ 15 s).
+ *
+ * O DINHEIRO SAI NO 200, e não na conclusão — medido lendo o saldo nos dois
+ * instantes. Por isso isto passa por `withLiveBudget` como a geração de vídeo:
+ * é uma operação tarifada de US$ 1,00, o equivalente a 20 segundos de vídeo.
+ * E por isso não há estorno depois do aceite: o fornecedor cobrou, e um look
+ * feio é entrega ruim, não falha de chamada.
+ */
+export async function createAvatarLook(input: {
+  apiKey: string;
+  vendor: AvatarVendor;
+  providerAvatarId: string;
+  name: string;
+  prompt: string;
+}): Promise<CreatedAvatarLook> {
+  if (isFixtureMode()) return createAvatarLookFixture(input.providerAvatarId, input.name);
+  if (input.vendor === "did") {
+    throw new Error("Criar traje por texto não existe na D-ID; só HeyGen implementa geração de look.");
+  }
+
+  return withLiveBudget("criação de traje", "criar traje", async () => {
+    const res = await fetch(`${HEYGEN_BASE}/v3/avatars`, {
+      method: "POST",
+      headers: { "x-api-key": input.apiKey, "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "prompt",
+        name: input.name,
+        avatar_id: input.providerAvatarId,
+        prompt: input.prompt,
+      }),
+    });
+    const data = await fetchJson(res, "HeyGen", "heygen.createLook");
+    const item = data?.data?.avatar_item;
+    const id = typeof item?.id === "string" ? item.id : "";
+    if (!id) {
+      // Sem id não há como acompanhar nem como escolher o traje depois — e o
+      // dinheiro já saiu. Falhar alto é melhor que guardar uma linha órfã.
+      throw new Error("HeyGen aceitou a criação de traje mas não devolveu o id do look");
+    }
+    return {
+      id,
+      name: typeof item?.name === "string" ? item.name : input.name,
+      status: item?.status === "completed" ? "completed" : "processing",
+      previewImageUrl: typeof item?.image_url === "string" ? item.image_url : null,
+    };
+  });
+}
+
+/**
+ * O estado de um look no fornecedor. Sem `withLiveBudget`: consultar é GET e
+ * não é tarifado — medido, a quota não se moveu em nenhuma das consultas.
+ */
+export async function readAvatarLookStatus(
+  apiKey: string,
+  vendor: AvatarVendor,
+  providerLookId: string,
+): Promise<{ status: "processing" | "completed" | "failed"; previewImageUrl: string | null }> {
+  if (isFixtureMode()) return readAvatarLookStatusFixture(providerLookId);
+  if (vendor === "did") return { status: "completed", previewImageUrl: null };
+  try {
+    const res = await fetch(`${HEYGEN_BASE}/v2/photo_avatar/${encodeURIComponent(providerLookId)}`, {
+      headers: { "x-api-key": apiKey },
+    });
+    const data = await fetchJson(res, "HeyGen", "heygen.lookStatus");
+    const bruto = data?.data?.status;
+    return {
+      // Desconhecido conta como `processing`, e nunca como `failed`: marcar
+      // falha apagaria da tela um traje que foi PAGO e pode estar pronto.
+      status: bruto === "completed" ? "completed" : bruto === "failed" ? "failed" : "processing",
+      previewImageUrl: typeof data?.data?.image_url === "string" ? data.data.image_url : null,
+    };
+  } catch (err) {
+    logEvent("error", "look_status_unreadable", {
+      context: "heygen.lookStatus",
+      detail: err instanceof Error ? err.message : String(err),
+      consequence: "o traje continua marcado como em preparo e a tela segue tentando",
+    });
+    return { status: "processing", previewImageUrl: null };
+  }
 }
 
 export async function listAvatarLooks(

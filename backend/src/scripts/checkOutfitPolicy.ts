@@ -1,35 +1,34 @@
 /**
- * TRAJE: criar um look, vê-lo na lista, e NÃO gastar com isso.
+ * TRAJE: criar um look por TEXTO, dentro do freio, e cobrar o que foi medido.
  *
- * O defeito de origem, medido em 05/08: o passo 1 tinha um upload de imagem e
- * um prompt de traje que não alimentavam nada. Os campos iam para
- * `defaults.outfit`/`outfitPrompt` e paravam ali — `corpoDaGeracao()`, que monta
- * o corpo de `POST /videos` desde o DEMO-2, nunca os incluiu. Um formulário que
- * aceita arquivo do cliente e não alimenta geração nenhuma é pior que um campo
- * ausente: ele promete.
+ * O defeito de origem: o passo 1 tinha um upload de imagem e um prompt de traje
+ * que não alimentavam nada — os campos iam para `defaults.outfit` e paravam ali,
+ * porque `corpoDaGeracao()` nunca os incluiu. Um formulário que aceita arquivo
+ * do cliente e não alimenta geração nenhuma é pior que um campo ausente.
+ *
+ * O caminho live ficou fechado até 06/08 por não se conhecer o endpoint. Agora
+ * é MEDIDO: `POST /v3/avatars` com `type: "prompt"`, `name` obrigatório e o id
+ * do LOOK em `avatar_id`. Custo medido no mesmo dia: **60 unidades, US$ 1,00**,
+ * debitado no 200 e não na conclusão.
  *
  * ---------------------------------------------------------------------------
- * O QUE ESTA GUARDA PROTEGE, E POR QUE CADA VETOR
+ * O QUE ESTA GUARDA PROTEGE
  *
- * 1. O traje criado EXISTE depois do clique. Os looks de fixture são derivados
- *    por função pura; se a criação não persistir, o traje some no request
- *    seguinte e o passo Cena nunca o vê — de novo um formulário decorativo,
- *    agora com mais código.
- * 2. Ele aparece na lista, JUNTO dos do fornecedor e sem duplicar.
- * 3. O caminho live RECUSA, e a recusa diz o custo. São duas razões
- *    independentes: o endpoint de criação de look do fornecedor não é conhecido
- *    (descobri-lo exige POST, que gasta), e criar look custa da ordem de
- *    US$ 1,00 — seis vezes um vídeo de 15 s. Uma recusa que só dissesse "não
- *    implementado" convidaria a implementar às pressas, e a segunda razão
- *    continuaria de pé.
- * 4. Corpo malformado é recusado como malformado NOS DOIS MODOS. Se a recusa do
- *    modo viesse antes da validação, em live todo erro viraria "não
- *    implementado" e ninguém descobriria o de verdade.
+ * 1. O FREIO vem antes da chamada. Um traje custa o mesmo que 20 segundos de
+ *    vídeo cobrados; fora do teto diário, um laço esvazia a carteira sem nada
+ *    opinar. É o vetor mais caro se quebrar, e é o pedido explícito do bloco.
+ * 2. O débito acontece, e o estorno só no `catch` — depois do 200 o fornecedor
+ *    já cobrou, e devolver crédito aí seria criar dinheiro.
+ * 3. Traje em PREPARO não entra no seletor. Escolher um look que ainda não
+ *    existe no fornecedor faz a geração — que custa — sair errada.
+ * 4. O custo na tela é o MEDIDO, não um número digitado.
+ * 5. Fixture continua inteiro e sem rede.
  * ---------------------------------------------------------------------------
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Mutant } from "./mutants.js";
+import { HEYGEN_LOOK_COST } from "../services/billing/providerCost.js";
 
 export interface OutfitCheckResult {
   failures: string[];
@@ -38,44 +37,53 @@ export interface OutfitCheckResult {
 
 export const MUTANTS: Mutant[] = [
   {
-    guard: "traje: criar look é simulado, nunca pago sem aviso",
-    name: "criar traje passa a valer no modo live",
+    guard: "traje: criar look em live passa pelo teto diário",
+    name: "criar look em live pula o teto",
     kind: "esperto",
-    // A função continua existindo, continua validando o corpo e continua
-    // persistindo. Só o portão do modo some — e o que passa a acontecer é uma
-    // escrita local que a tela apresenta como traje criado, enquanto o
-    // fornecedor nunca soube dele. O traje "existiria" e não sairia no vídeo.
+    // O débito continua, o fornecedor continua sendo chamado, o traje continua
+    // aparecendo. Só o freio some — e o sintoma é invisível até a carteira
+    // acabar, porque cada criação isolada parece perfeitamente normal.
     file: "backend/src/services/avatar/looks.ts",
-    find: "  if (!isFixtureMode()) {\n    return { ok: false, code: \"look_creation_not_implemented\", status: 501, message: RECUSA_LIVE };\n  }",
-    replace: "  // portão removido",
-    expect: "criar traje foi ACEITO com o modo em live",
+    find: "      await assertDailyGenerationBudget();",
+    replace: "      void assertDailyGenerationBudget;",
+    expect: "criar traje em live NÃO passou pelo teto diário",
   },
   {
-    guard: "traje: o look criado entra na lista que o passo Cena lê",
-    name: "a listagem volta a devolver só os looks do fornecedor",
+    guard: "traje: em preparo não é escolhível",
+    name: "o traje em preparo entra no seletor",
     kind: "esperto",
-    // O traje é criado, a linha existe no banco, a rota responde 201 — e o
-    // seletor do passo Cena nunca o mostra. É o formulário órfão de volta, só
-    // que agora com uma tabela por trás para disfarçar.
+    // A linha existe, o status está gravado, a tela mostra o andamento — e o
+    // seletor passa a oferecer um look que o fornecedor ainda não terminou.
+    // Gerar com ele gasta uma geração de vídeo para receber erro ou o traje
+    // antigo.
     file: "backend/src/services/avatar/looks.ts",
-    find: "  return [...doFornecedor, ...locais];",
-    replace: "  return doFornecedor;",
-    expect: "o traje criado não apareceu na lista",
+    find: '  const prontos = rows.filter((l) => l.status === "completed");',
+    replace: "  const prontos = rows;",
+    expect: "um traje em preparo apareceu no seletor",
   },
   {
-    guard: "traje: a recusa do modo pago diz quanto custa",
-    name: "a recusa perde o custo e vira só \"não implementado\"",
+    guard: "traje: o custo declarado é o medido",
+    name: "o custo do traje vira número digitado",
     kind: "esperto",
-    // A recusa continua acontecendo, o código continua 501, e a tela continua
-    // mostrando um erro honesto. O que some é a razão que sobrevive à
-    // implementação: US$ 1,00 por look. Sem ela, o próximo a ler a mensagem
-    // conclui que basta descobrir o endpoint.
-    file: "backend/src/services/avatar/looks.ts",
-    find: "  \"que gasta. Além disso, criar avatar ou look no fornecedor custa cerca de US$ 1,00, aproximadamente \" +\n  \"seis vezes um vídeo de 15 s: não é uma chamada para acontecer por tentativa. Escolher entre os trajes \" +",
-    replace: "  \"que gasta. Escolher entre os trajes \" +",
-    expect: "a recusa do modo live não diz o custo",
+    // 60 unidades viram 30: metade do que o fornecedor cobrou de verdade. A
+    // tela continua mostrando um custo, com aparência plausível, e a pessoa
+    // decide com base num número que não é o da conta.
+    file: "backend/src/services/billing/providerCost.ts",
+    find: "export const HEYGEN_LOOK_COST = {\n  units: 60,",
+    replace: "export const HEYGEN_LOOK_COST = {\n  units: 30,",
+    expect: "o custo do traje deixou de bater com a medição",
   },
 ];
+
+type Row = Record<string, unknown>;
+
+/** Registro do que o duplo observou durante uma chamada. */
+interface Observado {
+  fetchChamado: number;
+  debitos: number;
+  estornos: number;
+  contagemDoDia: number;
+}
 
 export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckResult> {
   const failures: string[] = [];
@@ -83,185 +91,327 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
 
   const { pool } = await import("../db/pool.js");
   const queryReal = pool.query.bind(pool);
+  const connectReal = pool.connect.bind(pool);
+  const fetchReal = globalThis.fetch;
   const modoOriginal = process.env.PROVIDER_MODE;
 
   const { criarLook, listarLooks } = await import("../services/avatar/looks.js");
+  const { resetLiveGenerationCount } = await import("../services/providers/liveGuard.js");
 
-  // Duplo de banco: guarda as linhas inseridas e as devolve na listagem, que é
-  // exatamente o vínculo que os dois primeiros vetores medem.
-  const inseridos: { provider_look_id: string; name: string; preview_image_url: string | null }[] = [];
+  const linhas: Row[] = [];
+  const obs: Observado = { fetchChamado: 0, debitos: 0, estornos: 0, contagemDoDia: 0 };
   const desconhecidas: string[] = [];
-  (pool as unknown as { query: unknown }).query = async (text: unknown, params?: unknown[]) => {
+  let fetchDeveLancar = false;
+
+  // Duplo de banco. Responde à contagem do teto, guarda os INSERTs e devolve as
+  // linhas na listagem — que é o vínculo que os vetores 1 e 3 medem.
+  const responder = async (text: unknown, params?: unknown[]) => {
     const sql = String(text).replace(/\s+/g, " ").trim();
+    if (/^(BEGIN|COMMIT|ROLLBACK)$/i.test(sql)) return { rows: [], rowCount: 0 };
+    if (/date_trunc\('day', now\(\)\)/.test(sql)) {
+      return { rows: [{ n: String(obs.contagemDoDia) }], rowCount: 1 };
+    }
     if (/INSERT INTO avatar_looks/i.test(sql)) {
-      inseridos.push({
-        provider_look_id: String(params?.[2] ?? ""),
-        name: String(params?.[3] ?? ""),
-        preview_image_url: (params?.[4] as string | null) ?? null,
+      // A linha nasce ANTES da chamada, sem id do fornecedor: é ela que serve
+      // de chave de idempotência para o débito e o estorno (migration 046).
+      const id = `linha-${linhas.length + 1}`;
+      linhas.push({
+        id,
+        provider_look_id: null,
+        name: params?.[2],
+        preview_image_url: params?.[3] ?? null,
+        status: "processing",
+        cost_units: null,
+        simulated: params?.[5],
       });
+      return { rows: [{ id }], rowCount: 1 };
+    }
+    if (/DELETE FROM avatar_looks/i.test(sql)) {
+      const i = linhas.findIndex((l) => l.id === params?.[0]);
+      if (i >= 0) linhas.splice(i, 1);
       return { rows: [], rowCount: 1 };
     }
-    if (/FROM avatar_looks/i.test(sql)) return { rows: inseridos, rowCount: inseridos.length };
+    if (/UPDATE avatar_looks/i.test(sql)) {
+      const alvo = linhas.find((l) => l.id === params?.[0]);
+      if (alvo) {
+        if (/SET status = 'failed'/.test(sql)) alvo.status = "failed";
+        else {
+          alvo.provider_look_id = params?.[1];
+          alvo.status = params?.[2];
+          alvo.cost_units = params?.[3] ?? null;
+        }
+      }
+      return { rows: [], rowCount: 1 };
+    }
+    if (/FROM avatar_looks/i.test(sql)) return { rows: linhas, rowCount: linhas.length };
+    if (/SELECT balance FROM tenant_credits/i.test(sql)) return { rows: [{ balance: 50 }], rowCount: 1 };
+    if (/UPDATE tenant_credits/i.test(sql)) return { rows: [{ balance: 49 }], rowCount: 1 };
+    if (/SELECT credit_type FROM credit_ledger/i.test(sql)) return { rows: [], rowCount: 0 };
+    if (/SELECT 1 FROM credit_ledger/i.test(sql)) return { rows: [], rowCount: 0 };
+    if (/INSERT INTO credit_ledger/i.test(sql)) {
+      const motivo = /'refund'/.test(sql) ? "estorno" : "debito";
+      if (motivo === "estorno") obs.estornos += 1;
+      else obs.debitos += 1;
+      return { rows: [], rowCount: 1 };
+    }
     desconhecidas.push(sql.slice(0, 90));
     return { rows: [], rowCount: 0 };
   };
 
-  const AVATAR = { tenantId: "t1", avatarId: "a1", providerAvatarId: "pa-1" };
+  (pool as unknown as { query: unknown }).query = responder;
+  (pool as unknown as { connect: unknown }).connect = async () => ({
+    query: responder,
+    release: () => {},
+  });
+
+  // Duplo de rede: devolve EXATAMENTE a resposta medida em 06/08, com o
+  // `status: processing` que torna o caminho assíncrono observável.
+  globalThis.fetch = (async () => {
+    obs.fetchChamado += 1;
+    if (fetchDeveLancar) throw new Error("HeyGen fora do ar (simulado pela guarda)");
+    return new Response(
+      JSON.stringify({
+        data: {
+          avatar_group: { id: "grupo-1", looks_count: 2 },
+          avatar_item: { id: "look-novo-1", name: "Terno azul", status: "processing" },
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  const BASE = {
+    tenantId: "t1",
+    avatarId: "a1",
+    providerAvatarId: "pa-1",
+    apiKey: "chave-de-verificacao",
+    vendor: "heygen" as const,
+  };
 
   try {
     // -----------------------------------------------------------------------
-    // 1. Em fixture o traje é criado e persistido.
-    // -----------------------------------------------------------------------
-    process.env.PROVIDER_MODE = "fixture";
-    const criado = await criarLook({ ...AVATAR, name: "Terno azul", prompt: "terno azul-marinho" });
-
-    if (!criado.ok) {
-      failures.push(
-        `traje: criar traje em fixture foi RECUSADO (${criado.code}). Ensaiar a criação de traje não toca ` +
-          "fornecedor nenhum e não custa nada; recusar aqui devolve o passo 1 ao estado em que o " +
-          "formulário existia e não alimentava geração alguma.",
-      );
-    } else if (inseridos.length !== 1) {
-      failures.push(
-        `traje: criar traje em fixture não persistiu (${inseridos.length} linha(s) em avatar_looks). Os ` +
-          "looks simulados são derivados por função pura, então sem a linha o traje some no request " +
-          "seguinte e o seletor do passo Cena nunca o mostra.",
-      );
-    } else if (!criado.look.id.startsWith(`${AVATAR.providerAvatarId}-look-`)) {
-      failures.push(
-        `traje: o id do traje criado (\`${criado.look.id}\`) não tem a forma \`<avatar>-look-…\` dos looks ` +
-          "de fixture. É essa forma que faz o payload impresso na simulação não precisar de caso especial " +
-          "para distinguir traje criado de traje que já existia.",
-      );
-    } else {
-      notes.push(`  traje: criado em fixture e persistido como \`${criado.look.id}\`.`);
-    }
-
-    // -----------------------------------------------------------------------
-    // 2. O traje criado aparece na lista, junto dos do fornecedor.
-    // -----------------------------------------------------------------------
-    const doFornecedor = [{ id: "pa-1", name: "Traje atual", previewImageUrl: null }];
-    const lista = await listarLooks(AVATAR.tenantId, AVATAR.avatarId, doFornecedor);
-    const idCriado = criado.ok ? criado.look.id : "";
-
-    if (!lista.some((l) => l.id === idCriado)) {
-      failures.push(
-        "traje: o traje criado não apareceu na lista que o passo Cena lê. A linha foi gravada, a rota " +
-          "responderia 201, e o seletor continuaria mostrando só os looks do fornecedor — o formulário " +
-          "órfão de volta, agora com uma tabela por trás para disfarçar.",
-      );
-    } else if (!lista.some((l) => l.id === "pa-1")) {
-      failures.push(
-        "traje: a lista perdeu os looks do FORNECEDOR ao juntar os criados aqui. O primeiro deles é o " +
-          "traje atual do avatar, e sem ele \"não trocar de traje\" deixa de ser uma opção.",
-      );
-    } else {
-      // Duplicata: o mesmo id vindo dos dois lados tem de aparecer uma vez só.
-      const duplicado = await listarLooks(AVATAR.tenantId, AVATAR.avatarId, [
-        ...doFornecedor,
-        { id: idCriado, name: "mesmo look", previewImageUrl: null },
-      ]);
-      if (duplicado.filter((l) => l.id === idCriado).length !== 1) {
-        failures.push(
-          "traje: um look presente nos dois lados apareceu duplicado na lista. No dia em que o caminho " +
-            "real existir, um traje criado aqui volta na listagem do fornecedor, e mostrar o mesmo traje " +
-            "duas vezes faz a pessoa achar que criou dois.",
-        );
-      } else {
-        notes.push(`  traje: lista combina ${lista.length} look(s), sem duplicar o que vem dos dois lados.`);
-      }
-    }
-
-    // -----------------------------------------------------------------------
-    // 3. Em live, RECUSA — e a recusa diz o custo.
+    // 1. O FREIO vem antes da chamada. Teto estourado → nada de rede.
     // -----------------------------------------------------------------------
     process.env.PROVIDER_MODE = "live";
-    const antesDoLive = inseridos.length;
-    const emLive = await criarLook({ ...AVATAR, name: "Terno preto", prompt: "terno preto" });
+    resetLiveGenerationCount();
+    obs.contagemDoDia = 99; // muito acima de qualquer teto configurado
+    obs.fetchChamado = 0;
+    const barrado = await criarLook({ ...BASE, name: "Terno", prompt: "terno azul" });
 
-    if (emLive.ok) {
+    if (barrado.ok) {
       failures.push(
-        "traje: criar traje foi ACEITO com o modo em live. O endpoint de criação de look do fornecedor " +
-          "não é conhecido — nenhum contrato lido declara a operação —, então o que acabou de acontecer " +
-          "foi uma escrita local apresentada como traje criado, que o fornecedor nunca vai conhecer e que " +
-          "não vai sair no vídeo.",
+        "traje: criar traje em live NÃO passou pelo teto diário — com 99 gerações pagas hoje a criação " +
+          "foi ACEITA. Um traje custa 60 unidades (US$ 1,00 medidos em 06/08), o mesmo que 20 segundos de " +
+          "vídeo cobrados. Fora do teto, um laço esvazia a carteira e nada opina — e cada criação isolada " +
+          "parece perfeitamente normal até o saldo acabar.",
+      );
+    } else if (barrado.code !== "daily_generation_limit") {
+      failures.push(
+        `traje: com o teto diário estourado a recusa veio como \`${barrado.code}\`, e não ` +
+          "`daily_generation_limit`. O motivo certo importa: o teto é NOSSO e nada foi cobrado, e a " +
+          "mensagem é o que diz a quem lê como levantá-lo.",
+      );
+    }
+    if (obs.fetchChamado !== 0) {
+      failures.push(
+        `traje: o teto recusou mas a chamada ao fornecedor ACONTECEU (${obs.fetchChamado}×). O freio tem ` +
+          "de vir antes da rede; depois dela o dinheiro já saiu — medido em 06/08, o débito acontece no " +
+          "200 e não na conclusão.",
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // 2. Com folga no teto: debita, chama, persiste em preparo, com o custo.
+    // -----------------------------------------------------------------------
+    resetLiveGenerationCount();
+    obs.contagemDoDia = 0;
+    obs.fetchChamado = 0;
+    obs.debitos = 0;
+    obs.estornos = 0;
+    linhas.length = 0;
+    const criado = await criarLook({ ...BASE, name: "Terno azul", prompt: "terno azul-marinho" });
+
+    if (!criado.ok) {
+      failures.push(`traje: criar traje em live com teto livre foi recusado (${criado.code}: ${criado.message}).`);
+    } else {
+      if (obs.fetchChamado !== 1) {
+        failures.push(`traje: esperava 1 chamada ao fornecedor e houve ${obs.fetchChamado}.`);
+      }
+      if (obs.debitos !== 1 || obs.estornos !== 0) {
+        failures.push(
+          `traje: o débito no ledger não bateu — ${obs.debitos} débito(s) e ${obs.estornos} estorno(s) ` +
+            "para uma criação bem-sucedida. Criar traje consome cota paga e tem de aparecer no extrato " +
+            "como as gerações de vídeo.",
+        );
+      }
+      if (criado.status !== "processing") {
+        failures.push(
+          `traje: o status devolvido foi \`${criado.status}\`, e a resposta do fornecedor diz ` +
+            "`processing`. Medido em 06/08: o 200 devolve `processing` e o look só fica utilizável quando " +
+            "vira `completed`. Tratar como pronto de imediato entrega um traje que ainda não existe.",
+        );
+      }
+      const linha = linhas[0];
+      if (linha?.cost_units !== HEYGEN_LOOK_COST.units) {
+        failures.push(
+          `traje: a linha gravada tem cost_units=${String(linha?.cost_units)} e a medição diz ` +
+            `${HEYGEN_LOOK_COST.units}. O extrato tem de guardar o que foi cobrado, por linha.`,
+        );
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. Traje em PREPARO não é escolhível — mas aparece como pendente.
+    // -----------------------------------------------------------------------
+    const doFornecedor = [{ id: "pa-1", name: "Traje atual", previewImageUrl: null }];
+    const semCredencial = await listarLooks(BASE.tenantId, BASE.avatarId, doFornecedor);
+
+    if (semCredencial.looks.some((l) => l.id === "look-novo-1")) {
+      failures.push(
+        "traje: um traje em preparo apareceu no seletor. O fornecedor ainda não terminou de gerá-lo — " +
+          "escolhê-lo faz a geração de vídeo, que custa, sair com um look que não existe.",
+      );
+    }
+    if (!semCredencial.pendentes.some((p) => p.id === "look-novo-1")) {
+      failures.push(
+        "traje: o traje em preparo sumiu da tela em vez de aparecer como pendente. Ele foi PAGO — " +
+          "esconder dinheiro gasto é pior que mostrar um andamento.",
+      );
+    }
+
+    // Quando o fornecedor conclui, ele entra no seletor. Sem isto, o vetor
+    // acima seria satisfeito por uma listagem que esconde tudo para sempre.
+    linhas[0].status = "completed";
+    const depois = await listarLooks(BASE.tenantId, BASE.avatarId, doFornecedor);
+    if (!depois.looks.some((l) => l.id === "look-novo-1")) {
+      failures.push(
+        "traje: o traje CONCLUÍDO não entrou no seletor. Ele foi pago, está pronto no fornecedor, e não " +
+          "pode ser escolhido — que é o formulário órfão de volta, agora com uma cobrança junto.",
+      );
+    }
+    if (depois.pendentes.length !== 0) {
+      failures.push("traje: o traje concluído continuou listado como pendente.");
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Fornecedor lançou → estorna, e nada é gravado.
+    // -----------------------------------------------------------------------
+    resetLiveGenerationCount();
+    linhas.length = 0;
+    obs.debitos = 0;
+    obs.estornos = 0;
+    fetchDeveLancar = true;
+    const falhou = await criarLook({ ...BASE, name: "Terno preto", prompt: "terno preto" });
+    fetchDeveLancar = false;
+
+    if (falhou.ok) {
+      failures.push("traje: a criação foi dada como bem-sucedida com o fornecedor lançando.");
+    } else if (falhou.code !== "look_creation_failed") {
+      failures.push(`traje: falha do fornecedor virou \`${falhou.code}\` em vez de \`look_creation_failed\`.`);
+    }
+    if (obs.estornos !== 1) {
+      failures.push(
+        `traje: o fornecedor lançou e houve ${obs.estornos} estorno(s), esperado 1. A chamada não foi ` +
+          "aceita, nada foi produzido e nenhuma cota externa foi gasta — é a única fronteira em que " +
+          "devolver o crédito é honesto.",
+      );
+    }
+    // A linha SOBREVIVE marcada como `failed`, e isso é deliberado: ela é a
+    // referência do estorno no ledger, e apagá-la desarmaria a idempotência que
+    // acabou de ser usada. O que não pode é ficar cobrada nem escolhível.
+    if (linhas.length !== 1 || linhas[0].status !== "failed") {
+      failures.push(
+        `traje: depois da falha do fornecedor esperava 1 linha marcada \`failed\`, e há ` +
+          `${linhas.length} com status \`${String(linhas[0]?.status)}\`. A linha é a chave de ` +
+          "idempotência do estorno — apagá-la desarma a proteção contra estornar duas vezes.",
+      );
+    } else if (linhas[0].cost_units !== null) {
+      failures.push(
+        `traje: a tentativa estornada ficou com cost_units=${String(linhas[0].cost_units)}. Estornado é o ` +
+          "mesmo que não cobrado, e um custo no extrato de algo devolvido conta dinheiro duas vezes.",
+      );
+    }
+    const listaAposFalha = await listarLooks(BASE.tenantId, BASE.avatarId, doFornecedor);
+    if (listaAposFalha.looks.some((l) => l.id === "look-novo-1")) {
+      failures.push("traje: um traje que FALHOU apareceu no seletor.");
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. FIXTURE: inteiro, sem rede, sem custo, sem teto.
+    // -----------------------------------------------------------------------
+    process.env.PROVIDER_MODE = "fixture";
+    linhas.length = 0;
+    obs.fetchChamado = 0;
+    obs.contagemDoDia = 99; // teto estourado NÃO pode barrar em fixture
+    const simulado = await criarLook({ ...BASE, name: "Casual", prompt: "camisa polo" });
+
+    if (!simulado.ok) {
+      failures.push(
+        `traje: criar traje em fixture foi recusado (${simulado.code}). Ensaiar não toca fornecedor e não ` +
+          "custa nada; incluir a simulação no teto inventaria um limite inexistente.",
       );
     } else {
-      if (emLive.code !== "look_creation_not_implemented" || emLive.status !== 501) {
+      if (obs.fetchChamado !== 0) {
+        failures.push(`traje: em fixture houve ${obs.fetchChamado} chamada(s) de rede. Fixture não fala com ninguém.`);
+      }
+      if (linhas[0]?.cost_units !== null) {
         failures.push(
-          `traje: a recusa em live veio como \`${emLive.code}\`/${emLive.status}, e não ` +
-            "`look_creation_not_implemented`/501. O pedido está correto; quem não implementa somos nós, e " +
-            "o código tem de dizer isso.",
+          `traje: o traje simulado gravou cost_units=${String(linhas[0]?.cost_units)}. Simulação não custa, ` +
+            "e um custo falso no extrato é pior que nenhum.",
         );
       }
-      if (!/US\$\s*1,00/.test(emLive.message)) {
+      if (linhas[0]?.status !== "processing") {
         failures.push(
-          "traje: a recusa do modo live não diz o custo. Criar avatar ou look no fornecedor custa cerca " +
-            "de US$ 1,00, cerca de seis vezes um vídeo de 15 s — e essa razão sobrevive à descoberta do " +
-            "endpoint. Sem ela, quem ler a mensagem conclui que basta implementar.",
-        );
-      }
-      if (inseridos.length !== antesDoLive) {
-        failures.push(
-          "traje: a recusa em live ainda assim gravou linha em `avatar_looks`. Recusar e persistir é o " +
-            "pior dos dois: a tela mostra erro e o catálogo local fica com um traje fantasma.",
+          "traje: o traje simulado nasceu pronto. O caminho assíncrono é onde moram os defeitos (tela " +
+            "presa em 'preparando', look que não aparece quando conclui) e um stub que responde pronto " +
+            "esconde os dois.",
         );
       }
     }
 
     // -----------------------------------------------------------------------
-    // 4. Corpo malformado é recusado como malformado NOS DOIS modos.
+    // 6. O custo declarado é o MEDIDO.
     // -----------------------------------------------------------------------
-    const semNomeEmLive = await criarLook({ ...AVATAR, name: "   ", prompt: "terno" });
-    if (semNomeEmLive.ok || semNomeEmLive.code !== "look_name_required") {
+    if (HEYGEN_LOOK_COST.units !== 60 || HEYGEN_LOOK_COST.usd !== 1.0) {
       failures.push(
-        "traje: em live, um traje sem nome foi recusado por outro motivo que não `look_name_required` " +
-          `(veio \`${semNomeEmLive.ok ? "aceito" : semNomeEmLive.code}\`). Se a recusa do modo vier antes ` +
-          "da validação de forma, todo erro em live vira \"não implementado\" e o de verdade fica invisível.",
+        `traje: o custo do traje deixou de bater com a medição — declarado ${HEYGEN_LOOK_COST.units} un / ` +
+          `US$ ${HEYGEN_LOOK_COST.usd}, medido em 06/08 na conta real 60 un / US$ 1,00 (quota 660 → 600, ` +
+          "wallet 11,00 → 10,00). Este número aparece na tela antes de a pessoa confirmar; errado, ela " +
+          "decide com base numa conta que não é a do fornecedor.",
       );
     }
-
-    process.env.PROVIDER_MODE = "fixture";
-    const semConteudo = await criarLook({ ...AVATAR, name: "Só o nome" });
-    if (semConteudo.ok || semConteudo.code !== "look_content_required") {
+    if (HEYGEN_LOOK_COST.units / HEYGEN_LOOK_COST.usd !== 60) {
       failures.push(
-        "traje: um traje sem imagem e sem descrição foi aceito. Nome sozinho não descreve roupa nenhuma, " +
-          "e um look vazio chegaria ao seletor prometendo o que não tem.",
-      );
-    }
-
-    const semTreino = await criarLook({ ...AVATAR, providerAvatarId: null, name: "X", prompt: "y" });
-    if (semTreino.ok || semTreino.code !== "avatar_not_trained") {
-      failures.push(
-        "traje: criar traje foi aceito para um avatar sem `provider_avatar_id`. Look é do avatar treinado; " +
-          "sem treino não há a que anexar, e o id gerado apontaria para coisa nenhuma.",
+        "traje: a razão unidades/dólar do traje deixou de ser 60, que é a régua medida da conta em todas " +
+          "as operações. Um dos dois números foi mexido sem o outro.",
       );
     }
 
     if (desconhecidas.length > 0) {
       failures.push(
         "traje: o duplo de banco recebeu consulta que não sabe responder — " +
-          `${JSON.stringify([...new Set(desconhecidas)])}. Alguma leitura nova entrou no caminho de traje ` +
-          "e esta guarda passou a exercitá-la às cegas.",
+          `${JSON.stringify([...new Set(desconhecidas)])}.`,
       );
     }
 
     if (failures.length === 0) {
-      notes.push("  traje: live recusa com 501 citando US$ 1,00, sem gravar; e corpo inválido é recusado nos dois modos.");
+      notes.push(
+        `  traje: teto barra antes da rede; com folga debita 1×, chama 1× e grava ${HEYGEN_LOOK_COST.units} un ` +
+          "em preparo; preparo fora do seletor e concluído dentro; falha do fornecedor estorna sem gravar",
+      );
+      notes.push("  traje: fixture cria sem rede, sem custo e sem teto — e o custo declarado é o medido (US$ 1,00)");
     }
   } finally {
     (pool as unknown as { query: unknown }).query = queryReal;
+    (pool as unknown as { connect: unknown }).connect = connectReal;
+    globalThis.fetch = fetchReal;
+    resetLiveGenerationCount();
     if (modoOriginal === undefined) delete process.env.PROVIDER_MODE;
     else process.env.PROVIDER_MODE = modoOriginal;
   }
 
   // ---------------------------------------------------------------------------
-  // 5. O formulário órfão não voltou ao passo 1.
-  //
-  // Estático, e ancorado em USO: procura o handler de upload sendo chamado com
-  // "outfit", que era o vínculo do bloco removido. A chave de tradução antiga
-  // pode continuar no arquivo de idioma sem prejuízo — o que não pode voltar é
-  // o campo escrevendo num estado que ninguém envia.
+  // 7. O formulário órfão não voltou ao passo 1, e o novo está lá.
   // ---------------------------------------------------------------------------
   const passo1 = path.join(repoRoot, "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx");
   try {
@@ -269,19 +419,14 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
     if (/handleAssetUpload\(\s*["']outfit["']/.test(fonte)) {
       failures.push(
         "traje: o upload de traje voltou ao passo 1 (`handleAssetUpload(\"outfit\", …)`). Aquele campo " +
-          "gravava em `defaults.outfit`, que `corpoDaGeracao()` não inclui no corpo de POST /videos — " +
-          "coletava arquivo do cliente e não alimentava geração nenhuma. Traje se cria em " +
-          "\"Adicionar traje\", que produz um look de verdade.",
+          "gravava em `defaults.outfit`, que `corpoDaGeracao()` não inclui no corpo de POST /videos.",
       );
     }
     if (!/handleCreateLook/.test(fonte)) {
-      failures.push(
-        "traje: o passo 1 não tem mais como criar traje — `handleCreateLook` sumiu. Sem ele o único " +
-          "caminho de traje volta a ser escolher entre os que já existem, e a conta real tem um look só.",
-      );
+      failures.push("traje: o passo 1 não tem mais como criar traje — `handleCreateLook` sumiu.");
     }
   } catch {
-    failures.push(`traje: não foi possível ler ${passo1} para conferir que o formulário órfão não voltou.`);
+    failures.push(`traje: não foi possível ler ${passo1}.`);
   }
 
   return { failures, notes };

@@ -204,6 +204,38 @@ export function estimateVideoCost(requestedSeconds: number, vendor: string): Cos
   return costFor({ provider: "avatar", vendor, unitType: "seconds", unitCount: requestedSeconds });
 }
 
+/**
+ * Custo de UM look (traje) gerado por prompt. MEDIDO, não estimado.
+ *
+ * Medição de 06/08, conta real, um único POST /v3/avatars type=prompt sobre o
+ * look do avatar do Mário:
+ *
+ *   remaining_quota  660 → 600   (−60 unidades)
+ *   wallet         11,00 → 10,00 (−US$ 1,00)
+ *
+ * As duas leituras foram tiradas imediatamente antes e imediatamente depois do
+ * HTTP 200, e repetidas depois de o look ficar `completed`: **não mudaram**. O
+ * débito acontece no ACEITE, e não na conclusão — o que importa para o estorno:
+ * uma vez que o fornecedor devolveu 200, o dinheiro saiu, mesmo que a imagem
+ * fique ruim. Não há o que devolver depois disso.
+ *
+ * 60 unidades por dólar é a mesma razão medida para vídeo, agora confirmada
+ * numa operação de natureza diferente — o que reforça que a régua é da conta, e
+ * não do tipo de trabalho.
+ *
+ * Um look custa o mesmo que 20 segundos de vídeo cobrados (60 ÷ 3). É caro para
+ * um botão: por isso o número aparece na tela ANTES da confirmação, e não
+ * depois, no extrato.
+ */
+export const HEYGEN_LOOK_COST = {
+  units: 60,
+  usd: 1.0,
+  measuredOn: "2026-08-06",
+  method:
+    "um POST /v3/avatars type=prompt na conta real: remaining_quota 660 → 600 e wallet 11,00 → 10,00, " +
+    "lidos imediatamente antes e depois do 200 e reconferidos após o look ficar completed",
+} as const;
+
 export interface CostDifference {
   usd: number;
   factor: number | null;
