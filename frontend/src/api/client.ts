@@ -4,6 +4,16 @@ class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /**
+     * O CORPO da resposta de erro, quando ele é JSON.
+     *
+     * Existe porque o erro carrega decisões além do texto: `replaceable` e
+     * `requiresAvatarName` dizem à tela QUE saída oferecer, e sem eles a tela
+     * escolhia lendo a mensagem — `/substitui/i` e `/protegida/i` sobre a frase
+     * em português. Uma decisão de fluxo tomada por regex sobre prosa quebra na
+     * primeira vez que alguém melhora a redação, sem nada acusar.
+     */
+    public body?: unknown,
   ) {
     super(message);
   }
@@ -21,15 +31,17 @@ async function handle<T>(res: Response): Promise<T> {
     // a mensagem — a tela mostrava algo como
     // '502 Bad Gateway: {"error":"...","message":"..."}'.
     let message = FALLBACK_ERROR;
+    let payload: unknown;
     try {
       const body = await res.json();
+      payload = body;
       if (body && typeof body.message === "string" && body.message.trim()) {
         message = body.message;
       }
     } catch {
       // resposta sem JSON (proxy, HTML de erro, corpo vazio): fica o fallback
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, payload);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

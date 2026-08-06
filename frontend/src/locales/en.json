@@ -648,6 +648,8 @@
       "cloned": "Voice cloned. The account now has {{used}} of {{limit}} voices in use.",
       "replaceExplain": "Confirming replaces this avatar's current voice with a new one. The previous voice stays in the provider account, but is no longer linked to this avatar here.",
       "replaceConfirm": "Replace anyway",
+      "protectedExplain": "This is the voice from the already-approved video and it is protected. The old one does not come back: the product does not delete voices at the provider, its slot is not freed, and the avatar keeps a single id. If this is really what you want, type the avatar name to confirm: {{name}}",
+      "protectedInputLabel": "Avatar name, to confirm replacing the protected voice",
       "micDenied": "The browser blocked the microphone. Allow microphone access for this site and try again, or upload an audio file.",
       "micUnavailable": "Could not access the microphone. Check that a microphone is connected, or upload an audio file.",
       "genericError": "Could not complete the operation. Please try again in a moment.",

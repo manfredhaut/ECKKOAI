@@ -489,10 +489,33 @@ export function checkSampleDuration(durationSeconds: number | null): SampleVerdi
   return OK;
 }
 
+/**
+ * A PORTA da voz protegida: digitar o NOME do avatar, exatamente.
+ *
+ * Por que uma segunda confirmação em vez da caixa que já existe: são perguntas
+ * diferentes. A caixa de `voice_exists` pergunta "você sabe que a anterior se
+ * perde?". Esta pergunta "você sabe QUAL avatar está mexendo?" — e a resposta
+ * não pode ser dada por reflexo, porque exige ler o nome na tela e copiá-lo.
+ *
+ * Comparação sem diferenciar maiúsculas e com as pontas aparadas: a fricção
+ * pretendida é ter de olhar o nome, não acertar a grafia de "TESTE REAL 15:40
+ * 01/08". Errar acento num nome não protege ninguém — só transforma a saída
+ * numa charada.
+ */
+export function protectedReplacementConfirms(typed: string | null, avatarName: string): boolean {
+  const a = (typed ?? "").trim().toLocaleLowerCase("pt-BR");
+  const b = avatarName.trim().toLocaleLowerCase("pt-BR");
+  return b.length > 0 && a === b;
+}
+
 /** GUARDA C — substituição de voz existente, e proteção da voz aprovada. */
 export function checkVoiceReplacement(input: {
   currentVoiceId: string | null;
   replace: boolean;
+  /** Nome do avatar, para a porta da voz protegida. */
+  avatarName?: string;
+  /** O que a pessoa DIGITOU para abrir essa porta. `null` = não digitou nada. */
+  confirmAvatarName?: string | null;
 }): SampleVerdict {
   const atual = input.currentVoiceId;
   if (!atual) return OK;
@@ -508,18 +531,42 @@ export function checkVoiceReplacement(input: {
     };
   }
 
-  // A flag foi enviada — mas para a voz protegida ela não basta por si só:
-  // aqui a recusa é definitiva por esta rota. Trocar a voz do vídeo aprovado é
-  // decisão que não deve caber a um clique numa tela de upload.
+  // -------------------------------------------------------------------------
+  // A VOZ PROTEGIDA GANHOU PORTA — e continua barrando por padrão.
+  //
+  // Até aqui a recusa era DEFINITIVA por esta rota, e o motivo era bom: trocar
+  // a voz do vídeo aprovado não deve caber a um clique numa tela de upload. Só
+  // que "definitiva" tinha um custo que não estava escrito em lugar nenhum —
+  // uma voz aprovada POR ENGANO ficava presa no avatar para sempre, e a única
+  // saída de dentro do produto era abandonar o avatar.
+  //
+  // A porta é digitar o nome do avatar. A caixa de confirmação continua sendo
+  // exigida junto (`replace`): são duas perguntas diferentes, e a segunda é a
+  // que não se responde por reflexo.
+  //
+  // O que a porta NÃO desfaz: a voz antiga continua sem volta. Este produto não
+  // exclui vozes no fornecedor, o slot não é liberado (medido em 05/08: a conta
+  // foi de 4 para 5 vozes ao substituir, com as duas de mesmo nome), e a coluna
+  // guarda um valor só. Por isso a mensagem diz o que se perde antes de dizer
+  // como prosseguir.
+  // -------------------------------------------------------------------------
   if (PROTECTED_VOICE_IDS.includes(atual)) {
-    return {
-      ok: false,
-      code: "voice_protected",
-      message:
-        "Esta é a voz usada no vídeo já aprovado e ela está protegida contra substituição. " +
-        "Clone a voz nova em outro avatar e repontar depois, se for mesmo o caso — assim a voz " +
-        "aprovada continua existindo enquanto a nova é avaliada.",
-    };
+    const nome = (input.avatarName ?? "").trim();
+    if (!protectedReplacementConfirms(input.confirmAvatarName ?? null, nome)) {
+      return {
+        ok: false,
+        code: "voice_protected",
+        message:
+          "Esta é a voz usada no vídeo já aprovado e ela está protegida contra substituição. A voz " +
+          "antiga não volta: este produto não exclui voz no fornecedor, o slot dela não é liberado, e " +
+          "o avatar guarda um id só. O caminho mais seguro continua sendo clonar a voz nova em outro " +
+          "avatar e repontar depois — assim a aprovada continua existindo enquanto a nova é avaliada. " +
+          (nome
+            ? `Para substituir mesmo assim, digite o nome do avatar exatamente como está na tela: "${nome}".`
+            : "Para substituir mesmo assim seria preciso confirmar o nome do avatar, e ele não veio na " +
+              "requisição — não dá para abrir a porta sem saber qual avatar está sendo trocado."),
+      };
+    }
   }
 
   return OK;

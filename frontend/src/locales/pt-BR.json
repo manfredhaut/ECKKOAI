@@ -648,6 +648,8 @@
       "cloned": "Voz clonada. A conta ficou com {{used}} de {{limit}} vozes em uso.",
       "replaceExplain": "Confirmar substitui a voz atual deste avatar por uma nova. A voz anterior continua na conta do provedor, mas deixa de estar ligada a este avatar aqui.",
       "replaceConfirm": "Substituir mesmo assim",
+      "protectedExplain": "Esta voz é a do vídeo já aprovado e está protegida. A antiga não volta: o produto não exclui voz no provedor, o slot dela não é liberado, e o avatar guarda um id só. Se for mesmo a intenção, digite o nome do avatar para confirmar: {{name}}",
+      "protectedInputLabel": "Nome do avatar, para confirmar a substituição da voz protegida",
       "micDenied": "O navegador bloqueou o microfone. Libere o acesso ao microfone para este site e tente de novo, ou envie um arquivo de áudio.",
       "micUnavailable": "Não foi possível acessar o microfone. Verifique se há um microfone conectado, ou envie um arquivo de áudio.",
       "genericError": "Não foi possível concluir a operação. Tente novamente em alguns instantes.",

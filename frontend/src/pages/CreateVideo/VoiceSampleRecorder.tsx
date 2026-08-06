@@ -76,6 +76,21 @@ export function VoiceSampleRecorder({
   // do outro lado é irreversível.
   const [replaceOffered, setReplaceOffered] = useState(false);
   /**
+   * A PORTA da voz PROTEGIDA — a que exige digitar o nome do avatar.
+   *
+   * A voz protegida é a do vídeo já aprovado, e até aqui a recusa era
+   * definitiva: uma voz aprovada por engano ficava presa no avatar para
+   * sempre, e a única saída de dentro do produto era abandonar o avatar.
+   *
+   * A caixa de substituir continua sendo exigida junto. São duas perguntas
+   * diferentes: a caixa pergunta se a pessoa sabe que a anterior se perde, e o
+   * nome digitado pergunta se ela sabe QUAL avatar está mexendo — resposta que
+   * não se dá por reflexo, porque exige ler o nome na tela e copiá-lo.
+   */
+  const [protectedGate, setProtectedGate] = useState(false);
+  const [protectedAvatarName, setProtectedAvatarName] = useState("");
+  const [typedName, setTypedName] = useState("");
+  /**
    * RECOLHIDO quando já existe voz, ABERTO quando falta — e o default é a
    * proteção, não a estética.
    *
@@ -198,11 +213,19 @@ export function VoiceSampleRecorder({
     setError(null);
     setNotice(null);
     try {
+      // O nome digitado só viaja quando o servidor pediu por ele — é a porta
+      // da voz PROTEGIDA, e mandá-lo sempre transformaria a segunda pergunta
+      // num campo qualquer do formulário.
+      const campos: Record<string, string> | undefined = replace
+        ? protectedGate
+          ? { replace: "true", confirm_avatar_name: typedName }
+          : { replace: "true" }
+        : undefined;
       const res = await api.upload<CloneResponse>(
         `/avatars/${avatar.id}/voice-sample`,
         blob,
         "voice-sample.webm",
-        replace ? { replace: "true" } : undefined,
+        campos,
       );
       onCloned(res.avatar);
       setNotice(
@@ -213,16 +236,26 @@ export function VoiceSampleRecorder({
           }),
       );
       setReplaceOffered(false);
+      setProtectedGate(false);
+      setTypedName("");
       if (blobUrl) URL.revokeObjectURL(blobUrl);
       setBlob(null);
       setBlobUrl(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("createVideo.voiceSample.genericError"));
-      // 409 com voz já existente é o único caso em que oferecer a substituição
-      // faz sentido — a voz protegida também dá 409 e NÃO deve oferecer nada,
-      // porque por esta rota não existe caminho.
+      // QUAL saída oferecer vem do CORPO do 409, não da mensagem. Até aqui a
+      // tela decidia com `/substitui/i` e `/protegida/i` sobre a frase em
+      // português — uma decisão de fluxo tomada por regex sobre prosa, que
+      // quebra na primeira vez que alguém melhora a redação e não acusa nada.
       if (err instanceof ApiError && err.status === 409) {
-        setReplaceOffered(/substitui/i.test(err.message) && !/protegida/i.test(err.message));
+        const corpo = (err.body ?? {}) as {
+          replaceable?: boolean;
+          requiresAvatarName?: boolean;
+          avatarName?: string;
+        };
+        setReplaceOffered(corpo.replaceable === true || corpo.requiresAvatarName === true);
+        setProtectedGate(corpo.requiresAvatarName === true);
+        setProtectedAvatarName(corpo.avatarName ?? avatar.name);
       }
     } finally {
       setSending(false);
@@ -356,7 +389,38 @@ export function VoiceSampleRecorder({
       {replaceOffered && (
         <div className="voice-sample__replace">
           <p>{t("createVideo.voiceSample.replaceExplain")}</p>
-          <button type="button" onClick={() => send(true)} disabled={!blob || sending}>
+          {/* A PORTA da voz protegida. Só aparece quando o servidor a abre, e
+              o campo vem com o nome a copiar escrito ao lado — mandar a pessoa
+              procurar o nome noutra tela é convite a errar três vezes. */}
+          {protectedGate && (
+            <div className="voice-sample__protected">
+              <p>
+                {t("createVideo.voiceSample.protectedExplain", { name: protectedAvatarName })}
+              </p>
+              <input
+                value={typedName}
+                onChange={(e) => setTypedName(e.target.value)}
+                placeholder={protectedAvatarName}
+                aria-label={t("createVideo.voiceSample.protectedInputLabel")}
+              />
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => send(true)}
+            // Com a porta aberta, o botão só liga com o nome conferido AQUI
+            // também. O servidor continua sendo a autoridade — esta é a mesma
+            // comparação, para que o clique não vire uma ida ao servidor só
+            // para voltar com "não". Aparar e ignorar caixa: a fricção
+            // pretendida é ter de LER o nome, não acertar a grafia.
+            disabled={
+              !blob ||
+              sending ||
+              (protectedGate &&
+                typedName.trim().toLocaleLowerCase("pt-BR") !==
+                  protectedAvatarName.trim().toLocaleLowerCase("pt-BR"))
+            }
+          >
             {t("createVideo.voiceSample.replaceConfirm")}
           </button>
         </div>

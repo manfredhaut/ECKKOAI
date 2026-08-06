@@ -483,7 +483,7 @@ async function checkEnvVarsReachContainer(
       continue;
     }
     const rel = path.relative(repoRoot, arquivo).split(path.sep).join("/");
-    for (const linha of fonte.split("\n")) {
+    for (const linha of semMutantes(fonte).split("\n")) {
       const t = linha.trim();
       if (t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")) continue;
       for (const forma of FORMAS) {
@@ -507,7 +507,7 @@ async function checkEnvVarsReachContainer(
       continue;
     }
     const rel = path.relative(repoRoot, arquivo).split(path.sep).join("/");
-    for (const bloco of fonte.matchAll(/_ENV\s*=\s*\{([^}]*)\}/g)) {
+    for (const bloco of semMutantes(fonte).matchAll(/_ENV\s*=\s*\{([^}]*)\}/g)) {
       for (const m of bloco[1].matchAll(/["']([A-Z][A-Z0-9_]{3,})["']/g)) {
         if (!lidas.has(m[1])) lidas.set(m[1], new Set());
         lidas.get(m[1])!.add(rel);
@@ -556,6 +556,26 @@ async function checkEnvVarsReachContainer(
         `exceto ${ENV_FORA_DO_COMPOSE.length} ausência(s) declarada(s) com motivo`,
     );
   }
+}
+
+/**
+ * Tira o bloco `MUTANTS` antes de varrer.
+ *
+ * As guardas declaram mutantes que, por construção, contêm o defeito — e um
+ * deles renomeia uma variável de ambiente de propósito. Sem esta poda, a
+ * varredura acusava `ELEVENLABS_TTS_MODEL_V2` como variável ausente do compose:
+ * a guarda reprovando por causa do texto escrito para exercitá-la. É a mesma
+ * armadilha que a guarda de feature flags já resolveu pulando os arquivos de
+ * guarda inteiros; aqui a poda é mais estreita de propósito, porque `REPO_ROOT`
+ * só é lida dentro de scripts de guarda e excluí-los cegaria a exceção que a
+ * declara.
+ *
+ * O bloco é reconhecido pela abertura e pelo `];` na coluna zero — a mesma
+ * leitura grosseira que o resto deste arquivo faz com o compose, e pelo mesmo
+ * motivo: se o formato mudar, isto falha barulhento em vez de passar calado.
+ */
+function semMutantes(fonte: string): string {
+  return fonte.replace(/export const MUTANTS: Mutant\[\] = \[[\s\S]*?\n\];/, "");
 }
 
 /** Varredura recursiva por extensão, sem as exclusões da busca de credencial. */

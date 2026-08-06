@@ -40,6 +40,31 @@ export interface VoiceSampleCheckResult {
 }
 
 export const MUTANTS: Mutant[] = [
+  // --- GUARDA C: a porta da voz protegida ---------------------------------
+  {
+    guard: "voz: a porta da voz protegida é estreita",
+    name: "a porta abre sem digitar nada",
+    kind: "esperto",
+    // A porta continua na tela, o campo continua aparecendo, o texto continua
+    // explicando o que se perde — e o servidor deixa de conferir. Quem opera
+    // vê exatamente a mesma coisa que veria com a proteção funcionando.
+    file: "backend/src/services/voice/voiceSample.ts",
+    find: "  return b.length > 0 && a === b;",
+    replace: "  return true;",
+    expect: "a voz protegida foi substituída sem que o nome do avatar sequer viesse",
+  },
+  {
+    guard: "voz: a porta da voz protegida é estreita",
+    name: "a comparação do nome vira prefixo",
+    kind: "esperto",
+    // A forma mais provável de alguém "facilitar" isto: quatro caracteres
+    // passam a bastar. A proteção continua existindo no papel e deixa de
+    // proteger na prática, porque digitar "TEST" não é ler o nome do avatar.
+    file: "backend/src/services/voice/voiceSample.ts",
+    find: "  return b.length > 0 && a === b;",
+    replace: "  return b.length > 0 && a.length > 0 && b.startsWith(a);",
+    expect: "a porta da voz protegida abriu com um PREFIXO do nome",
+  },
   // --- GUARDA A: duração mínima -----------------------------------------
   {
     guard: "voz: duração mínima da amostra",
@@ -483,9 +508,93 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
     );
   }
 
+  // A PORTA da voz protegida: existe, e é estreita.
+  //
+  // Antes deste bloco a recusa acima era o fim da linha — uma voz aprovada POR
+  // ENGANO ficava presa no avatar para sempre, e a única saída de dentro do
+  // produto era abandonar o avatar. A porta é digitar o NOME do avatar, e os
+  // quatro vetores abaixo são os quatro jeitos de ela deixar de ser porta:
+  // não abrir nunca, abrir com qualquer coisa, abrir por prefixo, ou abrir
+  // sem a caixa de confirmação que já existia.
+  const AVATAR_PROTEGIDO = "TESTE REAL 15:40 01/08";
+  const protegidaBase = {
+    currentVoiceId: PROTECTED_VOICE_IDS[0],
+    replace: true,
+    avatarName: AVATAR_PROTEGIDO,
+  };
+
+  const comNome = checkVoiceReplacement({ ...protegidaBase, confirmAvatarName: AVATAR_PROTEGIDO });
+  if (!comNome.ok) {
+    failures.push(
+      "voz: a voz protegida recusou MESMO com o nome do avatar digitado corretamente. Sem porta " +
+        "nenhuma, uma voz aprovada por engano fica presa no avatar para sempre e a única saída de " +
+        "dentro do produto é abandonar o avatar — que é pior que a substituição que se queria evitar.",
+    );
+  }
+
+  // Grafia: aparar e ignorar caixa. A fricção pretendida é ter de LER o nome
+  // na tela, não acertar acento e maiúscula de "TESTE REAL 15:40 01/08".
+  const comNomeFolgado = checkVoiceReplacement({
+    ...protegidaBase,
+    confirmAvatarName: `  ${AVATAR_PROTEGIDO.toLowerCase()}  `,
+  });
+  if (!comNomeFolgado.ok) {
+    failures.push(
+      "voz: a porta da voz protegida exigiu a grafia exata, com caixa e espaços. A fricção que ela " +
+        "existe para criar é ter de ler o nome do avatar, não vencer uma charada de digitação.",
+    );
+  }
+
+  const nomeErrado = checkVoiceReplacement({ ...protegidaBase, confirmAvatarName: "outro avatar" });
+  if (nomeErrado.ok) {
+    failures.push(
+      "voz: a porta da voz protegida abriu com o nome ERRADO. Ela pergunta se a pessoa sabe QUAL " +
+        "avatar está mexendo; aceitar qualquer texto responde a pergunta por ela.",
+    );
+  }
+
+  const nomePrefixo = checkVoiceReplacement({
+    ...protegidaBase,
+    confirmAvatarName: AVATAR_PROTEGIDO.slice(0, 4),
+  });
+  if (nomePrefixo.ok) {
+    failures.push(
+      "voz: a porta da voz protegida abriu com um PREFIXO do nome. Quatro caracteres não são ler o " +
+        "nome — e uma comparação por início é a forma mais provável de alguém 'facilitar' isto.",
+    );
+  }
+
+  const semCaixaMasComNome = checkVoiceReplacement({
+    ...protegidaBase,
+    replace: false,
+    confirmAvatarName: AVATAR_PROTEGIDO,
+  });
+  if (semCaixaMasComNome.ok) {
+    failures.push(
+      "voz: o nome digitado sozinho substituiu a voz, sem a confirmação de substituição. São duas " +
+        "perguntas diferentes — uma sobre o que se perde, outra sobre qual avatar — e a porta nova " +
+        "não pode engolir a barreira que já existia.",
+    );
+  }
+
+  // Sem o nome do avatar na requisição a porta não abre, e a mensagem diz por
+  // quê: não dá para confirmar QUAL avatar está sendo trocado sem saber o nome.
+  const semNomeNenhum = checkVoiceReplacement({
+    currentVoiceId: PROTECTED_VOICE_IDS[0],
+    replace: true,
+    confirmAvatarName: "qualquer coisa",
+  });
+  if (semNomeNenhum.ok) {
+    failures.push(
+      "voz: a voz protegida foi substituída sem que o nome do avatar sequer viesse na requisição. " +
+        "Comparar contra nome vazio faz a porta abrir para qualquer texto.",
+    );
+  }
+
   notes.push(
     `voz: primeiro clone livre, substituição exige flag, e ${PROTECTED_VOICE_IDS.length} voz(es) ` +
-      "protegida(s) recusam mesmo COM a flag",
+      "protegida(s) recusam com a flag — a porta é digitar o nome do avatar, e ela não abre com " +
+      "nome errado, prefixo, nome ausente nem sem a confirmação",
   );
 
   // --- GUARDA D: formato e tamanho ----------------------------------------
@@ -661,6 +770,75 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
   }
 
   notes.push("voz: o caminho antigo (reference-video) pula a clonagem quando já existe voz, em vez de sobrescrever");
+
+  // --- A porta chega até a TELA -------------------------------------------
+  //
+  // A porta pode estar perfeita no serviço e não existir para quem opera. Foi
+  // esse o estado até aqui: a recusa era definitiva porque a tela não tinha
+  // como oferecer saída nenhuma — e um caminho que só existe no `curl` não é
+  // saída de produto.
+  const relVoice = "backend/src/routes/voice.ts";
+  const relTela = "frontend/src/pages/CreateVideo/VoiceSampleRecorder.tsx";
+  for (const [rel, exigido, oQueE] of [
+    [relVoice, "requiresAvatarName", "a rota não diz à tela que a porta existe"],
+    [relVoice, "confirmAvatarName", "a rota não repassa o nome digitado ao veredito"],
+    [relTela, "confirm_avatar_name", "a tela não envia o nome digitado"],
+    [relTela, "requiresAvatarName", "a tela não lê do CORPO do 409 qual saída oferecer"],
+  ] as const) {
+    let fonte: string;
+    try {
+      fonte = await readFile(path.join(repoRoot, rel), "utf-8");
+    } catch {
+      failures.push(`voz: não consegui ler ${rel} — verificador cego é pior que reprovar.`);
+      continue;
+    }
+    if (!fonte.includes(exigido)) {
+      failures.push(
+        `voz: ${oQueE} — \`${exigido}\` sumiu de ${rel}. A porta da voz protegida pode estar inteira ` +
+          "no serviço e não existir para quem opera, que era o estado anterior: a recusa virava " +
+          "definitiva por falta de tela, e a voz aprovada por engano ficava presa para sempre.",
+      );
+    }
+  }
+
+  // A decisão de fluxo NÃO pode voltar a ser lida da prosa. A tela escolhia
+  // que saída oferecer com `/substitui/i` e `/protegida/i` sobre a mensagem em
+  // português — melhorar a redação quebrava o fluxo sem nada acusar.
+  try {
+    const tela = await readFile(path.join(repoRoot, relTela), "utf-8");
+    if (/\/(substitui|protegida)\/i\.test\(\s*err\.message/.test(tela)) {
+      failures.push(
+        `voz: ${relTela} voltou a decidir a saída lendo a MENSAGEM de erro por regex. A resposta traz ` +
+          "`replaceable` e `requiresAvatarName` justamente para isso; decidir por prosa quebra na " +
+          "primeira vez que alguém melhora a frase, e quebra em silêncio.",
+      );
+    }
+  } catch {
+    /* a leitura acima já reportou */
+  }
+
+  for (const idioma of ["pt-BR", "en"]) {
+    const arquivo = `frontend/src/locales/${idioma}.json`;
+    try {
+      const dict = JSON.parse(await readFile(path.join(repoRoot, arquivo), "utf-8")) as Record<string, any>;
+      const vs = dict?.createVideo?.voiceSample ?? {};
+      for (const chave of ["protectedExplain", "protectedInputLabel"]) {
+        if (typeof vs[chave] !== "string" || !vs[chave]) {
+          failures.push(
+            `voz: \`createVideo.voiceSample.${chave}\` não existe em ${idioma}.json. A tela mostraria ` +
+              "o nome da chave onde deveria explicar o que se perde ao substituir a voz protegida.",
+          );
+        }
+      }
+    } catch {
+      failures.push(`voz: não consegui ler ${arquivo}.`);
+    }
+  }
+
+  notes.push(
+    "voz: a porta da voz protegida chega à tela — a rota anuncia `requiresAvatarName`, a tela envia " +
+      "`confirm_avatar_name`, e a escolha da saída vem do corpo do 409, não da prosa",
+  );
 
   // --- 7a: o evento de troca preserva os ids, e a redação segue firme -----
   //

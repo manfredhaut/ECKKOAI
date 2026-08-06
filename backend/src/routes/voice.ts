@@ -103,6 +103,14 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       const campoReplace = (file.fields as Record<string, { value?: unknown } | undefined>)?.replace;
       const replace = String(campoReplace?.value ?? "") === "true";
 
+      // A PORTA da voz protegida viaja pelo mesmo multipart: o nome do avatar,
+      // digitado. Diferente de `replace`, aqui o valor importa — é ele que é
+      // comparado com o nome real. String vazia é o mesmo que não digitar.
+      const campoConfirmNome = (file.fields as Record<string, { value?: unknown } | undefined>)
+        ?.confirm_avatar_name;
+      const confirmAvatarName =
+        typeof campoConfirmNome?.value === "string" ? campoConfirmNome.value : null;
+
       const { rows: avatarRows } = await pool.query<Avatar>(
         "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
         [req.params.id, req.tenantId],
@@ -150,6 +158,8 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       const substituicao = checkVoiceReplacement({
         currentVoiceId: avatar.voice_id,
         replace,
+        avatarName: avatar.name,
+        confirmAvatarName,
       });
       if (!substituicao.ok) {
         logEvent("info", "voice_sample_rejected", {
@@ -160,8 +170,16 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
           error: substituicao.code,
           message: substituicao.message,
           // A tela precisa saber que existe um caminho (mandar `replace`) para
-          // `voice_exists`, e que NÃO existe para `voice_protected`.
+          // `voice_exists`.
           replaceable: substituicao.code === "voice_exists",
+          // E que para `voice_protected` a porta existe, mas é outra: digitar o
+          // NOME do avatar. Sem este campo a tela não teria como oferecer a
+          // saída, e a voz aprovada por engano continuaria presa para sempre —
+          // que era o estado até aqui. O nome vai junto porque é ele que a
+          // pessoa precisa copiar, e pedir que ela o procure noutra tela é
+          // convite a digitar errado três vezes.
+          requiresAvatarName: substituicao.code === "voice_protected",
+          avatarName: substituicao.code === "voice_protected" ? avatar.name : undefined,
         });
       }
 
