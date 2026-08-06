@@ -69,7 +69,7 @@ export const MUTANTS: Mutant[] = [
   {
     guard: "endpoints legados: nenhuma chamada v2 fora do inventário",
     name: "um caminho v2 inteiramente novo entra sem ser notado",
-    kind: "óbvio",
+    kind: "obvio",
     // O outro modo de escapar: não reaproveitar um nome declarado, e sim
     // acrescentar um endpoint v2 que nunca esteve na lista. É o caso comum de
     // quem lê a doc do fornecedor, acha um exemplo antigo e copia.
