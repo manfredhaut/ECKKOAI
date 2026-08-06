@@ -4,6 +4,7 @@
 // flagged "ASSUMPTION" — those are best-effort reads of ambiguous docs and
 // are meant to be corrected against the real HTTP response on first use,
 // same as the Gemini script adapter's model id was.
+import { createHash } from "node:crypto";
 import { readUpload } from "../storage.js";
 import { synthesizeSpeech } from "./voiceProvider.js";
 import { processVoiceAudio } from "../audioProcessing.js";
@@ -361,6 +362,71 @@ async function pollAvatarStatusHeygen(apiKey: string, avatarId: string): Promise
  * `aspect_ratio` ou `resolution` fiquem de fora, porque a omissão é justamente
  * o defeito corrigido aqui.
  */
+/**
+ * `fit` — o campo que produzia as barras por estar ausente.
+ *
+ * MEDIDO em 06/08 contra o fornecedor, com `avatar_id` inexistente como fusível
+ * (a chamada nunca pode render): `fit` aceita EXATAMENTE `contain` ou `cover` —
+ * o próprio 400 diz "Input should be 'contain' or 'cover'". Nunca enviamos o
+ * campo, e os 40% de barra no 4:5 e os 57,8% no 9:16 são o que `contain` faz:
+ * cabe o quadro inteiro e preenche o resto com sólido.
+ *
+ * `cover` preenche a proporção pedida CORTANDO o excesso. A troca é real e não
+ * é grátis — cortar pode comer topo e base do enquadramento, que é justamente
+ * a preocupação de `deriveVariants.ts`. É decisão de produto, tomada no
+ * TRAJE-3, e fica declarada aqui em vez de literal no meio do corpo.
+ */
+const HEYGEN_FIT: "contain" | "cover" = "cover";
+
+/**
+ * Chave de idempotência DA TENTATIVA.
+ *
+ * O contrato (lido na doc do fornecedor em 06/08): header `Idempotency-Key`,
+ * padrão `[A-Za-z0-9_\-:.]{1,255}`, e chamadas dentro de 24 h que compartilham
+ * a chave **replicam a resposta original** em vez de gerar de novo.
+ *
+ * O que ela precisa proteger é o duplo clique, e é isso que decide de onde ela
+ * é derivada. Duas coisas NÃO servem:
+ *
+ *  - o instante — dois cliques dão dois instantes, e a chave nunca colide, que
+ *    é o mesmo que não ter chave;
+ *  - o id da linha de `videos` — cada clique INSERE uma linha nova, então dois
+ *    cliques dão dois ids, e a proteção também não acontece.
+ *
+ * Sobra o CONTEÚDO da tentativa: mesmo tenant, mesmo avatar/look, mesmo
+ * roteiro, mesma cena, mesmo formato e mesmo motor. Dois cliques iguais em 24 h
+ * produzem a mesma chave e o segundo replica o primeiro, sem cobrar.
+ *
+ * `audio_asset_id` fica DE FORA de propósito, e essa é a parte que não é
+ * óbvia: o áudio é ressintetizado e resubido a cada clique, então o asset id é
+ * diferente nas duas tentativas. Incluí-lo faria a chave variar exatamente no
+ * caso que ela existe para cobrir.
+ */
+export function heygenIdempotencyKey(
+  input: Pick<
+    GenerateVideoInput,
+    "tenantId" | "providerAvatarId" | "script" | "format" | "scene" | "engineChoice"
+  >,
+): string {
+  const cena = normalizeScene(input.scene ?? {});
+  const material = JSON.stringify([
+    input.tenantId,
+    input.providerAvatarId,
+    input.script,
+    cena.background ?? null,
+    cena.motionPrompt ?? null,
+    cena.expressiveness ?? null,
+    input.format.aspectRatio,
+    input.format.resolution,
+    input.engineChoice ?? null,
+    HEYGEN_FIT,
+  ]);
+  // Prefixo nosso para que a chave seja reconhecível num log do fornecedor, e
+  // hex de 32 bytes — 71 caracteres no total, dentro dos 255 do padrão, e todos
+  // eles dentro de `[A-Za-z0-9_\-:.]`.
+  return `eckko-${createHash("sha256").update(material).digest("hex")}`;
+}
+
 export function buildHeygenVideoPayload(
   input: Pick<
     GenerateVideoInput,
@@ -386,6 +452,10 @@ export function buildHeygenVideoPayload(
     // horizontal sem que nada no sistema soubesse que havia uma escolha.
     aspect_ratio: input.format.aspectRatio,
     resolution: input.format.resolution,
+    // Ver `HEYGEN_FIT`. Vai SEMPRE, como aspect_ratio e resolution: o defeito
+    // que ele corrige é o da ausência, e um `fit` opcional reabriria a mesma
+    // porta pela qual o formato saía vazio antes.
+    fit: HEYGEN_FIT,
   };
 
   // CENÁRIO. Cor vai como valor; imagem vai como asset do fornecedor, e nunca
@@ -401,12 +471,26 @@ export function buildHeygenVideoPayload(
     body.background = { type: "image", asset_id: backgroundAssetId };
   }
 
+  // `remove_background` — sem ele o fundo escolhido é INERTE, e foi assim que
+  // a geração de 06/08 saiu.
+  //
+  // O que aconteceu lá: `background: {type:"color", value:"#1B2A4A"}` foi
+  // enviado, o fornecedor respondeu 200, e o vídeo veio com o fundo ORIGINAL da
+  // foto. Faz sentido: o avatar é um talking photo, a foto tem o fundo dela, e
+  // pedir uma cor sem mandar tirar o que já está lá não deixa a cor com onde
+  // aparecer. Medido que o campo passa o schema (o 400 do fusível é de avatar,
+  // não de parâmetro); que ele é a causa do fundo inerte é DEDUZIDO, e é o que
+  // a próxima geração paga confirma ou derruba.
+  //
+  // Só quando HÁ fundo escolhido: remover o fundo sem pôr nada no lugar entrega
+  // um recorte sobre vazio, que ninguém pediu.
+  if (body.background) body.remove_background = true;
+
   // INTERPRETAÇÃO. Os dois campos só existem no corpo quando têm conteúdo:
   // `normalizeScene` já transformou string vazia em ausência, e mandar
   // `motion_prompt: ""` seria uma instrução de movimento vazia, que não é a
   // mesma coisa que não instruir.
   if (scene.motionPrompt) body.motion_prompt = scene.motionPrompt;
-  if (scene.expressiveness) body.expressiveness = scene.expressiveness;
 
   // O motor é a parte DEDUZIDA (ver videoEngine.ts): a ligação entre
   // `supported_api_engines` e `engine.type` é leitura nossa, não contrato
@@ -418,6 +502,25 @@ export function buildHeygenVideoPayload(
   // ninguém disse.
   const escolhido = input.engineChoice ?? selection.engine;
   const razao: EngineReason = input.engineChoice ? "declared_preference" : selection.reason;
+
+  // EXPRESSIVIDADE só vale em Avatar IV — o fornecedor documenta o campo como
+  // "Avatar IV only", e mandá-lo com outro motor é pedir uma coisa que não vai
+  // acontecer e depois não saber por quê.
+  //
+  // MEDIDO em 06/08 que o schema NÃO impõe isso: `expressiveness` com
+  // `engine.type: "avatar_iii"` passa a validação (o 400 do fusível é de
+  // avatar, não de parâmetro). Ou seja, o fornecedor aceita e ignora em
+  // silêncio, que é o pior dos dois mundos — por isso a regra fica do nosso
+  // lado, onde ela é observável.
+  //
+  // Com a flag desligada não mandamos `engine`, e o default declarado do
+  // fornecedor é `avatar_iv`: o campo continua valendo, e por isso continua
+  // sendo enviado nesse caminho.
+  const motorEfetivo = input.engineEnabled ? escolhido : "avatar_iv";
+  if (scene.expressiveness && motorEfetivo === "avatar_iv") {
+    body.expressiveness = scene.expressiveness;
+  }
+
   if (!input.engineEnabled) {
     return { body, engine: null, engineReason: "flag_off" };
   }
@@ -480,13 +583,24 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
     engine: engine ?? "não enviado (flag desligada)",
     avatar_look: input.providerAvatarId.slice(0, 8) + "…",
     aspect_ratio: input.format.aspectRatio,
+    fit: body.fit,
+    remove_background: body.remove_background ?? "ausente",
   });
+
+  const idempotencyKey = heygenIdempotencyKey(input);
 
   let res: Response;
   try {
     res = await fetch(`${HEYGEN_BASE}/v3/videos`, {
       method: "POST",
-      headers: { "x-api-key": input.apiKey, "content-type": "application/json" },
+      headers: {
+        "x-api-key": input.apiKey,
+        "content-type": "application/json",
+        // Ver `heygenIdempotencyKey`. Um duplo clique repete o corpo inteiro,
+        // então repete a chave, e o fornecedor replica a resposta em vez de
+        // enfileirar um segundo vídeo — que seria cobrado.
+        "Idempotency-Key": idempotencyKey,
+      },
       body: JSON.stringify(body),
     });
   } catch (err) {

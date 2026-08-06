@@ -51,6 +51,7 @@ import { checkCloneSampleFormatPolicy } from "./checkCloneSampleFormatPolicy.js"
 import { checkSpendControlPolicy } from "./checkSpendControlPolicy.js";
 import { checkRehearsalCreditPolicy } from "./checkRehearsalCreditPolicy.js";
 import { checkOutfitPolicy } from "./checkOutfitPolicy.js";
+import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -546,6 +547,11 @@ async function main(): Promise<void> {
   const outfit = await checkOutfitPolicy(process.env.REPO_ROOT ?? "/repo");
   outfit.failures.forEach((f) => failures.push(f));
   outfit.notes.forEach((n) => note(n));
+
+  // --- 25e. o corpo e o header de POST /v3/videos batem com o contrato -----
+  const videoContract = await checkVideoContractPolicy();
+  videoContract.failures.forEach((f) => failures.push(f));
+  videoContract.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

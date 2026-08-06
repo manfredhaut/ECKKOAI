@@ -36,6 +36,7 @@ import { MUTANTS as cloneSampleFormatMutants } from "./checkCloneSampleFormatPol
 import { MUTANTS as spendControlMutants } from "./checkSpendControlPolicy.js";
 import { MUTANTS as rehearsalCreditMutants } from "./checkRehearsalCreditPolicy.js";
 import { MUTANTS as outfitMutants } from "./checkOutfitPolicy.js";
+import { MUTANTS as videoContractMutants } from "./checkVideoContractPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 const all: Mutant[] = [
@@ -65,6 +66,7 @@ const all: Mutant[] = [
   ...spendControlMutants,
   ...rehearsalCreditMutants,
   ...outfitMutants,
+  ...videoContractMutants,
 ];
 
 // Um mutante malformado só apareceria no meio da execução, com a árvore já
