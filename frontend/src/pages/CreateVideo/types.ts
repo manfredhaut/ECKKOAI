@@ -1,5 +1,16 @@
 export interface AssetDefaults {
   scenario: string;
+  /**
+   * O NOME do arquivo que a pessoa escolheu, guardado à parte.
+   *
+   * Não dá para tirar de `scenario`: o armazenamento renomeia para
+   * `<uuid>.<ext>` e o nome original não sobrevive na URL. E não dá para tirar
+   * do `<input type="file">`: navegador nenhum repovoa um campo de arquivo
+   * quando o componente remonta — por segurança, e não por descuido. Ao voltar
+   * ao passo 1 o campo dizia "nenhum ficheiro selecionado" com a imagem salva e
+   * em uso, que é a tela contradizendo o servidor.
+   */
+  scenarioName: string;
   outfit: string;
   scenarioPrompt: string;
   outfitPrompt: string;

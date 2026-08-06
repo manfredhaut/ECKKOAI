@@ -37,6 +37,7 @@ import { MUTANTS as spendControlMutants } from "./checkSpendControlPolicy.js";
 import { MUTANTS as rehearsalCreditMutants } from "./checkRehearsalCreditPolicy.js";
 import { MUTANTS as outfitMutants } from "./checkOutfitPolicy.js";
 import { MUTANTS as legacyEndpointMutants } from "./checkLegacyEndpointPolicy.js";
+import { MUTANTS as preflightSummaryMutants } from "./checkPreflightSummaryPolicy.js";
 import { MUTANTS as videoContractMutants } from "./checkVideoContractPolicy.js";
 import type { Mutant } from "./mutants.js";
 
@@ -68,6 +69,7 @@ const all: Mutant[] = [
   ...rehearsalCreditMutants,
   ...outfitMutants,
   ...legacyEndpointMutants,
+  ...preflightSummaryMutants,
   ...videoContractMutants,
 ];
 

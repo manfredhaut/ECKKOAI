@@ -210,6 +210,7 @@ function GalleryStats() {
 
 const EMPTY_DEFAULTS: AssetDefaults = {
   scenario: "",
+  scenarioName: "",
   outfit: "",
   scenarioPrompt: "",
   outfitPrompt: "",
@@ -217,6 +218,10 @@ const EMPTY_DEFAULTS: AssetDefaults = {
 
 const FILLED_DEFAULTS: AssetDefaults = {
   scenario: "/uploads/exemplo/cenario.jpg",
+  // O nome ORIGINAL, e não o do armazenamento: o `scenario` acima é
+  // `<uuid>.<ext>` na vida real, e é justamente por isso que o nome precisa ser
+  // guardado à parte.
+  scenarioName: "cenario-estudio.jpg",
   outfit: "/uploads/exemplo/traje.jpg",
   scenarioPrompt: "estúdio claro, fundo neutro, luz suave",
   outfitPrompt: "blazer azul-marinho sobre camisa branca",

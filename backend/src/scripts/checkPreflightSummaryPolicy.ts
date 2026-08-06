@@ -1,0 +1,336 @@
+/**
+ * O QUE A TELA DIZ ANTES DE O DINHEIRO SAIR.
+ *
+ * Três vetores, um tema: cada um fecha um lugar em que a tela ficava calada
+ * exatamente no instante em que falar importava.
+ *
+ * 1. **O resumo dos seis campos, acima do botão Gerar.** Dois vídeos pagos
+ *    saíram com campos vazios sem que desse para perceber antes de clicar — o
+ *    corpo era válido, o fornecedor respondeu 200, e a ausência só apareceu no
+ *    vídeo pronto. O passo Cena mostra cada controle na hora de preencher, mas
+ *    ninguém volta três telas para conferir.
+ *
+ * 2. **O traje em preparo trava o Avançar do passo 1.** Ele já foi COBRADO
+ *    (60 un, US$ 1,00 medidos) e ainda não está no seletor da Cena; passar
+ *    adiante leva a gerar sem ele. São dois prejuízos no mesmo clique.
+ *
+ * 3. **O arquivo já salvo aparece pelo NOME.** Navegador nenhum repovoa um
+ *    `<input type="file">` na remontagem, e o armazenamento renomeia para
+ *    `<uuid>.<ext>` (medido em `uploads/`), então o nome original não sobrevive
+ *    em lugar nenhum a não ser guardado à parte. O campo dizia "nenhum ficheiro
+ *    selecionado" com a imagem salva e em uso.
+ *
+ * COMO ELA OLHA: lendo os arquivos como TEXTO. O gate roda em Node, sem DOM e
+ * sem React, e importar um `.tsx` traria a árvore de componentes junto — mesma
+ * razão da guarda de fluxo do passo 1 e da dos cinco controles.
+ */
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import type { Mutant } from "./mutants.js";
+
+export interface PreflightSummaryCheckResult {
+  failures: string[];
+  notes: string[];
+}
+
+const RESUMO = "frontend/src/pages/CreateVideo/GenerationSummary.tsx";
+const GERAR = "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx";
+const WIZARD = "frontend/src/pages/CreateVideo/CreateVideoPage.tsx";
+const PASSO1 = "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx";
+
+/**
+ * Os SEIS campos, e de onde cada um sai no corpo de `POST /videos`.
+ *
+ * Declarados aqui em pares para que a guarda não aceite um resumo que mostre
+ * seis linhas tiradas de outro lugar: o valor do resumo está em ele ser lido do
+ * MESMO objeto que vai ao servidor. Um resumo que lê o formulário mostraria o
+ * que a pessoa escolheu, e o defeito é justamente escolha que não chega.
+ */
+const CAMPOS: { chave: string; corpo: string; oQueE: string }[] = [
+  { chave: "avatar", corpo: "corpo.avatar_id", oQueE: "o avatar" },
+  { chave: "outfit", corpo: "corpo.avatar_look_id", oQueE: "o traje" },
+  { chave: "background", corpo: "corpo.background", oQueE: "o fundo" },
+  { chave: "motionPrompt", corpo: "corpo.motion_prompt", oQueE: "a interpretação" },
+  { chave: "expressiveness", corpo: "corpo.expressiveness", oQueE: "a expressividade" },
+  { chave: "format", corpo: "corpo.publish_platform", oQueE: "o formato" },
+];
+
+export const MUTANTS: Mutant[] = [
+  {
+    guard: "gerar: o resumo mostra os seis campos antes de gastar",
+    name: "um dos seis campos some do resumo",
+    kind: "esperto",
+    // O resumo continua existindo, continua bonito, continua mostrando cinco
+    // linhas — e a que sai é justamente a que ninguém confere de cabeça. É a
+    // forma que a ausência silenciosa toma quando alguém "limpa" a lista.
+    file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
+    find: '    { campo: "format", value: plataforma ? plataforma.aspectRatio : null },',
+    replace: "",
+    expect: "gerar: o resumo não mostra o formato",
+  },
+  {
+    guard: "gerar: o resumo mostra os seis campos antes de gastar",
+    name: "o resumo sai da tela de gerar",
+    kind: "obvio",
+    // O componente continua no repositório, com os seis campos e as traduções
+    // todas — e deixa de ser renderizado. A guarda que só olhasse o arquivo do
+    // resumo passaria verde com a tela vazia.
+    file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
+    find: "          <GenerationSummary wizard={wizard} />",
+    replace: "",
+    expect: "gerar: o resumo do que vai ser enviado não é mostrado",
+  },
+  {
+    guard: "gerar: o resumo mostra os seis campos antes de gastar",
+    name: "o resumo passa a ler o formulário em vez do corpo enviado",
+    kind: "esperto",
+    // A diferença não aparece na tela na maioria das vezes — os dois coincidem
+    // quando tudo funciona. Ela aparece exatamente no caso que o resumo existe
+    // para pegar: campo escolhido que não chega ao corpo. Aí o formulário diz
+    // que está lá e o servidor recebe vazio, e o resumo confirma a mentira.
+    file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
+    find: "  const corpo = corpoDaGeracao(wizard);",
+    replace:
+      "  const corpo = {\n" +
+      "    avatar_id: wizard.avatarId,\n" +
+      "    avatar_look_id: wizard.avatarLookId,\n" +
+      "    background: wizard.background,\n" +
+      "    motion_prompt: wizard.motionPrompt,\n" +
+      "    expressiveness: wizard.expressiveness,\n" +
+      "    publish_platform: wizard.publishPlatform,\n" +
+      "  };",
+    expect: "gerar: o resumo deixou de ser derivado do corpo",
+  },
+  {
+    guard: "passo 1: traje em preparo trava o Avançar",
+    name: "o Avançar volta a liberar com traje em preparo",
+    kind: "esperto",
+    // Nada quebra e nada fica vermelho: o passo 1 continua avisando que há
+    // traje em preparo, o botão só volta a deixar passar. O prejuízo aparece
+    // duas telas depois, num vídeo pago gerado sem o traje que acabou de ser
+    // comprado.
+    file: "frontend/src/pages/CreateVideo/CreateVideoPage.tsx",
+    find: "    (step === 0 && wizard.avatarId !== null && !outfitPreparing) ||",
+    replace: "    (step === 0 && wizard.avatarId !== null) ||",
+    expect: "passo 1: o Avançar não trava com traje em preparo",
+  },
+  {
+    guard: "passo 1: traje em preparo trava o Avançar",
+    name: "a trava passa a valer também para o traje que falhou",
+    kind: "esperto",
+    // O outro lado, e o pior dos dois: `failed` é terminal, então travar por
+    // ele prende a pessoa no passo 1 sem saída nenhuma — e a única forma de
+    // sair seria criar outro traje, gastando mais US$ 1,00.
+    file: "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx",
+    find: '  const outfitPreparing = (lookInfo?.pendentes ?? []).some((p) => p.status === "processing");',
+    replace: "  const outfitPreparing = (lookInfo?.pendentes ?? []).length > 0;",
+    expect: "passo 1: a trava do Avançar deixou de distinguir preparo de falha",
+  },
+  {
+    guard: "passo 1: o arquivo já salvo aparece pelo nome",
+    name: "o nome do arquivo salvo volta a sumir da tela",
+    kind: "esperto",
+    // A frase "Imagem salva." continua ali, então a tela não fica muda — ela
+    // fica ambígua, que foi o estado original: o campo de arquivo diz "nenhum
+    // ficheiro selecionado" e a linha ao lado diz que há imagem salva, sem
+    // dizer qual.
+    file: "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx",
+    find:
+      "                  {defaults.scenarioName\n" +
+      '                    ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })\n' +
+      '                    : t("createVideo.avatarSetup.imageSaved")}',
+    replace: '                  {t("createVideo.avatarSetup.imageSaved")}',
+    expect: "passo 1: o cenário já salvo não aparece pelo nome",
+  },
+];
+
+async function ler(repoRoot: string, rel: string, failures: string[]): Promise<string> {
+  const fonte = await readFile(path.join(repoRoot, rel), "utf8").catch(() => "");
+  if (!fonte) failures.push(`pré-voo: ${rel} não foi encontrado — verificador cego é pior que reprovar.`);
+  return fonte;
+}
+
+export async function checkPreflightSummaryPolicy(
+  repoRoot: string,
+): Promise<PreflightSummaryCheckResult> {
+  const failures: string[] = [];
+  const notes: string[] = [];
+
+  // --------------------------------------------------------------- 1 -------
+  const resumo = await ler(repoRoot, RESUMO, failures);
+  const gerar = await ler(repoRoot, GERAR, failures);
+
+  if (resumo) {
+    for (const c of CAMPOS) {
+      // `campo:` e não `key:` — ver o comentário no próprio `GenerationSummary`:
+      // a guarda de feature flags conta todo `key: "..."` do frontend como
+      // referência a flag, e seis linhas dessas acusavam seis flags fantasma.
+      if (!resumo.includes(`campo: "${c.chave}"`)) {
+        failures.push(
+          `gerar: o resumo não mostra ${c.oQueE} — falta a linha \`campo: "${c.chave}"\` em ${RESUMO}. ` +
+            "Os seis campos existem porque dois vídeos pagos saíram com campo vazio sem que desse para " +
+            "perceber antes de clicar; uma lista com cinco linhas não chama atenção nenhuma.",
+        );
+      }
+      if (!resumo.includes(c.corpo)) {
+        failures.push(
+          `gerar: o resumo deixou de ser derivado do corpo em ${c.oQueE} — \`${c.corpo}\` sumiu de ` +
+            `${RESUMO}. O resumo tem de ler o MESMO objeto que vai no POST; lendo o formulário, ele ` +
+            "mostraria o que a pessoa escolheu, e o defeito é justamente escolha que não chega.",
+        );
+      }
+    }
+
+    if (!resumo.includes("corpoDaGeracao(wizard)")) {
+      failures.push(
+        `gerar: o resumo deixou de ser derivado do corpo — \`corpoDaGeracao(wizard)\` não é chamado em ` +
+          `${RESUMO}.`,
+      );
+    }
+    // Ausência ESCRITA, não omitida: a linha aparece dizendo "nenhum". Uma lista
+    // que encolhe não chama atenção; uma linha que diz "Traje: nenhum" chama.
+    if (!resumo.includes("summaryNone")) {
+      failures.push(
+        `gerar: o resumo deixou de escrever a ausência — \`summaryNone\` não aparece em ${RESUMO}. ` +
+          "Campo vazio tem de virar a palavra \"nenhum\" numa linha visível, e não uma linha a menos.",
+      );
+    }
+  }
+
+  if (gerar) {
+    if (!gerar.includes("<GenerationSummary wizard={wizard} />")) {
+      failures.push(
+        `gerar: o resumo do que vai ser enviado não é mostrado — \`<GenerationSummary>\` não é ` +
+          `renderizado em ${GERAR}. O componente pode continuar perfeito no repositório e a tela ` +
+          "continuar calada, que é o estado em que os dois vídeos saíram.",
+      );
+    } else {
+      // ANTES do botão, e é o ponto todo: um resumo abaixo do botão informa o
+      // preço depois da compra.
+      const iResumo = gerar.indexOf("<GenerationSummary");
+      const iBotao = gerar.indexOf("onClick={handleGenerate}");
+      if (iBotao >= 0 && iResumo > iBotao) {
+        failures.push(
+          "gerar: o resumo aparece DEPOIS do botão de gerar. Conferir o que vai ser enviado só serve " +
+            "antes de enviar; abaixo do botão ele vira recibo.",
+        );
+      }
+    }
+  }
+
+  // --------------------------------------------------------------- 2 -------
+  const wizard = await ler(repoRoot, WIZARD, failures);
+  const passo1 = await ler(repoRoot, PASSO1, failures);
+
+  if (wizard) {
+    if (!/step === 0 &&[^)]*!outfitPreparing/.test(wizard)) {
+      failures.push(
+        "passo 1: o Avançar não trava com traje em preparo — a condição do passo 0 em " +
+          `${WIZARD} não olha \`outfitPreparing\`. O traje já foi cobrado (60 un, US$ 1,00 medidos) e ` +
+          "ainda não está no seletor da Cena: avançar agora leva direto a gerar um vídeo sem ele, e " +
+          "são dois prejuízos no mesmo clique — o traje que não chegou e a geração a refazer.",
+      );
+    }
+    if (!wizard.includes("blocked.outfitPreparing")) {
+      failures.push(
+        "passo 1: o botão trava por traje em preparo e não diz por quê. Um botão que apaga por causa " +
+          "de algo acontecendo em outro bloco da mesma tela é indistinguível de tela quebrada.",
+      );
+    }
+  }
+
+  if (passo1) {
+    // A condição precisa filtrar por `processing` NESTA linha. Procurar a
+    // expressão solta no arquivo não serve: ela também aparece na lista de
+    // pendências logo abaixo, e a guarda passaria verde com a trava cega.
+    if (!/const outfitPreparing =[^\n]*p\.status === "processing"/.test(passo1)) {
+      failures.push(
+        "passo 1: a trava do Avançar deixou de distinguir preparo de falha — a condição em " +
+          `${PASSO1} não filtra \`status === "processing"\`. \`failed\` é terminal: travar por ele ` +
+          "prende a pessoa no passo 1 sem saída, e a única forma de sair seria criar outro traje, " +
+          "gastando mais US$ 1,00.",
+      );
+    }
+    if (!passo1.includes("onOutfitPreparingChange")) {
+      failures.push(
+        `passo 1: o estado do traje deixou de subir para quem monta o Avançar — ` +
+          `\`onOutfitPreparingChange\` sumiu de ${PASSO1}.`,
+      );
+    }
+
+    // ------------------------------------------------------------- 3 -------
+    for (const [origem, oQueE] of [
+      ["defaults.scenarioName", "o cenário"],
+      ["lookImageName", "a imagem do traje"],
+    ] as const) {
+      const usa = new RegExp(
+        `${origem.replace(".", "\\.")}\\s*\\?\\s*t\\("createVideo\\.avatarSetup\\.imageSavedNamed"`,
+      );
+      if (!usa.test(passo1)) {
+        failures.push(
+          `passo 1: ${oQueE} já salvo não aparece pelo nome — \`${origem}\` não alimenta ` +
+            `\`imageSavedNamed\` em ${PASSO1}. O campo de arquivo volta vazio a cada remontagem (o ` +
+            "navegador não repõe arquivo escolhido, por segurança) e o armazenamento renomeia para " +
+            "`<uuid>.<ext>`, então sem o nome guardado à parte a tela diz \"nenhum ficheiro\" sobre uma " +
+            "imagem que está salva e em uso.",
+        );
+      }
+    }
+    if (!passo1.includes("scenarioName: file.name")) {
+      failures.push(
+        `passo 1: o nome do arquivo deixou de ser guardado no upload — \`scenarioName: file.name\` ` +
+          `sumiu de ${PASSO1}. É a única cópia do nome original que sobrevive.`,
+      );
+    }
+  }
+
+  // --------------------------------------------------------------- i18n ----
+  //
+  // Chave sem tradução vira o próprio nome da chave na tela — e num resumo de
+  // conferência isso é pior que não ter resumo: seis linhas de `createVideo.
+  // generate.summary.avatar` não são conferíveis por ninguém.
+  const CHAVES: { caminho: string[]; nome: string }[] = [
+    ...CAMPOS.map((c) => ({ caminho: ["createVideo", "generate", "summary", c.chave], nome: c.chave })),
+    { caminho: ["createVideo", "generate", "summaryTitle"], nome: "summaryTitle" },
+    { caminho: ["createVideo", "generate", "summaryNone"], nome: "summaryNone" },
+    { caminho: ["createVideo", "blocked", "outfitPreparing"], nome: "blocked.outfitPreparing" },
+    { caminho: ["createVideo", "avatarSetup", "imageSavedNamed"], nome: "imageSavedNamed" },
+  ];
+  for (const idioma of ["pt-BR", "en"]) {
+    const arquivo = `frontend/src/locales/${idioma}.json`;
+    const texto = await ler(repoRoot, arquivo, failures);
+    if (!texto) continue;
+    let dict: unknown;
+    try {
+      dict = JSON.parse(texto);
+    } catch (err) {
+      failures.push(`pré-voo: ${arquivo} não é JSON válido (${err instanceof Error ? err.message : err}).`);
+      continue;
+    }
+    for (const c of CHAVES) {
+      let no: unknown = dict;
+      for (const seg of c.caminho) {
+        no = typeof no === "object" && no !== null ? (no as Record<string, unknown>)[seg] : undefined;
+      }
+      if (typeof no !== "string" || no.length === 0) {
+        failures.push(
+          `pré-voo: \`${c.caminho.join(".")}\` não existe em ${idioma}.json. A tela mostraria o nome da ` +
+            "chave no lugar do texto.",
+        );
+      }
+    }
+  }
+
+  if (failures.length === 0) {
+    notes.push(
+      `  gerar: os ${CAMPOS.length} campos do resumo são derivados do corpo de POST /videos e aparecem ` +
+        "acima do botão, com a ausência escrita como \"nenhum\"",
+    );
+    notes.push(
+      "  passo 1: traje em preparo trava o Avançar e diz por quê; traje falho não trava; o arquivo já " +
+        "salvo aparece pelo nome nos dois campos",
+    );
+  }
+
+  return { failures, notes };
+}

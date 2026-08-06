@@ -494,6 +494,7 @@
       "uploadImageLabel": "Upload reference image",
       "generateViaAiLabel": "Generate via AI",
       "imageSaved": "Image saved.",
+      "imageSavedNamed": "Image saved: {{name}}. The field above comes back empty on every visit — browsers do not restore a chosen file.",
       "finishSetup": "Finish setup",
       "background": {
         "label": "Virtual background",
@@ -603,6 +604,16 @@
     },
     "generate": {
       "title": "Generate & review",
+      "summaryTitle": "What will be sent",
+      "summaryNone": "none",
+      "summary": {
+        "avatar": "Avatar",
+        "outfit": "Outfit",
+        "background": "Background",
+        "motionPrompt": "Direction",
+        "expressiveness": "Expressiveness",
+        "format": "Format"
+      },
       "generateButton": "Generate video",
       "submitting": "Submitting…",
       "download": "Download",
@@ -616,7 +627,8 @@
     },
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",
-      "writeScript": "Write the script to continue."
+      "writeScript": "Write the script to continue.",
+      "outfitPreparing": "Wait for the outfit to finish being prepared. It has already been charged and only shows up in the Scene selector once it's ready — moving on now would generate the video without it."
     },
     "voiceSample": {
       "title": "Avatar voice",

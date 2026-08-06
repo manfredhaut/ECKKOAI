@@ -494,6 +494,7 @@
       "uploadImageLabel": "Enviar imagem de referência",
       "generateViaAiLabel": "Gerar via IA",
       "imageSaved": "Imagem salva.",
+      "imageSavedNamed": "Imagem salva: {{name}}. O campo acima volta vazio a cada visita — o navegador não repõe arquivo escolhido.",
       "finishSetup": "Concluir configuração",
       "background": {
         "label": "Fundo virtual",
@@ -603,6 +604,16 @@
     },
     "generate": {
       "title": "Gerar e revisar",
+      "summaryTitle": "O que vai ser enviado",
+      "summaryNone": "nenhum",
+      "summary": {
+        "avatar": "Avatar",
+        "outfit": "Traje",
+        "background": "Fundo",
+        "motionPrompt": "Interpretação",
+        "expressiveness": "Expressividade",
+        "format": "Formato"
+      },
       "generateButton": "Gerar vídeo",
       "submitting": "Enviando…",
       "download": "Baixar",
@@ -616,7 +627,8 @@
     },
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",
-      "writeScript": "Escreva o roteiro para continuar."
+      "writeScript": "Escreva o roteiro para continuar.",
+      "outfitPreparing": "Aguarde o traje terminar de ser preparado. Ele já foi cobrado e só aparece no seletor da Cena quando ficar pronto — avançar agora geraria o vídeo sem ele."
     },
     "voiceSample": {
       "title": "Voz do avatar",

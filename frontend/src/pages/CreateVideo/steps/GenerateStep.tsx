@@ -7,6 +7,7 @@ import { StatusPill } from "../../../components/ui/StatusPill";
 import type { WizardState } from "../types";
 import { VideoPlayer } from "../../../features/VideoPlayer";
 import { VideoCostPanel } from "../VideoCostPanel";
+import { GenerationSummary } from "../GenerationSummary";
 
 /**
  * O corpo de `POST /videos`, montado num lugar só.
@@ -158,6 +159,12 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
 
       {!video ? (
         <>
+          {/* ACIMA DO BOTÃO, e é o único lugar em que faz diferença.
+              Dois vídeos pagos saíram com campos vazios sem que desse para
+              perceber antes de clicar — o corpo era válido, o fornecedor
+              respondeu 200, e a ausência só apareceu no vídeo pronto. O resumo
+              é derivado do MESMO objeto que vai no POST. */}
+          <GenerationSummary wizard={wizard} />
           <button
             className="btn btn-primary"
             onClick={handleGenerate}

@@ -45,12 +45,23 @@ export function AvatarSetupStep({
   onSelectAvatar,
   defaults,
   onDefaultsChange,
+  onOutfitPreparingChange,
   nextButton,
 }: {
   selectedAvatarId: string | null;
   onSelectAvatar: (id: string | null) => void;
   defaults: AssetDefaults;
   onDefaultsChange: (defaults: AssetDefaults) => void;
+  /**
+   * Avisa o pai de que existe traje EM PREPARO neste avatar.
+   *
+   * Quem monta o `Avançar` é o `CreateVideoPage`, e o estado do traje mora
+   * aqui — então o dado sobe em vez de a decisão descer. O valor é derivado da
+   * lista que veio do SERVIDOR (`pendentes[].status`), nunca recalculado no
+   * cliente: é a mesma disciplina que o predicado único de prontidão fechou, em
+   * que o botão conhecia três condições e a rota recusava por sete.
+   */
+  onOutfitPreparingChange?: (preparing: boolean) => void;
   // Rendered by the parent (CreateVideoPage owns goNext/canProceed) — this
   // step is the one place the wizard's "next" button moves inline instead
   // of sitting in the shared footer, so the element is built once by the
@@ -77,6 +88,9 @@ export function AvatarSetupStep({
   const [lookName, setLookName] = useState("");
   const [lookPrompt, setLookPrompt] = useState("");
   const [lookImageUrl, setLookImageUrl] = useState<string | null>(null);
+  // Ver `AssetDefaults.scenarioName`: o nome do arquivo não sobrevive nem na
+  // URL (o armazenamento renomeia para `<uuid>.<ext>`) nem no campo de arquivo.
+  const [lookImageName, setLookImageName] = useState<string | null>(null);
   const [lookSaving, setLookSaving] = useState(false);
   const [lookMessage, setLookMessage] = useState<string | null>(null);
   const [lookError, setLookError] = useState(false);
@@ -97,6 +111,25 @@ export function AvatarSetupStep({
   useEffect(() => {
     refreshAvatars();
   }, []);
+
+  /**
+   * O TRAJE EM PREPARO TRAVA O AVANÇAR — e `failed` não trava.
+   *
+   * Por que travar, se o aviso de prontidão do avatar deliberadamente NÃO trava:
+   * lá a pendência é do avatar e quem explora pode legitimamente querer ver as
+   * telas seguintes. Aqui o traje é transitório e já foi COBRADO. Passar
+   * adiante enquanto ele está sendo preparado leva ao passo Cena com o seletor
+   * ainda sem ele — e o caminho natural dali é gerar o vídeo sem o traje. São
+   * dois prejuízos no mesmo clique: US$ 1,00 de traje que não chegou ao vídeo e
+   * uma geração que vai precisar ser refeita.
+   *
+   * `failed` fica de fora de propósito: um traje que falhou não está vindo, e
+   * travar por ele prenderia a pessoa no passo 1 sem saída nenhuma.
+   */
+  const outfitPreparing = (lookInfo?.pendentes ?? []).some((p) => p.status === "processing");
+  useEffect(() => {
+    onOutfitPreparingChange?.(outfitPreparing);
+  }, [outfitPreparing, onOutfitPreparingChange]);
 
   useEffect(() => {
     const option = BACKGROUND_OPTIONS.find((o) => o.id === backgroundId);
@@ -313,12 +346,20 @@ export function AvatarSetupStep({
 
   async function handleAssetUpload(kind: "scenario" | "outfit", file: File) {
     const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
-    onDefaultsChange({ ...defaults, [kind]: url });
+    // O nome vai junto porque é a única cópia dele que sobrevive: o
+    // armazenamento renomeia para `<uuid>.<ext>` (medido em `uploads/`) e o
+    // `<input type="file">` volta vazio a cada remontagem do passo.
+    onDefaultsChange({
+      ...defaults,
+      [kind]: url,
+      ...(kind === "scenario" ? { scenarioName: file.name } : {}),
+    });
   }
 
   async function handleLookImage(file: File) {
     const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
     setLookImageUrl(url);
+    setLookImageName(file.name);
   }
 
   /**
@@ -539,7 +580,9 @@ export function AvatarSetupStep({
               </Field>
               {lookImageUrl && (
                 <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
-                  {t("createVideo.avatarSetup.imageSaved")}
+                  {lookImageName
+                    ? t("createVideo.avatarSetup.imageSavedNamed", { name: lookImageName })
+                    : t("createVideo.avatarSetup.imageSaved")}
                 </p>
               )}
               <Field
@@ -993,7 +1036,9 @@ export function AvatarSetupStep({
               </Field>
               {defaults.scenario && (
                 <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
-                  {t("createVideo.avatarSetup.imageSaved")}
+                  {defaults.scenarioName
+                    ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
+                    : t("createVideo.avatarSetup.imageSaved")}
                 </p>
               )}
               <Field

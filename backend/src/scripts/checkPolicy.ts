@@ -52,6 +52,7 @@ import { checkSpendControlPolicy } from "./checkSpendControlPolicy.js";
 import { checkRehearsalCreditPolicy } from "./checkRehearsalCreditPolicy.js";
 import { checkOutfitPolicy } from "./checkOutfitPolicy.js";
 import { checkLegacyEndpointPolicy } from "./checkLegacyEndpointPolicy.js";
+import { checkPreflightSummaryPolicy } from "./checkPreflightSummaryPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -556,6 +557,11 @@ async function main(): Promise<void> {
   const legacy = await checkLegacyEndpointPolicy(process.env.REPO_ROOT ?? "/repo");
   legacy.failures.forEach((f) => failures.push(f));
   legacy.notes.forEach((n) => note(n));
+
+  // --- 25d-ter. a última tela antes de gastar diz o que vai ser enviado ----
+  const preflight = await checkPreflightSummaryPolicy(process.env.REPO_ROOT ?? "/repo");
+  preflight.failures.forEach((f) => failures.push(f));
+  preflight.notes.forEach((n) => note(n));
 
   // --- 25e. o corpo e o header de POST /v3/videos batem com o contrato -----
   const videoContract = await checkVideoContractPolicy();

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { AvatarSetupStep } from "./steps/AvatarSetupStep";
@@ -45,6 +45,7 @@ export function CreateVideoPage() {
    */
   const [defaults, setDefaults] = useState<AssetDefaults>({
     scenario: "",
+    scenarioName: "",
     outfit: "",
     scenarioPrompt: "",
     outfitPrompt: "",
@@ -61,6 +62,16 @@ export function CreateVideoPage() {
     publishPlatform: DEFAULT_PUBLISH_PLATFORM,
   });
 
+  /**
+   * Há traje sendo preparado no avatar do passo 1?
+   *
+   * Sobe do `AvatarSetupStep` porque o `Avançar` é montado aqui e o estado do
+   * traje mora lá. `useCallback` para o efeito que avisa não disparar a cada
+   * render do pai.
+   */
+  const [outfitPreparing, setOutfitPreparing] = useState(false);
+  const handleOutfitPreparingChange = useCallback((p: boolean) => setOutfitPreparing(p), []);
+
   function goNext() {
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   }
@@ -70,7 +81,12 @@ export function CreateVideoPage() {
   }
 
   const canProceed =
-    (step === 0 && wizard.avatarId !== null) ||
+    // O traje em preparo trava o passo 1, e é a única trava que não é sobre
+    // preenchimento: ele JÁ FOI COBRADO (60 un, US$ 1,00 medidos) e ainda não
+    // está no seletor da Cena. Avançar agora leva direto a gerar um vídeo sem
+    // ele — dois prejuízos no mesmo clique, o traje que não chegou e a geração
+    // que vai ter de ser refeita.
+    (step === 0 && wizard.avatarId !== null && !outfitPreparing) ||
     (step === 1 && wizard.script.trim().length > 0) ||
     // Cena nunca trava: todos os controles dela são opcionais, e nenhum campo
     // vazio vai para o payload.
@@ -81,12 +97,16 @@ export function CreateVideoPage() {
    *
    * Um botão cinza sem explicação obriga a adivinhar — e nos dois passos que
    * travam a condição não é óbvia: no 1 dá para ter cinco avatares salvos e
-   * nenhum selecionado, e no 2 dá para ter digitado só espaços.
+   * nenhum selecionado, e no 2 dá para ter digitado só espaços. No caso do
+   * traje é pior: o botão apagaria por causa de algo que está acontecendo em
+   * outro bloco da mesma tela, e sem a frase a pessoa concluiria que travou.
    */
   const blockedReason = canProceed
     ? null
     : step === 0
-      ? t("createVideo.blocked.selectAvatar")
+      ? outfitPreparing
+        ? t("createVideo.blocked.outfitPreparing")
+        : t("createVideo.blocked.selectAvatar")
       : step === 1
         ? t("createVideo.blocked.writeScript")
         : null;
@@ -109,6 +129,7 @@ export function CreateVideoPage() {
           onSelectAvatar={(id) => setWizard((w) => ({ ...w, avatarId: id }))}
           defaults={defaults}
           onDefaultsChange={setDefaults}
+          onOutfitPreparingChange={handleOutfitPreparingChange}
           nextButton={
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <button className="btn btn-primary" onClick={goNext} disabled={!canProceed}>
