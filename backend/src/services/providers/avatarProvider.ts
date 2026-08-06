@@ -35,7 +35,23 @@ import {
 } from "./fixtureProvider.js";
 import { logEvent } from "../log/safeLog.js";
 
-export class AvatarProviderError extends Error {}
+/**
+ * `httpStatus` existe porque havia UMA pergunta que só o código HTTP responde e
+ * que a mensagem não respondia: "o fornecedor recusou, ou o fornecedor disse que
+ * isto não existe?". Quem só tem a string acaba procurando "(404)" dentro dela,
+ * e aí um corpo de erro que por acaso contenha esses caracteres decide o fluxo.
+ *
+ * Medido em 06/08: um traje pago responde 404 em quatro rotas diferentes depois
+ * de ter existido. Sem distinguir esse 404 de uma indisponibilidade qualquer, o
+ * traje fica "em preparo" para sempre — ver `readAvatarLookStatus`.
+ */
+export class AvatarProviderError extends Error {
+  readonly httpStatus?: number;
+  constructor(message: string, httpStatus?: number) {
+    super(message);
+    this.httpStatus = httpStatus;
+  }
+}
 
 export interface TrainAvatarInput {
   apiKey: string;
@@ -241,7 +257,7 @@ async function fetchJson(res: Response, providerLabel: string, context: string):
   logVendorResponse({ context, vendor: providerLabel, status: res.status, res, rawBody });
 
   if (!res.ok) {
-    throw new AvatarProviderError(`${providerLabel} API error (${res.status}): ${rawBody}`);
+    throw new AvatarProviderError(`${providerLabel} API error (${res.status}): ${rawBody}`, res.status);
   }
   try {
     return JSON.parse(rawBody);
@@ -915,12 +931,19 @@ export async function checkAvatarConnection(apiKey: string, vendor: AvatarVendor
  * O caminho no fornecedor tem DOIS saltos, e o primeiro é o que não é óbvio:
  * o id que guardamos é o do LOOK, e a listagem é por GRUPO. Medido em 05/08:
  * `GET /v3/avatars/{look_id}` responde 404 com "Avatar group … not found" —
- * aquela rota espera group id. O grupo sai de `GET /v2/photo_avatar/{look_id}`.
+ * aquela rota espera group id.
  *
- * O endpoint de listagem é v2 e tem SUNSET declarado pelo fornecedor para
- * 2026-10-31, com o aviso mandando migrar para `/v3/avatar_groups`. Essa rota
- * v3 responde **404 nesta chave** (sondada em 05/08), então migrar agora
- * trocaria algo que funciona por algo que não existe. É dívida com data.
+ * MIGRADO PARA v3 EM 06/08, e a rota de listagem foi ACHADA sondando. O que
+ * estava registrado aqui — "a v3 responde 404 nesta chave, migrar trocaria algo
+ * que funciona por algo que não existe" — vinha de ter sondado
+ * `/v3/avatar_groups/{g}`. Sondadas as quatro formas plausíveis, três devolvem
+ * 404 de roteador e **`GET /v3/avatars/looks?group_id={g}` responde 200**, com
+ * um corpo mais rico que o do v2 (`preview_image_url`, `status`,
+ * `preferred_orientation`, dimensões e `supported_api_engines`).
+ *
+ * O prazo era real e continua: o corpo de toda resposta v2 traz `warning` de
+ * remoção em **2026-10-31**. O inventário do que ainda fala v2 está em
+ * `legacyEndpoints.ts`, e uma guarda impede que entre um novo sem ser notado.
  *
  * Falha NÃO derruba nada: devolve lista vazia, e a tela mostra o seletor
  * desabilitado — que é o mesmo estado de quem tem um look só.
@@ -1006,18 +1029,56 @@ export async function createAvatarLook(input: {
 }
 
 /**
+ * O que uma consulta de estado de traje pode devolver.
+ *
+ * `vanished` é o estado que faltava, e a falta dele prendeu um traje pago em
+ * "em preparo" para sempre. Não é "não consegui perguntar" — é o fornecedor
+ * respondendo, com todas as letras, que este look NÃO EXISTE nele.
+ */
+export type LookStatusOutcome =
+  | { status: "processing" | "completed" | "failed"; previewImageUrl: string | null }
+  | { status: "vanished"; previewImageUrl: null };
+
+/**
  * O estado de um look no fornecedor. Sem `withLiveBudget`: consultar é GET e
  * não é tarifado — medido, a quota não se moveu em nenhuma das consultas.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ESTA FUNÇÃO MUDOU DE ENDPOINT **E** DE VOCABULÁRIO
+ *
+ * Ela perguntava em `GET /v2/photo_avatar/{id}` o estado de um look nascido em
+ * `POST /v3/avatars`, e o sintoma era um traje pago preso em "em preparo".
+ *
+ * A hipótese natural — "endpoint da família errada, todo id v3 dá 404" — foi
+ * MEDIDA em 06/08 e REFUTADA: o v2 lê um look v3 com 200. O Jaleco branco
+ * (`800e04f0…`), criado por `POST /v3/avatars`, responde 200 no v2 com status,
+ * grupo e nome. Trocar de endpoint, sozinho, não consertaria nada.
+ *
+ * O 404 medido é de um id só, o "TRAJE CASUAL" (`1fa904f6…`), e ele responde
+ * 404 nas QUATRO rotas sondadas — duas v2, duas v3 — e não aparece na listagem
+ * do grupo em nenhuma família. O grupo trazia `looks_count: 2` na resposta da
+ * criação e hoje lista 1. O look foi criado, cobrado, e sumiu.
+ *
+ * O defeito, então, é NOSSO e é de vocabulário: o `catch` transformava
+ * "o fornecedor diz que isto não existe" em `processing`, que é o único estado
+ * de onde não se sai. Sete consultas, sete 404, sete vezes "continua em
+ * preparo". Agora esse caso tem nome — `vanished` — e quem decide o que fazer
+ * com ele é `reconciliarPendentes`, que tem a idade da linha e pode esperar.
+ *
+ * A migração para v3 fica, mas pelo motivo dela: o próprio corpo das respostas
+ * v2 traz `warning` de remoção em **2026-10-31**. É dívida com prazo, e o
+ * inventário dela está em `legacyEndpoints.ts`.
+ * ---------------------------------------------------------------------------
  */
 export async function readAvatarLookStatus(
   apiKey: string,
   vendor: AvatarVendor,
   providerLookId: string,
-): Promise<{ status: "processing" | "completed" | "failed"; previewImageUrl: string | null }> {
+): Promise<LookStatusOutcome> {
   if (isFixtureMode()) return readAvatarLookStatusFixture(providerLookId);
   if (vendor === "did") return { status: "completed", previewImageUrl: null };
   try {
-    const res = await fetch(`${HEYGEN_BASE}/v2/photo_avatar/${encodeURIComponent(providerLookId)}`, {
+    const res = await fetch(`${HEYGEN_BASE}/v3/avatars/looks/${encodeURIComponent(providerLookId)}`, {
       headers: { "x-api-key": apiKey },
     });
     const data = await fetchJson(res, "HeyGen", "heygen.lookStatus");
@@ -1026,9 +1087,26 @@ export async function readAvatarLookStatus(
       // Desconhecido conta como `processing`, e nunca como `failed`: marcar
       // falha apagaria da tela um traje que foi PAGO e pode estar pronto.
       status: bruto === "completed" ? "completed" : bruto === "failed" ? "failed" : "processing",
-      previewImageUrl: typeof data?.data?.image_url === "string" ? data.data.image_url : null,
+      previewImageUrl:
+        typeof data?.data?.preview_image_url === "string"
+          ? data.data.preview_image_url
+          : typeof data?.data?.image_url === "string"
+            ? data.data.image_url
+            : null,
     };
   } catch (err) {
+    // 404 é RESPOSTA, não indisponibilidade. Só ele vira `vanished`; timeout,
+    // 5xx e chave recusada continuam sendo `processing`, porque a pergunta não
+    // chegou a ser respondida e desistir do traje seria desistir por conta
+    // própria de um dólar que já saiu.
+    if (err instanceof AvatarProviderError && err.httpStatus === 404) {
+      logEvent("error", "look_vanished_at_vendor", {
+        context: "heygen.lookStatus",
+        detail: err.message.slice(0, 300),
+        consequence: "o traje pago não existe mais no fornecedor; a linha vai para failed depois da carência",
+      });
+      return { status: "vanished", previewImageUrl: null };
+    }
     logEvent("error", "look_status_unreadable", {
       context: "heygen.lookStatus",
       detail: err instanceof Error ? err.message : String(err),
@@ -1046,25 +1124,46 @@ export async function listAvatarLooks(
   if (isFixtureMode()) return listAvatarLooksFixture(providerAvatarId);
   if (vendor === "did") return [];
   try {
-    const pa = await fetch(`${HEYGEN_BASE}/v2/photo_avatar/${encodeURIComponent(providerAvatarId)}`, {
+    // SALTO 1 — o id que guardamos é de um LOOK, e a listagem é por GRUPO.
+    // O grupo saía de `GET /v2/photo_avatar/{id}`; agora sai do equivalente v3,
+    // que devolve o mesmo `group_id` (conferido nos dois avatares base e no
+    // Jaleco: 21812e52…, e1071cee… e 21812e52… nas duas famílias).
+    const pa = await fetch(`${HEYGEN_BASE}/v3/avatars/looks/${encodeURIComponent(providerAvatarId)}`, {
       headers: { "x-api-key": apiKey },
     });
     const paData = await fetchJson(pa, "HeyGen", "heygen.photoAvatar");
     const groupId: string | undefined = paData?.data?.group_id;
     if (!groupId) return [];
 
-    const res = await fetch(`${HEYGEN_BASE}/v2/avatar_group/${encodeURIComponent(groupId)}/avatars`, {
-      headers: { "x-api-key": apiKey },
-    });
+    // SALTO 2 — a listagem por grupo. O caminho é QUERY, não segmento: das
+    // quatro formas sondadas em 06/08, `/v3/avatars/{g}/looks`,
+    // `/v3/avatar_groups/{g}/looks` e `/v3/avatar_groups/{g}/avatars` devolvem
+    // 404 de roteador (HTML, nem JSON), e só esta responde 200.
+    //
+    // A resposta v3 é um ARRAY em `data`, não `data.avatar_list` como no v2 —
+    // ler a forma antiga daria lista vazia em silêncio, que na tela é
+    // indistinguível de "este avatar tem um traje só".
+    const res = await fetch(
+      `${HEYGEN_BASE}/v3/avatars/looks?group_id=${encodeURIComponent(groupId)}`,
+      { headers: { "x-api-key": apiKey } },
+    );
     const data = await fetchJson(res, "HeyGen", "heygen.listLooks");
-    const lista: unknown = data?.data?.avatar_list;
+    const lista: unknown = data?.data;
     if (!Array.isArray(lista)) return [];
     return lista
       .filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null)
       .map((x) => ({
         id: String(x.id ?? ""),
         name: String(x.name ?? ""),
-        previewImageUrl: typeof x.image_url === "string" ? x.image_url : null,
+        // O v3 chama de `preview_image_url` o que o v2 chamava de `image_url`.
+        // O v2 fica no `??` porque um nome só custa uma linha e a ausência de
+        // prévia é um card cinza sem explicação.
+        previewImageUrl:
+          typeof x.preview_image_url === "string"
+            ? x.preview_image_url
+            : typeof x.image_url === "string"
+              ? x.image_url
+              : null,
       }))
       .filter((l) => l.id.length > 0);
   } catch (err) {

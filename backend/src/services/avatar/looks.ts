@@ -230,7 +230,24 @@ interface AvatarLookRow {
   name: string;
   preview_image_url: string | null;
   status: "processing" | "completed" | "failed";
+  created_at: Date | string;
 }
+
+/**
+ * Quanto tempo um traje pode ser desconhecido do fornecedor antes de a gente
+ * aceitar que ele não vai voltar.
+ *
+ * Existe porque um 404 sozinho é AMBÍGUO: pode ser "sumiu" ou "ainda não
+ * apareceu". As duas conclusões medidas em 06/08 foram 15 s e 50 s, e a tela
+ * espera 240 s. Dez minutos são 12× a conclusão mais lenta observada e 2,5× a
+ * janela da tela — margem suficiente para que a carência nunca seja o motivo de
+ * um traje bom virar `failed`.
+ *
+ * Errar para o lado curto marcaria como falho um traje pago que estava vindo.
+ * Errar para o lado longo só adia um rótulo: o traje continua na tela como
+ * pendente enquanto isso, e ninguém consegue escolhê-lo de qualquer forma.
+ */
+const LOOK_VANISHED_GRACE_MS = 600_000;
 
 /** Um traje ainda em preparo, para a tela poder mostrar andamento. */
 export interface LookPendente {
@@ -262,8 +279,43 @@ async function reconciliarPendentes(
   const pendentes = linhas.filter((l) => l.status === "processing" && l.provider_look_id);
   if (pendentes.length === 0) return;
 
+  const agora = Date.now();
   for (const linha of pendentes) {
-    const atual = await readAvatarLookStatus(apiKey, vendor, linha.provider_look_id as string);
+    const bruto = await readAvatarLookStatus(apiKey, vendor, linha.provider_look_id as string);
+
+    // -------------------------------------------------------------------------
+    // O TRAJE QUE O FORNECEDOR NÃO CONHECE MAIS.
+    //
+    // Medido em 06/08: o "TRAJE CASUAL" (`1fa904f6…`) foi criado com 200, o
+    // grupo passou a declarar `looks_count: 2`, e depois disso ele responde 404
+    // em quatro rotas — duas v2 e duas v3 — e não aparece na listagem do grupo
+    // em nenhuma família. O grupo voltou a listar 1.
+    //
+    // Antes daqui, esse 404 virava `processing` no `catch`, e `processing` é o
+    // único estado de onde não se sai sozinho: sete consultas, sete 404, sete
+    // vezes "continua em preparo". A cada abertura da tela o produto perguntava
+    // de novo, para sempre, por um traje que o fornecedor já tinha esquecido.
+    //
+    // A carência existe porque o 404 é ambíguo perto do nascimento — ver
+    // `LOOK_VANISHED_GRACE_MS`. Passada ela, o rótulo é `failed`, que nesta
+    // tabela significa terminal e VISÍVEL: o traje foi pago, e migration 045 já
+    // decidiu que dinheiro gasto não some da tela em silêncio.
+    // -------------------------------------------------------------------------
+    let atual: { status: "processing" | "completed" | "failed"; previewImageUrl: string | null };
+    if (bruto.status === "vanished") {
+      const idade = agora - new Date(linha.created_at).getTime();
+      if (idade < LOOK_VANISHED_GRACE_MS) continue;
+      logEvent("error", "look_given_up", {
+        context: "avatar.listarLooks",
+        avatarId,
+        detail: `traje sem resposta no fornecedor há ${Math.round(idade / 1000)} s`,
+        consequence: "a linha passa a failed e para de ser consultada; o custo já foi debitado",
+      });
+      atual = { status: "failed", previewImageUrl: null };
+    } else {
+      atual = bruto;
+    }
+
     if (atual.status === "processing") continue;
     await pool.query(
       `UPDATE avatar_looks SET status = $3, preview_image_url = COALESCE($4, preview_image_url)
@@ -295,7 +347,7 @@ export async function listarLooks(
   credencial?: { apiKey: string; vendor: AvatarVendor },
 ): Promise<{ looks: AvatarLook[]; pendentes: LookPendente[] }> {
   const { rows } = await pool.query<AvatarLookRow>(
-    `SELECT id, provider_look_id, name, preview_image_url, status FROM avatar_looks
+    `SELECT id, provider_look_id, name, preview_image_url, status, created_at FROM avatar_looks
       WHERE tenant_id = $1 AND avatar_id = $2 ORDER BY created_at ASC`,
     [tenantId, avatarId],
   );

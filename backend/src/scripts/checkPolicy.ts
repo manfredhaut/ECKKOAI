@@ -51,6 +51,7 @@ import { checkCloneSampleFormatPolicy } from "./checkCloneSampleFormatPolicy.js"
 import { checkSpendControlPolicy } from "./checkSpendControlPolicy.js";
 import { checkRehearsalCreditPolicy } from "./checkRehearsalCreditPolicy.js";
 import { checkOutfitPolicy } from "./checkOutfitPolicy.js";
+import { checkLegacyEndpointPolicy } from "./checkLegacyEndpointPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -547,6 +548,14 @@ async function main(): Promise<void> {
   const outfit = await checkOutfitPolicy(process.env.REPO_ROOT ?? "/repo");
   outfit.failures.forEach((f) => failures.push(f));
   outfit.notes.forEach((n) => note(n));
+
+  // --- 25d-bis. a dívida com prazo é inventariada, e o traje sumido acaba ---
+  //
+  // Junto da 25d porque é a mesma tabela e o mesmo dinheiro, e depois dela
+  // porque também troca `pool.query` por um duplo — restaura no `finally`.
+  const legacy = await checkLegacyEndpointPolicy(process.env.REPO_ROOT ?? "/repo");
+  legacy.failures.forEach((f) => failures.push(f));
+  legacy.notes.forEach((n) => note(n));
 
   // --- 25e. o corpo e o header de POST /v3/videos batem com o contrato -----
   const videoContract = await checkVideoContractPolicy();
