@@ -181,10 +181,17 @@ export async function checkPreflightSummaryPolicy(
       }
     }
 
-    if (!resumo.includes("corpoDaGeracao(wizard)")) {
+    // A ATRIBUIÇÃO, e não a menção. Procurar `corpoDaGeracao(wizard)` solto no
+    // arquivo dava verde com a chamada removida: o cabeçalho do próprio módulo
+    // cita a expressão para explicar por que ela existe, e a guarda lia o
+    // comentário como se fosse o código. É a armadilha já registrada duas vezes
+    // neste diretório — guarda tropeçando no texto escrito para descrevê-la — e
+    // aqui ela custou um mutante inerte.
+    if (!/const corpo = corpoDaGeracao\(wizard\);/.test(resumo)) {
       failures.push(
-        `gerar: o resumo deixou de ser derivado do corpo — \`corpoDaGeracao(wizard)\` não é chamado em ` +
-          `${RESUMO}.`,
+        `gerar: o resumo deixou de ser derivado do corpo — \`const corpo = corpoDaGeracao(wizard)\` não ` +
+          `está em ${RESUMO}. Montar o resumo a partir do wizard mostraria o que a pessoa escolheu; o ` +
+          "defeito que ele existe para pegar é escolha que não chega ao corpo, e aí os dois discordam.",
       );
     }
     // Ausência ESCRITA, não omitida: a linha aparece dizendo "nenhum". Uma lista
