@@ -63,6 +63,34 @@ export const MUTANTS: Mutant[] = [
     expect: 'serviço "backend" está sem healthcheck',
   },
   // --- credencial de desenvolvimento ---------------------------------------
+  // --- compose: a variável lida chega mesmo ao container -------------------
+  {
+    guard: "ambiente: variável lida chega ao container",
+    name: "uma variável nova é lida sem ser repassada",
+    kind: "esperto",
+    // O caso de quem renomeia a variável no código e esquece do compose. Nada
+    // quebra: o `?? padrão` absorve a ausência e o produto continua
+    // funcionando com o valor de fábrica. O sintoma só aparece no dia em que
+    // alguém preencher a variável no `.env` e ela não fizer efeito nenhum —
+    // que foi como `DAILY_PAID_GENERATION_LIMIT` e `DNS_PROVIDER` passaram
+    // despercebidas.
+    file: "backend/src/services/providers/voiceProvider.ts",
+    find: 'export const ELEVENLABS_TTS_MODEL = process.env.ELEVENLABS_TTS_MODEL?.trim()',
+    replace: 'export const ELEVENLABS_TTS_MODEL = process.env.ELEVENLABS_TTS_MODEL_V2?.trim()',
+    expect: "`ELEVENLABS_TTS_MODEL_V2` é lida pelo código",
+  },
+  {
+    guard: "ambiente: variável lida chega ao container",
+    name: "o teto diário volta a não chegar ao container",
+    kind: "esperto",
+    // O defeito original, ao pé da letra: a variável continua no `.env`, o
+    // `docker compose config` continua resolvendo-a, e o container não a
+    // recebe. O produto recusa em 5 de 5 com o teto configurado em 10.
+    file: "docker-compose.yml",
+    find: "      DAILY_PAID_GENERATION_LIMIT: ${DAILY_PAID_GENERATION_LIMIT:-5}\n",
+    replace: "",
+    expect: "`DAILY_PAID_GENERATION_LIMIT` é lida pelo código",
+  },
   {
     guard: "acesso: autofill em produção",
     name: "DEV_AUTOFILL=1 com NODE_ENV=production",
@@ -123,6 +151,7 @@ export async function checkEnvironmentPolicy(repoRoot: string): Promise<Environm
   await checkComposeResilience(repoRoot, failures, notes);
   checkLoginRateLimit(failures, notes);
   await checkNoLiteralCredentials(repoRoot, failures, notes);
+  await checkEnvVarsReachContainer(repoRoot, failures, notes);
 
   return { failures, notes };
 }
@@ -362,4 +391,186 @@ async function collectSourceFiles(repoRoot: string): Promise<string[]> {
   }
 
   return found;
+}
+
+// --------------------------------------------------------------- 4 -------
+
+/**
+ * TODA VARIÁVEL LIDA PELO CÓDIGO CHEGA AO CONTAINER — ou está declarada aqui
+ * como ausência deliberada, com o motivo escrito.
+ *
+ * O defeito que isto fecha aconteceu duas vezes, e as duas em silêncio. Docker
+ * Compose NÃO exporta o `.env` inteiro para dentro do container: repassa o que
+ * está listado em `environment:`. Uma variável documentada no `.env` e ausente
+ * dali é lida pelo `docker compose config`, descartada na fronteira do
+ * container, e o processo cai no default sem dizer que caiu.
+ *
+ *  · `DAILY_PAID_GENERATION_LIMIT` — o sintoma era "subi o teto e o sistema
+ *    continua recusando em 5 de 5".
+ *  · `DNS_PROVIDER` — MEDIDO em 06/08: já estava PREENCHIDA no `.env` e nunca
+ *    chegava ao container. O valor escolhido não valia nada.
+ *
+ * Nenhuma das duas dá erro. É por isso que a verificação tem de ser mecânica.
+ */
+
+/** Onde o código lê ambiente. `frontend/src` não lê: quem lê é o build. */
+const ENV_READ_ROOTS = ["backend/src", "frontend/vite.config.ts"];
+
+/**
+ * Lidas de propósito FORA do container, e por isso ausentes do compose.
+ *
+ * Cada uma precisa de motivo porque a lista é a única coisa entre "decisão" e
+ * "esquecimento" — e as duas se parecem exatamente igual no diff.
+ */
+const ENV_FORA_DO_COMPOSE: { nome: string; motivo: string }[] = [
+  {
+    nome: "REPO_ROOT",
+    motivo:
+      "só o gate a lê, e com default `/repo`, que é onde o repositório está montado. MEDIDO: o " +
+      "processo do backend responde vazio para ela, e o gate roda verde — o default é o caminho real.",
+  },
+  {
+    nome: "QUOTA_BASELINE_TENANT",
+    motivo:
+      "override de operador para os scripts de leitura de saldo (`quotaBaseline`, `probeLookEndpoints`), " +
+      "com default `dev-c77a5b`. Não participa de nenhum caminho de produto.",
+  },
+];
+
+async function checkEnvVarsReachContainer(
+  repoRoot: string,
+  failures: string[],
+  notes: string[],
+): Promise<void> {
+  let compose: string;
+  try {
+    compose = await readFile(path.join(repoRoot, "docker-compose.yml"), "utf-8");
+  } catch {
+    failures.push("ambiente: não consegui ler docker-compose.yml para conferir as variáveis repassadas.");
+    return;
+  }
+  // Chaves de `environment:` de QUALQUER serviço: a pergunta é se a variável
+  // chega a algum container, e `IMAGE_UPLOAD_MAX_BYTES` de propósito vai para
+  // dois.
+  const declaradas = new Set(
+    [...compose.matchAll(/^ {6}([A-Z][A-Z0-9_]*):/gm)].map((m) => m[1]),
+  );
+
+  const arquivos: string[] = [];
+  for (const raiz of ENV_READ_ROOTS) {
+    const abs = path.join(repoRoot, raiz);
+    if (/\.tsx?$/.test(raiz)) arquivos.push(abs);
+    else arquivos.push(...(await collectFilesWithExtensions(abs, new Set([".ts", ".tsx"]))));
+  }
+
+  // As quatro formas em que uma variável é lida neste repositório. Um nome que
+  // só aparece dentro de comentário NÃO conta: `config.ts` explica o problema
+  // do `??` com uma linha `process.env.X`, e contá-la faria a guarda pedir uma
+  // variável chamada X.
+  const FORMAS: RegExp[] = [
+    /process\.env\.([A-Z][A-Z0-9_]*)/g,
+    /process\.env\[\s*["']([A-Z][A-Z0-9_]*)["']/g,
+    /\b(?:required|optional|envNumber)\(\s*["']([A-Z][A-Z0-9_]*)["']/g,
+    /_ENV(?:[A-Z_]*)?\s*[:=]\s*["']([A-Z][A-Z0-9_]*)["']/g,
+  ];
+
+  const lidas = new Map<string, Set<string>>();
+  for (const arquivo of arquivos) {
+    let fonte: string;
+    try {
+      fonte = await readFile(arquivo, "utf-8");
+    } catch {
+      continue;
+    }
+    const rel = path.relative(repoRoot, arquivo).split(path.sep).join("/");
+    for (const linha of fonte.split("\n")) {
+      const t = linha.trim();
+      if (t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")) continue;
+      for (const forma of FORMAS) {
+        forma.lastIndex = 0;
+        for (const m of linha.matchAll(forma)) {
+          if (!lidas.has(m[1])) lidas.set(m[1], new Set());
+          lidas.get(m[1])!.add(rel);
+        }
+      }
+    }
+  }
+
+  // O objeto `LOGIN_RATE_LIMIT_ENV` guarda DOIS nomes em campos minúsculos, e
+  // a forma `_ENV = "..."` só pega o de atribuição direta. Sem isto a guarda
+  // não enxergaria as duas variáveis do limiter de login.
+  for (const arquivo of arquivos) {
+    let fonte: string;
+    try {
+      fonte = await readFile(arquivo, "utf-8");
+    } catch {
+      continue;
+    }
+    const rel = path.relative(repoRoot, arquivo).split(path.sep).join("/");
+    for (const bloco of fonte.matchAll(/_ENV\s*=\s*\{([^}]*)\}/g)) {
+      for (const m of bloco[1].matchAll(/["']([A-Z][A-Z0-9_]{3,})["']/g)) {
+        if (!lidas.has(m[1])) lidas.set(m[1], new Set());
+        lidas.get(m[1])!.add(rel);
+      }
+    }
+  }
+
+  const excecoes = new Map(ENV_FORA_DO_COMPOSE.map((e) => [e.nome, e.motivo]));
+  const usadas = new Set<string>();
+
+  for (const [nome, onde] of [...lidas].sort()) {
+    if (declaradas.has(nome)) continue;
+    if (excecoes.has(nome)) {
+      usadas.add(nome);
+      continue;
+    }
+    failures.push(
+      `ambiente: \`${nome}\` é lida pelo código (${[...onde].join(", ")}) e NÃO é repassada em ` +
+        "docker-compose.yml. Compose não exporta o `.env` inteiro: repassa o que está listado em " +
+        "`environment:`. Preencher esta variável no `.env` não teria efeito nenhum — o valor é lido " +
+        "pelo `docker compose config`, descartado na fronteira do container, e o processo cai no " +
+        "default sem dizer que caiu. Já aconteceu duas vezes aqui, com " +
+        "`DAILY_PAID_GENERATION_LIMIT` e com `DNS_PROVIDER`, e nenhuma das duas deu erro. " +
+        "Se a ausência for deliberada, declare-a em ENV_FORA_DO_COMPOSE com o motivo.",
+    );
+  }
+
+  for (const e of ENV_FORA_DO_COMPOSE) {
+    if (declaradas.has(e.nome)) {
+      failures.push(
+        `ambiente: \`${e.nome}\` está declarada como ausência deliberada e ESTÁ no compose. ` +
+          "Uma exceção que não é mais exceção ensina a ignorar a lista.",
+      );
+    } else if (!usadas.has(e.nome)) {
+      failures.push(
+        `ambiente: \`${e.nome}\` está na lista de ausências deliberadas e não é lida por ninguém. ` +
+          "Ou a leitura sumiu e a entrada tem de sair, ou ela mudou de forma e a varredura deixou de " +
+          "enxergá-la — as duas exigem olhar.",
+      );
+    }
+  }
+
+  if (failures.length === 0) {
+    notes.push(
+      `  ambiente: ${lidas.size} variável(is) lida(s) pelo código, todas repassadas ao container — ` +
+        `exceto ${ENV_FORA_DO_COMPOSE.length} ausência(s) declarada(s) com motivo`,
+    );
+  }
+}
+
+/** Varredura recursiva por extensão, sem as exclusões da busca de credencial. */
+async function collectFilesWithExtensions(dir: string, exts: Set<string>): Promise<string[]> {
+  const saida: string[] = [];
+  let entradas;
+  try {
+    entradas = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return saida;
+  }
+  for (const e of entradas) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) saida.push(...(await collectFilesWithExtensions(p, exts)));
+    else if (exts.has(path.extname(e.name))) saida.push(p);
+  }
+  return saida;
 }

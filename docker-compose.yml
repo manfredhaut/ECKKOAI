@@ -103,6 +103,25 @@ services:
       # NODE_ENV=production. Ver services/loginRateLimitPolicy.ts.
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-}
       LOGIN_RATE_LIMIT_WINDOW_MS: ${LOGIN_RATE_LIMIT_WINDOW_MS:-}
+      # As seis que a varredura de 06/08 achou lidas pelo código e ausentes
+      # daqui — a mesma família do DAILY_PAID_GENERATION_LIMIT logo acima.
+      # DNS_PROVIDER não era hipótese: ela JÁ ESTAVA preenchida no .env e nunca
+      # chegava ao container, então o valor escolhido não valia nada.
+      #
+      # O DEFAULT DE CADA UMA É O DEFAULT DO CÓDIGO, e a forma muda conforme a
+      # leitura tolera string vazia ou não. `DOCS_DIR` e `UPLOADS_DIR` são lidas
+      # com `?? "/app/…"`, e `??` NÃO cai para o default com string vazia — o
+      # `${VAR:-}` das outras linhas apagaria o caminho e o container subiria
+      # servindo de lugar nenhum. Por isso o default vai escrito. As de roteiro
+      # e a de modelo de TTS usam `!raw`/`|| padrão`, que tratam vazio como
+      # ausente, e podem ficar na forma curta.
+      DNS_PROVIDER: ${DNS_PROVIDER:-pending}
+      DOCS_DIR: ${DOCS_DIR:-/app/docs}
+      UPLOADS_DIR: ${UPLOADS_DIR:-/app/uploads}
+      ELEVENLABS_TTS_MODEL: ${ELEVENLABS_TTS_MODEL:-}
+      SCRIPT_TARGET_SECONDS: ${SCRIPT_TARGET_SECONDS:-}
+      SCRIPT_WORDS_PER_MINUTE: ${SCRIPT_WORDS_PER_MINUTE:-}
+      SCRIPT_DURATION_TOLERANCE: ${SCRIPT_DURATION_TOLERANCE:-}
       # Contas fixas de desenvolvimento, consumidas por
       # `npm run dev:seed-access`. Sem default embutido no código: os valores
       # vivem só no .env (fora do git).
