@@ -32,6 +32,7 @@ import type { Mutant } from "./mutants.js";
 import {
   buildHeygenVideoPayload,
   heygenIdempotencyKey,
+  heygenVideoRequestHeaders,
 } from "../services/providers/avatarProvider.js";
 import { resolveVideoFormat } from "../services/providers/videoFormat.js";
 import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
@@ -107,6 +108,17 @@ export const MUTANTS: Mutant[] = [
     find: "  return `eckko-${createHash(\"sha256\").update(material).digest(\"hex\")}`;",
     replace: "  return `eckko-${createHash(\"sha256\").update(material + String(Date.now())).digest(\"hex\")}`;",
     expect: "a chave de idempotência deixou de ser derivada da tentativa",
+  },
+  {
+    guard: "contrato de vídeo: a chave de idempotência é da tentativa",
+    name: "a chave de idempotência deixa de ser enviada",
+    kind: "obvio",
+    // Nada muda de aparência: o corpo é o mesmo, a resposta é a mesma, o vídeo
+    // sai igual. Só que o duplo clique volta a custar dois vídeos.
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: '    "Idempotency-Key": heygenIdempotencyKey(input),',
+    replace: "",
+    expect: "a requisição de vídeo saiu sem chave de idempotência",
   },
   {
     guard: "contrato de vídeo: nenhum campo fora do schema do fornecedor",
@@ -349,6 +361,25 @@ export async function checkVideoContractPolicy(): Promise<VideoContractCheckResu
   await new Promise((r) => setTimeout(r, 5));
   const k2 = heygenIdempotencyKey({ ...tentativa });
 
+  // O header que VAI no `fetch`, e não a menção a ele: sem este vetor, apagar
+  // a linha da requisição deixaria a derivação perfeita e a chave em lugar
+  // nenhum — o defeito mais fácil de não notar, porque nada muda de aparência.
+  const headers = heygenVideoRequestHeaders("chave-do-fornecedor", tentativa);
+  const enviada = headers["Idempotency-Key"];
+  if (!enviada) {
+    failures.push(
+      "contrato de vídeo: a requisição de vídeo saiu sem chave de idempotência — os headers de " +
+        `POST /v3/videos são ${JSON.stringify(Object.keys(headers))}. O fornecedor replica a resposta ` +
+        "por 24 h na mesma chave, e é só isso que impede um duplo clique de enfileirar (e cobrar) dois " +
+        "vídeos.",
+    );
+  } else if (enviada !== k1) {
+    failures.push(
+      "contrato de vídeo: a chave enviada no header não é a derivada da tentativa. Duas derivações " +
+        "diferentes para a mesma coisa significam que uma delas não protege nada.",
+    );
+  }
+
   if (k1 !== k2) {
     failures.push(
       "contrato de vídeo: a chave de idempotência deixou de ser derivada da tentativa — a MESMA " +
@@ -392,8 +423,8 @@ export async function checkVideoContractPolicy(): Promise<VideoContractCheckResu
         "conhecidos e nenhum fora dele, e `expressiveness` só com Avatar IV",
     );
     notes.push(
-      `  contrato de vídeo: chave de idempotência estável na mesma tentativa e distinta em ` +
-        `${variacoes.length} variação(ões), dentro do padrão do fornecedor`,
+      `  contrato de vídeo: chave de idempotência no header do POST, estável na mesma tentativa e ` +
+        `distinta em ${variacoes.length} variação(ões), dentro do padrão do fornecedor`,
     );
   }
 

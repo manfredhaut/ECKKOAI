@@ -427,6 +427,29 @@ export function heygenIdempotencyKey(
   return `eckko-${createHash("sha256").update(material).digest("hex")}`;
 }
 
+/**
+ * Os headers de `POST /v3/videos`, montados num lugar exercitável.
+ *
+ * Separado do `fetch` pela mesma razão que `buildHeygenVideoPayload`: um header
+ * montado no literal da chamada só é inspecionável interceptando a rede, e uma
+ * guarda que não consegue olhar o objeto acaba conferindo a MENÇÃO ao helper em
+ * vez do que ele produz — que é exatamente como a `checkVendorLogPolicy` ficou
+ * inerte com treze funções casadas.
+ */
+export function heygenVideoRequestHeaders(
+  apiKey: string,
+  input: Parameters<typeof heygenIdempotencyKey>[0],
+): Record<string, string> {
+  return {
+    "x-api-key": apiKey,
+    "content-type": "application/json",
+    // Ver `heygenIdempotencyKey`. Um duplo clique repete o corpo inteiro, então
+    // repete a chave, e o fornecedor replica a resposta em vez de enfileirar um
+    // segundo vídeo — que seria cobrado.
+    "Idempotency-Key": heygenIdempotencyKey(input),
+  };
+}
+
 export function buildHeygenVideoPayload(
   input: Pick<
     GenerateVideoInput,
@@ -587,20 +610,11 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
     remove_background: body.remove_background ?? "ausente",
   });
 
-  const idempotencyKey = heygenIdempotencyKey(input);
-
   let res: Response;
   try {
     res = await fetch(`${HEYGEN_BASE}/v3/videos`, {
       method: "POST",
-      headers: {
-        "x-api-key": input.apiKey,
-        "content-type": "application/json",
-        // Ver `heygenIdempotencyKey`. Um duplo clique repete o corpo inteiro,
-        // então repete a chave, e o fornecedor replica a resposta em vez de
-        // enfileirar um segundo vídeo — que seria cobrado.
-        "Idempotency-Key": idempotencyKey,
-      },
+      headers: heygenVideoRequestHeaders(input.apiKey, input),
       body: JSON.stringify(body),
     });
   } catch (err) {
