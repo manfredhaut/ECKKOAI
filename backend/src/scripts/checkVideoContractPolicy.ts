@@ -64,8 +64,10 @@ export const MUTANTS: Mutant[] = [
     // débito, num caminho que parece o mais comum de todos: ninguém escolheu
     // traje.
     file: "backend/src/services/avatar/lookSelection.ts",
-    find: "  const look = (avatarLookId ?? \"\").trim();",
-    replace: "  const look = avatarLookId ?? providerAvatarId;",
+    find:
+      '  const look = (avatarLookId ?? "").trim();\n' +
+      "  return look.length > 0 ? look : providerAvatarId;",
+    replace: "  return avatarLookId ?? providerAvatarId;",
     expect: "o traje escolhido não chegou ao corpo de POST /v3/videos",
   },
   {
