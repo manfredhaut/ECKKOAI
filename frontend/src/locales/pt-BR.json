@@ -485,6 +485,7 @@
       "addLookSaving": "Criando…",
       "addLookCreated": "Traje \"{{name}}\" criado. Ele já aparece no seletor do passo Cena.",
       "addLookPreparing": "Traje \"{{name}}\" enviado. O fornecedor está gerando a imagem — isso leva alguns segundos, e ele aparece no seletor quando ficar pronto.",
+      "addLookStillPreparing": "Traje \"{{name}}\" continua sendo preparado pelo fornecedor — está demorando mais que o normal. Ele já foi cobrado e não se perdeu: aparece sozinho no seletor do passo Cena assim que ficar pronto, sem você fazer nada. Não crie de novo, porque cada traje custa à parte.",
       "addLookFailed": "O fornecedor não conseguiu gerar este traje. Nada foi cobrado — o crédito voltou.",
       "lookCostLive": "Criar um traje custa US$ {{usd}} ({{units}} unidades) — o mesmo que cerca de 20 segundos de vídeo. A cobrança acontece assim que o fornecedor aceita o pedido.",
       "lookCostSimulated": "Modo simulado: criar traje aqui não fala com o fornecedor e não custa nada.",

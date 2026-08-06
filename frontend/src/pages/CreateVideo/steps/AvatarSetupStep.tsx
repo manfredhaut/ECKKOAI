@@ -15,6 +15,31 @@ import { RecordingProgress } from "../RecordingProgress";
 import { VoiceSampleRecorder } from "../VoiceSampleRecorder";
 import { AvatarReadinessNotice } from "../AvatarReadinessNotice";
 
+/**
+ * A JANELA DE ESPERA DO TRAJE, e por que ela é declarada aqui em vez de virar
+ * um `20` solto dentro do laço.
+ *
+ * As duas conclusões MEDIDAS em live foram de 15 s e 50 s (06/08). A janela
+ * antiga eram 20 tentativas de 3 s — 60 s, dez segundos além da medição mais
+ * lenta que tínhamos. Uma janela dimensionada pela maior amostra observada não
+ * tem folga nenhuma: basta o fornecedor demorar o que já demorou mais uma vez
+ * e a tela desiste de um traje que está a caminho.
+ *
+ * 240 s são 4,8× a conclusão mais lenta medida. O número não é gratuito — o
+ * custo de errar para menos é a pessoa achar que perdeu US$ 1,00 e criar o
+ * traje de novo, gastando outro; o custo de errar para mais é a tela seguir
+ * consultando um GET que não é tarifado. Os dois lados não são simétricos, e a
+ * folga fica do lado barato.
+ *
+ * Esgotar a janela NÃO é falha: a reconciliação vive na LISTAGEM do servidor
+ * (`services/avatar/looks.ts`), então o traje continua sendo preparado e
+ * aparece sozinho na próxima vez que alguém abrir a tela. É isso que a
+ * mensagem final precisa dizer, e é por isso que ela não é um erro.
+ */
+const LOOK_POLL_INTERVAL_MS = 3_000;
+const LOOK_POLL_WINDOW_MS = 240_000;
+const LOOK_POLL_ATTEMPTS = LOOK_POLL_WINDOW_MS / LOOK_POLL_INTERVAL_MS;
+
 export function AvatarSetupStep({
   selectedAvatarId,
   onSelectAvatar,
@@ -348,8 +373,9 @@ export function AvatarSetupStep({
         await refreshLooks(selectedAvatar.id);
       } else {
         setLookMessage(t("createVideo.avatarSetup.addLookPreparing", { name: criado.look.name }));
-        for (let i = 0; i < 20; i++) {
-          await new Promise((r) => setTimeout(r, 3000));
+        let concluiu = false;
+        for (let i = 0; i < LOOK_POLL_ATTEMPTS; i++) {
+          await new Promise((r) => setTimeout(r, LOOK_POLL_INTERVAL_MS));
           const info = await refreshLooks(selectedAvatar.id);
           const aindaEmPreparo = info?.pendentes.some((p) => p.status === "processing");
           if (!aindaEmPreparo) {
@@ -360,8 +386,23 @@ export function AvatarSetupStep({
                 ? t("createVideo.avatarSetup.addLookFailed")
                 : t("createVideo.avatarSetup.addLookCreated", { name: criado.look.name }),
             );
+            concluiu = true;
             break;
           }
+        }
+        // A JANELA ACABOU E O TRAJE NÃO. Antes daqui o laço simplesmente
+        // terminava: a última mensagem continuava sendo "o fornecedor está
+        // gerando", congelada, sem nada dizendo que a tela havia parado de
+        // olhar. Quem esperava via um traje que nunca chegava e concluía que os
+        // US$ 1,00 tinham sumido — e o conserto natural, criar de novo, gasta
+        // outro dólar por um traje que já estava vindo.
+        //
+        // Não é `setLookError`: nada falhou. O traje continua em preparo no
+        // fornecedor e a listagem o reconcilia na próxima abertura da tela.
+        if (!concluiu) {
+          setLookMessage(
+            t("createVideo.avatarSetup.addLookStillPreparing", { name: criado.look.name }),
+          );
         }
       }
     } catch (err) {

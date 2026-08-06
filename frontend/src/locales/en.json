@@ -485,6 +485,7 @@
       "addLookSaving": "Creating…",
       "addLookCreated": "Outfit \"{{name}}\" created. It already appears in the Scene step selector.",
       "addLookPreparing": "Outfit \"{{name}}\" submitted. The provider is generating the image — this takes a few seconds, and it shows up in the selector once it's ready.",
+      "addLookStillPreparing": "Outfit \"{{name}}\" is still being prepared by the provider — it's taking longer than usual. It was already charged and is not lost: it will show up on its own in the Scene step selector as soon as it's ready, with nothing for you to do. Don't create it again — each outfit is charged separately.",
       "addLookFailed": "The provider could not generate this outfit. Nothing was charged — the credit was returned.",
       "lookCostLive": "Creating an outfit costs US$ {{usd}} ({{units}} units) — about the same as 20 seconds of video. You are charged as soon as the provider accepts the request.",
       "lookCostSimulated": "Simulated mode: creating an outfit here does not contact the provider and costs nothing.",
