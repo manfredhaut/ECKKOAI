@@ -39,10 +39,12 @@ SaaS multi-tenant de vídeo com avatar digital. Docker Compose: `traefik` (únic
 | Plano | `billing_type: "wallet"`, saldo **US$ 12,05** | `/v3/users/me` |
 | Cota | **723 un** (`details.api: 723`) | `/v2/user/remaining_quota` |
 | Avatar IV | **disponível** — é o default do `engine`; a conta tem `avatar_iv_free_credit: 3` | doc + cota |
-| Avatar V | **indisponível para este avatar** — exige `digital_twin` | `avatar-v.md` + inventário |
-| `supported_api_engines` por GET | **não existe nesta chave** | 11 GETs sondados, nenhum traz o campo |
+| ~~Avatar V indisponível~~ | **REFUTADO em 06/08** — ver abaixo | `GET /v3/avatars/looks/{id}` |
+| ~~`supported_api_engines` por GET não existe~~ | **REFUTADO em 06/08** — ver abaixo | idem |
 
-**O avatar do Mário é TALKING PHOTO (avatar de foto), não digital twin.** `photo_avatar_id 45528bb8…`, grupo `21812e52…`, `business_type: "uploaded"`, `status: completed`, **1 look**. A conta tem 4 grupos privados `twinai-*`, um look cada. `/v3/avatars/{id}` espera **group id**, não look id — o 404 diz "Avatar group … not found" (isto encerra a ASSUMPTION registrada em `avatarProvider.ts`).
+**`supported_api_engines` É LEGÍVEL POR GET — o endpoint existe e as duas linhas riscadas acima estavam erradas.** `GET /v3/avatars/looks/{id}` responde **200** e traz o campo. Medido em 06/08 nos três ids: look Jaleco branco, avatar do Mário e avatar "TESTE REAL". **Os três devolvem `["avatar_v","avatar_iv","avatar_iii"]`** — ou seja, **avatar_v ESTÁ listado**, e a conclusão anterior de que ele exigiria `digital_twin` não se sustenta contra esta leitura. O mesmo GET traz `avatar_type: "photo_avatar"`, `status`, `group_id`, `preferred_orientation` e as dimensões da imagem (o Jaleco tem **2400×1792**, contra 640×480 do avatar base). **Que avatar_v FUNCIONE segue NÃO VERIFICADO** — estar listado é o fornecedor dizendo que aceita, não uma geração provando; e o item 2 das "três coisas que o fornecedor não tem" registrava outra objeção (avatar_v não documenta `audio_asset_id`, e é a voz clonada que dirige a geração aqui) que este GET **não** responde.
+
+**O avatar do Mário é TALKING PHOTO (avatar de foto), não digital twin.** `photo_avatar_id 45528bb8…`, grupo **`21812e52d8bb48659b49405140e998bb`** (o id registrado aqui antes, `21812e52d4e2…`, **estava errado** — os 8 primeiros dígitos coincidem e o resto não; medido por `GET /v2/photo_avatar/{avatar}`, que devolve o `group_id`), `business_type: "uploaded"`, `status: completed`, **3 looks em 06/08** (era 1). A conta tem 4 grupos privados `twinai-*`, um look cada. `/v3/avatars/{id}` espera **group id**, não look id — o 404 diz "Avatar group … not found" (isto encerra a ASSUMPTION registrada em `avatarProvider.ts`).
 
 **O que o fornecedor aceita em `POST /v3/videos` (doc pública, lida por GET):** `background.type` ∈ **{color, image}** · `motion_prompt` texto livre · `expressiveness` ∈ {low, medium, high} (avatares de foto) · `engine.type` ∈ {avatar_iii, avatar_iv, avatar_v} · áudio por `audio_asset_id`, `audio_url` ou `script`+`voice_id`, mutuamente exclusivos.
 
@@ -55,7 +57,38 @@ SaaS multi-tenant de vídeo com avatar digital. Docker Compose: `traefik` (únic
 
 **DEMO-2 (05/08) — A TELA. Wizard em 4 passos: Avatar · Roteiro · Cena · Gerar.** O passo Cena reúne fundo (cor hex ou imagem, com prévia e validação local), interpretação (`motion_prompt` com contador + expressividade em 3 níveis), traje (seletor de look, desabilitado com 1 look) e formato. **4:5 RETIRADO** do catálogo — Instagram e Facebook eram as duas entradas 4:5. Publicação saiu do fluxo. `GET /avatars/:id/looks` devolve `{looks, canChoose}`; em fixture são **3 looks**, para exercitar o seletor habilitado que a conta real (1 look) não produz. "Gerar novamente" repete o corpo por uma função de montagem única. Guarda nova: `os cinco controles chegam do formulário ao payload`, mutante `o formulário deixa de propagar a interpretação`, provado reprovando. Commits `44a5e5e`, `1ba8f39`, `3653f6b`.
 
-**⚠️ O ARNÊS NÃO RODA ENQUANTO `CLAUDE - md.txt` EXISTIR SOLTO.** `npm run check:mutants` aborta antes do primeiro mutante: ele exige árvore limpa e conta o untracked. O arquivo é INTOCÁVEL por ordem do operador (não mover, não apagar, não commitar), então o arnês ficou sem rodar desde o DEMO-2 — **127 mutantes declarados, 0 conferidos nesta passada**. Decidir o destino do arquivo é do operador; enquanto isso, o gate (`npm run check`) continua verde e as guardas novas foram provadas reprovando à mão, uma a uma.
+**TRAJE-2 e TRAJE-3 (06/08) — O CONTRATO DO TRAJE, FECHADO POR LEITURA E MEDIÇÃO. Nenhuma geração nesta rodada; o custo foi zero.**
+
+**O traje NÃO tem campo — ele SUBSTITUI o avatar.** A doc do fornecedor diz na letra: *"The look id is the `avatar_id` to pass when creating a video"* (`/reference/list-avatar-looks.md`). Então `providerAvatarId: look ?? avatar` não é gambiarra, é o contrato. A decisão saiu do handler para [lookSelection.ts](backend/src/services/avatar/lookSelection.ts) — dentro da rota ela só era exercitável subindo a aplicação, e o arnês provou isso ao devolver AMBÍGUO no primeiro mutante. **A extração achou um defeito de brinde:** `"" ?? x` devolve `""`, e um seletor sem escolha mandaria `avatar_id: ""` — 4xx **depois** do débito, no caminho mais comum de todos.
+
+**A geração de 06/08 saiu sem traje porque o traje nunca foi escolhido — não porque se perdeu.** MEDIDO no log: `avatar_look: "6f60dca9…"`, que é o avatar base **"TESTE REAL 15:40 01/08"**, não o Mário (`45528bb8…`) e não o Jaleco (`800e04f0…`); `avatar_look_id` **NULL** na linha; **HTTP 200**, sem 400 e sem retry. O avatar usado nem possui aquele look — o Jaleco é do Mário.
+
+**DOIS CAMPOS FALTAVAM, e os dois foram medidos sem gastar.** A sonda usa `avatar_id` inexistente como **fusível**: sem avatar não há render, então o levantamento é grátis e a resposta chega antes de qualquer cobrança.
+- **`additionalProperties: false` CONFIRMADO** — campo desconhecido volta **400 "Extra inputs are not permitted"**, com o nome do campo em `param`. Como o débito é **antes** da chamada, campo inventado custa o estorno. A guarda mantém a lista fechada nos **21 campos** transcritos da doc.
+- **`remove_background`** — passa o schema. **Sem ele o `background` é INERTE**, e foi isso que aconteceu: `{type:"color", value:"#1B2A4A"}` foi enviado, o fornecedor respondeu 200, e o vídeo veio com o fundo da FOTO. O avatar é talking photo e a foto tem fundo próprio. **Que ele CONSERTE é DEDUZIDO; que ele saia agora é MEDIDO.**
+- **`fit`** — aceita **exatamente** `contain` ou `cover`; o próprio 400 diz *"Input should be 'contain' or 'cover'"*. **Nunca enviamos**, e `contain` é o que produz barra — são os **40% medidos no 4:5** e os **57,8% no 9:16**. Agora vai `cover`, que preenche **cortando**: a troca é real e é decisão de produto, não otimização.
+- **`expressiveness` é "Avatar IV only" e o schema NÃO impõe isso** — medido: com `avatar_iii` ele **passa** a validação. O fornecedor aceita e ignora em silêncio, que é o pior caso, então a regra ficou do nosso lado.
+
+**`Idempotency-Key` DE PÉ.** O fornecedor replica a resposta por **24 h** na mesma chave (padrão `[A-Za-z0-9_\-:.]{1,255}`). A chave é derivada da **TENTATIVA** — tenant, look, roteiro, cena, formato, motor, `fit`. **Nem do instante** (nunca colide, é o mesmo que não ter chave) **nem do id da linha de `videos`** (cada clique INSERE uma linha nova, então dois cliques dão dois ids). **`audio_asset_id` fica de fora de propósito:** o áudio é ressintetizado a cada clique, e incluí-lo faria a chave variar exatamente no caso que ela cobre.
+
+**A espera do traje na tela ia até 60 s e desistia calada.** As conclusões medidas foram 15 s e 50 s — a janela estava dimensionada pela maior amostra observada. Agora são **240 s** e, ao esgotar, a tela diz que o traje continua vindo, **já foi cobrado**, aparece sozinho no seletor e **não deve ser recriado** (cada um custa US$ 1,00). Não é erro: a reconciliação vive na listagem do servidor.
+
+**Um SEGUNDO traje pago existe no fornecedor SEM linha no nosso banco:** "Navy Suit, Open Collar" (`aef28fd5…`). Ele aparece no seletor com o nome **do fornecedor**, não com um nosso — que é como se reconhece um look sem linha local. A aritmética fecha ao dígito: **723 − 540 = 183 = 60 + 60 + 33 + 30**. A atribuição dos 60 ao Terno é **DEDUZIDA**; o total é medido.
+
+**RITMO DA VOZ — a constante 12,8151 c/s NÃO é constante, e erra mais quanto mais curto o texto.** Seis gerações reais, `tts_timestamps`:
+
+| caracteres | segundos | c/s |
+|---|---|---|
+| 119 | 7,173 | **16,53** |
+| 145 | 10,192 | 14,19 |
+| 145 | 11,121 | 13,00 |
+| 474 | 36,988 | 12,81 |
+| 180 | 14,789 | 12,15 |
+| 206 | 16,972 | 12,12 |
+
+**Dois 145 deram durações diferentes (10,19 e 11,12 s, 9,1% de diferença)** — mesmo comprimento, mesma voz, mesmo modelo. Logo o ritmo não é função do comprimento. Para 119 caracteres a estimativa dá 9,29 s contra 7,17 s reais: **erro de +29,5%, sempre para cima**. **A HeyGen não sintetiza nada aqui** — a duração vem do `audio_asset_id`, então o encurtamento é do ElevenLabs. **CONFIRMADO por leitura:** o corpo da síntese é `{ text, model_id }` nos **dois** caminhos ([voiceProvider.ts:235](backend/src/services/providers/voiceProvider.ts:235) e [:291](backend/src/services/providers/voiceProvider.ts:291)), **sem `voice_settings`** — a voz herda o estado salvo no painel, que é global, editável fora do produto e não registrado em lugar nenhum. **Conserto (NÃO implementado nesta passada): enviar `voice_settings` explícito no corpo, com `speed` fixado, para tirar a duração das mãos do painel.**
+
+**⚠️ O ARNÊS NÃO RODA ENQUANTO `CLAUDE - md.txt` EXISTIR SOLTO.** `npm run check:mutants` aborta antes do primeiro mutante: ele exige árvore limpa e conta o untracked. O arquivo é INTOCÁVEL por ordem do operador (não mover, não apagar, não commitar). **DESBLOQUEADO em 06/08: ele não está mais solto** — `git status --untracked-files=all` não acusa nada, e o arnês voltou a rodar. **145 mutantes declarados** (a contagem de 127 registrada aqui estava desatualizada; 145 é `--list`, medido). Conferidos nesta passada: **9** (2 da espera do traje + 7 do contrato de vídeo), todos reprovando. Os outros 136 não foram rodados — a passada inteira custa ~21,5 min. Decidir o destino do arquivo é do operador; enquanto isso, o gate (`npm run check`) continua verde e as guardas novas foram provadas reprovando à mão, uma a uma.
 
 **DEMO-1 — o que NÃO está feito, e é tudo de TELA:** o wizard continua em 6 passos (item 7), não há UI para fundo/interpretação/look (itens 1, 3, 4), o prompt→roteiro **não usa o RAG** (`/scripts/generate` chama o LLM sem contexto — item 5), não há botão de gerar novamente (item 8), e Publicação continua dentro do fluxo de criação. **Sem a tela, os cinco controles existem no backend e ninguém consegue usá-los.**
 
