@@ -88,7 +88,7 @@ export const MUTANTS: Mutant[] = [
     file: "backend/src/services/avatar/looks.ts",
     find: '      atual = { status: "failed", previewImageUrl: null };',
     replace: '      atual = { status: "processing", previewImageUrl: null };',
-    expect: "um traje que sumiu do fornecedor continuou em preparo para sempre",
+    expect: "traje: um traje que o fornecedor não conhece mais há 24 h continuou como",
   },
   {
     guard: "traje: o que sumiu do fornecedor para de ser eterno",
@@ -100,7 +100,7 @@ export const MUTANTS: Mutant[] = [
     file: "backend/src/services/providers/avatarProvider.ts",
     find: "    if (err instanceof AvatarProviderError && err.httpStatus === 404) {",
     replace: "    if (err instanceof AvatarProviderError) {",
-    expect: "uma indisponibilidade do fornecedor foi tratada como traje inexistente",
+    expect: "traje: o fornecedor respondeu 503 e o traje foi marcado",
   },
 ];
 
