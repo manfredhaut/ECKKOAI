@@ -61,6 +61,13 @@ services:
       PROVIDER_MODE: ${PROVIDER_MODE:-fixture}
       PROVIDER_LIVE_CONFIRM: ${PROVIDER_LIVE_CONFIRM:-}
       PROVIDER_LIVE_MAX_GENERATIONS: ${PROVIDER_LIVE_MAX_GENERATIONS:-1}
+      # Teto DIÁRIO de gerações pagas (vídeos e trajes contam na mesma conta,
+      # porque a carteira do fornecedor é uma só). Vazio = 5; zera à
+      # meia-noite do servidor. Estava documentado no .env mas NÃO era
+      # repassado ao container — preencher no .env não tinha efeito nenhum, e
+      # o sintoma era "subi o limite e o sistema continua recusando em 5 de 5".
+      # Ver services/billing/dailyGenerationLimit.ts.
+      DAILY_PAID_GENERATION_LIMIT: ${DAILY_PAID_GENERATION_LIMIT:-5}
       # Teto de TENTATIVAS (qualquer desfecho). Vazio = 3× o de gasto. Existe
       # porque a falha passou a devolver o GASTO: sem um contador que não
       # volta, um caminho que falha sempre dispararia para sempre.
