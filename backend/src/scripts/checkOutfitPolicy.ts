@@ -57,8 +57,8 @@ export const MUTANTS: Mutant[] = [
     // Gerar com ele gasta uma geração de vídeo para receber erro ou o traje
     // antigo.
     file: "backend/src/services/avatar/looks.ts",
-    find: '  const prontos = rows.filter((l) => l.status === "completed");',
-    replace: "  const prontos = rows;",
+    find: '  const prontos = rows.filter((l) => l.status === "completed" && l.provider_look_id);',
+    replace: "  const prontos = rows.filter((l) => l.provider_look_id);",
     expect: "um traje em preparo apareceu no seletor",
   },
   {
@@ -419,15 +419,21 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
     // -----------------------------------------------------------------------
     // 6. O custo declarado é o MEDIDO.
     // -----------------------------------------------------------------------
-    if (HEYGEN_LOOK_COST.units !== 60 || HEYGEN_LOOK_COST.usd !== 1.0) {
+    // Tipados como `number` de propósito: `HEYGEN_LOOK_COST` é `as const`, e
+    // comparar a propriedade direto contra 60 faz o TypeScript reclamar de
+    // comparação entre literais quando o mutante troca o valor — o gate sairia
+    // pelo compilador e a guarda nunca opinaria, que é a definição de inerte.
+    const unidades: number = HEYGEN_LOOK_COST.units;
+    const dolares: number = HEYGEN_LOOK_COST.usd;
+    if (unidades !== 60 || dolares !== 1.0) {
       failures.push(
-        `traje: o custo do traje deixou de bater com a medição — declarado ${HEYGEN_LOOK_COST.units} un / ` +
-          `US$ ${HEYGEN_LOOK_COST.usd}, medido em 06/08 na conta real 60 un / US$ 1,00 (quota 660 → 600, ` +
+        `traje: o custo do traje deixou de bater com a medição — declarado ${unidades} un / ` +
+          `US$ ${dolares}, medido em 06/08 na conta real 60 un / US$ 1,00 (quota 660 → 600, ` +
           "wallet 11,00 → 10,00). Este número aparece na tela antes de a pessoa confirmar; errado, ela " +
           "decide com base numa conta que não é a do fornecedor.",
       );
     }
-    if (HEYGEN_LOOK_COST.units / HEYGEN_LOOK_COST.usd !== 60) {
+    if (unidades / dolares !== 60) {
       failures.push(
         "traje: a razão unidades/dólar do traje deixou de ser 60, que é a régua medida da conta em todas " +
           "as operações. Um dos dois números foi mexido sem o outro.",
