@@ -39,9 +39,33 @@ function treeStatus() {
  * casos, e transformá-la em exceção faria o `finally` da reversão competir com
  * o tratamento de erro.
  */
+/**
+ * O gate, rodado como o projeto documenta: `-e PROVIDER_MODE=fixture`.
+ *
+ * O default NÃO era passado, e o arnês herdava o modo do container. Com o
+ * ambiente armado em live isso deixava o gate estruturalmente vermelho: duas
+ * guardas (`checkPollPolicy` e `checkVendorErrorPathPolicy`) trocam
+ * `PROVIDER_MODE` por fixture, restauram o valor ORIGINAL no `finally` e depois
+ * exigem `isFixtureMode()` — porque tudo que rodar em seguida naquele processo
+ * falaria com a rede. Em live a restauração devolve "live" e as duas reprovam,
+ * com a árvore limpa e sem mutante nenhum.
+ *
+ * O efeito era assimétrico e por isso passou despercebido: um mutante comum
+ * continuava "ok", porque o gate reprovava e a mensagem esperada estava lá
+ * junto das duas extras. Quem quebrava eram os CONTRAPONTOS (`expectGreen`),
+ * que exigem verde — nove deles, todos ao mesmo tempo, sem nada em comum além
+ * do modo.
+ *
+ * A base só entra quando o mutante NÃO declara `PROVIDER_MODE`: há mutantes que
+ * mexem no modo de propósito (`checkProviderPolicy`), e dois `-e` para a mesma
+ * variável dependeriam de qual o docker escolhe.
+ */
 function runGate(env = {}) {
+  const base = Object.prototype.hasOwnProperty.call(env, "PROVIDER_MODE")
+    ? env
+    : { PROVIDER_MODE: "fixture", ...env };
   const args = ["compose", "exec", "-T"];
-  for (const [k, v] of Object.entries(env)) args.push("-e", `${k}=${v}`);
+  for (const [k, v] of Object.entries(base)) args.push("-e", `${k}=${v}`);
   args.push("backend", "npm", "run", "check");
   try {
     const out = execFileSync("docker", args, { cwd: repoRoot, encoding: "utf8", stdio: "pipe" });

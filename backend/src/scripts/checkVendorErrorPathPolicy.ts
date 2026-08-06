@@ -72,7 +72,7 @@ export const MUTANTS: Mutant[] = [
     // polling e termina como "demorou mais que o esperado". Erro engolido é
     // pior que falha visível — a tela mente que está processando.
     find: `  if (!res.ok) {
-    throw new AvatarProviderError(\`\${providerLabel} API error (\${res.status}): \${rawBody}\`);
+    throw new AvatarProviderError(\`\${providerLabel} API error (\${res.status}): \${rawBody}\`, res.status);
   }`,
     replace: "",
     expect: "NÃO interrompeu o caminho de geração",
