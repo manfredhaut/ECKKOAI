@@ -5,6 +5,7 @@ import type { Avatar, Video } from "../types.js";
 import { generateVideo, pollVideoJob, AvatarProviderError } from "../services/providers/avatarProvider.js";
 import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import { getCredential } from "../services/credentialLookup.js";
+import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 import { createNotification } from "../services/notifications.js";
 import { recordFailedProviderUsage, recordProviderUsage } from "../services/billing/usageTracking.js";
 import { costBasisNote, costDifference, costFor, estimateVideoCost } from "../services/billing/providerCost.js";
@@ -823,8 +824,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         vendor: avatarCredential.vendor as AvatarVendor,
         // O LOOK escolhido no passo Cena, quando há mais de um. Traje é look do
         // avatar, não parâmetro de vídeo — e sem look escolhido vale o do
-        // avatar, que é o que sempre valeu.
-        providerAvatarId: avatarLookId ?? avatar.provider_avatar_id,
+        // avatar, que é o que sempre valeu. Ver `lookSelection.ts`: a decisão
+        // saiu daqui para poder ser exercitada pela guarda do contrato.
+        providerAvatarId: providerAvatarIdParaGeracao(avatar.provider_avatar_id, avatarLookId),
         script,
         elevenLabsApiKey: voiceCredential?.apiKey ?? null,
         voiceId: avatar.voice_id,

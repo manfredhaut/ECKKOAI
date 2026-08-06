@@ -34,6 +34,7 @@ import {
   heygenIdempotencyKey,
 } from "../services/providers/avatarProvider.js";
 import { resolveVideoFormat } from "../services/providers/videoFormat.js";
+import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 
 export interface VideoContractCheckResult {
   failures: string[];
@@ -49,9 +50,22 @@ export const MUTANTS: Mutant[] = [
     // `avatar_look_id`, e o fornecedor continua respondendo 200. Só o corpo
     // enviado volta a ter o avatar base — e o vídeo sai com a roupa errada,
     // pago, sem nada acusando. É o defeito de 06/08, letra por letra.
-    file: "backend/src/routes/videos.ts",
-    find: "        providerAvatarId: avatarLookId ?? avatar.provider_avatar_id,",
-    replace: "        providerAvatarId: avatar.provider_avatar_id,",
+    file: "backend/src/services/avatar/lookSelection.ts",
+    find: "  return look.length > 0 ? look : providerAvatarId;",
+    replace: "  void look;\n  return providerAvatarId;",
+    expect: "o traje escolhido não chegou ao corpo de POST /v3/videos",
+  },
+  {
+    guard: "contrato de vídeo: o traje escolhido chega ao objeto enviado",
+    name: "o seletor sem escolha vira avatar inexistente",
+    kind: "esperto",
+    // `"" ?? x` devolve `""`. Um `<select>` sem escolha manda string vazia, e
+    // ela atravessaria como `avatar_id: ""` — 4xx do fornecedor DEPOIS do
+    // débito, num caminho que parece o mais comum de todos: ninguém escolheu
+    // traje.
+    file: "backend/src/services/avatar/lookSelection.ts",
+    find: "  const look = (avatarLookId ?? \"\").trim();",
+    replace: "  const look = avatarLookId ?? providerAvatarId;",
     expect: "o traje escolhido não chegou ao corpo de POST /v3/videos",
   },
   {
@@ -156,11 +170,29 @@ export async function checkVideoContractPolicy(): Promise<VideoContractCheckResu
 
   // ---------------------------------------------------------------------------
   // 1. O TRAJE vai no lugar do avatar — é assim que o fornecedor recebe traje.
+  //
+  // A decisão é exercitada pela FUNÇÃO que a rota chama, com os valores que a
+  // rota lhe passa, e o resultado entra no montador. Assim o vetor mede o id
+  // que de fato sai no corpo, e não a presença de um trecho de texto no
+  // handler — que é a diferença entre pegar o defeito e citá-lo.
   // ---------------------------------------------------------------------------
+  const escolhido = providerAvatarIdParaGeracao(AVATAR_BASE, LOOK);
+  const naoEscolhido = providerAvatarIdParaGeracao(AVATAR_BASE, null);
+  const escolhaVazia = providerAvatarIdParaGeracao(AVATAR_BASE, "");
+
+  if (naoEscolhido !== AVATAR_BASE || escolhaVazia !== AVATAR_BASE) {
+    failures.push(
+      "contrato de vídeo: o traje escolhido não chegou ao corpo de POST /v3/videos — sem escolha, o id " +
+        `enviado deixou de ser o do avatar (null → ${JSON.stringify(naoEscolhido)}, "" → ` +
+        `${JSON.stringify(escolhaVazia)}). Um seletor sem escolha manda string vazia, e ela iria ao ` +
+        "fornecedor como avatar inexistente — 4xx DEPOIS do débito.",
+    );
+  }
+
   const comTraje = buildHeygenVideoPayload(
     {
       ...BASE,
-      providerAvatarId: LOOK,
+      providerAvatarId: escolhido,
       scene: { background: { type: "color", value: "#1e3a5f" }, motionPrompt: "gesto leve", expressiveness: "medium" },
     },
     "asset-de-audio",
@@ -180,7 +212,7 @@ export async function checkVideoContractPolicy(): Promise<VideoContractCheckResu
   // vetor que só olha "avatar_id é o look" passaria verde com o call site
   // mandando o look SEMPRE, inclusive quando ninguém escolheu traje.
   const semTraje = buildHeygenVideoPayload(
-    { ...BASE, providerAvatarId: AVATAR_BASE, scene: null },
+    { ...BASE, providerAvatarId: naoEscolhido, scene: null },
     "asset-de-audio",
     null,
   );
