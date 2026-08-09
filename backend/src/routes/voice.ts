@@ -33,7 +33,7 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
 import type { Avatar } from "../types.js";
 import type { VoiceInventory } from "../services/providers/voiceProvider.js";
-import { cloneVoice, listVoices } from "../services/providers/voiceProvider.js";
+import { cloneVoice, listVoices, synthesizeSpeech } from "../services/providers/voiceProvider.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { takeUpload } from "../services/uploadLimits.js";
 import { saveUpload } from "../services/storage.js";
@@ -58,6 +58,12 @@ import {
   normalizeVoiceSample,
   probeSampleDurationSeconds,
 } from "../services/voice/voiceSampleAudio.js";
+import type { VoicePreview } from "../services/voice/voicePreview.js";
+import {
+  VOICE_PREVIEW_PHRASE,
+  previewUnavailableMessage,
+  previewVoiceId,
+} from "../services/voice/voicePreview.js";
 
 export async function voiceRoutes(app: FastifyInstance): Promise<void> {
   /**
@@ -302,6 +308,50 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         [req.params.id, req.tenantId, voiceId],
       );
 
+      // --- 7. prévia audível ----------------------------------------------
+      //
+      // Depois do UPDATE, e FORA de qualquer caminho que possa derrubar a
+      // resposta. O slot já foi consumido: transformar uma falha de prévia em
+      // 5xx faria a tela dizer "falhou" sobre uma clonagem que aconteceu e foi
+      // cobrada — e o reflexo de quem lê isso é clonar de novo, que gasta
+      // outro slot. É o defeito de 09/08 renascendo pelo outro lado.
+      //
+      // O id vem de `previewVoiceId(voiceId)`, NUNCA de `avatar.voice_id`:
+      // aquela variável ainda guarda o id ANTIGO neste escopo, e sintetizar
+      // com ela devolveria 200, áudio e player — a voz errada, aprovada como
+      // se fosse a nova. Ver voicePreview.ts.
+      //
+      // `synthesizeSpeech` NÃO passa por `withLiveBudget` (voiceProvider.ts) e
+      // isto é deliberado: prévia não é operação tarifada de produto. Não
+      // acrescente o wrapper aqui por simetria com `cloneVoice` — o teto
+      // existe para conter gasto de PRODUÇÃO, e meio centavo de prévia que
+      // impede um slot de US$ 1,00 desperdiçado é o oposto disso.
+      let preview: VoicePreview | null = null;
+      let previewError: string | null = null;
+      try {
+        const falado = await synthesizeSpeech(
+          voiceCredential.apiKey,
+          previewVoiceId(voiceId),
+          VOICE_PREVIEW_PHRASE,
+        );
+        const previewUrl = await saveUpload(req.tenantId, falado.audio, "voice-preview.mp3");
+        preview = {
+          url: previewUrl,
+          phrase: VOICE_PREVIEW_PHRASE,
+          durationSeconds: falado.durationSeconds,
+        };
+      } catch (err) {
+        // Registrado como `info`, não `error`: a operação que importa deu
+        // certo. O que falhou foi o espelho.
+        const { message } = toClientVendorError("voice", "voice.preview", err);
+        previewError = previewUnavailableMessage(message);
+        logEvent("info", "voice_preview_failed", {
+          avatarId: avatar.id,
+          voiceId: voiceIdForLog(voiceId),
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       return reply.code(201).send({
         avatar: updated[0],
         sample_url: sampleUrl,
@@ -312,6 +362,11 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         // é informação, não recusa.
         warning: veredictoDuracao.warning ?? null,
         voice_slots: { used: inventario.owned + 1, limit: limite },
+        // Os dois andam em par: `preview` preenchido e `preview_error` nulo, ou
+        // o contrário. Nunca os dois nulos — isso seria sucesso silencioso sem
+        // player, que é indistinguível de uma tela quebrada.
+        preview,
+        preview_error: previewError,
       });
     },
   );

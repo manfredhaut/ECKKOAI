@@ -646,6 +646,14 @@
       "sending": "Cloning…",
       "blockedShort": "The sample needs to be at least {{min}}.",
       "cloned": "Voice cloned. The account now has {{used}} of {{limit}} voices in use.",
+      "slotsUsed": "{{used}} of {{limit}} voice slots used",
+      "slotsDeclaredNote": "Limit declared by this application, not confirmed with the provider: the quota endpoint requires the user_read permission, which the key in use does not have.",
+      "result": {
+        "created": "Voice created and linked to this avatar · {{used}} of {{limit}} slots used",
+        "done": "Done",
+        "cloneAgain": "Clone again",
+        "cloneAgainWarning": "Cloning again creates a NEW voice and burns another irreversible slot. The current voice stays in the provider account and is not deleted — this product does not delete voices."
+      },
       "replaceExplain": "Confirming replaces this avatar's current voice with a new one. The previous voice stays in the provider account, but is no longer linked to this avatar here.",
       "replaceConfirm": "Replace anyway",
       "protectedExplain": "This is the voice from the already-approved video and it is protected. The old one does not come back: the product does not delete voices at the provider, its slot is not freed, and the avatar keeps a single id. If this is really what you want, type the avatar name to confirm: {{name}}",

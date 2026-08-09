@@ -646,6 +646,14 @@
       "sending": "Clonando…",
       "blockedShort": "A amostra precisa de pelo menos {{min}}.",
       "cloned": "Voz clonada. A conta ficou com {{used}} de {{limit}} vozes em uso.",
+      "slotsUsed": "{{used}} de {{limit}} slots de voz usados",
+      "slotsDeclaredNote": "Teto declarado por este aplicativo, não confirmado no fornecedor: o endpoint de cota exige a permissão user_read, que a chave em uso não tem.",
+      "result": {
+        "created": "Voz criada e ligada a este avatar · {{used}} de {{limit}} slots usados",
+        "done": "Pronto",
+        "cloneAgain": "Clonar de novo",
+        "cloneAgainWarning": "Clonar de novo cria uma voz NOVA e gasta outro slot irreversível. A voz atual continua na conta do provedor e não é apagada — este produto não exclui vozes."
+      },
       "replaceExplain": "Confirmar substitui a voz atual deste avatar por uma nova. A voz anterior continua na conta do provedor, mas deixa de estar ligada a este avatar aqui.",
       "replaceConfirm": "Substituir mesmo assim",
       "protectedExplain": "Esta voz é a do vídeo já aprovado e está protegida. A antiga não volta: o produto não exclui voz no provedor, o slot dela não é liberado, e o avatar guarda um id só. Se for mesmo a intenção, digite o nome do avatar para confirmar: {{name}}",

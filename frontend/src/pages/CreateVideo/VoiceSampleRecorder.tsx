@@ -46,6 +46,28 @@ interface CloneResponse {
   duration_seconds: number | null;
   warning: string | null;
   voice_slots: { used: number; limit: number };
+  /**
+   * A prévia audível da voz recém-criada. `null` quando a síntese falhou — e
+   * nesse caso `preview_error` diz por quê. Os dois nunca são nulos juntos:
+   * isso seria sucesso sem player e sem explicação, indistinguível de tela
+   * quebrada.
+   */
+  preview: { url: string; phrase: string; durationSeconds: number | null } | null;
+  preview_error: string | null;
+}
+
+/**
+ * O resultado da clonagem, mantido na tela até a pessoa fechá-lo.
+ *
+ * Estado próprio, e não um `notice` de texto: o bloco tem player, contagem de
+ * slots e dois botões, e some só no clique de "Pronto" — nunca no próximo
+ * render. Uma clonagem que custou um slot irreversível não pode ter o
+ * resultado descartado por uma re-renderização.
+ */
+interface CloneResult {
+  slots: { used: number; limit: number };
+  preview: { url: string; phrase: string; durationSeconds: number | null } | null;
+  previewError: string | null;
 }
 
 function formatDuration(totalSeconds: number): string {
@@ -71,6 +93,9 @@ export function VoiceSampleRecorder({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // O bloco de resultado. Enquanto ele existe, o gravador dá lugar a ele: quem
+  // acabou de gastar um slot precisa OUVIR antes de qualquer outra ação.
+  const [result, setResult] = useState<CloneResult | null>(null);
   // Só aparece depois de o servidor recusar com `voice_exists`. Um checkbox de
   // "substituir" sempre visível é um convite a marcar sem ler — e o que está
   // do outro lado é irreversível.
@@ -228,13 +253,17 @@ export function VoiceSampleRecorder({
         campos,
       );
       onCloned(res.avatar);
-      setNotice(
-        res.warning ??
-          t("createVideo.voiceSample.cloned", {
-            used: res.voice_slots.used,
-            limit: res.voice_slots.limit,
-          }),
-      );
+      // O aviso de duração (faixa 60–90 s) continua sendo aviso; o RESULTADO
+      // agora tem bloco próprio, com o player. Antes desta mudança a única
+      // saída era esta frase de sucesso, e quem quisesse saber como a voz
+      // ficou não tinha como — foi assim que três slots irreversíveis foram
+      // gastos em 09/08, um por tentativa de "ver se agora ficou bom".
+      setNotice(res.warning ?? null);
+      setResult({
+        slots: res.voice_slots,
+        preview: res.preview,
+        previewError: res.preview_error,
+      });
       setReplaceOffered(false);
       setProtectedGate(false);
       setTypedName("");
@@ -310,8 +339,75 @@ export function VoiceSampleRecorder({
         <p className="voice-sample__existing">{t("createVideo.voiceSample.alreadyCloned")}</p>
       )}
 
+      {/* RESULTADO DA CLONAGEM — ocupa o lugar do gravador enquanto existe.
+          Não é um aviso passageiro: o slot foi gasto e é irreversível, então o
+          bloco fica até um clique explícito em "Pronto". */}
+      {result && (
+        <div className="voice-sample__result" data-testid="voice-clone-result">
+          <p className="voice-sample__result-title">
+            {t("createVideo.voiceSample.result.created", {
+              used: result.slots.used,
+              limit: result.slots.limit,
+            })}
+          </p>
+          <p className="voice-sample__limit-note">
+            {t("createVideo.voiceSample.slotsDeclaredNote")}
+          </p>
+
+          {result.preview ? (
+            <>
+              {/* O texto ao lado do player não é decoração: é ele que torna
+                  duas clonagens comparáveis entre si. Sem a frase à vista,
+                  "ficou melhor?" vira memória, não comparação. */}
+              <audio controls src={result.preview.url} data-testid="voice-preview-audio" />
+              <p className="voice-sample__preview-phrase">“{result.preview.phrase}”</p>
+            </>
+          ) : (
+            /* A prévia falhou. A voz EXISTE e o slot foi gasto — o texto do
+               servidor diz as duas coisas, e diz que clonar de novo não
+               conserta a prévia. Nunca tratar como erro da clonagem. */
+            <p className="voice-sample__preview-missing">{result.previewError}</p>
+          )}
+
+          <div className="voice-sample__result-actions">
+            {/* "Pronto", e não "Manter esta voz": não há nada a manter. O
+                UPDATE já aconteceu e o slot já foi gasto quando este bloco
+                apareceu. Um botão que simula uma decisão já tomada é o mesmo
+                defeito que esta tela existe para consertar. */}
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setResult(null);
+                setExpanded(false);
+              }}
+            >
+              {t("createVideo.voiceSample.result.done")}
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => {
+                setResult(null);
+                setExpanded(true);
+              }}
+            >
+              {t("createVideo.voiceSample.result.cloneAgain")}
+            </button>
+          </div>
+
+          {/* SEMPRE visível, nunca em hover: esta informação existia só ANTES
+              de clonar, e é depois — olhando um resultado morno — que a pessoa
+              decide tentar de novo. Foi exatamente esse o caminho dos três
+              slots gastos em 09/08. */}
+          <p className="voice-sample__result-warning">
+            {t("createVideo.voiceSample.result.cloneAgainWarning")}
+          </p>
+        </div>
+      )}
+
       {/* Recolhido: mostra só o estado e o caminho para expandir. */}
-      {!expanded && (
+      {!result && !expanded && (
         <button type="button" className="btn btn-outline" onClick={() => setExpanded(true)}>
           {avatar.voice_id
             ? t("createVideo.voiceSample.changeVoice")
@@ -319,7 +415,7 @@ export function VoiceSampleRecorder({
         </button>
       )}
 
-      {expanded && (
+      {!result && expanded && (
         <>
       <p className="voice-sample__hint">
         {min !== null && recommended !== null && max !== null
