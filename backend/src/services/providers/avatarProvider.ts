@@ -9,6 +9,7 @@ import { readUpload } from "../storage.js";
 import { synthesizeSpeech } from "./voiceProvider.js";
 import { processVoiceAudio } from "../audioProcessing.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
+import { vendorSignal } from "./vendorTimeout.js";
 import { recordProviderUsage } from "../billing/usageTracking.js";
 import { contractMismatch, logVendorResponse, unexpectedShapeMessage } from "./vendorResponseLog.js";
 import {
@@ -274,6 +275,15 @@ async function fetchJson(res: Response, providerLabel: string, context: string):
 
 const HEYGEN_BASE = "https://api.heygen.com";
 
+/**
+ * O sinal de timeout, importado e usado em TODA chamada deste arquivo.
+ *
+ * Antes disto nenhum `fetch` do produto tinha `AbortSignal`, e no caminho de
+ * criação isso é dinheiro: `POST /v3/videos` acontece DEPOIS do débito, e um
+ * socket pendurado deixava o crédito debitado com a linha em `queued` para
+ * sempre. Ver `providers/vendorTimeout.ts`.
+ */
+
 async function heygenUploadAsset(apiKey: string, buffer: Buffer, mimeType: string): Promise<string> {
   let res: Response;
   try {
@@ -284,6 +294,7 @@ async function heygenUploadAsset(apiKey: string, buffer: Buffer, mimeType: strin
       method: "POST",
       headers: { "x-api-key": apiKey },
       body: form,
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("avatarProvider.heygen", err);
@@ -310,6 +321,7 @@ async function trainAvatarHeygen(apiKey: string, photoBuffer: Buffer): Promise<T
         name: `twinai-${Date.now()}`,
         file: { type: "asset_id", asset_id: assetId },
       }),
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("avatarProvider.heygen", err);
@@ -357,6 +369,7 @@ async function pollAvatarStatusHeygen(apiKey: string, avatarId: string): Promise
   try {
     const res = await fetch(`${HEYGEN_BASE}/v3/avatars/${encodeURIComponent(avatarId)}`, {
       headers: { "x-api-key": apiKey },
+      signal: vendorSignal(),
     });
     const data = await fetchJson(res, "HeyGen", "heygen.getAvatar");
     return normalizeAvatarStatus(data?.data?.avatar_item?.status ?? data?.data?.status ?? data?.status);
@@ -632,6 +645,10 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
       method: "POST",
       headers: heygenVideoRequestHeaders(input.apiKey, input),
       body: JSON.stringify(body),
+      // A chamada mais cara do produto, e a que acontece DEPOIS do débito. Um
+      // socket pendurado aqui era o pior caso do ciclo de vida: crédito
+      // debitado, aceite desconhecido, linha em `queued` para sempre.
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("avatarProvider.heygen", err);
@@ -656,6 +673,7 @@ async function pollHeygenVideo(apiKey: string, jobId: string): Promise<PollResul
   try {
     res = await fetch(`${HEYGEN_BASE}/v3/videos/${encodeURIComponent(jobId)}`, {
       headers: { "x-api-key": apiKey },
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("avatarProvider.heygen", err);
@@ -698,7 +716,10 @@ async function pollHeygenVideo(apiKey: string, jobId: string): Promise<PollResul
 async function checkHeygenConnection(apiKey: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${HEYGEN_BASE}/v2/user/remaining_quota`, { headers: { "x-api-key": apiKey } });
+    res = await fetch(`${HEYGEN_BASE}/v2/user/remaining_quota`, {
+      headers: { "x-api-key": apiKey },
+      signal: vendorSignal(),
+    });
   } catch (err) {
     logProviderNetworkError("avatarProvider.heygen", err);
     throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
@@ -734,6 +755,7 @@ async function didUpload(apiKey: string, buffer: Buffer, filename: string, mimeT
       method: "POST",
       headers: { authorization: didAuthHeader(apiKey) },
       body: form,
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("avatarProvider.did", err);
@@ -767,6 +789,7 @@ async function generateVideoDid(input: GenerateVideoInput): Promise<GenerateVide
         source_url: input.providerAvatarId,
         script: { type: "audio", audio_url: audioUrl },
       }),
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("avatarProvider.did", err);
@@ -789,6 +812,7 @@ async function pollDidTalk(apiKey: string, jobId: string): Promise<PollResult> {
   try {
     res = await fetch(`${DID_BASE}/talks/${encodeURIComponent(jobId)}`, {
       headers: { authorization: didAuthHeader(apiKey) },
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("avatarProvider.did", err);
@@ -820,7 +844,10 @@ async function pollDidTalk(apiKey: string, jobId: string): Promise<PollResult> {
 async function checkDidConnection(apiKey: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${DID_BASE}/credits`, { headers: { authorization: didAuthHeader(apiKey) } });
+    res = await fetch(`${DID_BASE}/credits`, {
+      headers: { authorization: didAuthHeader(apiKey) },
+      signal: vendorSignal(),
+    });
   } catch (err) {
     logProviderNetworkError("avatarProvider.did", err);
     throw new AvatarProviderError(`Could not reach D-ID API: ${describeNetworkError(err)}`);
@@ -1010,6 +1037,7 @@ export async function createAvatarLook(input: {
         avatar_id: input.providerAvatarId,
         prompt: input.prompt,
       }),
+      signal: vendorSignal(),
     });
     const data = await fetchJson(res, "HeyGen", "heygen.createLook");
     const item = data?.data?.avatar_item;
@@ -1080,6 +1108,7 @@ export async function readAvatarLookStatus(
   try {
     const res = await fetch(`${HEYGEN_BASE}/v3/avatars/looks/${encodeURIComponent(providerLookId)}`, {
       headers: { "x-api-key": apiKey },
+      signal: vendorSignal(),
     });
     const data = await fetchJson(res, "HeyGen", "heygen.lookStatus");
     const bruto = data?.data?.status;
@@ -1130,6 +1159,7 @@ export async function listAvatarLooks(
     // Jaleco: 21812e52…, e1071cee… e 21812e52… nas duas famílias).
     const pa = await fetch(`${HEYGEN_BASE}/v3/avatars/looks/${encodeURIComponent(providerAvatarId)}`, {
       headers: { "x-api-key": apiKey },
+      signal: vendorSignal(),
     });
     const paData = await fetchJson(pa, "HeyGen", "heygen.photoAvatar");
     const groupId: string | undefined = paData?.data?.group_id;
@@ -1145,7 +1175,7 @@ export async function listAvatarLooks(
     // indistinguível de "este avatar tem um traje só".
     const res = await fetch(
       `${HEYGEN_BASE}/v3/avatars/looks?group_id=${encodeURIComponent(groupId)}`,
-      { headers: { "x-api-key": apiKey } },
+      { headers: { "x-api-key": apiKey }, signal: vendorSignal() },
     );
     const data = await fetchJson(res, "HeyGen", "heygen.listLooks");
     const lista: unknown = data?.data;

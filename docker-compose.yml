@@ -72,6 +72,26 @@ services:
       # porque a falha passou a devolver o GASTO: sem um contador que não
       # volta, um caminho que falha sempre dispararia para sempre.
       PROVIDER_LIVE_MAX_ATTEMPTS: ${PROVIDER_LIVE_MAX_ATTEMPTS:-}
+      # TETO DE TEMPO de toda chamada a fornecedor. Vazio = os padrões
+      # declarados em services/providers/vendorTimeout.ts (120 s para chamada
+      # de API, 600 s para download de artefato).
+      #
+      # São DOIS porque medem coisas diferentes: uma resposta JSON que demora
+      # dois minutos é o fornecedor não respondendo; um mp4 de 3,4 MB que
+      # demora dois minutos é um link lento. Um teto só transformaria download
+      # lento em falha — um modo de falha novo, não um defeito corrigido.
+      #
+      # Antes deste bloco NENHUM `fetch` do produto tinha AbortSignal: um
+      # socket pendurado no `POST /v3/videos` deixava o crédito debitado com a
+      # linha em `queued` para sempre, porque a chamada acontece DEPOIS do
+      # débito.
+      VENDOR_HTTP_TIMEOUT_MS: ${VENDOR_HTTP_TIMEOUT_MS:-}
+      VENDOR_DOWNLOAD_TIMEOUT_MS: ${VENDOR_DOWNLOAD_TIMEOUT_MS:-}
+      # Idade acima da qual a varredura de boot ENCERRA um registro preso em
+      # vez de voltar a acompanhá-lo. Vazio = 6 h (services/video/recovery.ts).
+      # Acima dela o vídeo vira `error` com motivo `recovery_stale`; o estorno
+      # segue a mesma regra dos demais — volta só se o fornecedor nunca aceitou.
+      VIDEO_RECOVERY_MAX_AGE_MS: ${VIDEO_RECOVERY_MAX_AGE_MS:-}
       # Teto das rotas de imagem (cenário, traje, fotos do rosto). Vazio = 25 MB.
       # Repassado aos DOIS serviços para que cliente e servidor concordem por
       # construção — o servidor continua sendo a autoridade.

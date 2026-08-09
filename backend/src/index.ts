@@ -5,6 +5,8 @@ import { buildApp } from "./app.js";
 import { runMonthlyGrantSweep } from "./services/billing/monthlyGrant.js";
 import { recordAuditLog } from "./services/auditLog.js";
 import { logEvent } from "./services/log/safeLog.js";
+import { recoverInFlightVideos } from "./services/video/recovery.js";
+import { rearmVideoPolling } from "./routes/videos.js";
 
 const GRANT_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -43,6 +45,31 @@ async function main() {
 
   const app = await buildApp();
   startMonthlyGrantScheduler();
+
+  // VARREDURA ÚNICA de registros presos, ANTES de aceitar conexão.
+  //
+  // O acompanhamento de uma geração vive num `setInterval` na memória deste
+  // processo. Até aqui, morto o processo, o laço morria com ele e nada o
+  // re-armava: a linha ficava em `queued`/`processing` para sempre, com o
+  // crédito já debitado. Esta chamada é a rede de segurança mínima — não é
+  // fila, não é worker, e não roda de novo enquanto o processo viver.
+  //
+  // Antes do `listen` de propósito: um registro preso que só fosse recolhido
+  // depois de a porta abrir competiria com uma geração nova pelo mesmo teto.
+  //
+  // Nunca lança (o `catch` é interno): um processo que não sobe não acompanha
+  // nada, que é exatamente o oposto do que esta varredura existe para garantir.
+  const recuperacao = await recoverInFlightVideos(rearmVideoPolling);
+  if (recuperacao.encontrados > 0) {
+    await recordAuditLog({
+      tenantId: null,
+      actorAdminUserId: null,
+      action: "system.videos.boot_recovery",
+      before: null,
+      after: recuperacao,
+    }).catch((err) => logEvent("error", "boot_recovery_audit_failed", { detail: err }));
+  }
+
   await app.listen({ host: "0.0.0.0", port: config.port });
 }
 

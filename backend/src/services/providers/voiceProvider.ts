@@ -1,6 +1,7 @@
 // Real integration: ElevenLabs instant voice cloning. Only vendor today —
 // see vendorCatalog.ts.
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
+import { vendorSignal } from "./vendorTimeout.js";
 import { isFixtureMode } from "./providerMode.js";
 import { withLiveBudget } from "./liveGuard.js";
 import { logVendorBinaryResponse, logVendorResponse } from "./vendorResponseLog.js";
@@ -75,6 +76,10 @@ export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResu
         method: "POST",
         headers: { "xi-api-key": input.apiKey },
         body: form,
+        // Clonar consome um slot IRREVERSÍVEL na conta do fornecedor, e este
+        // produto não tem caminho de exclusão. Um socket pendurado aqui deixa
+        // a pergunta "o slot foi gasto?" sem resposta possível.
+        signal: vendorSignal(),
       });
     } catch (err) {
       logProviderNetworkError("voiceProvider.cloneVoice", err);
@@ -120,6 +125,7 @@ export async function listVoices(apiKey: string): Promise<VoiceInventory> {
     res = await fetch(ELEVENLABS_VOICES_URL, {
       method: "GET",
       headers: { "xi-api-key": apiKey },
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("voiceProvider.listVoices", err);
@@ -161,6 +167,7 @@ export async function checkElevenLabsConnection(apiKey: string): Promise<void> {
     res = await fetch(ELEVENLABS_VOICES_URL, {
       method: "GET",
       headers: { "xi-api-key": apiKey },
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("voiceProvider.checkElevenLabsConnection", err);
@@ -233,6 +240,7 @@ export async function synthesizeSpeech(
       method: "POST",
       headers: { "xi-api-key": apiKey, "content-type": "application/json" },
       body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("voiceProvider.synthesizeSpeech", err);
@@ -289,6 +297,7 @@ export async function synthesizeSpeech(
       // produziriam vozes diferentes conforme o endpoint que respondesse — um
       // defeito que só apareceria de forma intermitente.
       body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),
+      signal: vendorSignal(),
     });
   } catch (err) {
     logProviderNetworkError("voiceProvider.synthesizeSpeech", err);

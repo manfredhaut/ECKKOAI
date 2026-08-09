@@ -54,6 +54,7 @@ import { checkOutfitPolicy } from "./checkOutfitPolicy.js";
 import { checkLegacyEndpointPolicy } from "./checkLegacyEndpointPolicy.js";
 import { checkPreflightSummaryPolicy } from "./checkPreflightSummaryPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
+import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -567,6 +568,16 @@ async function main(): Promise<void> {
   const videoContract = await checkVideoContractPolicy();
   videoContract.failures.forEach((f) => failures.push(f));
   videoContract.notes.forEach((n) => note(n));
+
+  // --- 25f. o vídeo pago não some sem rastro ------------------------------
+  //
+  // Depois da 25e porque compartilha o mesmo arquivo (`routes/videos.ts`) e o
+  // mesmo dinheiro, e ANTES da 26 porque troca `pool.query` por um duplo para
+  // exercitar a varredura de boot — restaura no `finally`, mas rodar cedo
+  // demais faria tudo que lê banco depois depender dessa restauração.
+  const recovery = await checkVideoRecoveryPolicy(process.env.REPO_ROOT ?? "/repo");
+  recovery.failures.forEach((f) => failures.push(f));
+  recovery.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

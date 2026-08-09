@@ -8,6 +8,7 @@
 // don't belong in this registry.
 import { config } from "../../config.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
+import { vendorSignal } from "./vendorTimeout.js";
 import { completeFixture } from "./fixtureProvider.js";
 import { isFixtureMode } from "./providerMode.js";
 import type { ScriptVendor } from "./vendorCatalog.js";
@@ -67,6 +68,7 @@ async function completeAnthropic(model: string, _baseUrl: string | null, input: 
   let res: Response;
   try {
     res = await fetch(ANTHROPIC_API_URL, {
+      signal: vendorSignal(),
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -105,6 +107,7 @@ async function completeGemini(model: string, _baseUrl: string | null, input: Com
   let res: Response;
   try {
     res = await fetch(`${url}?key=${encodeURIComponent(input.apiKey)}`, {
+      signal: vendorSignal(),
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -168,6 +171,7 @@ async function completeOpenAiChatCompletions(
   let res: Response;
   try {
     res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      signal: vendorSignal(),
       method: "POST",
       headers: {
         "content-type": "application/json",

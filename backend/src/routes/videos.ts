@@ -2,7 +2,12 @@ import type { FastifyInstance } from "fastify";
 import path from "node:path";
 import { pool } from "../db/pool.js";
 import type { Avatar, Video } from "../types.js";
-import { generateVideo, pollVideoJob, AvatarProviderError } from "../services/providers/avatarProvider.js";
+import {
+  generateVideo,
+  pollVideoJob,
+  heygenIdempotencyKey,
+  AvatarProviderError,
+} from "../services/providers/avatarProvider.js";
 import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
@@ -34,9 +39,106 @@ import {
   assertDailyGenerationBudget,
   readDailyBudget,
 } from "../services/billing/dailyGenerationLimit.js";
+import { decidirEstorno, type VideoFailureReason } from "../services/video/videoFailure.js";
+import { ehTimeoutDeFornecedor } from "../services/providers/vendorTimeout.js";
+import type { VideoEmVoo } from "../services/video/recovery.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
+
+/**
+ * Encerra um vídeo em `error` gravando o MOTIVO ao lado, e decide o estorno.
+ *
+ * Existe porque o estado `error` era escrito em sete lugares e significava
+ * cinco coisas financeiramente distintas — e nenhum dos quatro caminhos de
+ * falha do polling devolvia crédito. Concentrar as três decisões (estado,
+ * motivo, dinheiro) numa função só é o que impede o oitavo ponto de nascer
+ * sem uma delas.
+ *
+ * A máquina de estados NÃO muda: continuam `queued`, `processing`, `ready` e
+ * `error`. O que entra é a coluna `failure_reason`, ao lado.
+ *
+ * `AND status = ANY(...)` protege o que só o caminho de timeout protegia: um
+ * `UPDATE` cego sobrescreveria um `ready` que chegou no último instante.
+ */
+/**
+ * A DECISÃO DE DINHEIRO, isolada num lugar só.
+ *
+ * Separada do `UPDATE` de propósito: os sete pontos que escrevem `error` não
+ * escrevem o estado da mesma forma — dois precisam de `RETURNING *` para
+ * devolver a linha ao cliente, os do polling não —, mas a pergunta "o crédito
+ * volta?" tem de ser respondida do mesmo jeito nos sete. Duplicar a resposta
+ * por causa da diferença de forma do `UPDATE` é como os quatro caminhos do
+ * polling ficaram sem estorno nenhum.
+ */
+async function decidirEEstornar(input: {
+  videoId: string;
+  tenantId: string;
+  reason: VideoFailureReason;
+  providerJobId: string | null;
+  /** `false` no caminho de crédito insuficiente: não houve débito a devolver. */
+  houveDebito?: boolean;
+}): Promise<boolean> {
+  const decisao = decidirEstorno(input.reason, input.providerJobId != null);
+  logEvent(decisao.estorna ? "info" : "error", "video_falhou", {
+    context: "videos.encerrar",
+    videoId: input.videoId,
+    reason: input.reason,
+    gasto: decisao.gasto,
+    nota: decisao.nota,
+    providerJobId: input.providerJobId ? input.providerJobId.slice(0, 8) + "…" : null,
+  });
+  if (!decisao.estorna || input.houveDebito === false) return false;
+
+  // O índice único parcial `credit_ledger_one_refund_per_video` (migration 035)
+  // é a garantia final: dois caminhos que decidam estornar a mesma linha
+  // produzem UM lançamento, não dois. `refundCredit` já consulta sob
+  // `FOR UPDATE`; o índice cobre o que o lock não cobre — um caminho novo que
+  // esqueça a checagem, e o dia em que houver mais de uma réplica.
+  const r = await refundCredit({
+    tenantId: input.tenantId,
+    creditType: "video",
+    relatedVideoId: input.videoId,
+  });
+  return r.refunded;
+}
+
+async function encerrarComMotivo(input: {
+  videoId: string;
+  tenantId: string;
+  reason: VideoFailureReason;
+  mensagem: string;
+  providerJobId: string | null;
+  vendor: AvatarVendor;
+  durationSeconds: number;
+  format: VideoFormat;
+  houveDebito?: boolean;
+}): Promise<{ encerrado: boolean; estornado: boolean }> {
+  const { rowCount } = await pool
+    .query(
+      `UPDATE videos SET status = 'error', error_message = $2, failure_reason = $3
+        WHERE id = $1 AND status = ANY($4)`,
+      [input.videoId, input.mensagem, input.reason, ["queued", "processing"]],
+    )
+    .catch(() => ({ rowCount: 0 }));
+  if (!rowCount) return { encerrado: false, estornado: false };
+
+  await recordFailedProviderUsage({
+    tenantId: input.tenantId,
+    videoId: input.videoId,
+    provider: "avatar",
+    vendor: input.vendor,
+    unitType: "seconds",
+    requestedUnitCount: input.durationSeconds,
+    failureReason: input.mensagem,
+    aspectRatio: input.format.aspectRatio,
+    resolution: input.format.resolution,
+    providerJobId: input.providerJobId,
+  });
+
+  const estornado = await decidirEEstornar(input);
+  return { encerrado: true, estornado };
+}
 
 function pollJob(
   videoId: string,
@@ -65,27 +167,22 @@ function pollJob(
         const check = validateVideoArtifact(artifact.head, artifact.totalBytes);
         if (!check.ok) {
           logEvent("error", "artifact_rejected", { context: "videos.poll", videoId, reason: check.reason, url: result.outputUrl });
-          await pool.query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1", [
-            videoId,
-            ARTIFACT_INVALID_MESSAGE,
-          ]);
-          await createNotification(tenantId, "video_error", ARTIFACT_INVALID_MESSAGE);
           // Falha DEPOIS do aceite: o fornecedor renderizou e cobrou, e nós é
-          // que não conseguimos usar o artefato. A linha registra a tentativa
-          // com custo zero do NOSSO lado — o que não é o mesmo que dizer que
-          // não custou ao fornecedor. É por isto que ela também não estorna
-          // (ver a fronteira do ESTORNO-1).
-          await recordFailedProviderUsage({
-            tenantId,
+          // que não conseguimos usar o artefato. `decidirEstorno` classifica
+          // este motivo como gasto que SAIU — é o único dos sete em que há
+          // prova de renderização, porque o artefato chegou. Não estorna, e o
+          // motivo fica gravado na linha (ver a fronteira do ESTORNO-1).
+          await encerrarComMotivo({
             videoId,
-            provider: "avatar",
+            tenantId,
+            reason: "artifact_invalid",
+            mensagem: ARTIFACT_INVALID_MESSAGE,
+            providerJobId: jobId,
             vendor,
-            unitType: "seconds",
-            requestedUnitCount: durationSeconds,
-            failureReason: ARTIFACT_INVALID_MESSAGE,
-            aspectRatio: format.aspectRatio,
-            resolution: format.resolution,
+            durationSeconds,
+            format,
           });
+          await createNotification(tenantId, "video_error", ARTIFACT_INVALID_MESSAGE);
           return;
         }
 
@@ -174,77 +271,101 @@ function pollJob(
           aspectRatio: format.aspectRatio,
           resolution: format.resolution,
           providerEngine: engine,
+          // O job que produziu ESTE consumo. É o que torna a linha conferível
+          // contra a fatura sem depender do join com `videos` — que é
+          // `ON DELETE SET NULL` e já deixou 15 linhas órfãs (medido em 08/08).
+          providerJobId: jobId,
         });
       } else if (result.status === "error") {
         clearInterval(interval);
         const { message: pollMessage } = toClientVendorError("avatar", "videos.poll", new Error(result.errorMessage));
-        await pool.query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1", [
+        // A mensagem SANITIZADA, nunca o corpo do fornecedor: `error_message` e
+        // `provider_usage.failure_reason` são lidas por tela de admin, e o
+        // corpo bruto já está no log. O MOTIVO enumerado entra ao lado.
+        await encerrarComMotivo({
           videoId,
-          pollMessage,
-        ]);
-        await createNotification(tenantId, "video_error", pollMessage);
-        await recordFailedProviderUsage({
           tenantId,
-          videoId,
-          provider: "avatar",
+          reason: "vendor_reported_error",
+          mensagem: pollMessage,
+          providerJobId: jobId,
           vendor,
-          unitType: "seconds",
-          requestedUnitCount: durationSeconds,
-          // A mensagem SANITIZADA, nunca o corpo do fornecedor: esta coluna é
-          // lida por tela de admin, e o corpo bruto já está no log.
-          failureReason: pollMessage,
-          aspectRatio: format.aspectRatio,
-          resolution: format.resolution,
+          durationSeconds,
+          format,
         });
+        await createNotification(tenantId, "video_error", pollMessage);
       } else if (attempts === 1) {
         await pool.query("UPDATE videos SET status = 'processing' WHERE id = $1", [videoId]);
       }
     } catch (err) {
       const { message } = toClientVendorError("avatar", "videos.pollLoop", err);
       clearInterval(interval);
-      await pool
-        .query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1", [videoId, message])
-        .catch(() => {});
-      await recordFailedProviderUsage({
-        tenantId,
+      // Um timeout do NOSSO lado no meio do polling não é o fornecedor
+      // falhando: o job continua lá. Distinguir os dois motivos é o que
+      // permite, depois, procurar o job pelo id em vez de concluir que a
+      // geração morreu.
+      await encerrarComMotivo({
         videoId,
-        provider: "avatar",
+        tenantId,
+        reason: ehTimeoutDeFornecedor(err) ? "vendor_timeout" : "poll_loop_error",
+        mensagem: message,
+        providerJobId: jobId,
         vendor,
-        unitType: "seconds",
-        requestedUnitCount: durationSeconds,
-        failureReason: message,
-        aspectRatio: format.aspectRatio,
-        resolution: format.resolution,
+        durationSeconds,
+        format,
       });
     }
     if (attempts >= MAX_POLL_ATTEMPTS) {
       clearInterval(interval);
       const timeout = "O serviço de vídeo demorou mais que o esperado. Tente gerar novamente.";
-      const { rowCount } = await pool
-        .query("UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 AND status != 'ready'", [
-          videoId,
-          timeout,
-        ])
-        .catch(() => ({ rowCount: 0 }));
-      // Só registra se o UPDATE de fato marcou erro. Sem o `rowCount`, um
-      // vídeo que ficou pronto no último instante ganharia uma linha de falha
-      // ao lado da de sucesso — e o pós-morte passaria a contar falhas que
-      // não aconteceram.
-      if (rowCount) {
-        await recordFailedProviderUsage({
-          tenantId,
-          videoId,
-          provider: "avatar",
-          vendor,
-          unitType: "seconds",
-          requestedUnitCount: durationSeconds,
-          failureReason: timeout,
-          aspectRatio: format.aspectRatio,
-          resolution: format.resolution,
-        });
-      }
+      // Só registra se o UPDATE de fato marcou erro — a proteção vive dentro de
+      // `encerrarComMotivo`, no `AND status = ANY(...)`. Sem ela, um vídeo que
+      // ficou pronto no último instante ganharia uma linha de falha ao lado da
+      // de sucesso, e o pós-morte passaria a contar falhas que não aconteceram.
+      await encerrarComMotivo({
+        videoId,
+        tenantId,
+        reason: "poll_timeout",
+        mensagem: timeout,
+        providerJobId: jobId,
+        vendor,
+        durationSeconds,
+        format,
+      });
     }
   }, POLL_INTERVAL_MS);
+}
+
+/**
+ * Re-arma o acompanhamento de UM registro que ficou preso — o que a varredura
+ * de boot chama (`services/video/recovery.ts`).
+ *
+ * É o MESMO `pollJob` do caminho normal, de propósito: um segundo mecanismo de
+ * acompanhamento seria um segundo lugar para o desfecho ser tratado de forma
+ * diferente, e a divergência apareceria justamente no caso raro.
+ *
+ * A credencial é relida aqui porque ela não é guardada na linha do vídeo (e
+ * não deve ser). Sem credencial não há como perguntar o status: a linha fica
+ * onde está e a varredura conta como falha, em vez de encerrar um vídeo que
+ * pode estar pronto.
+ */
+export async function rearmVideoPolling(linha: VideoEmVoo): Promise<void> {
+  if (!linha.provider_job_id) {
+    throw new Error("rearmVideoPolling chamado sem provider_job_id — a varredura deveria ter encerrado a linha");
+  }
+  const credential = await getCredential(linha.tenant_id, "avatar");
+  if (!credential) {
+    throw new Error(`sem credencial de avatar para o tenant ${linha.tenant_id}; a linha continua em acompanhamento pendente`);
+  }
+  pollJob(
+    linha.id,
+    linha.tenant_id,
+    credential.apiKey,
+    (linha.provider_vendor ?? credential.vendor) as AvatarVendor,
+    linha.provider_job_id,
+    linha.duration_seconds,
+    resolveVideoFormat(linha.publish_platform),
+    linha.provider_engine,
+  );
 }
 
 /**
@@ -800,10 +921,21 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       relatedVideoId: video.id,
     });
     if (!debit.ok) {
-      await pool.query(
-        "UPDATE videos SET status = 'error', error_message = 'Insufficient credits' WHERE id = $1",
-        [video.id],
-      );
+      // `houveDebito: false` — não há o que devolver: o portão recusou ANTES de
+      // mexer no saldo. Sem essa marca, `refundCredit` seria chamado, acharia
+      // que não existe linha de consumo e devolveria `no_reference`; funciona,
+      // mas registra uma tentativa de estorno que nunca fez sentido.
+      await encerrarComMotivo({
+        videoId: video.id,
+        tenantId: req.tenantId,
+        reason: "insufficient_credits",
+        mensagem: "Insufficient credits",
+        providerJobId: null,
+        vendor: avatarCredential.vendor as AvatarVendor,
+        durationSeconds: duration_seconds,
+        format,
+        houveDebito: false,
+      });
       return reply.code(403).send({
         error: "plan_limit_reached",
         // Mesmo par de textos de `evaluateGenerationReadiness`, pelo mesmo
@@ -818,15 +950,61 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    // O LOOK escolhido no passo Cena, quando há mais de um. Traje é look do
+    // avatar, não parâmetro de vídeo — e sem look escolhido vale o do avatar,
+    // que é o que sempre valeu. Ver `lookSelection.ts`: a decisão saiu daqui
+    // para poder ser exercitada pela guarda do contrato.
+    const providerAvatarId = providerAvatarIdParaGeracao(avatar.provider_avatar_id, avatarLookId);
+
+    // -----------------------------------------------------------------------
+    // GRAVAÇÃO ANTECIPADA — fecha a janela entre o débito e o `provider_job_id`.
+    //
+    // O defeito: `debitCredit()` acontece acima, `generateVideo()` logo abaixo,
+    // e o `UPDATE` com o job id só depois da resposta. Morto o processo no meio
+    // — ou o socket ficando pendurado —, o crédito já saiu, a chamada pode ter
+    // sido aceita, e não sobra NADA que ligue a linha ao trabalho no
+    // fornecedor. É o pior caso do ciclo de vida: perdido e sem rastro.
+    //
+    // A chave de idempotência é DETERMINÍSTICA e derivada do conteúdo da
+    // tentativa (`heygenIdempotencyKey`), então ela pode ser calculada ANTES de
+    // a chamada sair — e é exatamente por ser a mesma que o header leva que ela
+    // serve de vínculo: com ela gravada, um job órfão do lado do fornecedor
+    // pode ser reconhecido como sendo desta linha.
+    //
+    // `provider_request_at` marca o instante em que a chamada foi emitida. Sem
+    // ele, "queued sem job id" não distingue "nunca chegou a chamar" de
+    // "chamou e não voltou" — e as duas têm consequências opostas no estorno.
+    //
+    // `null` para vendor que não tem o conceito: só a HeyGen documenta
+    // `Idempotency-Key`. Inventar uma chave para a D-ID seria gravar um vínculo
+    // que não existe do outro lado.
+    const idempotencyKey =
+      avatarCredential.vendor === "heygen"
+        ? heygenIdempotencyKey({
+            tenantId: req.tenantId,
+            providerAvatarId,
+            script,
+            format,
+            scene,
+            engineChoice,
+          })
+        : null;
+    await pool.query(
+      "UPDATE videos SET provider_idempotency_key = $2, provider_request_at = now() WHERE id = $1",
+      [video.id, idempotencyKey],
+    );
+    logEvent("info", "video_tentativa_registrada", {
+      context: "videos.create",
+      videoId: video.id,
+      idempotencyKey: idempotencyKey ? idempotencyKey.slice(0, 14) + "…" : null,
+      vendor: avatarCredential.vendor,
+    });
+
     try {
       const { providerJobId, audioDurationSeconds, audioDurationSource, engine, engineReason } = await generateVideo({
         apiKey: avatarCredential.apiKey,
         vendor: avatarCredential.vendor as AvatarVendor,
-        // O LOOK escolhido no passo Cena, quando há mais de um. Traje é look do
-        // avatar, não parâmetro de vídeo — e sem look escolhido vale o do
-        // avatar, que é o que sempre valeu. Ver `lookSelection.ts`: a decisão
-        // saiu daqui para poder ser exercitada pela guarda do contrato.
-        providerAvatarId: providerAvatarIdParaGeracao(avatar.provider_avatar_id, avatarLookId),
+        providerAvatarId,
         script,
         elevenLabsApiKey: voiceCredential?.apiKey ?? null,
         voiceId: avatar.voice_id,
@@ -879,12 +1057,20 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // vale: assim que `generateVideo()` devolve um `providerJobId`, o
       // trabalho está enfileirado lá e a cota é consumida, então falha de
       // polling, artefato inválido ou download quebrado NÃO estornam (ver
-      // pollJob acima e services/billing/creditGate.ts).
-      await refundCredit({
-        tenantId: req.tenantId,
-        creditType: "video",
-        relatedVideoId: video.id,
-      });
+      // pollJob acima e services/billing/creditGate.ts). A decisão deixou de
+      // ser um `refundCredit()` incondicional aqui e passou a sair de
+      // `decidirEEstornar`, que é a MESMA função que os sete pontos usam.
+      //
+      // TIMEOUT é o caso que obriga a distinção a existir: a chamada de criação
+      // pode ter chegado ao fornecedor sem a resposta ter voltado. Não há job
+      // id, então a regra ("se o dinheiro não saiu, o crédito volta") manda
+      // estornar — e é a chave de idempotência, gravada ANTES da chamada, que
+      // impede a repetição do cliente de virar um segundo vídeo cobrado.
+      const motivoDaCriacao: VideoFailureReason = ehTimeoutDeFornecedor(err)
+        ? "vendor_timeout"
+        : err instanceof LiveBudgetExhaustedError
+          ? "live_budget_exhausted"
+          : "vendor_rejected";
 
       // Teto NOSSO, não falha do fornecedor: nenhuma chamada saiu e nada foi
       // cobrado. Tratado ANTES do sanitizador de erro de vendor, porque ele
@@ -895,17 +1081,29 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // quando a HeyGen nem chegou a ser chamada.
       if (err instanceof LiveBudgetExhaustedError) {
         const { rows: barrado } = await pool.query<Video>(
-          "UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 RETURNING *",
-          [video.id, err.message],
+          "UPDATE videos SET status = 'error', error_message = $2, failure_reason = $3 WHERE id = $1 RETURNING *",
+          [video.id, err.message, motivoDaCriacao],
         );
         logEvent("error", "live_budget_exhausted", { context: "videos.create", used: err.used, max: err.max });
+        await decidirEEstornar({
+          videoId: video.id,
+          tenantId: req.tenantId,
+          reason: motivoDaCriacao,
+          providerJobId: null,
+        });
         return reply.code(429).send({ error: "live_budget_exhausted", message: err.message, video: barrado[0] });
       }
       const { failure, message } = toClientVendorError("avatar", "videos.create", err);
       const { rows: errored } = await pool.query<Video>(
-        "UPDATE videos SET status = 'error', error_message = $2 WHERE id = $1 RETURNING *",
-        [video.id, message],
+        "UPDATE videos SET status = 'error', error_message = $2, failure_reason = $3 WHERE id = $1 RETURNING *",
+        [video.id, message, motivoDaCriacao],
       );
+      await decidirEEstornar({
+        videoId: video.id,
+        tenantId: req.tenantId,
+        reason: motivoDaCriacao,
+        providerJobId: null,
+      });
       // Recusa ANTES do aceite: nada foi renderizado e o crédito já foi
       // estornado acima. A linha existe mesmo assim — sem ela, "cinco
       // tentativas recusadas" e "nenhuma tentativa" ficam indistinguíveis
@@ -921,6 +1119,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         failureReason: message,
         aspectRatio: format.aspectRatio,
         resolution: format.resolution,
+        // `null` porque o fornecedor não chegou a devolver job. A coluna existe
+        // para os casos em que ele devolveu, e é ela que permite conferir uma
+        // fatura contra o que foi gerado — ver migration 047.
+        providerJobId: null,
       });
       // Status de ERRO, e não 201.
       //

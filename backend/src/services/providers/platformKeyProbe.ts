@@ -14,6 +14,7 @@
  * por isso ela só roda a partir de um clique, nunca ao montar a tela.
  */
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
+import { vendorSignal } from "./vendorTimeout.js";
 import type { PlatformValidationKind } from "../platformCredentials.js";
 import { logEvent } from "../log/safeLog.js";
 
@@ -80,7 +81,9 @@ async function probeGemini(apiKey: string): Promise<ProbeResult> {
   // cliente.
   let res: Response;
   try {
-    res = await fetch(`${PROBE_ENDPOINTS.gemini}?key=${encodeURIComponent(apiKey)}`);
+    res = await fetch(`${PROBE_ENDPOINTS.gemini}?key=${encodeURIComponent(apiKey)}`, {
+      signal: vendorSignal(),
+    });
   } catch (err) {
     return unreachable("gemini", err);
   }
@@ -96,6 +99,7 @@ async function probeAnthropic(apiKey: string): Promise<ProbeResult> {
   try {
     res = await fetch(PROBE_ENDPOINTS.anthropic, {
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      signal: vendorSignal(),
     });
   } catch (err) {
     return unreachable("anthropic", err);
@@ -110,7 +114,7 @@ async function probeAnthropic(apiKey: string): Promise<ProbeResult> {
 async function probeHeygen(apiKey: string): Promise<ProbeResult> {
   let res: Response;
   try {
-    res = await fetch(PROBE_ENDPOINTS.heygen, { headers: { "x-api-key": apiKey } });
+    res = await fetch(PROBE_ENDPOINTS.heygen, { headers: { "x-api-key": apiKey }, signal: vendorSignal() });
   } catch (err) {
     return unreachable("heygen", err);
   }
@@ -137,7 +141,7 @@ async function probeElevenLabs(apiKey: string): Promise<ProbeResult> {
   // — falso negativo. Ver a nota em platformCredentials.ts.
   let res: Response;
   try {
-    res = await fetch(PROBE_ENDPOINTS.elevenlabs, { headers: { "xi-api-key": apiKey } });
+    res = await fetch(PROBE_ENDPOINTS.elevenlabs, { headers: { "xi-api-key": apiKey }, signal: vendorSignal() });
   } catch (err) {
     return unreachable("elevenlabs", err);
   }

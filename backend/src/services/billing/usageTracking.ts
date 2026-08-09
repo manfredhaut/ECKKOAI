@@ -34,6 +34,19 @@ export interface RecordUsageInput {
   resolution?: string | null;
   /** `null` = nenhum motor foi enviado ao fornecedor. Ver videoEngine.ts. */
   providerEngine?: string | null;
+  /**
+   * O job no FORNECEDOR que produziu este consumo.
+   *
+   * Repetido aqui em vez de alcançado por join com `videos`, e a razão é
+   * medida: `video_id` é `ON DELETE SET NULL` (migration 023), e em 08/08 havia
+   * **15 linhas de `avatar` com `video_id` nulo** — consumo que sobreviveu ao
+   * vídeo e perdeu qualquer ponte com o fornecedor. Sem esta coluna, uma
+   * fatura não tem como ser conferida contra o que foi gerado.
+   *
+   * `null` para consumo que não tem job: voz e roteiro, e o caminho de recusa
+   * anterior ao aceite.
+   */
+  providerJobId?: string | null;
 }
 
 /**
@@ -75,6 +88,8 @@ export interface RecordFailedUsageInput {
   failureReason: string;
   aspectRatio?: string | null;
   resolution?: string | null;
+  /** Ver `RecordUsageInput.providerJobId`. Preenchido quando o job chegou a existir. */
+  providerJobId?: string | null;
 }
 
 /**
@@ -111,8 +126,8 @@ async function writeUsage(input: WriteUsageInput): Promise<void> {
       `INSERT INTO provider_usage
          (tenant_id, video_id, provider, vendor, unit_type, unit_count,
           requested_unit_count, unit_source, aspect_ratio, resolution, provider_engine,
-          outcome, failure_reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          outcome, failure_reason, provider_job_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         input.tenantId,
         input.videoId ?? null,
@@ -127,6 +142,7 @@ async function writeUsage(input: WriteUsageInput): Promise<void> {
         input.providerEngine ?? null,
         input.outcome,
         input.failureReason,
+        input.providerJobId ?? null,
       ],
     );
   } catch (err) {

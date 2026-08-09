@@ -8,6 +8,7 @@ import type { FastifyReply } from "fastify";
 import { Readable } from "node:stream";
 import { config } from "../config.js";
 import { InvalidArtifactError, validateVideoArtifact } from "./videoArtifact.js";
+import { vendorDownloadSignal } from "./providers/vendorTimeout.js";
 
 const EXTENSION_CONTENT_TYPES: Record<string, string> = {
   ".mp4": "video/mp4",
@@ -74,7 +75,10 @@ export async function proxyRemoteAttachment(
   filename: string,
   options: { validate?: boolean } = {},
 ): Promise<void> {
-  const upstream = await fetch(absoluteUrl(url));
+  // Teto de DOWNLOAD, não o de API: baixar um mp4 legitimamente demora, e
+  // aplicar aqui o teto curto transformaria link lento em falha — um modo de
+  // falha novo. Ver providers/vendorTimeout.ts.
+  const upstream = await fetch(absoluteUrl(url), { signal: vendorDownloadSignal() });
   if (!upstream.ok || !upstream.body) {
     throw new Error(`Upstream returned ${upstream.status}`);
   }
@@ -122,7 +126,7 @@ export async function persistRemoteArtifact(
 ): Promise<{ localUrl: string; bytes: number } | null> {
   if (!/^https?:\/\//i.test(url)) return null;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: vendorDownloadSignal() });
   if (!res.ok) throw new Error(`Upstream returned ${res.status}`);
   const body = Buffer.from(await res.arrayBuffer());
 
@@ -148,7 +152,10 @@ export async function persistRemoteArtifact(
  * de ser barato.
  */
 export async function probeArtifact(url: string): Promise<{ head: Buffer; totalBytes: number }> {
-  const res = await fetch(absoluteUrl(url), { headers: { Range: "bytes=0-65535" } });
+  const res = await fetch(absoluteUrl(url), {
+    headers: { Range: "bytes=0-65535" },
+    signal: vendorDownloadSignal(),
+  });
   if (!res.ok) throw new Error(`Upstream returned ${res.status}`);
 
   const head = Buffer.from(await res.arrayBuffer());

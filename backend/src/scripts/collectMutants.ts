@@ -39,6 +39,7 @@ import { MUTANTS as outfitMutants } from "./checkOutfitPolicy.js";
 import { MUTANTS as legacyEndpointMutants } from "./checkLegacyEndpointPolicy.js";
 import { MUTANTS as preflightSummaryMutants } from "./checkPreflightSummaryPolicy.js";
 import { MUTANTS as videoContractMutants } from "./checkVideoContractPolicy.js";
+import { MUTANTS as videoRecoveryMutants } from "./checkVideoRecoveryPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 const all: Mutant[] = [
@@ -71,6 +72,7 @@ const all: Mutant[] = [
   ...legacyEndpointMutants,
   ...preflightSummaryMutants,
   ...videoContractMutants,
+  ...videoRecoveryMutants,
 ];
 
 // Um mutante malformado só apareceria no meio da execução, com a árvore já
