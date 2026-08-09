@@ -43,6 +43,7 @@ const BOOT = "backend/src/index.ts";
 const ESTORNO = "backend/src/services/billing/creditGate.ts";
 const MIGRATION_ESTORNO = "backend/src/db/migrations/035_credit_ledger_refund_reason.sql";
 const MOTIVOS = "backend/src/services/video/videoFailure.ts";
+const RECUPERACAO = "backend/src/services/video/recovery.ts";
 
 /** Arquivos com saída para fornecedor. Todo `fetch` deles precisa de sinal. */
 const ARQUIVOS_COM_SAIDA = [
@@ -346,19 +347,31 @@ export async function checkVideoRecoveryPolicy(repoRoot: string): Promise<Recove
     // =====================================================================
     // G6 — cada um dos sete pontos grava o SEU motivo
     // =====================================================================
-    const usados = [...rota.matchAll(/reason:\s*"([a-z_]+)"/g)].map((m) => m[1]);
-    const motivosDeVideo = usados.filter((r) => (VIDEO_FAILURE_REASONS as readonly string[]).includes(r));
-    const distintos = new Set(motivosDeVideo);
-    // Sete pontos escrevem `error`; um deles (o do teto de sessão) e o de
-    // recusa compartilham a mesma variável, então o piso é 6 motivos distintos
-    // alcançáveis a partir desta rota.
-    const PISO_DE_MOTIVOS = 6;
-    if (distintos.size < PISO_DE_MOTIVOS) {
+    // A primeira versão desta verificação lia só `reason: "literal"` e exigia
+    // um piso de 6. Ela enxergava 4 dos 8 motivos que a rota alcança —
+    // `vendor_timeout` e `poll_loop_error` chegam por ternário, e os três da
+    // criação chegam pela variável `motivoDaCriacao` —, então reprovava o
+    // código correto e não havia código que a fizesse passar. Agora o sinal é
+    // a presença do literal no arquivo, que é o que sobrevive às três formas.
+    const escreve = (fonte: string, r: string) => fonte.includes(`"${r}"`);
+    const recuperacaoBruta = await ler(repoRoot, RECUPERACAO);
+    const recuperacaoFonte = recuperacaoBruta ? semComentarios(recuperacaoBruta) : "";
+    // O piso deixou de ser digitado: os motivos que ESTA rota deve saber
+    // escrever são os declarados menos os que a varredura de boot escreve.
+    // Motivo novo em videoFailure.ts que ninguém escreve aparece aqui como
+    // ausente, em vez de engordar o CHECK do banco sem nunca ser gravado.
+    const daRecuperacao = VIDEO_FAILURE_REASONS.filter((r) => escreve(recuperacaoFonte, r));
+    const esperadosNaRota = VIDEO_FAILURE_REASONS.filter((r) => !daRecuperacao.includes(r));
+    const distintos = new Set(VIDEO_FAILURE_REASONS.filter((r) => escreve(rota, r)));
+    const ausentes = esperadosNaRota.filter((r) => !distintos.has(r));
+    if (ausentes.length > 0) {
       failures.push(
-        `recuperação: dois pontos de falha diferentes gravam o MESMO motivo — routes/videos.ts usa ` +
-          `${distintos.size} motivos distintos (${[...distintos].sort().join(", ")}), e são pelo menos ` +
-          `${PISO_DE_MOTIVOS} pontos com consequências financeiras diferentes. Um motivo repetido devolve ` +
-          `a coluna ao estado que ela veio corrigir: 'error' significando cinco coisas.`,
+        `recuperação: dois pontos de falha diferentes gravam o MESMO motivo — routes/videos.ts deixou de ` +
+          `escrever ${ausentes.length} motivo(s) que só ela escreve (${[...ausentes].sort().join(", ")}), ` +
+          `e usa ${distintos.size} dos ${esperadosNaRota.length} esperados. O ponto continua marcando ` +
+          `'error' e gravando um literal válido do CHECK — só que passou a dizer o que outro ponto já ` +
+          `dizia. Um motivo repetido devolve a coluna ao estado que ela veio corrigir: 'error' ` +
+          `significando cinco coisas.`,
       );
     }
     const atualizacoesDeErro = [...rota.matchAll(/UPDATE videos SET status = 'error'/g)].length;
@@ -371,7 +384,9 @@ export async function checkVideoRecoveryPolicy(repoRoot: string): Promise<Recove
       );
     }
     notes.push(
-      `recuperação: ${distintos.size} motivos distintos e ${comMotivo}/${atualizacoesDeErro} pontos de erro com motivo gravado`,
+      `recuperação: ${distintos.size}/${esperadosNaRota.length} motivos da rota e ` +
+        `${comMotivo}/${atualizacoesDeErro} pontos de erro com motivo gravado ` +
+        `(${daRecuperacao.length} motivo(s) são da varredura de boot)`,
     );
   }
 
