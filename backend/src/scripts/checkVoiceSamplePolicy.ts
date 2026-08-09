@@ -33,6 +33,10 @@ import {
   sniffAudioFormat,
   voiceIdForLog,
 } from "../services/voice/voiceSample.js";
+import {
+  previewUnavailableMessage,
+  voiceNameWithTimestamp,
+} from "../services/voice/voicePreview.js";
 
 export interface VoiceSampleCheckResult {
   failures: string[];
@@ -40,6 +44,87 @@ export interface VoiceSampleCheckResult {
 }
 
 export const MUTANTS: Mutant[] = [
+  // --- G11: a prévia da voz recém-clonada ---------------------------------
+  {
+    guard: "voz: a prévia sai da voz que acabou de ser criada",
+    name: "a prévia usa o voice_id antigo",
+    kind: "esperto",
+    // O mutante mais perigoso do lote, e o motivo de a guarda comparar o
+    // ARGUMENTO em vez de contar chamadas. Aqui nada quebra: o TTS responde
+    // 200, o arquivo é salvo, o player aparece e sai voz. Só que é a voz
+    // ANTERIOR — e o operador aprova uma clonagem que nunca ouviu, agora com
+    // motivo para confiar. É pior que não ter prévia nenhuma.
+    file: "backend/src/routes/voice.ts",
+    find: "          previewVoiceId(voiceId),",
+    replace: "          previewVoiceId(avatar.voice_id ?? voiceId),",
+    expect: "a prévia é sintetizada com",
+  },
+  {
+    guard: "voz: a prévia sai da voz que acabou de ser criada",
+    name: "a falha da prévia some do corpo",
+    kind: "esperto",
+    // A resposta continua bem formada e continua 201. A tela mostra sucesso,
+    // sem player e sem explicação — indistinguível de defeito de tela. Quem vê
+    // isso clona de novo.
+    file: "backend/src/routes/voice.ts",
+    find: "        preview_error: previewError,",
+    replace: "        preview_error: null,",
+    expect: "não devolve mais `preview_error`",
+  },
+  {
+    guard: "voz: o custo do slot é dito DEPOIS, não só antes",
+    name: "o aviso de clonar de novo deixa de dizer que a voz antiga fica",
+    kind: "esperto",
+    // Sutil de propósito: o aviso CONTINUA lá e continua falando em slot. Só
+    // deixa de dizer que a voz atual não é apagada — e sem isso "gasta outro
+    // slot" se lê como TROCA, que parece indolor. Foi essa leitura que
+    // produziu cinco vozes homônimas na conta.
+    file: "frontend/src/locales/pt-BR.json",
+    find: "\"cloneAgainWarning\": \"Clonar de novo cria uma voz NOVA e gasta outro slot irreversível. A voz atual continua na conta do provedor e não é apagada — este produto não exclui vozes.\"",
+    replace: "\"cloneAgainWarning\": \"Clonar de novo cria uma voz nova e gasta outro slot.\"",
+    expect: "não diz as duas coisas necessárias",
+  },
+  {
+    guard: "voz: o custo do slot é dito DEPOIS, não só antes",
+    name: "o bloco de resultado perde o aviso",
+    kind: "obvio",
+    file: "frontend/src/pages/CreateVideo/VoiceSampleRecorder.tsx",
+    find: "            {t(\"createVideo.voiceSample.result.cloneAgainWarning\")}",
+    replace: "            {null}",
+    expect: "não usa mais `result.cloneAgainWarning`",
+  },
+  {
+    guard: "voz: a prévia sai da voz que acabou de ser criada",
+    name: "não há prévia",
+    kind: "obvio",
+    file: "backend/src/routes/voice.ts",
+    find: "          previewVoiceId(voiceId),",
+    replace: "          \"\",",
+    expect: "a prévia é sintetizada com",
+  },
+  {
+    guard: "voz: o nome da voz distingue uma clonagem da outra",
+    name: "o nome volta a ser só o do avatar",
+    kind: "esperto",
+    // Nada quebra hoje. O dano aparece na quinta voz homônima, quando alguém
+    // precisa apagar uma e não tem como saber qual.
+    file: "backend/src/routes/voice.ts",
+    find: "          name: voiceNameWithTimestamp(avatar.name, new Date()),",
+    replace: "          name: avatar.name,",
+    expect: "voltou a clonar sem carimbo no nome",
+  },
+  {
+    guard: "voz: o nome da voz distingue uma clonagem da outra",
+    name: "o carimbo perde a hora e vira só a data",
+    kind: "esperto",
+    // Duas clonagens no mesmo dia — que é exatamente o caso medido, três em
+    // vinte minutos — voltam a ser indistinguíveis.
+    file: "backend/src/services/voice/voicePreview.ts",
+    find: "  const carimbo = `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;",
+    replace: "  const carimbo = iso.slice(0, 10);",
+    expect: "fora do formato AAAA-MM-DD HH:mm em UTC",
+  },
+
   // --- GUARDA C: a porta da voz protegida ---------------------------------
   {
     guard: "voz: a porta da voz protegida é estreita",
@@ -981,6 +1066,138 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
   }
 
   notes.push("voz: o texto de duração interpola min/recommended da política, sem número fixo nem fallback");
+
+  // --- G11: a PRÉVIA da voz recém-clonada ---------------------------------
+  //
+  // O defeito medido: três slots irreversíveis gastos em 09/08 no mesmo
+  // avatar, um a cada nove minutos, porque a tela pedia uma decisão sem volta
+  // e não mostrava o resultado. A prévia fecha isso — mas ela tem um modo de
+  // falhar que NÃO produz sintoma nenhum, e é esse que esta seção existe para
+  // pegar.
+  //
+  // 1) O ID. Sintetizar com `avatar.voice_id` em vez do id recém-clonado
+  //    devolve 200, áudio e player. Tudo funciona; só que é a voz ANTIGA, e o
+  //    operador aprova uma clonagem que nunca ouviu — pior que não ter prévia,
+  //    porque agora ele tem motivo para confiar. Verificar que "houve chamada
+  //    ao TTS" não pega isto: a chamada acontece nos dois casos. A asserção
+  //    precisa comparar o argumento com o identificador que RECEBE o resultado
+  //    de cloneVoice, e é o que ela faz abaixo.
+  const previewIdx = rotaCode.indexOf("previewVoiceId(");
+  if (previewIdx === -1) {
+    failures.push(
+      `voz: ${relVoiceRoute} não chama mais previewVoiceId(). Sem prévia, a tela volta a pedir uma ` +
+        "decisão irreversível sem mostrar o resultado — o defeito que gastou três slots em 09/08.",
+    );
+  } else {
+    // De qual variável a clonagem devolve o id. Lido do próprio arquivo em vez
+    // de assumido: se alguém renomear a variável, a comparação seguinte tem de
+    // acompanhar, e não reprovar por engano.
+    const clone = /\(\{\s*voiceId\s*\}\s*=\s*await\s+cloneVoice\(/.test(rotaCode);
+    if (!clone) {
+      failures.push(
+        `voz: não achei em ${relVoiceRoute} a desestruturação \`({ voiceId } = await cloneVoice(\`. ` +
+          "Sem ela não dá para afirmar QUAL id a prévia recebe, e um verificador cego é pior que reprovar.",
+      );
+    }
+    const arg = rotaCode.slice(previewIdx + "previewVoiceId(".length).match(/^([^)]*)\)/);
+    const argumento = arg ? arg[1].trim() : "";
+    if (argumento !== "voiceId") {
+      failures.push(
+        `voz: a prévia é sintetizada com \`${argumento}\`, e não com o id que cloneVoice acabou de ` +
+          "devolver (`voiceId`). Se for `avatar.voice_id`, é o id ANTIGO: a chamada responde 200, o " +
+          "player toca e sai voz — a voz ERRADA, aprovada como se fosse a nova. Este defeito não tem " +
+          "sintoma; só a comparação do argumento o pega.",
+      );
+    }
+  }
+
+  // 2) A FALHA NÃO PODE SER SILENCIOSA. O slot já foi gasto quando a prévia
+  //    roda: uma prévia que falha sem dizer nada produz tela de sucesso sem
+  //    player, indistinguível de defeito — e o reflexo de quem vê isso é
+  //    clonar de novo, que gasta outro slot.
+  if (!/preview_error:\s*previewError/.test(rotaCode)) {
+    failures.push(
+      `voz: ${relVoiceRoute} não devolve mais \`preview_error\` com o motivo. A resposta continua 201 ` +
+        "e a tela mostra sucesso sem player e sem explicação — o pior desfecho, porque convida a " +
+        "clonar de novo para 'ver se agora vai'.",
+    );
+  }
+  if (!/preview:\s*null/.test(previewUnavailableMessage("x")) && previewUnavailableMessage("x").length < 40) {
+    failures.push("voz: a mensagem de prévia indisponível ficou curta demais para dizer o que se perdeu.");
+  }
+  for (const exigido of ["slot", "Clonar de novo"]) {
+    if (!previewUnavailableMessage("motivo").includes(exigido)) {
+      failures.push(
+        `voz: a mensagem de prévia indisponível não menciona "${exigido}". Ela precisa dizer que a voz ` +
+          "EXISTE, que o slot foi consumido, e que clonar de novo não conserta a prévia — sem isso o " +
+          "operador reclona.",
+      );
+    }
+  }
+
+  // 3) O AVISO DEPOIS. A informação sobre o custo do slot existia só ANTES de
+  //    clonar, e é DEPOIS — olhando um resultado morno — que se decide tentar
+  //    outra vez. Foi esse o caminho dos três slots.
+  for (const chave of ["result.cloneAgainWarning", "result.done", "result.cloneAgain"]) {
+    if (!recorderSource.includes(chave)) {
+      failures.push(
+        `voz: ${relRecorder} não usa mais \`${chave}\`. O bloco de resultado precisa do player, do ` +
+          "botão que só fecha e do aviso de que clonar de novo gasta outro slot irreversível.",
+      );
+    }
+  }
+  for (const loc of ["pt-BR", "en"] as const) {
+    const relLoc = `frontend/src/locales/${loc}.json`;
+    let locSource: string;
+    try {
+      locSource = await readFile(path.join(repoRoot, relLoc), "utf-8");
+    } catch {
+      failures.push(`voz: não consegui ler ${relLoc}.`);
+      continue;
+    }
+    const dict = JSON.parse(locSource) as Record<string, any>;
+    const aviso = dict?.createVideo?.voiceSample?.result?.cloneAgainWarning ?? "";
+    if (typeof aviso !== "string" || aviso.trim().length === 0) {
+      failures.push(`voz: ${relLoc} não tem o aviso de que clonar de novo gasta outro slot.`);
+      continue;
+    }
+    // O aviso precisa dizer que a voz atual NÃO é apagada. Sem isso, "gasta
+    // outro slot" pode ser lido como troca — e trocar seria indolor.
+    const dizIrreversivel = /irrevers|irrevers[íi]vel/i.test(aviso);
+    const dizQueNaoApaga = /não é apagada|not deleted|does not delete|não exclui/i.test(aviso);
+    if (!dizIrreversivel || !dizQueNaoApaga) {
+      failures.push(
+        `voz: o aviso de "clonar de novo" em ${relLoc} não diz as duas coisas necessárias — que o slot ` +
+          "é irreversível E que a voz atual continua na conta. Sem a segunda, a pessoa lê 'troca' e " +
+          "troca parece indolor.",
+      );
+    }
+  }
+
+  // 4) O NOME com carimbo — cinco vozes homônimas foram o que tornou a limpeza
+  //    manual arriscada. Exercitado de verdade, não só procurado no texto.
+  const carimbado = voiceNameWithTimestamp("Avatar X", new Date("2026-08-09T08:22:02Z"));
+  if (carimbado !== "Avatar X · 2026-08-09 08:22") {
+    failures.push(`voz: o nome carimbado saiu como "${carimbado}", fora do formato AAAA-MM-DD HH:mm em UTC.`);
+  }
+  if (voiceNameWithTimestamp("A".repeat(200), new Date()).length > 90) {
+    failures.push(
+      "voz: o nome carimbado passa de 90 caracteres com avatar de nome longo. O teto do fornecedor não " +
+        "é conhecido, e descobri-lo com uma recusa custaria o slot já consumido.",
+    );
+  }
+  if (!/name:\s*voiceNameWithTimestamp\(/.test(rotaCode)) {
+    failures.push(
+      `voz: ${relVoiceRoute} voltou a clonar sem carimbo no nome. Foi assim que cinco vozes homônimas ` +
+        "apareceram na conta, impossíveis de distinguir no painel do fornecedor.",
+    );
+  }
+
+  notes.push(
+    "voz: a prévia é sintetizada com o id RECÉM-CLONADO (comparado com o de cloneVoice), a falha vira " +
+      `preview_error sem derrubar o 201, o aviso de slot aparece DEPOIS no resultado, e o nome sai ` +
+      `carimbado ("${carimbado}")`,
+  );
 
   return { failures, notes };
 }
