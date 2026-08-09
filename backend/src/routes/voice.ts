@@ -63,6 +63,7 @@ import {
   VOICE_PREVIEW_PHRASE,
   previewUnavailableMessage,
   previewVoiceId,
+  voiceNameWithTimestamp,
 } from "../services/voice/voicePreview.js";
 
 export async function voiceRoutes(app: FastifyInstance): Promise<void> {
@@ -300,7 +301,11 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       try {
         ({ voiceId } = await cloneVoice({
           apiKey: voiceCredential.apiKey,
-          name: avatar.name,
+          // Com carimbo de data/hora: `name: avatar.name` puro produziu cinco
+          // vozes homônimas na conta, impossíveis de distinguir no painel do
+          // fornecedor — e é isso que torna a limpeza manual arriscada. Ver
+          // voicePreview.ts.
+          name: voiceNameWithTimestamp(avatar.name, new Date()),
           fileBuffer: normalizada.buffer,
           filename: normalizada.filename,
           mimeType: normalizada.mimeType,

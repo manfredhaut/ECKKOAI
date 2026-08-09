@@ -58,6 +58,37 @@ export function previewVoiceId(voiceIdRecemClonado: string): string {
 }
 
 /**
+ * NOME da voz no fornecedor.
+ *
+ * A rota clonava com `name: avatar.name` e mais nada. O resultado está na
+ * conta agora: CINCO vozes chamadas "TESTE REAL 15:40 01/08", indistinguíveis
+ * no painel do ElevenLabs. Não é só feio — é o que torna a limpeza manual
+ * arriscada, porque não há como saber qual apagar sem cruzar `voice_id` com o
+ * log, e apagar a errada quebra o avatar que a usa.
+ *
+ * O sufixo é a data/hora da criação, em UTC. UTC e não local de propósito: o
+ * `voice_id_replaced` do log é UTC, e um nome em fuso diferente obrigaria a
+ * converter de cabeça justamente no momento em que alguém está tentando
+ * identificar qual voz é qual.
+ *
+ * Formato `AAAA-MM-DD HH:mm` — ordenável alfabeticamente, que é como um painel
+ * de fornecedor costuma listar.
+ *
+ * O nome do avatar é TRUNCADO antes de receber o sufixo. O limite de tamanho
+ * de nome do ElevenLabs não está documentado nem foi medido; cortar em 60
+ * deixa folga confortável e é preferível a descobrir o teto com uma clonagem
+ * recusada DEPOIS de o slot ter sido consumido.
+ */
+const NOME_MAX_BASE = 60;
+
+export function voiceNameWithTimestamp(avatarName: string, agora: Date): string {
+  const iso = agora.toISOString();
+  const carimbo = `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+  const base = avatarName.trim().slice(0, NOME_MAX_BASE);
+  return `${base} · ${carimbo}`;
+}
+
+/**
  * O que a rota devolve no campo `preview`.
  *
  * `url` e `phrase` andam juntos: um player sem o texto obriga quem ouve a
