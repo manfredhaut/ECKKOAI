@@ -542,6 +542,52 @@ export async function checkVideoRecoveryPolicy(repoRoot: string): Promise<Recove
   }
   notes.push("recuperação: o boot recolhe preso órfão, preso antigo e preso recente");
 
+  // -----------------------------------------------------------------------
+  // G4, segunda metade: o BOOT precisa CHAMAR a varredura.
+  //
+  // Tudo acima prova que `recoverInFlightVideos` funciona — com o banco
+  // substituído, exercitando os três ramos. Não prova que alguém a chama, e
+  // essa distinção não é teórica: MEDIDO em 08/08, o mutante "não recolhe
+  // nada" (que troca a chamada em index.ts por um objeto de zeros) passou o
+  // gate VERDE. A guarda inteira olhava para a função e nunca para o arquivo
+  // de boot — a constante BOOT existia só na declaração do mutante.
+  //
+  // Uma função de recuperação perfeita que ninguém invoca deixa o vídeo preso
+  // exatamente como antes dela existir, e o resumo verde diz que está tudo
+  // certo. É o caso que o próprio runner chama de guarda inerte.
+  // -----------------------------------------------------------------------
+  const bootBruto = await ler(repoRoot, BOOT);
+  if (!bootBruto) {
+    failures.push(`recuperação: não consegui ler ${BOOT} — verificador cego é pior que reprovar.`);
+  } else {
+    const boot = semComentarios(bootBruto);
+    const posVarredura = boot.indexOf("recoverInFlightVideos(");
+    const posListen = boot.indexOf(".listen(");
+    if (posVarredura === -1) {
+      failures.push(
+        "recuperação: o boot não chama a varredura de registros presos — `recoverInFlightVideos` não " +
+          "aparece em index.ts. O laço de acompanhamento vive na memória do processo, então sem esta " +
+          "chamada um reinício deixa a linha em queued/processing para sempre, com o crédito debitado.",
+      );
+    } else if (posListen !== -1 && posVarredura > posListen) {
+      failures.push(
+        "recuperação: o boot chama a varredura DEPOIS de abrir a porta. Um registro preso recolhido " +
+          "depois do `listen` disputa com geração nova o mesmo teto de sessão, e o cliente pode receber " +
+          "recusa por um limite que a recuperação ainda estava consumindo.",
+      );
+    }
+    // A varredura tem de re-armar pelo MESMO `pollJob` da criação. Um segundo
+    // mecanismo de acompanhamento é a forma mais cara de os dois divergirem:
+    // um grava consumo e o outro não, e a diferença só aparece na conciliação.
+    if (posVarredura !== -1 && !/recoverInFlightVideos\(\s*rearmVideoPolling\s*\)/.test(boot)) {
+      failures.push(
+        "recuperação: o boot chama a varredura sem passar `rearmVideoPolling` — reacompanhar por outro " +
+          "caminho cria um segundo mecanismo de polling ao lado do da criação.",
+      );
+    }
+  }
+  notes.push("recuperação: o boot chama a varredura antes do listen, pelo mesmo pollJob da criação");
+
   // =======================================================================
   // G5 — teto de tempo em toda chamada a fornecedor
   // =======================================================================

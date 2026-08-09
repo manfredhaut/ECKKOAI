@@ -74,8 +74,13 @@ export const MUTANTS: Mutant[] = [
     // acrescentar um endpoint v2 que nunca esteve na lista. É o caso comum de
     // quem lê a doc do fornecedor, acha um exemplo antigo e copia.
     file: "backend/src/services/providers/avatarProvider.ts",
-    find: "    res = await fetch(`${HEYGEN_BASE}/v2/user/remaining_quota`, { headers: { \"x-api-key\": apiKey } });",
-    replace: "    res = await fetch(`${HEYGEN_BASE}/v2/talking_photo/list`, { headers: { \"x-api-key\": apiKey } });",
+    // A chamada era de uma linha só até o teto de tempo entrar: o `signal`
+    // quebrou-a em quatro, e o `find` antigo passou a casar 0× — o mutante
+    // deixou de ser aplicado e esta guarda ficou sem ninguém a exercitar.
+    // MEDIDO em 08/08 pelo arnês (ERRO 144/175). Agora o `find` pega só a
+    // linha do endpoint, que é a única que o defeito precisa mexer.
+    find: "    res = await fetch(`${HEYGEN_BASE}/v2/user/remaining_quota`, {",
+    replace: "    res = await fetch(`${HEYGEN_BASE}/v2/talking_photo/list`, {",
     expect: "endpoints legados: chamada a endpoint v2 fora do inventário",
   },
   {
