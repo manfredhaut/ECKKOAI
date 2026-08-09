@@ -39,6 +39,14 @@ interface SamplePolicy {
    * conta aqui divergiria dela na primeira mudança de formato.
    */
   max_seconds: number;
+  /**
+   * Quantos slots de voz a conta já usa, medidos no fornecedor, e o teto
+   * DECLARADO por este aplicativo. `null` quando a leitura não foi possível —
+   * sem credencial ou com o fornecedor fora do ar. Nesse caso a seção
+   * simplesmente não mostra a contagem: inventar "0 de 10" seria pior que
+   * omitir, porque um número errado aqui convida a clonar.
+   */
+  voice_slots: { used: number; limit: number } | null;
 }
 
 interface CloneResponse {
@@ -337,6 +345,25 @@ export function VoiceSampleRecorder({
 
       {avatar.voice_id && (
         <p className="voice-sample__existing">{t("createVideo.voiceSample.alreadyCloned")}</p>
+      )}
+
+      {/* SLOTS, sempre visível — inclusive com o bloco recolhido, e ANTES de
+          qualquer clonagem. Até aqui este número só existia na resposta da
+          clonagem, ou seja, chegava depois de o slot ter sido gasto: o
+          operador descobria que a conta estava cheia quando a guarda recusava.
+          A ressalva do teto declarado anda junto e não é rodapé decorativo —
+          o limite é palpite nosso, e o número ao lado dele é medido. */}
+      {policy?.voice_slots && (
+        <p className="voice-sample__slots">
+          {t("createVideo.voiceSample.slotsUsed", {
+            used: policy.voice_slots.used,
+            limit: policy.voice_slots.limit,
+          })}
+          <span className="voice-sample__limit-note">
+            {" "}
+            {t("createVideo.voiceSample.slotsDeclaredNote")}
+          </span>
+        </p>
       )}
 
       {/* RESULTADO DA CLONAGEM — ocupa o lugar do gravador enquanto existe.

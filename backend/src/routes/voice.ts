@@ -75,17 +75,48 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
    * servidor que recusa por cinco produz o pior desfecho possível — botão
    * habilitado seguido de erro, com o arquivo já enviado.
    */
-  app.get("/voice/sample-policy", async () => ({
-    min_seconds: MIN_SAMPLE_SECONDS,
-    recommended_seconds: RECOMMENDED_SAMPLE_SECONDS,
-    max_bytes: VOICE_SAMPLE_MAX_BYTES,
-    // O TETO em segundos, derivado dos bytes pela mesma função que a rota usa
-    // para recusar (`maxSampleSecondsFor`). Sem ele a tela dizia "pode gravar
-    // mais, não há limite" — e havia: a 24 kHz cabem 218 s nos 10 MiB do
-    // fornecedor, e o que passa disso é recusado depois de a pessoa ter
-    // gravado.
-    max_seconds: MAX_SAMPLE_SECONDS,
-  }));
+  app.get("/voice/sample-policy", async (req) => {
+    // SLOTS, para a tela poder mostrar antes — não só depois que a GUARDA B
+    // recusa. Até aqui o operador só descobria que a conta estava cheia
+    // gastando uma tentativa: a contagem viajava apenas na resposta da
+    // clonagem, ou seja, chegava DEPOIS de o slot ter sido consumido.
+    //
+    // Falha SUAVE, e é o ponto do desenho: sem credencial, ou com o fornecedor
+    // fora do ar, esta rota continua devolvendo os limites de duração. Deixar
+    // uma leitura acessória derrubar a política inteira travaria a gravação por
+    // causa de um número informativo.
+    //
+    // O `used` é MEDIDO no fornecedor (`countOwnedVoices` exclui a biblioteca
+    // `premade`); o `limit` é DECLARADO por nós e continua sem confirmação —
+    // `/v1/user/subscription` responde 401 sem `user_read`. A tela escreve essa
+    // ressalva ao lado do número; ver `slotsDeclaredNote`.
+    let voiceSlots: { used: number; limit: number } | null = null;
+    try {
+      const cred = await getCredential(req.tenantId, "voice");
+      if (cred) {
+        const inventario = await listVoices(cred.apiKey);
+        voiceSlots = { used: inventario.owned, limit: voiceSlotLimit() };
+      }
+    } catch (err) {
+      logEvent("info", "voice_slots_unavailable", {
+        context: "voice.samplePolicy",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return {
+      min_seconds: MIN_SAMPLE_SECONDS,
+      recommended_seconds: RECOMMENDED_SAMPLE_SECONDS,
+      max_bytes: VOICE_SAMPLE_MAX_BYTES,
+      // O TETO em segundos, derivado dos bytes pela mesma função que a rota usa
+      // para recusar (`maxSampleSecondsFor`). Sem ele a tela dizia "pode gravar
+      // mais, não há limite" — e havia: a 24 kHz cabem 218 s nos 10 MiB do
+      // fornecedor, e o que passa disso é recusado depois de a pessoa ter
+      // gravado.
+      max_seconds: MAX_SAMPLE_SECONDS,
+      voice_slots: voiceSlots,
+    };
+  });
 
   app.post<{ Params: { id: string } }>(
     "/avatars/:id/voice-sample",
