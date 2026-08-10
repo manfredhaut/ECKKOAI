@@ -450,7 +450,16 @@ interface VideoRow extends Video {
  * número errado e não mostrar nada: quando há medição, ela ganha; enquanto não
  * há, a estimativa aparece rotulada como estimativa.
  */
-function withDeliveredSeconds(row: VideoRow) {
+// EXPORTADA para poder ser exercitada sem subir a aplicação.
+//
+// É a única função por onde a linha de um vídeo vira resposta do tenant, e por
+// isso é o único lugar onde o véu pode ser conferido de verdade. Enquanto ela
+// era privada, provar que `motion_prompt_en` não sai exigia uma sessão
+// autenticada — e o cookie de `@fastify/session` é assinado, então a única
+// forma de obtê-la seria forjar credencial. A guarda passa a chamar a função
+// com uma linha construída em memória, que é a mesma lição de `lookSelection.ts`
+// e `captionSelection.ts`: decisão dentro do handler não é exercitável.
+export function withDeliveredSeconds(row: VideoRow) {
   return {
     // O VÉU entra AQUI, e não em cada uma das três rotas, porque é aqui que o
     // `SELECT *` vira resposta. Filtrar nos chamadores deixaria a próxima rota
