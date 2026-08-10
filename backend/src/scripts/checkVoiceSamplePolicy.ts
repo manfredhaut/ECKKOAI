@@ -91,7 +91,7 @@ export const MUTANTS: Mutant[] = [
     file: "backend/src/services/providers/voiceProvider.ts",
     find: "    body.voice_settings = { speed: VOICE_SPEED };",
     replace: "    body.voice_settings = {};",
-    expect: "manda voice_settings sem speed",
+    expect: "não leva `voice_settings.speed",
   },
   {
     guard: "voz: a velocidade da fala é enviada, e é a medida",
@@ -139,7 +139,7 @@ export const MUTANTS: Mutant[] = [
     file: "backend/src/services/providers/voiceProvider.ts",
     find: "  if (supportsSpeed(modelId)) {\n    body.voice_settings = { speed: VOICE_SPEED };\n  }",
     replace: "",
-    expect: "não envia voice_settings",
+    expect: "não leva `voice_settings.speed",
   },
 
   // --- G11: a prévia da voz recém-clonada ---------------------------------

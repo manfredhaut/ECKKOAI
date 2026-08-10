@@ -244,7 +244,13 @@ export const ELEVENLABS_TTS_MODEL = process.env.ELEVENLABS_TTS_MODEL?.trim() || 
  * e vale só naquela chamada. Mandar o objeto sem `speed` devolveria tudo ao
  * default do fornecedor — pior que não mandar nada.
  */
-export const VOICE_SPEED = 0.85;
+// Anotado como `number`, e não deixado inferir o literal `0.85`: sem a
+// anotação, o TypeScript estreita o tipo para o próprio valor e qualquer
+// comparação com outro número vira "erro de tipo" em vez de verificação. A
+// guarda que confere se a velocidade continua sendo a medida ficaria INERTE —
+// reprovaria por não compilar, sem nunca dizer o que está errado. Medido: com
+// o literal, trocar 0.85 por 1.0 dá TS2367 e a mensagem da guarda some.
+export const VOICE_SPEED: number = 0.85;
 
 /**
  * Modelos que aceitam `speed`. O envio é condicionado a esta lista.
