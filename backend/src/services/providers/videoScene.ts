@@ -81,6 +81,55 @@ export function isExpressiveness(value: unknown): value is Expressiveness {
  * geração nossa jamais enviou o campo. Na dúvida, não mandar é o único lado
  * reversível.
  */
+/**
+ * Teto da INTERPRETAÇÃO, em caracteres do texto que o usuário escreveu.
+ *
+ * ---------------------------------------------------------------------------
+ * ELE JÁ EXISTIA — SÓ QUE SÓ NA TELA, E ISSO NÃO É UM TETO
+ *
+ * `MOTION_PROMPT_MAX = 600` vive em `SceneStep.tsx` como `maxLength` de um
+ * `<textarea>`. Atributo de HTML é sugestão ao navegador: um `curl`, um cliente
+ * antigo, uma extensão ou um colar programático passam por cima dele sem
+ * esforço. Do lado do servidor, `normalizeScene` fazia `trim()` e mais nada —
+ * ou seja, o teto tinha exatamente a força de um comentário.
+ *
+ * O número **600 é o mesmo da tela**, de propósito: dois tetos diferentes para
+ * o mesmo campo produziriam o pior dos dois mundos — a tela deixando digitar o
+ * que o servidor recusa, ou o contrário.
+ * ---------------------------------------------------------------------------
+ *
+ * ┌─ O TETO VALE SOBRE O TEXTO FONTE, E O CASO DA TRADUÇÃO É DECLARADO ──────┐
+ * │ Quem é medido é o que a PESSOA escreveu, nunca a tradução. Inglês pode   │
+ * │ crescer sobre o português (medido em 10/08: 74 → 89 e 74 → 99 caracteres,│
+ * │ de 20% a 34% a mais), e recusar por causa disso seria cobrar de alguém   │
+ * │ por um passo que ela não sabe que existe — o modelo do produto é que ela │
+ * │ nunca vê a versão inglesa.                                              │
+ * │                                                                          │
+ * │ COMPORTAMENTO DECLARADO: uma tradução que ultrapasse 600 caracteres é    │
+ * │ ENVIADA assim mesmo. O fornecedor não publica limite para                │
+ * │ `motion_prompt`, então não há nada do lado dele que este teto proteja;   │
+ * │ ele existe para que uma direção de cena não vire um segundo roteiro.     │
+ * │ Uma direção de 600 caracteres traduzida com folga de 40% dá ~840, o que  │
+ * │ continua sendo direção de cena.                                          │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * Anotado como `number`: sem a anotação o TypeScript estreita para o literal
+ * `600`, e a guarda que compara o teto com outro número passaria a reprovar por
+ * não compilar em vez de por regra — INERTE, o mesmo defeito já medido em
+ * `VOICE_SPEED` e já custado uma vez em `MAX_SCRIPT_SECONDS`.
+ */
+export const MOTION_PROMPT_MAX_CHARS: number = 600;
+
+/**
+ * A Interpretação passou do teto?
+ *
+ * Mede o texto FONTE, e mede depois do `trim()` — espaço em branco no fim não é
+ * conteúdo, e recusar por causa dele seria recusar por invisível.
+ */
+export function exceedsMotionPromptLimit(motionPrompt: string | null | undefined): boolean {
+  return (motionPrompt?.trim().length ?? 0) > MOTION_PROMPT_MAX_CHARS;
+}
+
 export function normalizeScene(input: SceneInput): SceneInput {
   const motion = input.motionPrompt?.trim();
   const background =

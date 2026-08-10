@@ -105,6 +105,10 @@ export function GenerateStep({
       .post<GenerationReadiness>("/videos/readiness", {
         avatar_id: wizard.avatarId,
         script: wizard.script,
+        // O teto da Interpretação também é do servidor. O `maxLength` do
+        // `<textarea>` do passo Cena continua lá como conveniência, mas quem
+        // recusa é a rota — e é dela que sai o motivo escrito na tela.
+        motion_prompt: wizard.motionPrompt,
       })
       .then((r) => {
         if (!cancelled) setReadiness(r);
@@ -118,7 +122,7 @@ export function GenerateStep({
     return () => {
       cancelled = true;
     };
-  }, [wizard.avatarId, wizard.script, reloadKey]);
+  }, [wizard.avatarId, wizard.script, wizard.motionPrompt, reloadKey]);
 
   const blockers = readiness?.blockers ?? [];
 

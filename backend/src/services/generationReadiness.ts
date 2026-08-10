@@ -48,6 +48,10 @@ import {
   exceedsMaxScriptLength,
   maxScriptChars,
 } from "./video/scriptDuration.js";
+// O teto da Interpretação mora junto da normalização da cena, e não aqui: é o
+// mesmo módulo que decide o que é uma cena válida, e separar os dois faria a
+// regra viver longe do tipo que ela mede.
+import { MOTION_PROMPT_MAX_CHARS, exceedsMotionPromptLimit } from "./providers/videoScene.js";
 import {
   liveGenerationAttempts,
   liveGenerationsUsed,
@@ -87,6 +91,7 @@ export type GenerationBlockerCode =
    */
   | "direction_translation_failed"
   | "direction_translation_unavailable"
+  | "motion_prompt_too_long"
   | "plan_limit_reached"
   | "live_budget_exhausted";
 
@@ -113,6 +118,13 @@ export interface GenerationReadinessInput {
   tenantId: string;
   avatarId: string | null | undefined;
   script: string | null | undefined;
+  /**
+   * A INTERPRETAÇÃO, para o teto de tamanho.
+   *
+   * Opcional porque o passo Cena é opcional — a maioria das gerações deste
+   * produto nunca teve direção nenhuma. Ausente conta como vazia, e vazia passa.
+   */
+  motionPrompt?: string | null;
 }
 
 export async function evaluateGenerationReadiness(
@@ -198,6 +210,26 @@ export async function evaluateGenerationReadiness(
         `e o limite é ${MAX_SCRIPT_SECONDS} s (${maxScriptChars()} caracteres). ` +
         "Nada foi cobrado. Encurte o roteiro ou divida em mais de um vídeo — " +
         "o texto não é cortado automaticamente para não entregar um vídeo que para no meio de uma frase.",
+    });
+  }
+
+  // --- Interpretação ------------------------------------------------------
+  //
+  // RECUSA, nunca corte — mesma regra do roteiro e pelo mesmo motivo. Uma
+  // direção de cena truncada não é uma direção menor: é outra direção, e o
+  // fornecedor a aceita com 200 sem que nada avise.
+  //
+  // O teto existia só como `maxLength` de um `<textarea>`, que é sugestão ao
+  // navegador. Aqui ele passa a valer para qualquer cliente.
+  if (exceedsMotionPromptLimit(input.motionPrompt)) {
+    blockers.push({
+      code: "motion_prompt_too_long",
+      status: 400,
+      message:
+        `A Interpretação tem ${input.motionPrompt?.trim().length} caracteres e o limite é ` +
+        `${MOTION_PROMPT_MAX_CHARS}. Nada foi cobrado. Encurte o texto — a Interpretação é uma ` +
+        "orientação de gesto e postura para o avatar, não um segundo roteiro; o que ele fala vem do " +
+        "campo Roteiro.",
     });
   }
 

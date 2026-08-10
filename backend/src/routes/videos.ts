@@ -576,13 +576,18 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    *
    * Não debita, não reserva, não chama fornecedor. É leitura pura.
    */
-  app.post<{ Body: { avatar_id?: string | null; script?: string | null } }>(
+  app.post<{
+    Body: { avatar_id?: string | null; script?: string | null; motion_prompt?: string | null };
+  }>(
     "/videos/readiness",
     async (req) => {
       return evaluateGenerationReadiness({
         tenantId: req.tenantId,
         avatarId: req.body?.avatar_id ?? null,
         script: req.body?.script ?? "",
+        // Vai junto para a tela poder avisar ANTES do clique. Quem recusa
+        // continua sendo a rota de criação, com o mesmo predicado.
+        motionPrompt: req.body?.motion_prompt ?? null,
       });
     },
   );
@@ -923,6 +928,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       tenantId: req.tenantId,
       avatarId: avatar_id,
       script,
+      // A cena JÁ NORMALIZADA — o mesmo texto que seria gravado e traduzido. O
+      // teto mede o que a PESSOA escreveu, nunca a tradução: inglês cresce
+      // sobre o português, e recusar por causa disso cobraria dela um passo que
+      // ela não sabe que existe. Ver MOTION_PROMPT_MAX_CHARS.
+      motionPrompt: scene.motionPrompt,
     });
     if (!readiness.ready) {
       const [primeiro] = readiness.blockers;
