@@ -631,7 +631,8 @@
       "captionsOff": "Sem legenda",
       "captionsOn": "Com legenda",
       "captionsUnverified": "A legenda é queimada no vídeo pelo fornecedor. O campo está na documentação dele, mas nenhuma geração deste sistema o enviou ainda — se ele for recusado, a tentativa falha na validação, antes da cobrança, e nada é debitado.",
-      "captionsMissing": "Você pediu legenda, mas o fornecedor não devolveu a versão legendada. O vídeo abaixo é a versão sem legenda — ele foi cobrado normalmente."
+      "captionsMissing": "Você pediu legenda, mas o fornecedor não devolveu a versão legendada. O vídeo abaixo é a versão sem legenda — ele foi cobrado normalmente.",
+      "captionsIrreversible": "A legenda é definida antes de gerar e não pode ser ligada ou desligada depois: para trocar, é preciso gerar um vídeo NOVO, com novo custo."
     },
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",

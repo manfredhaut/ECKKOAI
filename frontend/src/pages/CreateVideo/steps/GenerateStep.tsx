@@ -216,6 +216,22 @@ export function GenerateStep({
                 {t("createVideo.generate.captionsOn")}
               </button>
             </div>
+            {/* IRREVERSÍVEL, e dito SEMPRE — nas duas escolhas, não só em
+                "Com legenda".
+
+                A base é medida: um vídeo gerado sem `caption` volta do
+                fornecedor sem `subtitle_url` e sem `captioned_video_url`
+                (medido em 10/08 no vídeo `dca10724`). Não existe versão
+                legendada para ligar depois, nem arquivo de legenda para juntar:
+                a única forma de mudar de ideia é gerar outro vídeo, e outro
+                vídeo custa outra vez.
+
+                Sob os dois botões porque é aqui que a decisão acontece. Um
+                aviso que só aparecesse depois de escolher "Com legenda" deixaria
+                quem manteve o padrão sem saber que também estava decidindo. */}
+            <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+              {t("createVideo.generate.captionsIrreversible")}
+            </p>
             {/* O que está sendo aguardado, escrito. O campo `caption` está no
                 schema do fornecedor (lido em 06/08 e relido em 10/08), mas
                 nenhuma geração deste projeto o enviou — então o ACEITE é

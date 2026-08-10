@@ -631,7 +631,8 @@
       "captionsOff": "No captions",
       "captionsOn": "With captions",
       "captionsUnverified": "Captions are burned into the video by the provider. The field is in their documentation, but no generation from this system has sent it yet — if it is rejected, the attempt fails at validation, before billing, and nothing is charged.",
-      "captionsMissing": "You asked for captions, but the provider did not return the captioned version. The video below is the version without captions — it was charged normally."
+      "captionsMissing": "You asked for captions, but the provider did not return the captioned version. The video below is the version without captions — it was charged normally.",
+      "captionsIrreversible": "Captions are set before generating and cannot be turned on or off afterwards: changing this means generating a NEW video, at a new cost."
     },
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",
