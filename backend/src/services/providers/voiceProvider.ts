@@ -12,6 +12,7 @@ import {
   synthesizeSpeechFixture,
 } from "./fixtureProvider.js";
 import { countOwnedVoices } from "../voice/voiceSample.js";
+import { logEvent } from "../log/safeLog.js";
 const ELEVENLABS_ADD_VOICE_URL = "https://api.elevenlabs.io/v1/voices/add";
 const ELEVENLABS_VOICES_URL = "https://api.elevenlabs.io/v1/voices";
 
@@ -297,6 +298,45 @@ export function buildSynthesisBody(text: string, modelId = ELEVENLABS_TTS_MODEL)
   return body;
 }
 
+/**
+ * O corpo QUE SAIU, registrado — a prova que faltava do lado da voz.
+ *
+ * ---------------------------------------------------------------------------
+ * O QUE ISTO FECHA
+ *
+ * Até 10/08, "o corpo levou `speed: 0.85` e `eleven_multilingual_v2`?" era
+ * DEDUZIDO: o log de fornecedor grava só a RESPOSTA (`logVendorResponse`), e a
+ * única forma de responder era ler `buildSynthesisBody` e confiar que os dois
+ * ramos a chamam. Do lado da HeyGen isso já era medido — `video_payload_built`
+ * existe desde o TRAJE-3. Do lado da voz, não havia nada.
+ *
+ * A diferença importa porque `voice_settings` SOBRESCREVE o que está guardado
+ * na voz e vale só naquela chamada: se ele parar de ir, a fala volta ao ritmo
+ * do painel do fornecedor, que é global, editável fora do produto e não fica
+ * registrado em lugar nenhum. O sintoma seria uma duração diferente sem nenhuma
+ * mudança visível no nosso código.
+ * ---------------------------------------------------------------------------
+ *
+ * O TEXTO NÃO ENTRA — só o tamanho. Ele é o roteiro do cliente, e um log de
+ * servidor não é lugar para conteúdo dele. `model_id` e `voice_settings.speed`
+ * entram como VALORES porque são configuração nossa, não dado de ninguém.
+ * Nenhuma credencial passa por aqui: `apiKey` viaja em header, e este evento não
+ * o recebe.
+ */
+export function logSynthesisBody(context: string, body: Record<string, unknown>): void {
+  const settings = body.voice_settings as { speed?: number } | undefined;
+  logEvent("info", "voice_payload_built", {
+    context,
+    campos: Object.keys(body),
+    model_id: body.model_id,
+    // "ausente" por extenso, e não `undefined`: a diferença entre "mandamos
+    // 0.85" e "não mandamos velocidade nenhuma" é a única coisa que este evento
+    // existe para deixar visível, e um campo que some do JSON não a mostra.
+    voice_settings_speed: settings?.speed ?? "ausente",
+    textChars: typeof body.text === "string" ? body.text.length : null,
+  });
+}
+
 // Text-to-speech using a cloned voice — used by avatarProvider.ts to
 // synthesize the video script in the tenant's own cloned voice before
 // handing the audio to HeyGen/D-ID.
@@ -316,12 +356,18 @@ export async function synthesizeSpeech(
   if (isFixtureMode()) return synthesizeSpeechFixture();
   const base = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`;
 
+  // A PROVA do que sai, antes de sair. Registrada nos DOIS ramos: se só o
+  // caminho feliz fosse registrado, o fallback poderia mandar outro corpo e
+  // nada apontaria para isso.
+  const corpo = buildSynthesisBody(text);
+  logSynthesisBody("elevenlabs.synthesizeWithTimestamps", corpo);
+
   let res: Response;
   try {
     res = await fetch(`${base}/with-timestamps`, {
       method: "POST",
       headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify(buildSynthesisBody(text)),
+      body: JSON.stringify(corpo),
       signal: vendorSignal(),
     });
   } catch (err) {
@@ -370,6 +416,15 @@ export async function synthesizeSpeech(
   // Fallback: endpoint simples. Um 4xx aqui é erro de verdade (chave, voz,
   // texto) e sobe; o with-timestamps acima pode ter falhado só por não estar
   // liberado para o plano, e isso não deve impedir a geração do vídeo.
+  //
+  // O corpo é remontado e REGISTRADO de novo, com outro contexto. Reaproveitar
+  // o objeto do ramo de cima e o registro dele esconderia justamente o caso que
+  // interessa: dois corpos divergindo entre os endpoints. Assim o log mostra o
+  // que cada chamada levou, e dois eventos no mesmo vídeo já dizem que o
+  // fallback entrou — e que o TTS foi pago duas vezes.
+  const corpoFallback = buildSynthesisBody(text);
+  logSynthesisBody("elevenlabs.synthesizeSpeech", corpoFallback);
+
   let plain: Response;
   try {
     plain = await fetch(base, {
@@ -379,7 +434,7 @@ export async function synthesizeSpeech(
       // ou velocidades diferentes produziriam vozes diferentes conforme o
       // endpoint que respondesse — um defeito que só apareceria de forma
       // intermitente, e só quando o fallback entrasse.
-      body: JSON.stringify(buildSynthesisBody(text)),
+      body: JSON.stringify(corpoFallback),
       signal: vendorSignal(),
     });
   } catch (err) {
