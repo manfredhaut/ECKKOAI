@@ -57,6 +57,8 @@ import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
 import { checkScriptLimitPolicy } from "./checkScriptLimitPolicy.js";
 import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
+import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
+import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -594,6 +596,20 @@ async function main(): Promise<void> {
   const caption = checkCaptionPolicy(process.env.REPO_ROOT ?? "/repo");
   caption.failures.forEach((f) => failures.push(f));
   caption.notes.forEach((n) => note(n));
+
+  // --- 25i. a instrução vai em inglês, a fala fica, e o inglês não vaza -----
+  //
+  // Depois das outras porque troca `globalThis.fetch` por bombas e mexe em
+  // PROVIDER_MODE — restaura os dois no `finally`, mas rodar cedo faria tudo
+  // que fala com fornecedor depois depender dessa restauração.
+  const translation = await checkTranslationPolicy(process.env.REPO_ROOT ?? "/repo");
+  translation.failures.forEach((f) => failures.push(f));
+  translation.notes.forEach((n) => note(n));
+
+  // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
+  const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");
+  directionLimit.failures.forEach((f) => failures.push(f));
+  directionLimit.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

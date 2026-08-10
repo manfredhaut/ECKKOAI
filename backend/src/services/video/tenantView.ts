@@ -29,7 +29,15 @@
  * nome ("tudo que termina em `_en`") pareceria mais elegante e falharia calada
  * no primeiro campo velado que não seguisse a convenção.
  */
-export const CAMPOS_VELADOS = ["motion_prompt_en"] as const;
+// Anotada como `readonly string[]`, e NÃO deixada inferir a tupla literal.
+//
+// Com `as const`, `CAMPOS_VELADOS.length` tem o tipo `1`, e a guarda que
+// confere se a lista esvaziou vira `1 === 0` — erro de compilação TS2367 em vez
+// de verificação. Ela reprovaria por não compilar, calada, sem nunca dizer o que
+// está errado: INERTE. É o mesmo defeito já medido em `VOICE_SPEED` e pago de
+// novo em `MAX_SCRIPT_SECONDS`; aqui ele foi pego pelo `tsc` antes de custar um
+// mutante.
+export const CAMPOS_VELADOS: readonly string[] = ["motion_prompt_en"];
 
 /**
  * A linha sem os campos velados.
