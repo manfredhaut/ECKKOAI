@@ -553,7 +553,10 @@
       "promptHelpPrompt": "Explique o que é o campo 'Gerar com IA' do roteiro nesta tela e como escrever um bom prompt para obter um roteiro melhor.",
       "promptPlaceholder": "ex.: notícia de 30 segundos sobre um lançamento tecnológico local",
       "generate": "Gerar com IA",
-      "generating": "Gerando…"
+      "generating": "Gerando…",
+      "counterChars": "{{chars}} caracteres",
+      "counter": "{{chars}} caracteres · ~{{seconds}} s de vídeo · {{cost}}",
+      "tooLong": "Acima do limite de {{maxSeconds}} s ({{maxChars}} caracteres). A geração será recusada e nada será cobrado — o texto não é cortado automaticamente. Encurte o roteiro ou divida em mais de um vídeo."
     },
     "assets": {
       "title": "Escolha os recursos para este vídeo",

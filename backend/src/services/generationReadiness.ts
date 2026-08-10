@@ -39,6 +39,15 @@ import type { Avatar } from "../types.js";
 import { contaDe } from "./billing/creditGate.js";
 import { getCredential } from "./credentialLookup.js";
 import { isFixtureMode } from "./providers/providerMode.js";
+// A régua de duração vem de UM lugar só. Comparar tamanho de roteiro com um
+// número escrito aqui criaria a segunda verdade que `scriptDuration.ts` existe
+// para não deixar nascer.
+import {
+  MAX_SCRIPT_SECONDS,
+  estimateSecondsFromScript,
+  exceedsMaxScriptLength,
+  maxScriptChars,
+} from "./video/scriptDuration.js";
 import {
   liveGenerationAttempts,
   liveGenerationsUsed,
@@ -63,6 +72,7 @@ export type GenerationBlockerCode =
   | "avatar_still_training"
   | "no_avatar_credential"
   | "empty_script"
+  | "script_too_long"
   | "plan_limit_reached"
   | "live_budget_exhausted";
 
@@ -146,15 +156,34 @@ export async function evaluateGenerationReadiness(
 
   // --- Roteiro ------------------------------------------------------------
   //
-  // Só vazio. NÃO existe limite de tamanho de roteiro em lugar nenhum deste
-  // projeto — nem cliente, nem servidor, nem fornecedor conferido —, e
-  // inventar um número aqui seria transformar um palpite em bloqueio de tela.
-  // Registrado como lacuna no CLAUDE.md em vez de adivinhado.
+  // Dois bloqueios, e os dois são NOSSOS: o fornecedor não publica limite de
+  // tamanho de roteiro, e continuamos sem medi-lo. O que mudou é que a ausência
+  // de teto deixou de ser aceitável do lado do dinheiro — sem ele, um artigo
+  // colado por engano no lugar de uma frase vira débito de dezenas de dólares
+  // atrás de um único checkbox de confirmação.
   if (!input.script || !input.script.trim()) {
     blockers.push({
       code: "empty_script",
       status: 400,
       message: "Escreva o roteiro no passo 2 antes de gerar o vídeo.",
+    });
+  } else if (exceedsMaxScriptLength(input.script)) {
+    // RECUSA, e nunca corte. Um roteiro truncado geraria um vídeo que para no
+    // meio de uma frase — cobrado por inteiro, sem ninguém ter escolhido isso.
+    // Recusar custa zero e se resolve editando o texto.
+    //
+    // Os dois números da mensagem saem da MESMA régua que estima o custo: o
+    // limite em caracteres é derivado de `MAX_SCRIPT_SECONDS`, não digitado, e
+    // por isso não tem como discordar da duração mostrada logo acima dele.
+    const estimado = estimateSecondsFromScript(input.script);
+    blockers.push({
+      code: "script_too_long",
+      status: 400,
+      message:
+        `O roteiro tem ${input.script.length} caracteres, cerca de ${estimado.toFixed(0)} s de vídeo, ` +
+        `e o limite é ${MAX_SCRIPT_SECONDS} s (${maxScriptChars()} caracteres). ` +
+        "Nada foi cobrado. Encurte o roteiro ou divida em mais de um vídeo — " +
+        "o texto não é cortado automaticamente para não entregar um vídeo que para no meio de uma frase.",
     });
   }
 

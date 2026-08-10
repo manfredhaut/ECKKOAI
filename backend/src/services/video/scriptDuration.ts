@@ -132,6 +132,34 @@ export const CONFIRM_ABOVE_SECONDS = 60;
 export const CONFIRM_MARGIN = 1.1;
 
 /**
+ * TETO DURO de roteiro, em segundos ESTIMADOS. Acima daqui a geração é
+ * RECUSADA — não confirmada, não truncada.
+ *
+ * Irmão de `CONFIRM_ABOVE_SECONDS`, e a diferença entre os dois é o que cada um
+ * faz: aos 60 s a tela PERGUNTA, aos 180 s ela RECUSA. Um teto sem o aviso
+ * intermediário transformaria toda surpresa de custo em parede; um aviso sem
+ * teto deixa um roteiro colado por engano — um artigo inteiro no lugar de uma
+ * frase — virar débito de dezenas de dólares atrás de um único checkbox.
+ *
+ * **180 s são DECLARADOS**, e a escolha é de dinheiro: a 3 unidades por segundo
+ * inteiro são 540 unidades, **US$ 9,00** — quase o dobro da carteira medida em
+ * 10/08 (US$ 4,90). Nenhum roteiro que a conta consegue pagar hoje chega perto
+ * disto, que é a propriedade desejada de um teto: ele existe para o caso
+ * anormal, não para o dia a dia.
+ *
+ * NUNCA CORTAR. Truncar o roteiro do cliente entregaria um vídeo que para no
+ * meio de uma frase, cobrado integralmente, sem ninguém ter escolhido isso —
+ * pior que recusar, porque a recusa custa zero e é reversível editando o texto.
+ *
+ * Anotado como `number`, e não deixado inferir o literal `180`: sem a anotação
+ * o TypeScript estreita o tipo para o próprio valor, e qualquer comparação com
+ * outro número vira erro de compilação em vez de verificação — a guarda
+ * passaria a testar o compilador e ficaria INERTE. É a mesma razão, medida, que
+ * já obrigou a anotação em `VOICE_SPEED`.
+ */
+export const MAX_SCRIPT_SECONDS: number = 180;
+
+/**
  * O veredito, num lugar só.
  *
  * A tela e as duas rotas de custo consomem esta função em vez de repetirem a
@@ -140,6 +168,36 @@ export const CONFIRM_MARGIN = 1.1;
  */
 export function requiresLongVideoConfirmation(estimatedSeconds: number): boolean {
   return estimatedSeconds * CONFIRM_MARGIN > CONFIRM_ABOVE_SECONDS;
+}
+
+/**
+ * O teto convertido em CARACTERES — o número que a tela consegue contar
+ * enquanto alguém digita.
+ *
+ * É DERIVADO da régua em execução, e essa é a propriedade que importa: o valor
+ * sai da inversa exata de `estimateSecondsFromChars`, então mudar o ritmo
+ * medido ou a velocidade da voz move o limite junto, sozinho. Um número colado
+ * aqui (hoje 1960) continuaria parecendo certo depois de a régua mudar, e a
+ * tela passaria a recusar num ponto que não corresponde a 180 s de vídeo
+ * nenhum — a mesma classe de defeito que fez a estimativa valer 0,42× do
+ * cobrado.
+ *
+ * `floor` e não `round`: o último caractere aceito tem de caber DENTRO do teto.
+ */
+export function maxScriptChars(): number {
+  return Math.floor(MAX_SCRIPT_SECONDS * CHARS_PER_SECOND * VOICE_SPEED);
+}
+
+/**
+ * O veredito de tamanho, na mesma forma dos outros: uma função só, consumida
+ * pela rota de estimativa, pelo portão de geração e pela tela.
+ *
+ * Compara SEGUNDOS, não caracteres, porque é a duração que custa dinheiro —
+ * `maxScriptChars()` existe para a tela contar enquanto se digita, e é derivado
+ * daqui, nunca o contrário.
+ */
+export function exceedsMaxScriptLength(script: string | null | undefined): boolean {
+  return estimateSecondsFromScript(script) > MAX_SCRIPT_SECONDS;
 }
 
 /**

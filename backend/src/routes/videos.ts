@@ -27,8 +27,10 @@ import { logEvent } from "../services/log/safeLog.js";
 import { evaluateGenerationReadiness } from "../services/generationReadiness.js";
 import {
   CONFIRM_ABOVE_SECONDS,
+  MAX_SCRIPT_SECONDS,
   estimateSecondsFromChars,
   estimateSecondsFromScript,
+  maxScriptChars,
   requiresLongVideoConfirmation,
   scriptDurationBasis,
 } from "../services/video/scriptDuration.js";
@@ -489,6 +491,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // comparação passa a discordar do servidor no dia em que o teto mudar.
       confirmAboveSeconds: CONFIRM_ABOVE_SECONDS,
       requiresConfirmation: requiresLongVideoConfirmation(estimatedSeconds),
+      // O TETO DURO viaja junto, nas duas unidades, pelo mesmo motivo do teto
+      // diário logo abaixo: a tela precisa contar caracteres enquanto alguém
+      // digita, e a única alternativa a receber o número pronto seria
+      // recalculá-lo no cliente — uma segunda régua, que é exatamente o defeito
+      // que `scriptDuration.ts` fecha. Quem RECUSA continua sendo o servidor,
+      // em `evaluateGenerationReadiness`.
+      maxScriptSeconds: MAX_SCRIPT_SECONDS,
+      maxScriptChars: maxScriptChars(),
+      exceedsMaxScript: estimatedSeconds > MAX_SCRIPT_SECONDS,
       estimate: {
         costUsd: estimate.known ? estimate.usd : null,
         costUnknownReason: estimate.known ? null : estimate.explanation,
@@ -678,6 +689,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       pacing: scriptDurationBasis(),
       confirmAboveSeconds: CONFIRM_ABOVE_SECONDS,
       requiresConfirmation: requiresLongVideoConfirmation(estimatedSeconds),
+      // Os três campos do teto duro vão aqui também, e não só na rota de
+      // estimativa: "MESMA forma" acima é o que permite um caminho de
+      // renderização só, e uma forma que diverge entre as duas rotas obriga a
+      // tela a checar de qual delas o objeto veio.
+      maxScriptSeconds: MAX_SCRIPT_SECONDS,
+      maxScriptChars: maxScriptChars(),
+      exceedsMaxScript: estimatedSeconds > MAX_SCRIPT_SECONDS,
       estimate: {
         costUsd: estimate.known ? estimate.usd : null,
         costUnknownReason: estimate.known ? null : estimate.explanation,

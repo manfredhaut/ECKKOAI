@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
+import { ScriptCounter } from "../ScriptCounter";
 
 export function ScriptStep({
   script,
@@ -45,6 +46,10 @@ export function ScriptStep({
           onChange={(e) => onChange(e.target.value)}
           placeholder={t("createVideo.script.scriptPlaceholder")}
         />
+        {/* Sob o campo, e não no passo de geração: quando o custo só aparece
+            no fim, quem escreve descobre que o roteiro é caro depois de já ter
+            escrito. Aqui o número muda enquanto se digita. */}
+        <ScriptCounter script={script} />
       </Field>
 
       <div style={{ maxWidth: 480 }}>

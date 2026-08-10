@@ -553,7 +553,10 @@
       "promptHelpPrompt": "Explain what the script's 'Generate with AI' field on this screen is for and how to write a good prompt to get a better script.",
       "promptPlaceholder": "e.g. 30-second news update about a local tech launch",
       "generate": "Generate with AI",
-      "generating": "Generating…"
+      "generating": "Generating…",
+      "counterChars": "{{chars}} characters",
+      "counter": "{{chars}} characters · ~{{seconds}} s of video · {{cost}}",
+      "tooLong": "Over the {{maxSeconds}} s limit ({{maxChars}} characters). Generation will be refused and nothing will be charged — the text is never truncated automatically. Shorten the script or split it into more than one video."
     },
     "assets": {
       "title": "Choose assets for this video",

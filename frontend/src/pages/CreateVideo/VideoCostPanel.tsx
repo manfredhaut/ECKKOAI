@@ -26,6 +26,17 @@ export interface CostResponse {
   pacing: string;
   confirmAboveSeconds: number;
   requiresConfirmation: boolean;
+  /**
+   * O TETO DURO, nas duas unidades, vindo pronto do servidor.
+   *
+   * `maxScriptChars` é derivado da régua LÁ, e chega aqui como número: a tela
+   * não multiplica ritmo por velocidade para descobrir o limite, porque essa
+   * conta feita duas vezes é a segunda régua que este painel inteiro existe
+   * para não ter.
+   */
+  maxScriptSeconds: number;
+  maxScriptChars: number;
+  exceedsMaxScript: boolean;
   estimate: { costUsd: number | null; costUnknownReason: string | null };
   actual: {
     seconds: number;
