@@ -79,7 +79,11 @@ export const MUTANTS: Mutant[] = [
     file: "backend/src/services/video/captionSelection.ts",
     find: "  if (video.captions && video.captionedOutputUrl) return video.captionedOutputUrl;",
     replace: "  if (video.captionedOutputUrl) return video.captionedOutputUrl;",
-    expect: "serviu a versão legendada sem que ela tivesse sido pedida",
+    // O `expect` cita a frase COMO ELA SAI, e não uma paráfrase dela: o arnês
+    // casa texto literal, e a primeira versão deste campo dizia "serviu…" onde
+    // a guarda escreve "Servir…". O mutante reprovava certo e voltava AMBÍGUO —
+    // reprovação que não se consegue atribuir à guarda não prova nada.
+    expect: "Servir a versão legendada sem que ela tivesse sido pedida",
   },
 ];
 
