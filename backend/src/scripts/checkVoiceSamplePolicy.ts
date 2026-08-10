@@ -76,8 +76,8 @@ export const MUTANTS: Mutant[] = [
     // a régua continua coerente consigo mesma. Parece melhoria até alguém
     // ouvir — e foi exatamente esse o som que o operador reprovou em 09/08.
     file: "backend/src/services/providers/voiceProvider.ts",
-    find: "export const VOICE_SPEED = 0.85;",
-    replace: "export const VOICE_SPEED = 1.0;",
+    find: "export const VOICE_SPEED: number = 0.85;",
+    replace: "export const VOICE_SPEED: number = 1.0;",
     expect: "a velocidade da fala deixou de ser a medida",
   },
   {
