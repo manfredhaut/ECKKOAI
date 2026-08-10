@@ -55,6 +55,8 @@ import { checkLegacyEndpointPolicy } from "./checkLegacyEndpointPolicy.js";
 import { checkPreflightSummaryPolicy } from "./checkPreflightSummaryPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
+import { checkScriptLimitPolicy } from "./checkScriptLimitPolicy.js";
+import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -578,6 +580,20 @@ async function main(): Promise<void> {
   const recovery = await checkVideoRecoveryPolicy(process.env.REPO_ROOT ?? "/repo");
   recovery.failures.forEach((f) => failures.push(f));
   recovery.notes.forEach((n) => note(n));
+
+  // --- 25g. o teto de roteiro é derivado, e recusa em vez de cortar -------
+  //
+  // Só funções puras e leitura de arquivo: nada de rede, banco ou substituição
+  // de global. Pode rodar em qualquer posição — fica aqui por assunto, junto
+  // das outras invariantes de `routes/videos.ts` e do que custa dinheiro.
+  const scriptLimit = checkScriptLimitPolicy(process.env.REPO_ROOT ?? "/repo");
+  scriptLimit.failures.forEach((f) => failures.push(f));
+  scriptLimit.notes.forEach((n) => note(n));
+
+  // --- 25h. a legenda escolhida vira o campo `caption` do fornecedor ------
+  const caption = checkCaptionPolicy(process.env.REPO_ROOT ?? "/repo");
+  caption.failures.forEach((f) => failures.push(f));
+  caption.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //
