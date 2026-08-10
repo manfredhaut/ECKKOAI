@@ -39,11 +39,14 @@ export const MUTANTS: Mutant[] = [
     // O vídeo continua saindo, o fornecedor continua respondendo 200, o custo
     // é o mesmo. O que muda é o IDIOMA da fala — e só quem assistir descobre,
     // depois de pago.
+    // Muta o ARGUMENTO da chamada que já existe, em vez de inserir uma nova.
+    // A primeira versão inseria uma chamada inteira e reprovava por não
+    // compilar — AMBÍGUO, sem nunca imprimir a mensagem da guarda. Aqui o
+    // código continua válido: `script` é string, a chamada é a mesma, e o único
+    // efeito é a FALA atravessar o tradutor.
     file: "backend/src/routes/videos.ts",
-    find: "        scene: { ...scene, motionPrompt: motionPromptEn ?? scene.motionPrompt },",
-    replace:
-      "        script: motionPromptEn ? await translateDirection({ tenantId: req.tenantId, apiKey: (await getCredential(req.tenantId, \"script\"))!.apiKey, vendor: \"gemini\", source: script, locale: interfaceLocale }).then((r) => r.english) : script,\n" +
-      "        scene: { ...scene, motionPrompt: motionPromptEn ?? scene.motionPrompt },",
+    find: "          source: scene.motionPrompt,",
+    replace: "          source: script,",
     expect: "o roteiro passou pelo tradutor",
   },
   {
@@ -88,12 +91,15 @@ export const MUTANTS: Mutant[] = [
     // Nada quebra e nada aparece: o saldo simplesmente cai por um passo que a
     // pessoa não pediu, e o "Gerar com IA" dela acaba mais cedo sem explicação.
     file: "backend/src/services/video/directionTranslation.ts",
-    find: "  if (usage) {\n    await recordProviderUsage({",
+    // O `import` dinâmico da primeira versão fazia o mutante reprovar por
+    // compilação antes de a guarda opinar. Aqui o débito entra pelo caminho que
+    // o resto do projeto usa — import no topo —, o código compila, e o que
+    // muda é só o saldo caindo por um passo que ninguém pediu.
+    file: "backend/src/services/video/directionTranslation.ts",
+    find: "import { logEvent } from \"../log/safeLog.js\";",
     replace:
-      "  {\n    const { debitCredit } = await import(\"../billing/creditGate.js\");\n" +
-      "    await debitCredit({ tenantId: input.tenantId, creditType: \"script\" });\n  }\n" +
-      "  if (usage) {\n    await recordProviderUsage({",
-    expect: "a tradução debitou crédito",
+      "import { logEvent } from \"../log/safeLog.js\";\nimport { debitCredit } from \"../billing/creditGate.js\";",
+    expect: "apareceu no módulo de tradução",
   },
   {
     guard: "tradução: o VÉU — a versão inglesa não sai para o tenant",
@@ -322,7 +328,12 @@ export async function checkTranslationPolicy(repoRoot: string): Promise<Translat
   // caminho que alguém acrescentar amanhã.
   {
     const fonte = apenasCodigo(readFileSync(path.join(repoRoot, MODULO), "utf8"));
-    if (/debitCredit\s*\(/.test(fonte)) {
+    // Qualquer MENÇÃO no código, inclusive um import solto — e não só a
+    // chamada. O import é o primeiro passo de quem vai debitar, e barrá-lo ali
+    // é mais cedo e mais barato do que esperar a chamada aparecer. Comentários
+    // já saíram: este arquivo explica por que NÃO debita, e a guarda casaria a
+    // própria explicação.
+    if (/\bdebitCredit\b/.test(fonte)) {
       failures.push(
         "tradução: `debitCredit` apareceu no módulo de tradução. A tradução é decisão NOSSA e acontece " +
           "sem a pessoa pedir — ela não pode consumir o saldo que a pessoa reserva para o 'Gerar com IA'.",
