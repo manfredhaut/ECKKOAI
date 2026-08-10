@@ -60,12 +60,13 @@ export const MUTANTS: Mutant[] = [
     // 18% mais rápida sem que nada no sistema tenha mudado. Intermitente,
     // sem sintoma e sem erro — a pior combinação para diagnosticar.
     file: "backend/src/services/providers/voiceProvider.ts",
-    find: `      // O MESMO corpo do ramo acima, pela MESMA função. Dois ramos com modelos
-      // ou velocidades diferentes produziriam vozes diferentes conforme o
-      // endpoint que respondesse — um defeito que só apareceria de forma
-      // intermitente, e só quando o fallback entrasse.
-      body: JSON.stringify(buildSynthesisBody(text)),`,
-    replace: `      body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),`,
+    // O `find` acompanha o corpo do FALLBACK, que no bloco TRADUCAO-1 passou a
+    // ser montado numa variável para poder ser registrado antes de sair. O
+    // texto antigo (`body: JSON.stringify(buildSynthesisBody(text))`) deixou de
+    // existir e o mutante voltou ERRO de aplicação — que não é reprovação nem
+    // aprovação: é o arnês dizendo que não conseguiu nem plantar o defeito.
+    find: `  const corpoFallback = buildSynthesisBody(text);`,
+    replace: `  const corpoFallback = { text, model_id: ELEVENLABS_TTS_MODEL };`,
     expect: "não monta o corpo pela mesma função nos dois ramos",
   },
   {

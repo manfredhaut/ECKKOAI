@@ -349,8 +349,29 @@ async function checkCincoControles(repoRoot: string, failures: string[], notes: 
     { campo: "avatar_look_id", origem: "wizard.avatarLookId", oQueE: "o traje" },
   ];
 
+  // A busca é DENTRO de `corpoDaGeracao`, e não no arquivo inteiro.
+  //
+  // Ela já foi no arquivo inteiro, e isso a cegou: no bloco TRADUCAO-1 a
+  // consulta de prontidão passou a mandar `motion_prompt: wizard.motionPrompt`
+  // — noutra função, no mesmo arquivo — e as duas metades da verificação
+  // (`motion_prompt:` existe? `wizard.motionPrompt` existe?) continuaram
+  // encontrando o que procuravam mesmo com a linha do CORPO apagada. O mutante
+  // ficou INERTE por presença de um homônimo a vinte linhas de distância.
+  //
+  // Recortar a função é o que transforma "a expressão aparece no arquivo" em "o
+  // campo é montado no corpo enviado", que é a proposição de verdade.
+  const inicio = fonte.indexOf("export function corpoDaGeracao");
+  const corpoDaGeracao = inicio >= 0 ? fonte.slice(inicio, fonte.indexOf("\n}", inicio)) : "";
+  if (!corpoDaGeracao) {
+    failures.push(
+      `gasto: não achei \`corpoDaGeracao\` em ${rel}. É a função que monta o corpo de POST /videos; sem ` +
+        "ela a guarda dos cinco controles não tem o que olhar.",
+    );
+    return;
+  }
+
   for (const c of controles) {
-    if (!fonte.includes(`${c.campo}:`) || !fonte.includes(c.origem)) {
+    if (!corpoDaGeracao.includes(`${c.campo}:`) || !corpoDaGeracao.includes(c.origem)) {
       failures.push(
         `gasto: ${c.oQueE} não chega ao payload pelo formulário — ${rel} monta o corpo de POST /videos sem ` +
           `\`${c.campo}\` vindo de \`${c.origem}\`. É a forma exata do defeito anterior: a tela coleta, o ` +

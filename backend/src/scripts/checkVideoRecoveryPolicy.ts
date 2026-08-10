@@ -224,17 +224,23 @@ export const MUTANTS: Mutant[] = [
     name: "fetch sem AbortSignal",
     kind: "obvio",
     file: "backend/src/services/providers/voiceProvider.ts",
-    // O `find` NÃO inclui a linha do `body`. Ele já incluiu, e quebrou: quando
-    // o corpo passou a ser montado por `buildSynthesisBody(text)`, o trecho
-    // casou 0× e o mutante virou ERRO de aplicação — deixou de exercitar a
-    // guarda sem que nada acusasse. O que este mutante precisa tocar é o
-    // `signal`, e só ele; amarrá-lo ao conteúdo do corpo o torna refém de
-    // qualquer mudança na síntese.
-    find: `      headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify(buildSynthesisBody(text)),
-      signal: vendorSignal(),`,
-    replace: `      headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify(buildSynthesisBody(text)),`,
+    // O `find` NÃO inclui a linha do `body` — e desta vez é verdade.
+    //
+    // Este comentário já existia dizendo exatamente isto, e o `find` logo
+    // abaixo dele continuava citando `body: JSON.stringify(buildSynthesisBody(
+    // text))`. A lição estava escrita e o código não a seguia: no bloco
+    // TRADUCAO-1 o corpo passou a ser guardado numa variável, o trecho casou 0×
+    // e o mutante voltou a ser ERRO de aplicação pela SEGUNDA vez — sem
+    // exercitar a guarda, e sem que o gate acusasse nada.
+    //
+    // A âncora agora é o `signal` de `cloneVoice`, com o comentário que só
+    // existe ali. Clonagem não tem corpo JSON (é multipart), então nada que se
+    // faça com a síntese alcança este trecho.
+    find: `        // Clonar consome um slot IRREVERSÍVEL na conta do fornecedor, e este
+        // produto não tem caminho de exclusão. Um socket pendurado aqui deixa
+        // a pergunta "o slot foi gasto?" sem resposta possível.
+        signal: vendorSignal(),`,
+    replace: "",
     expect: "chamada a fornecedor sem teto de tempo",
   },
   {
