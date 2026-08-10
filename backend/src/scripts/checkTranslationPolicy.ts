@@ -90,7 +90,6 @@ export const MUTANTS: Mutant[] = [
     kind: "esperto",
     // Nada quebra e nada aparece: o saldo simplesmente cai por um passo que a
     // pessoa não pediu, e o "Gerar com IA" dela acaba mais cedo sem explicação.
-    file: "backend/src/services/video/directionTranslation.ts",
     // O `import` dinâmico da primeira versão fazia o mutante reprovar por
     // compilação antes de a guarda opinar. Aqui o débito entra pelo caminho que
     // o resto do projeto usa — import no topo —, o código compila, e o que
