@@ -632,7 +632,7 @@
     },
     "voiceSample": {
       "title": "Avatar voice",
-      "hint": "At least {{min}}. From {{recommended}} on the result improves. The cap is {{max}} — beyond that the sample no longer fits the upload to the voice provider.",
+      "hint": "Record speaking continuously, with no cuts or long pauses. The provider learns the pace of whatever audio you send: a choppy or rushed sample produces a voice that speaks too fast. Sit somewhere without echo, keep the same distance from the microphone throughout, and speak as if you were presenting. Aim close to {{max}}, not to the minimum: the floor is {{min}} and from {{recommended}} on the result improves, but the more continuous speech, the better the clone. Beyond {{max}} the sample no longer fits the upload to the voice provider.",
       "alreadyCloned": "This avatar already has a cloned voice. Sending another sample replaces the current one, and the previous voice cannot be recovered.",
       "record": "Record",
       "recordAgain": "Record again",

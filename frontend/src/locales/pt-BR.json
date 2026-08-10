@@ -632,7 +632,7 @@
     },
     "voiceSample": {
       "title": "Voz do avatar",
-      "hint": "No mínimo {{min}}. A partir de {{recommended}} o resultado melhora. O teto é {{max}} — acima disso a amostra não cabe no envio ao provedor de voz.",
+      "hint": "Grave falando corrido, sem cortes nem pausas longas. O provedor aprende o ritmo do áudio que você enviar: uma amostra picotada ou apressada produz uma voz que fala rápido demais. Fique num lugar sem eco, mantenha sempre a mesma distância do microfone e fale como se estivesse apresentando. Mire perto de {{max}}, não do mínimo: o piso é {{min}} e a partir de {{recommended}} o resultado melhora, mas quanto mais fala contínua, melhor o clone. Acima de {{max}} a amostra não cabe no envio ao provedor de voz.",
       "alreadyCloned": "Este avatar já tem uma voz clonada. Enviar outra amostra substitui a atual, e a anterior não pode ser recuperada.",
       "record": "Gravar",
       "recordAgain": "Regravar",
