@@ -37,7 +37,7 @@
   },
   "nav": {
     "dashboard": "Painel",
-    "createVideo": "Criar vídeo",
+    "createVideo": "Criar vídeo direto",
     "content": "Conteúdo",
     "settings": "Configurações",
     "mySubscription": "Minha Assinatura",
@@ -316,7 +316,7 @@
   "dashboard": {
     "title": "Painel",
     "subtitle": "Visão geral do seu uso, fila de geração e vídeos recentes.",
-    "createVideo": "Criar vídeo",
+    "createVideo": "Criar vídeo direto",
     "creditsRemaining": "Créditos restantes",
     "creditsNotConnected": "Ainda não conectado a um provedor de cobrança",
     "videosThisMonth": "Vídeos este mês",
@@ -430,7 +430,7 @@
     }
   },
   "createVideo": {
-    "title": "Criar vídeo",
+    "title": "Criar vídeo direto",
     "subtitle": "Configure um avatar, escreva um roteiro e gere um vídeo.",
     "steps": {
       "avatarSetup": "Configurar avatar",
@@ -708,7 +708,7 @@
     },
     "referenceImages": {
       "title": "Imagens de referência",
-      "description": "Material de referência geral do cliente — catálogos, fotografia de marca, referências de estilo — apenas para consulta humana. Não é indexado para busca, e é separado das imagens de cenário/traje usadas em Criar vídeo.",
+      "description": "Material de referência geral do cliente — catálogos, fotografia de marca, referências de estilo — apenas para consulta humana. Não é indexado para busca, e é separado das imagens de cenário/traje usadas em Criar vídeo direto.",
       "upload": "Enviar imagem",
       "uploading": "Enviando…",
       "empty": "Nenhuma imagem de referência enviada ainda."

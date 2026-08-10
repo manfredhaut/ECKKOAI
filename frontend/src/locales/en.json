@@ -37,7 +37,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
-    "createVideo": "Create video",
+    "createVideo": "Create direct video",
     "content": "Content",
     "settings": "Settings",
     "mySubscription": "My Subscription",
@@ -316,7 +316,7 @@
   "dashboard": {
     "title": "Dashboard",
     "subtitle": "Overview of your usage, generation queue, and recent videos.",
-    "createVideo": "Create video",
+    "createVideo": "Create direct video",
     "creditsRemaining": "Credits remaining",
     "creditsNotConnected": "Not yet connected to a billing provider",
     "videosThisMonth": "Videos this month",
@@ -430,7 +430,7 @@
     }
   },
   "createVideo": {
-    "title": "Create video",
+    "title": "Create direct video",
     "subtitle": "Set up an avatar, write a script, and generate a video.",
     "steps": {
       "avatarSetup": "Avatar setup",
@@ -708,7 +708,7 @@
     },
     "referenceImages": {
       "title": "Reference images",
-      "description": "General client reference material — catalogs, brand photography, style references — for human lookup only. Not indexed for search, and separate from the scenario/outfit images used in Create video.",
+      "description": "General client reference material — catalogs, brand photography, style references — for human lookup only. Not indexed for search, and separate from the scenario/outfit images used in Create direct video.",
       "upload": "Upload image",
       "uploading": "Uploading…",
       "empty": "No reference images uploaded yet."
