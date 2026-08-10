@@ -40,6 +40,11 @@ export function corpoDaGeracao(wizard: WizardState) {
     // do padrão dele aqui reproduziria, um andar acima, a mesma omissão que o
     // bloco de formato tirou do payload do fornecedor.
     publish_platform: wizard.publishPlatform,
+    // Vai SEMPRE, inclusive `false`. O servidor tem padrão, mas omitir o campo
+    // quando a resposta é "não" deixaria "não pedi legenda" e "esqueci de
+    // mandar a escolha" com a mesma aparência no corpo — e é justamente essa
+    // ambiguidade que o log de prova precisa não ter.
+    captions: wizard.captions,
   };
 }
 
@@ -50,7 +55,14 @@ const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   error: 100,
 };
 
-export function GenerateStep({ wizard }: { wizard: WizardState }) {
+export function GenerateStep({
+  wizard,
+  onCaptionsChange,
+}: {
+  wizard: WizardState;
+  /** Mesma forma dos outros passos: o estado mora na página, o passo avisa. */
+  onCaptionsChange: (captions: boolean) => void;
+}) {
   const { t } = useTranslation();
   const [video, setVideo] = useState<Video | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -165,10 +177,52 @@ export function GenerateStep({ wizard }: { wizard: WizardState }) {
               respondeu 200, e a ausência só apareceu no vídeo pronto. O resumo
               é derivado do MESMO objeto que vai no POST. */}
           <GenerationSummary wizard={wizard} />
+
+          {/* LEGENDA — a escolha fica ANTES do botão, junto do resumo, porque é
+              o último campo que muda o corpo enviado. Depois do clique não há
+              onde mudar: o vídeo já foi debitado.
+
+              Os dois estados são botões, e não um checkbox, para que "Sem
+              legenda" seja uma escolha visível e não a ausência de uma. */}
+          <fieldset className="caption-choice" style={{ border: 0, padding: 0, margin: "12px 0 0" }}>
+            <legend style={{ fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 6 }}>
+              {t("createVideo.generate.captionsLabel")}
+            </legend>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className={wizard.captions ? "btn btn-secondary" : "btn btn-primary"}
+                aria-pressed={!wizard.captions}
+                onClick={() => onCaptionsChange(false)}
+              >
+                {t("createVideo.generate.captionsOff")}
+              </button>
+              <button
+                type="button"
+                className={wizard.captions ? "btn btn-primary" : "btn btn-secondary"}
+                aria-pressed={wizard.captions}
+                onClick={() => onCaptionsChange(true)}
+              >
+                {t("createVideo.generate.captionsOn")}
+              </button>
+            </div>
+            {/* O que está sendo aguardado, escrito. O campo `caption` está no
+                schema do fornecedor (lido em 06/08 e relido em 10/08), mas
+                nenhuma geração deste projeto o enviou — então o ACEITE é
+                suposição, e a tela não finge o contrário. Só aparece na escolha
+                que muda o corpo. */}
+            {wizard.captions && (
+              <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                {t("createVideo.generate.captionsUnverified")}
+              </p>
+            )}
+          </fieldset>
+
           <button
             className="btn btn-primary"
             onClick={handleGenerate}
             disabled={submitting || blocked}
+            style={{ marginTop: 12 }}
           >
             {submitting ? t("createVideo.generate.submitting") : t("createVideo.generate.generateButton")}
           </button>

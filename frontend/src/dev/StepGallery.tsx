@@ -270,6 +270,9 @@ function StepUnderGlass({
       // nasce escolhida no wizard real, e uma galeria que mostrasse o passo
       // sem seleção retrataria um estado que o produto não produz.
       publishPlatform: DEFAULT_PUBLISH_PLATFORM,
+      // Sem legenda, que é o padrão do wizard real. A galeria retrata o estado
+      // que o produto produz, e não um que só existe aqui.
+      captions: false,
     }),
     [state],
   );
@@ -306,7 +309,7 @@ function StepUnderGlass({
         />
       );
     case "passo4-gerar":
-      return <GenerateStep wizard={wizard} />;
+      return <GenerateStep wizard={wizard} onCaptionsChange={noop} />;
     case "tela-conteudo":
       return <ContentPage />;
     case "tela-painel-admin":

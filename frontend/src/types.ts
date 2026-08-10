@@ -51,6 +51,23 @@ export interface Video {
   estimated_seconds?: number;
   status: VideoStatus;
   output_url: string | null;
+  /**
+   * A URL a EXIBIR, escolhida pelo SERVIDOR entre a versão limpa e a legendada.
+   *
+   * A tela não escolhe: `urlParaServir()` decide num lugar só, e o download usa
+   * a mesma função. Duas escolhas independentes divergiriam, e o sintoma seria
+   * o player mostrando uma versão enquanto o botão baixa a outra.
+   */
+  playback_url?: string | null;
+  /** Legenda foi PEDIDA nesta geração? */
+  captions?: boolean;
+  /**
+   * Legenda pedida foi de fato ENTREGUE?
+   *
+   * `false` com `captions: true` é o caso que a tela precisa avisar — o vídeo
+   * saiu sem legenda e foi cobrado do mesmo jeito.
+   */
+  captions_delivered?: boolean;
   error_message: string | null;
   /** Gerado em PROVIDER_MODE=fixture — artefato de teste, não geração real. */
   simulated: boolean;

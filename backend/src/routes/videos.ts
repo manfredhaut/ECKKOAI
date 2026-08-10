@@ -42,6 +42,7 @@ import {
   readDailyBudget,
 } from "../services/billing/dailyGenerationLimit.js";
 import { decidirEstorno, type VideoFailureReason } from "../services/video/videoFailure.js";
+import { captionsDelivered, urlParaServir } from "../services/video/captionSelection.js";
 import { ehTimeoutDeFornecedor } from "../services/providers/vendorTimeout.js";
 import type { VideoEmVoo } from "../services/video/recovery.js";
 
@@ -225,9 +226,21 @@ function pollJob(
           });
         }
 
+        // A versão legendada é gravada COMO VEIO do fornecedor, sem passar por
+        // `persistRemoteArtifact`.
+        //
+        // A URL do fornecedor expira, e é por isso que a versão limpa vira
+        // arquivo nosso logo acima. Copiar as duas dobraria o armazenamento e o
+        // tempo do polling de todo vídeo legendado, e a segunda cópia serve a um
+        // caminho que ainda não tem nenhum uso medido — nenhuma geração deste
+        // projeto pediu legenda até 10/08. Guardar o ponteiro registra que a
+        // versão existe e quanto ela dura; trocá-lo por arquivo local é uma
+        // decisão para quando houver um vídeo legendado real para medir.
         await pool.query(
-          "UPDATE videos SET status = 'ready', output_url = $2, provider_output_url = $3 WHERE id = $1",
-          [videoId, servedUrl, providerUrl],
+          `UPDATE videos SET status = 'ready', output_url = $2, provider_output_url = $3,
+                             captioned_output_url = $4
+             WHERE id = $1`,
+          [videoId, servedUrl, providerUrl, result.captionedOutputUrl ?? null],
         );
         await createNotification(tenantId, "video_ready", "Your video is ready.");
 
@@ -437,6 +450,23 @@ function withDeliveredSeconds(row: VideoRow) {
     delivered_seconds: row.delivered_seconds != null ? Number(row.delivered_seconds) : null,
     delivered_source: row.delivered_source ?? null,
     estimated_seconds: estimateSecondsFromScript(row.script),
+    // A URL a EXIBIR sai da mesma função que o download usa. A tela não escolhe
+    // entre `output_url` e `captioned_output_url`: escolher em dois lugares é
+    // como o player passaria a mostrar a versão limpa de um vídeo cujo download
+    // entrega a legendada.
+    playback_url: urlParaServir({
+      captions: row.captions,
+      outputUrl: row.output_url,
+      captionedOutputUrl: row.captioned_output_url ?? null,
+    }),
+    // Pedida E entregue são coisas diferentes, e a diferença é o caso em que a
+    // tela precisa avisar: alguém pediu legenda e o vídeo saiu sem. Sem este
+    // campo, isso só se descobre assistindo.
+    captions_delivered: captionsDelivered({
+      captions: row.captions,
+      outputUrl: row.output_url,
+      captionedOutputUrl: row.captioned_output_url ?? null,
+    }),
   };
 }
 
@@ -738,9 +768,19 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     const video = rows[0];
     if (!video || !video.output_url) return reply.code(404).send({ error: "Video not found" });
 
+    // Quem escolhe é a MESMA função que a Biblioteca usa. Um `??` repetido aqui
+    // faria o download entregar a versão limpa enquanto a tela mostra a
+    // legendada, no dia em que uma das duas cópias mudasse.
+    const urlServida =
+      urlParaServir({
+        captions: video.captions,
+        outputUrl: video.output_url,
+        captionedOutputUrl: video.captioned_output_url ?? null,
+      }) ?? video.output_url;
+
     let ext = ".mp4";
     try {
-      ext = path.extname(new URL(video.output_url).pathname) || ".mp4";
+      ext = path.extname(new URL(urlServida).pathname) || ".mp4";
     } catch {
       // Malformed output_url — fall back to the .mp4 default above.
     }
@@ -750,7 +790,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // marcar `ready`: o arquivo pode ter expirado, sido substituído ou
       // truncado no meio do caminho desde então, e entregar um arquivo
       // quebrado é pior que recusar o download.
-      await proxyRemoteAttachment(reply, video.output_url, `video-${video.id}${ext}`, { validate: true });
+      await proxyRemoteAttachment(reply, urlServida, `video-${video.id}${ext}`, { validate: true });
       return reply;
     } catch (err) {
       if (err instanceof InvalidArtifactError) {
@@ -794,6 +834,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       engine_choice?: string | null;
       /** Look do avatar. Traje é look; ver o passo Cena. */
       avatar_look_id?: string | null;
+      /**
+       * LEGENDA queimada. Ausente = sem legenda, que é o padrão do produto e o
+       * comportamento de todos os vídeos gerados até 10/08.
+       */
+      captions?: boolean | null;
     };
   }>("/videos", { preHandler: requireActiveTenant }, async (req, reply) => {
     const {
@@ -820,6 +865,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       expressiveness: isExpressiveness(expressividadeBruta) ? expressividadeBruta : null,
     });
     const engineChoice = isHeygenEngine(engineChoiceBruto) ? engineChoiceBruto : null;
+    // `=== true` e não coerção: qualquer coisa que não seja o booleano
+    // verdadeiro cai no padrão SEM legenda. Um `Boolean(x)` aceitaria a string
+    // "false" de um cliente mal formado como pedido de legenda, e a legenda é
+    // uma escolha que aparece no vídeo pago.
+    const captions = req.body.captions === true;
 
     // A duração é DERIVADA do roteiro, aqui e em nenhum outro lugar.
     //
@@ -892,8 +942,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     const { rows } = await pool.query<Video>(
       `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated,
                            publish_platform, aspect_ratio, resolution,
-                           background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
+                           background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id,
+                           captions)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING *`,
       [
         req.tenantId,
         avatar_id,
@@ -925,6 +976,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         scene.expressiveness,
         engineChoice,
         avatarLookId ?? null,
+        // Gravada junto do resto do pedido, e antes da chamada: é o que faz
+        // "Gerar novamente" repetir a MESMA escolha em vez de reconstruí-la.
+        captions,
       ],
     );
     const video = rows[0];
@@ -1041,6 +1095,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // coletava e o banco guardava.
         scene,
         engineChoice,
+        captions,
       });
       // A duração do áudio é gravada AGORA porque só agora ela é conhecida: o
       // registro de consumo acontece no laço de polling, noutra requisição. O

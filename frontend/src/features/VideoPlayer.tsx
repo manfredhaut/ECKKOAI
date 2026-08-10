@@ -76,8 +76,17 @@ export function VideoPlayer({ video }: { video: Video }) {
       {/* Acima do player, nunca abaixo: quem olha o vídeo tem de ler isto
           antes de julgar o que está vendo. */}
       <SimulatedNotice simulated={video.simulated} />
+      {/* Legenda PEDIDA e não entregue. O aviso fica acima do player pelo mesmo
+          motivo do aviso de simulação: quem vai assistir precisa saber o que
+          está vendo antes de julgar o resultado — e este é o caso em que o
+          vídeo foi cobrado por inteiro sem a legenda que alguém escolheu. */}
+      {video.captions === true && video.captions_delivered === false && (
+        <div className="alert alert-warning">{t("createVideo.generate.captionsMissing")}</div>
+      )}
       <video
-        src={video.output_url}
+        // A URL vem escolhida do servidor; `output_url` é o fallback para
+        // respostas antigas, de antes de este campo existir.
+        src={video.playback_url ?? video.output_url}
         controls
         style={{
           width: "100%",

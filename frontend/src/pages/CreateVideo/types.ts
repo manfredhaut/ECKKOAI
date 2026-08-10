@@ -50,4 +50,9 @@ export interface WizardState {
    * DEMO-2 ela é escolhida dentro do passo Cena, e não num passo próprio.
    */
   publishPlatform: string;
+  /**
+   * LEGENDA queimada no vídeo. Padrão `false` — é o que todos os vídeos deste
+   * projeto fizeram até 10/08, e é a escolha que não muda o caminho conhecido.
+   */
+  captions: boolean;
 }

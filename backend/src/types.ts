@@ -49,6 +49,13 @@ export interface Video {
   provider_engine: string | null;
   /** Por que este motor — gravado inclusive quando nenhum foi enviado. */
   provider_engine_reason: string | null;
+  /** Legenda queimada foi PEDIDA nesta geração? Ver migration 049. */
+  captions: boolean;
+  /**
+   * A versão COM legenda queimada devolvida pelo fornecedor, quando houve.
+   * Guardada AO LADO de `output_url`, nunca no lugar dela.
+   */
+  captioned_output_url: string | null;
   /** Gerado em modo fixture? Fato da LINHA, não do ambiente (ver migration 032). */
   simulated: boolean;
   created_at: string;

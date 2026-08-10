@@ -626,7 +626,12 @@
       "openLibrary": "Ver na Biblioteca de vídeos →",
       "longConfirm": "Este roteiro produz cerca de {{seconds}} s de vídeo, acima dos {{limit}} s a partir dos quais pedimos confirmação. A cobrança é por segundo entregue e não há estorno depois que o fornecedor aceita. Confirmo que quero gerar assim.",
       "again": "Gerar novamente",
-      "againHelp": "Repete os mesmos parâmetros — roteiro, voz já sintetizada, fundo, interpretação, traje e formato. O serviço pode produzir um resultado diferente com a mesma entrada. Cada tentativa consome do limite diário e aparece na Biblioteca."
+      "againHelp": "Repete os mesmos parâmetros — roteiro, voz já sintetizada, fundo, interpretação, traje e formato. O serviço pode produzir um resultado diferente com a mesma entrada. Cada tentativa consome do limite diário e aparece na Biblioteca.",
+      "captionsLabel": "Legenda",
+      "captionsOff": "Sem legenda",
+      "captionsOn": "Com legenda",
+      "captionsUnverified": "A legenda é queimada no vídeo pelo fornecedor. O campo está na documentação dele, mas nenhuma geração deste sistema o enviou ainda — se ele for recusado, a tentativa falha na validação, antes da cobrança, e nada é debitado.",
+      "captionsMissing": "Você pediu legenda, mas o fornecedor não devolveu a versão legendada. O vídeo abaixo é a versão sem legenda — ele foi cobrado normalmente."
     },
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",

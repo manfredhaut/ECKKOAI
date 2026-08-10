@@ -142,6 +142,27 @@ export interface GenerateVideoInput {
    * caro.
    */
   engineChoice?: HeygenEngine | null;
+  /**
+   * LEGENDA queimada no vídeo. Padrão do produto: `false`.
+   *
+   * O campo do fornecedor é `caption`, de nível superior em `POST /v3/videos` —
+   * transcrito da doc em 06/08 na lista fechada de `checkVideoContractPolicy`, e
+   * relido na doc em 10/08, que descreve `caption.file_format` (enum, default
+   * `srt`) e `caption.style` (enum `default`, opcional). É `style` que queima a
+   * legenda na imagem; sem ele o fornecedor só entrega o arquivo `.srt` ao lado.
+   *
+   * NÃO é `enable_caption`: esse é campo da v2 e não existe no schema da v3,
+   * onde raiz desconhecida volta 400 "Extra inputs are not permitted".
+   *
+   * ┌─ NÃO VERIFICADO ────────────────────────────────────────────────────────┐
+   * │ Que o fornecedor ACEITE `caption` neste caminho. Nenhuma geração deste   │
+   * │ projeto o enviou, e medir custa um vídeo pago. O campo está no schema    │
+   * │ lido; o aceite, não. Se ele for recusado, o 400 acontece na validação —  │
+   * │ ANTES do aceite —, então o débito estorna e o custo é zero. Por isso o   │
+   * │ padrão continua sendo `false`: o caminho da demo não passa por aqui.     │
+   * └─────────────────────────────────────────────────────────────────────────┘
+   */
+  captions?: boolean;
 }
 
 /**
@@ -187,6 +208,22 @@ export type PollResult =
        * equivalente.
        */
       durationSeconds?: number | null;
+      /**
+       * A versão COM legenda queimada, quando o fornecedor a devolve
+       * (`captioned_video_url`).
+       *
+       * Vem SEPARADA de `outputUrl`, e não no lugar dele: o fornecedor entrega
+       * as duas, e sobrescrever a limpa com a legendada apagaria uma versão de
+       * um vídeo que já foi pago. Guardar as duas custa uma coluna; regerar
+       * custa dinheiro.
+       *
+       * `null` no caso normal. MEDIDO em 10/08: num vídeo gerado SEM `caption`
+       * no pedido, `GET /v3/videos/{id}` devolveu nove campos e nenhum deles
+       * era `captioned_video_url` ou `subtitle_url` — apesar de a doc afirmar
+       * que o sidecar é "always generated". Onde doc e medição divergem, vale
+       * a medição.
+       */
+      captionedOutputUrl?: string | null;
     }
   | { status: "error"; errorMessage: string };
 
@@ -408,6 +445,23 @@ async function pollAvatarStatusHeygen(apiKey: string, avatarId: string): Promise
 const HEYGEN_FIT: "contain" | "cover" = "cover";
 
 /**
+ * Os dois valores de `caption`, transcritos do schema do fornecedor lido em
+ * 10/08 — `file_format` é um enum cujo único valor documentado é `srt`, e
+ * `style` um enum cujo único valor documentado é `default`.
+ *
+ * Declarados aqui, e não literais no meio do corpo, pela mesma razão de
+ * `HEYGEN_FIT`: são valores de enum do fornecedor, e o dia em que ele
+ * acrescentar um segundo valor a discussão tem de acontecer num lugar só.
+ *
+ * Anotados com o tipo largo (`string`) de propósito. Sem a anotação o
+ * TypeScript estreita para o literal, e a guarda que confere qual valor sai no
+ * corpo passaria a reprovar por não compilar — reprovaria calada, sem nunca
+ * dizer o que mudou. É o defeito INERTE já medido em `VOICE_SPEED`.
+ */
+const CAPTION_FILE_FORMAT: string = "srt";
+const CAPTION_STYLE: string = "default";
+
+/**
  * Chave de idempotência DA TENTATIVA.
  *
  * O contrato (lido na doc do fornecedor em 06/08): header `Idempotency-Key`,
@@ -482,7 +536,13 @@ export function heygenVideoRequestHeaders(
 export function buildHeygenVideoPayload(
   input: Pick<
     GenerateVideoInput,
-    "providerAvatarId" | "format" | "supportedEngines" | "engineEnabled" | "scene" | "engineChoice"
+    | "providerAvatarId"
+    | "format"
+    | "supportedEngines"
+    | "engineEnabled"
+    | "scene"
+    | "engineChoice"
+    | "captions"
   >,
   audioAssetId: string,
   /**
@@ -573,6 +633,20 @@ export function buildHeygenVideoPayload(
     body.expressiveness = scene.expressiveness;
   }
 
+  // LEGENDA. O objeto só existe no corpo quando alguém pediu — omitir é o
+  // padrão do fornecedor e é o comportamento de todos os vídeos já gerados
+  // aqui.
+  //
+  // Os DOIS sub-campos vão juntos, e nenhum deles é inventado: `file_format` e
+  // `style` são o schema inteiro de `caption` na doc lida em 10/08. Mandar só
+  // `style` funcionaria pelo default declarado de `file_format`, mas depender
+  // de default alheio é como o `background` sem `remove_background` saiu
+  // inerte em 06/08 — o fornecedor aceitou, respondeu 200, e não fez o que se
+  // esperava. Explícito custa dois campos.
+  if (input.captions) {
+    body.caption = { file_format: CAPTION_FILE_FORMAT, style: CAPTION_STYLE };
+  }
+
   if (!input.engineEnabled) {
     return { body, engine: null, engineReason: "flag_off" };
   }
@@ -637,6 +711,10 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
     aspect_ratio: input.format.aspectRatio,
     fit: body.fit,
     remove_background: body.remove_background ?? "ausente",
+    // A PROVA de que a escolha de legenda chegou ao corpo. Sem esta linha, a
+    // única forma de saber se o botão da tela virou campo no payload seria
+    // gerar um vídeo pago e olhar o resultado.
+    caption: body.caption ? JSON.stringify(body.caption) : "ausente",
   });
 
   let res: Response;
@@ -701,10 +779,22 @@ async function pollHeygenVideo(apiKey: string, jobId: string): Promise<PollResul
     // para medir consumo — o `duration_seconds` da requisição é só o que o
     // cliente escolheu na tela.
     const vendorDuration = Number(data?.data?.duration ?? data?.duration);
+    // A versão legendada é LIDA sempre, e não só quando pedimos legenda: a
+    // alternativa seria carregar a escolha do usuário até aqui, e este poll é o
+    // mesmo que a varredura de boot usa para retomar um vídeo cujo pedido
+    // ninguém mais tem em mãos. Ler o que a resposta trouxer não precisa de
+    // estado nenhum.
+    //
+    // Presença implica pedido — DEDUZIDO do medido em 10/08: sem `caption` no
+    // corpo, o campo não veio. Se um dia vier sem termos pedido, o efeito é
+    // uma URL a mais guardada, não um vídeo trocado: quem escolhe qual servir é
+    // a coluna `captions`, e não a existência desta.
+    const captionedUrl: unknown = data?.data?.captioned_video_url ?? data?.captioned_video_url;
     return {
       status: "ready",
       outputUrl: videoUrl,
       durationSeconds: Number.isFinite(vendorDuration) && vendorDuration > 0 ? vendorDuration : null,
+      captionedOutputUrl: typeof captionedUrl === "string" && captionedUrl.length > 0 ? captionedUrl : null,
     };
   }
   if (status === "failed" || status === "error") {

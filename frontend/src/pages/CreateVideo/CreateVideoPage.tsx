@@ -60,6 +60,9 @@ export function CreateVideoPage() {
     expressiveness: null,
     avatarLookId: null,
     publishPlatform: DEFAULT_PUBLISH_PLATFORM,
+    // SEM legenda por padrão. A escolha contrária muda o corpo enviado ao
+    // fornecedor de um jeito que nenhuma geração deste projeto exercitou.
+    captions: false,
   });
 
   /**
@@ -162,7 +165,12 @@ export function CreateVideoPage() {
           onPublishPlatformChange={(publishPlatform) => setWizard((w) => ({ ...w, publishPlatform }))}
         />
       )}
-      {step === 3 && <GenerateStep wizard={wizard} />}
+      {step === 3 && (
+        <GenerateStep
+          wizard={wizard}
+          onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))}
+        />
+      )}
 
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
         {step > 0 && (

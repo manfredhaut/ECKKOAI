@@ -626,7 +626,12 @@
       "openLibrary": "Open in video library →",
       "longConfirm": "This script produces about {{seconds}}s of video, above the {{limit}}s threshold where we ask for confirmation. Billing is per delivered second and there is no refund once the vendor accepts the job. I confirm I want to generate it.",
       "again": "Generate again",
-      "againHelp": "Repeats the same parameters — script, already synthesised voice, background, performance, outfit and format. The service may produce a different result from the same input. Each attempt counts against the daily limit and shows up in the Library."
+      "againHelp": "Repeats the same parameters — script, already synthesised voice, background, performance, outfit and format. The service may produce a different result from the same input. Each attempt counts against the daily limit and shows up in the Library.",
+      "captionsLabel": "Captions",
+      "captionsOff": "No captions",
+      "captionsOn": "With captions",
+      "captionsUnverified": "Captions are burned into the video by the provider. The field is in their documentation, but no generation from this system has sent it yet — if it is rejected, the attempt fails at validation, before billing, and nothing is charged.",
+      "captionsMissing": "You asked for captions, but the provider did not return the captioned version. The video below is the version without captions — it was charged normally."
     },
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",
