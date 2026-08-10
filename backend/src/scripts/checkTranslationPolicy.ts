@@ -22,6 +22,7 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import {
+  DirectionTranslationError,
   needsTranslation,
   resolveInterfaceLocale,
   translateDirection,
@@ -192,20 +193,46 @@ export async function checkTranslationPolicy(repoRoot: string): Promise<Translat
   }
 
   // ---------------------------------------------------------------------------
-  // 2. FALHA RECUSA — e a recusa é uma exceção, não um valor devolvido.
+  // 2. FALHA RECUSA, REUTILIZAÇÃO SUBSTITUI, E NADA DISSO DEBITA CRÉDITO.
   //
-  // Exercitado de verdade: `complete()` é forçado a falhar pela rede, e o que
-  // se exige é que NADA volte. Um retorno aqui — qualquer um — significa que o
-  // caminho caiu de volta em enviar alguma coisa.
+  // As três são exercitadas com `pool.query` substituído por um duplo, e não
+  // com o banco de verdade. A primeira versão desta guarda chamava com
+  // `tenantId: "tenant-de-teste"`, que não é UUID: o Postgres recusava a
+  // consulta de reutilização, a função lançava por ISSO, e o `catch` do teste
+  // engolia o erro e dava a guarda por passada. Ela ficou INERTE exatamente no
+  // mutante mais importante da passada — o que devolve o português em vez de
+  // falhar. Um `catch` que aceita qualquer exceção não distingue "recusou como
+  // devia" de "quebrou antes de chegar lá".
   // ---------------------------------------------------------------------------
+  const { pool } = await import("../db/pool.js");
+  const queryOriginal = pool.query.bind(pool);
   const modoOriginal = process.env.PROVIDER_MODE;
+
+  /** Instala o duplo. `reuso` é o que a consulta de reutilização devolve. */
+  function comBancoFalso(reuso: string | null): string[] {
+    const sqls: string[] = [];
+    (pool as { query: unknown }).query = (async (texto: unknown, _params?: unknown) => {
+      const sql = String(texto);
+      sqls.push(sql);
+      if (sql.includes("motion_prompt_en")) {
+        return { rows: reuso ? [{ motion_prompt_en: reuso }] : [] };
+      }
+      // Qualquer outra coisa (registro de tokens, e um débito que não devia
+      // existir) devolve vazio — o que interessa é o SQL ter passado por aqui.
+      return { rows: [] };
+    }) as typeof pool.query;
+    return sqls;
+  }
+
+  // --- 2a. falha do modelo RECUSA, com o tipo de erro certo ---------------
   process.env.PROVIDER_MODE = "live";
+  const sqlsFalha = comBancoFalso(null);
   globalThis.fetch = (async () => {
     throw new Error("fornecedor de texto fora do ar (simulado pela guarda)");
   }) as typeof fetch;
   try {
     const r = await translateDirection({
-      tenantId: "tenant-de-teste",
+      tenantId: "00000000-0000-0000-0000-0000000000ff",
       apiKey: "irrelevante",
       vendor: "gemini",
       source: "mãos abertas na altura do peito",
@@ -217,12 +244,90 @@ export async function checkTranslationPolicy(repoRoot: string): Promise<Translat
         "`background_asset_failed` renascendo: cai num catch, a geração segue, o vídeo é cobrado por " +
         "inteiro e a tela fica calada. Aqui o avatar receberia direção em português.",
     );
-  } catch {
-    // Esperado: lançou.
+  } catch (err) {
+    // O TIPO importa. Qualquer exceção passaria — inclusive a de um tenant
+    // malformado, que foi o que tornou esta guarda inerte na primeira versão.
+    if (!(err instanceof DirectionTranslationError)) {
+      failures.push(
+        `tradução: a falha do modelo lançou ${err instanceof Error ? err.constructor.name : typeof err} ` +
+          `em vez de DirectionTranslationError — a guarda não conseguiu distinguir "recusou como devia" ` +
+          `de "quebrou antes de chegar lá". Mensagem: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   } finally {
     globalThis.fetch = fetchOriginal;
-    if (modoOriginal === undefined) delete process.env.PROVIDER_MODE;
-    else process.env.PROVIDER_MODE = modoOriginal;
+  }
+
+  // NADA de débito, em nenhum dos caminhos. Crédito de roteiro é do "Gerar com
+  // IA", que a pessoa escolhe; a tradução acontece sem ela pedir.
+  const debitou = (sqls: string[]) =>
+    sqls.some((s) => /tenant_credits|credit_ledger/i.test(s) && /UPDATE|INSERT/i.test(s));
+  if (debitou(sqlsFalha)) {
+    failures.push(
+      "tradução: a tradução debitou crédito no caminho de falha. Nenhum caminho pode debitar: o saldo " +
+        "cairia por um passo que a pessoa não pediu, e o 'Gerar com IA' dela acabaria mais cedo sem " +
+        "explicação nenhuma.",
+    );
+  }
+
+  // --- 2b. a reutilização SUBSTITUI, e não acumula ------------------------
+  const JA_FEITA = "hands open at chest height, calm gesture";
+  const FONTE = "mãos abertas na altura do peito";
+  const sqlsReuso = comBancoFalso(JA_FEITA);
+  globalThis.fetch = (async () => {
+    throw new Error("BOMBA: rechamou o modelo com uma tradução já feita do mesmo texto");
+  }) as typeof fetch;
+  try {
+    const r = await translateDirection({
+      tenantId: "00000000-0000-0000-0000-0000000000ff",
+      apiKey: "irrelevante",
+      vendor: "gemini",
+      source: FONTE,
+      locale: "pt-BR",
+    });
+    if (r.origin !== "reused") {
+      failures.push(
+        `tradução: havia tradução pronta do mesmo texto e a função não a reaproveitou (origin=${r.origin}). ` +
+          "Rechamar o modelo com o texto fonte inalterado gasta tokens para produzir o mesmo resultado.",
+      );
+    }
+    if (r.english !== JA_FEITA) {
+      failures.push(
+        `tradução: a tradução reaproveitada não é a tradução — recebi ${JSON.stringify(r.english)}, ` +
+          `esperado ${JSON.stringify(JA_FEITA)}. ` +
+          (r.english.includes(FONTE)
+            ? "O texto FONTE veio junto: a versão nova está sendo concatenada à anterior em vez de " +
+              "substituí-la. Na terceira geração a direção seriam três instruções empilhadas, " +
+              "contraditórias entre si, e o fornecedor aceitaria todas com 200."
+            : ""),
+      );
+    }
+  } catch (err) {
+    failures.push(
+      `tradução: o caminho de reutilização falhou — ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+  if (debitou(sqlsReuso)) {
+    failures.push("tradução: a tradução debitou crédito no caminho de reutilização.");
+  }
+
+  pool.query = queryOriginal;
+  if (modoOriginal === undefined) delete process.env.PROVIDER_MODE;
+  else process.env.PROVIDER_MODE = modoOriginal;
+
+  // E o módulo não pode nem CONHECER o portão de crédito. A verificação de
+  // comportamento acima cobre os caminhos que existem hoje; esta cobre o
+  // caminho que alguém acrescentar amanhã.
+  {
+    const fonte = apenasCodigo(readFileSync(path.join(repoRoot, MODULO), "utf8"));
+    if (/debitCredit\s*\(/.test(fonte)) {
+      failures.push(
+        "tradução: `debitCredit` apareceu no módulo de tradução. A tradução é decisão NOSSA e acontece " +
+          "sem a pessoa pedir — ela não pode consumir o saldo que a pessoa reserva para o 'Gerar com IA'.",
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -289,11 +394,18 @@ export async function checkTranslationPolicy(repoRoot: string): Promise<Translat
   const modulo = apenasCodigo(readFileSync(path.join(repoRoot, MODULO), "utf8"));
 
   // `translateDirection` só pode receber `scene.motionPrompt` — nunca `script`.
+  //
+  // A busca é pelo ARGUMENTO, e não pela chamada inteira. A primeira versão
+  // tentava casar `translateDirection\([^)]*source:\s*script` e falhava: um
+  // argumento com parênteses aninhados (uma credencial resolvida na hora, por
+  // exemplo) fecha o `[^)]*` antes de chegar ao `source:`, e a guarda ficou
+  // INERTE. `source:` é parâmetro exclusivo desta função — procurá-lo direto é
+  // mais estreito e não tem como ser despistado por aninhamento.
   for (const [arquivo, fonte] of [
     [ROTA, rota],
     [MODULO, modulo],
   ] as const) {
-    if (/translateDirection\([^)]*\bsource:\s*script\b/s.test(fonte)) {
+    if (/\bsource:\s*script\b/.test(fonte)) {
       failures.push(
         `tradução: o roteiro passou pelo tradutor em ${arquivo}. O roteiro é FALA: sai pela boca do ` +
           "avatar, e traduzi-lo troca o idioma do vídeo entregue. Só a direção de cena atravessa — ela " +
