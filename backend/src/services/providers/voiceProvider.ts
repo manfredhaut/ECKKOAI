@@ -215,6 +215,82 @@ const DEFAULT_MP3_BITRATE_BPS = 128_000;
  */
 export const ELEVENLABS_TTS_MODEL = process.env.ELEVENLABS_TTS_MODEL?.trim() || "eleven_multilingual_v2";
 
+/**
+ * VELOCIDADE DA FALA do avatar — não a rapidez de produzir o vídeo.
+ *
+ * Quem usa a aba nunca vê este controle: ele chega pronto, e é por isso que o
+ * valor mora aqui e não numa coluna ou num campo de tela. Uma coluna exigiria
+ * migration e UI para um número que ninguém varia por avatar; um campo
+ * ofereceria uma escolha que ninguém consegue julgar sem gerar e pagar.
+ *
+ * **0.85 é MEDIDO, não escolhido.** Em 09/08, no painel do fornecedor, com
+ * `eleven_multilingual_v2` e a voz `0hQuq0q2JEk1SY4lZaM9`, o operador aprovou
+ * timbre e ritmo a 0.85; a 1.0 — o padrão do fornecedor — a fala saiu rápida
+ * demais. A causa provável está no áudio de treino, e é o que o texto da tela
+ * de gravação passou a dizer. A faixa aceita pelo fornecedor é 0.7–1.2.
+ *
+ * POR QUE ENVIAR, se `GET /v1/voices/{id}/settings` já mostra `speed: 0.85`
+ * guardado nessa voz e o fornecedor aplica o guardado quando o campo é
+ * omitido. Três razões, e a segunda é certeza, não risco:
+ *   1. o valor mora só no fornecedor — quem abrir o painel muda o ritmo de
+ *      todos os vídeos futuros, sem rastro nenhum deste lado;
+ *   2. o ajuste é POR VOZ, e toda clonagem nova nasce em 1.0: a próxima voz
+ *      clonada perderia o ritmo aprovado em silêncio. Este produto clona a
+ *      cada regravação, então isso ia acontecer;
+ *   3. a régua de custo precisa do número para estimar direito — ver
+ *      scriptDuration.ts.
+ *
+ * ATENÇÃO ao enviar: `voice_settings` SOBRESCREVE o que está guardado na voz,
+ * e vale só naquela chamada. Mandar o objeto sem `speed` devolveria tudo ao
+ * default do fornecedor — pior que não mandar nada.
+ */
+export const VOICE_SPEED = 0.85;
+
+/**
+ * Modelos que aceitam `speed`. O envio é condicionado a esta lista.
+ *
+ * `eleven_v3` NÃO tem o campo. Mandá-lo a um modelo que não o suporta cai no
+ * pior caso conhecido deste projeto — o fornecedor aceita e ignora em
+ * silêncio, como `expressiveness` com `avatar_iii` —, e o sintoma seria uma
+ * fala 18% mais rápida que ninguém saberia explicar. A regra fica do nosso
+ * lado, onde é observável.
+ *
+ * Modelo fora da lista: o campo não vai, e o evento de log diz por quê. A
+ * síntese continua acontecendo — recusar a geração porque o ritmo não pode
+ * ser ajustado seria trocar um defeito de ritmo por um defeito de produto.
+ */
+export const MODELS_WITH_SPEED: readonly string[] = [
+  "eleven_multilingual_v2",
+  "eleven_turbo_v2_5",
+  "eleven_flash_v2_5",
+];
+
+export function supportsSpeed(modelId: string): boolean {
+  return MODELS_WITH_SPEED.includes(modelId);
+}
+
+/**
+ * O corpo da síntese, montado num lugar só.
+ *
+ * Os DOIS ramos de `synthesizeSpeech` (com timestamps e simples) chamam esta
+ * função. Dois corpos montados à mão divergiriam no dia em que um deles
+ * mudasse, e o defeito apareceria só quando o fallback entrasse em ação — que
+ * é raro, intermitente e sem sintoma. É a mesma razão pela qual `model_id` já
+ * era o mesmo nos dois.
+ *
+ * E é o mesmo corpo da PRÉVIA e do VÍDEO: as duas passam por
+ * `synthesizeSpeech`. Se divergissem, o operador aprovaria um ritmo na prévia
+ * e receberia outro no vídeo — exatamente o defeito de aprovar sem ouvir que a
+ * prévia existe para fechar.
+ */
+export function buildSynthesisBody(text: string, modelId = ELEVENLABS_TTS_MODEL): Record<string, unknown> {
+  const body: Record<string, unknown> = { text, model_id: modelId };
+  if (supportsSpeed(modelId)) {
+    body.voice_settings = { speed: VOICE_SPEED };
+  }
+  return body;
+}
+
 // Text-to-speech using a cloned voice — used by avatarProvider.ts to
 // synthesize the video script in the tenant's own cloned voice before
 // handing the audio to HeyGen/D-ID.
@@ -239,7 +315,7 @@ export async function synthesizeSpeech(
     res = await fetch(`${base}/with-timestamps`, {
       method: "POST",
       headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),
+      body: JSON.stringify(buildSynthesisBody(text)),
       signal: vendorSignal(),
     });
   } catch (err) {
@@ -293,10 +369,11 @@ export async function synthesizeSpeech(
     plain = await fetch(base, {
       method: "POST",
       headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      // O MESMO modelo do ramo acima. Dois ramos com modelos diferentes
-      // produziriam vozes diferentes conforme o endpoint que respondesse — um
-      // defeito que só apareceria de forma intermitente.
-      body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),
+      // O MESMO corpo do ramo acima, pela MESMA função. Dois ramos com modelos
+      // ou velocidades diferentes produziriam vozes diferentes conforme o
+      // endpoint que respondesse — um defeito que só apareceria de forma
+      // intermitente, e só quando o fallback entrasse.
+      body: JSON.stringify(buildSynthesisBody(text)),
       signal: vendorSignal(),
     });
   } catch (err) {
