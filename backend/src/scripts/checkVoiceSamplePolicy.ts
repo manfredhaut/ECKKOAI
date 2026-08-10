@@ -1346,12 +1346,34 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
     path.join(repoRoot, "backend/src/services/providers/voiceProvider.ts"),
     "utf-8",
   );
-  const chamadas = (provider.match(/body:\s*JSON\.stringify\(buildSynthesisBody\(/g) ?? []).length;
+  //
+  // A âncora conta a MONTAGEM, e não mais a expressão inteira dentro do
+  // `body:`. O bloco TRADUCAO-1 passou a guardar o corpo numa variável para
+  // poder registrá-lo antes de enviar (`logSynthesisBody`), e a âncora antiga
+  // — presa a `body: JSON.stringify(buildSynthesisBody(` — reprovou por essa
+  // refatoração, não por defeito. O que precisa continuar verdadeiro é que os
+  // dois ramos montem pela MESMA função; onde o resultado é guardado antes de
+  // virar JSON é detalhe.
+  const chamadas = (provider.match(/=\s*buildSynthesisBody\(text\)/g) ?? []).length;
   if (chamadas !== 2) {
     failures.push(
       `voz: não monta o corpo pela mesma função nos dois ramos de synthesizeSpeech (achei ${chamadas} de 2). ` +
         "O ramo com timestamps responde quase sempre, então um corpo divergente no fallback fica dormindo " +
         "até o dia em que ele entra — e aí a voz muda de ritmo sem nada ter mudado.",
+    );
+  }
+
+  // E os dois ramos REGISTRAM o que vão mandar. Sem isto, `voice_settings`
+  // poderia parar de ir e a única pista seria uma duração diferente — o A7 volta
+  // a ser dedução.
+  const registros = (provider.match(/logSynthesisBody\(/g) ?? []).length;
+  // 3 = a definição da função + as duas chamadas.
+  if (registros < 3) {
+    failures.push(
+      `voz: o corpo enviado ao ElevenLabs deixou de ser registrado nos dois ramos (achei ${registros}, ` +
+        "esperado 3 = definição + 2 chamadas). O log de fornecedor grava só a resposta, então sem este " +
+        "evento não há como saber se `model_id` e `voice_settings.speed` saíram — e `voice_settings` " +
+        "sobrescreve o que está guardado na voz, que é editável no painel do fornecedor sem rastro.",
     );
   }
 
