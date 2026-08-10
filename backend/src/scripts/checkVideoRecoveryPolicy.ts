@@ -224,11 +224,17 @@ export const MUTANTS: Mutant[] = [
     name: "fetch sem AbortSignal",
     kind: "obvio",
     file: "backend/src/services/providers/voiceProvider.ts",
+    // O `find` NÃO inclui a linha do `body`. Ele já incluiu, e quebrou: quando
+    // o corpo passou a ser montado por `buildSynthesisBody(text)`, o trecho
+    // casou 0× e o mutante virou ERRO de aplicação — deixou de exercitar a
+    // guarda sem que nada acusasse. O que este mutante precisa tocar é o
+    // `signal`, e só ele; amarrá-lo ao conteúdo do corpo o torna refém de
+    // qualquer mudança na síntese.
     find: `      headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),
+      body: JSON.stringify(buildSynthesisBody(text)),
       signal: vendorSignal(),`,
     replace: `      headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),`,
+      body: JSON.stringify(buildSynthesisBody(text)),`,
     expect: "chamada a fornecedor sem teto de tempo",
   },
   {
