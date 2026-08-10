@@ -50,12 +50,30 @@ export const MUTANTS: Mutant[] = [
   },
   {
     guard: "roteiro: acima do teto RECUSA, nunca corta",
-    name: "o blocker corta o roteiro em vez de recusar",
+    name: "o portão para de recusar roteiro acima do teto",
     kind: "obvio",
+    // Muta a FUNÇÃO, e não a condição no portão. `} else if (false) {` também
+    // desliga a recusa, mas deixa o import sem uso e reprova por não compilar —
+    // o arnês devolveu AMBÍGUO nessa forma, porque o gate ficava vermelho sem
+    // nunca chegar a imprimir a mensagem da guarda. É o mesmo defeito de
+    // anotação de tipo já medido em `VOICE_SPEED`, por outro caminho.
+    file: "backend/src/services/video/scriptDuration.ts",
+    find: "  return estimateSecondsFromScript(script) > MAX_SCRIPT_SECONDS;",
+    replace: "  return false;",
+    expect: "passaram pelo portão",
+  },
+  {
+    guard: "roteiro: acima do teto RECUSA, nunca corta",
+    name: "o portão passa a cortar o roteiro em vez de recusar",
+    kind: "obvio",
+    // O corte de verdade: o texto é truncado no limite e a geração segue. Nada
+    // reclama, o vídeo sai, e ele para no meio de uma frase — cobrado por
+    // inteiro.
     file: "backend/src/services/generationReadiness.ts",
-    find: "  } else if (exceedsMaxScriptLength(input.script)) {",
-    replace: "  } else if (false) {",
-    expect: "roteiro acima do teto passou pelo portão",
+    find: "    const estimado = estimateSecondsFromScript(input.script);",
+    replace:
+      "    input.script = input.script.slice(0, maxScriptChars());\n    const estimado = estimateSecondsFromScript(input.script);",
+    expect: "apareceu corte de texto no portão",
   },
   {
     guard: "roteiro: acima do teto RECUSA, nunca corta",
@@ -134,6 +152,31 @@ export function checkScriptLimitPolicy(repoRoot: string): ScriptLimitCheckResult
     failures.push(
       `roteiro: o limite derivado (${limite}) não bate com ${MAX_SCRIPT_SECONDS} s × ` +
         `${CHARS_PER_SECOND.toFixed(6)} c/s × velocidade ${VOICE_SPEED} = ${esperado}.`,
+    );
+  }
+
+  // E — o único que pega o literal — a derivação é conferida no CÓDIGO.
+  //
+  // As duas verificações acima são tautologias contra este defeito, e isso foi
+  // MEDIDO: com `return 1960;` no lugar da fórmula, as duas continuam passando,
+  // porque 1960 é exatamente o que a derivação produz hoje. O arnês devolveu
+  // INERTE, que é a pior categoria — a guarda ocupava o lugar da verificação
+  // sem fazê-la.
+  //
+  // "Derivado" é propriedade do CÓDIGO, não do valor: nenhum valor consegue
+  // distinguir um número certo por construção de um número certo por
+  // coincidência. Por isso aqui se lê o corpo da função.
+  const regua = readFileSync(path.join(repoRoot, "backend/src/services/video/scriptDuration.ts"), "utf8");
+  const corpo = /export function maxScriptChars\(\): number \{([\s\S]*?)\n\}/.exec(regua)?.[1] ?? "";
+  const derivada = /MAX_SCRIPT_SECONDS\s*\*\s*CHARS_PER_SECOND\s*\*\s*VOICE_SPEED/.test(corpo);
+  const temLiteral = /return\s+\d/.test(corpo);
+  if (!derivada || temLiteral) {
+    failures.push(
+      "roteiro: o limite em caracteres deixou de ser derivado — `maxScriptChars()` não multiplica " +
+        `MAX_SCRIPT_SECONDS por CHARS_PER_SECOND e VOICE_SPEED${temLiteral ? ", e devolve um número escrito à mão" : ""}. ` +
+        "Um literal aqui continua parecendo certo depois de a régua mudar (hoje as duas dão 1960), e " +
+        "aí a tela passa a recusar num ponto que não corresponde a duração nenhuma. " +
+        `Corpo lido: ${JSON.stringify(corpo.trim())}`,
     );
   }
 
