@@ -56,6 +56,11 @@
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
+// A velocidade da fala vem do provedor de voz, e não é redeclarada aqui: dois
+// números para a mesma coisa divergiriam, e a régua passaria a estimar por uma
+// velocidade que a síntese não usa.
+import { VOICE_SPEED } from "../providers/voiceProvider.js";
+
 /**
  * A medição, com os dois lados à vista. Mexer aqui muda toda duração estimada
  * e todo custo estimado do produto — que é a propriedade desejada.
@@ -77,6 +82,23 @@ export const SCRIPT_PACING = {
  */
 export const CHARS_PER_SECOND =
   SCRIPT_PACING.measuredChars / SCRIPT_PACING.measuredDeliveredSeconds;
+
+/**
+ * A MEDIÇÃO FOI FEITA A VELOCIDADE 1.0 — e é por isso que ela não basta
+ * sozinha.
+ *
+ * Os 474 caracteres em 36,9876 s saíram da voz `5Yeum4QN…`, cujo
+ * `GET /v1/voices/{id}/settings` mostra `speed: 1.0` (medido em 09/08). A voz
+ * em uso hoje está em **0.85**, aprovada pelo operador — a 1.0 a fala saía
+ * rápida demais.
+ *
+ * Uma fala 15% mais lenta dura mais, e a cobrança é por segundo INTEIRO
+ * entregue: para os 194 caracteres da frase da demo, 15,1 s a 1.0 viram
+ * 17,8 s a 0.85, e 45 unidades viram 51. Sem esta divisão a tela mostraria
+ * US$ 0,75 enquanto o fornecedor debitaria US$ 0,85 — o defeito 4 (estimativa
+ * que valia 0,42× do cobrado) voltando por outra porta, menor mas do mesmo
+ * tipo.
+ */
 
 /**
  * Acima de quantos segundos estimados o passo 6 exige confirmação explícita.
@@ -133,7 +155,17 @@ export function requiresLongVideoConfirmation(estimatedSeconds: number): boolean
  */
 export function estimateSecondsFromChars(chars: number): number {
   if (!Number.isFinite(chars) || chars <= 0) return 0;
-  return chars / CHARS_PER_SECOND;
+  // DOIS fatores, não um. `CHARS_PER_SECOND` é o ritmo da voz a velocidade
+  // 1.0 — foi assim que ele foi medido, no vídeo pago de 05/08 com a voz
+  // antiga. A velocidade é o segundo fator, e dividir por ela é o que
+  // converte "quanto essa voz fala por segundo" em "quanto tempo esse
+  // roteiro vai durar".
+  //
+  // NÃO recalibrar a constante para embutir a velocidade. Misturar os dois
+  // números faria a régua quebrar de novo no dia em que a velocidade mudasse,
+  // e ninguém saberia qual dos dois estava errado — é o mesmo motivo pelo qual
+  // a constante é a divisão medida e não o 12,8 redondo.
+  return chars / CHARS_PER_SECOND / VOICE_SPEED;
 }
 
 /** O mesmo, a partir do roteiro. O servidor tem o texto; a tela, só a contagem. */
