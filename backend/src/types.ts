@@ -52,6 +52,15 @@ export interface Video {
   /** Legenda queimada foi PEDIDA nesta geração? Ver migration 049. */
   captions: boolean;
   /**
+   * A Interpretação traduzida para inglês — o que de fato foi ao fornecedor.
+   *
+   * **VELADA.** Existe para auditoria (log de servidor e painel admin) e nunca
+   * pode sair numa resposta destinada ao cliente do tenant: quem escreve vê e
+   * revisa sempre o próprio texto, em `motion_prompt`. O filtro é
+   * `semCamposVelados()`, aplicado em `withDeliveredSeconds`.
+   */
+  motion_prompt_en: string | null;
+  /**
    * A versão COM legenda queimada devolvida pelo fornecedor, quando houve.
    * Guardada AO LADO de `output_url`, nunca no lugar dela.
    */

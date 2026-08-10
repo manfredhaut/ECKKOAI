@@ -8,7 +8,7 @@ import {
   heygenIdempotencyKey,
   AvatarProviderError,
 } from "../services/providers/avatarProvider.js";
-import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
+import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCatalog.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 import { createNotification } from "../services/notifications.js";
@@ -43,6 +43,12 @@ import {
 } from "../services/billing/dailyGenerationLimit.js";
 import { decidirEstorno, type VideoFailureReason } from "../services/video/videoFailure.js";
 import { captionsDelivered, urlParaServir } from "../services/video/captionSelection.js";
+import { semCamposVelados } from "../services/video/tenantView.js";
+import {
+  DirectionTranslationError,
+  resolveInterfaceLocale,
+  translateDirection,
+} from "../services/video/directionTranslation.js";
 import { ehTimeoutDeFornecedor } from "../services/providers/vendorTimeout.js";
 import type { VideoEmVoo } from "../services/video/recovery.js";
 
@@ -446,7 +452,11 @@ interface VideoRow extends Video {
  */
 function withDeliveredSeconds(row: VideoRow) {
   return {
-    ...row,
+    // O VÉU entra AQUI, e não em cada uma das três rotas, porque é aqui que o
+    // `SELECT *` vira resposta. Filtrar nos chamadores deixaria a próxima rota
+    // que serializar vídeo nascer sem o filtro — e a coluna velada apareceria
+    // no JSON do tenant sem ninguém ter decidido isso.
+    ...semCamposVelados(row as unknown as Record<string, unknown>),
     delivered_seconds: row.delivered_seconds != null ? Number(row.delivered_seconds) : null,
     delivered_source: row.delivered_source ?? null,
     estimated_seconds: estimateSecondsFromScript(row.script),
@@ -839,6 +849,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
        * comportamento de todos os vídeos gerados até 10/08.
        */
       captions?: boolean | null;
+      /**
+       * IDIOMA DA INTERFACE — o gatilho da tradução da Interpretação.
+       *
+       * Vem do cliente porque é ele quem sabe em que idioma a pessoa está
+       * usando o produto; não é detecção de língua sobre o texto, que erra
+       * justamente nas direções curtas. Ausente ou inválido cai em `pt-BR`, o
+       * lado seguro — ver `resolveInterfaceLocale`.
+       */
+      interface_locale?: string | null;
     };
   }>("/videos", { preHandler: requireActiveTenant }, async (req, reply) => {
     const {
@@ -870,6 +889,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     // "false" de um cliente mal formado como pedido de legenda, e a legenda é
     // uma escolha que aparece no vídeo pago.
     const captions = req.body.captions === true;
+    const interfaceLocale = resolveInterfaceLocale(req.body.interface_locale);
 
     // A duração é DERIVADA do roteiro, aqui e em nenhum outro lugar.
     //
@@ -939,12 +959,64 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     }
     const voiceCredential = await getCredential(req.tenantId, "voice");
 
+    // -----------------------------------------------------------------------
+    // A INTERPRETAÇÃO É TRADUZIDA AQUI — antes da linha, antes do débito.
+    //
+    // A ordem é o ponto. Traduzir depois do débito exigiria estornar quando o
+    // modelo falhasse, e estorno é caminho que só funciona antes do aceite do
+    // fornecedor: uma janela a mais para errar, num lugar onde não precisa
+    // existir nenhuma. Aqui, falhar custa zero por construção — não há o que
+    // desfazer.
+    //
+    // O ROTEIRO NÃO PASSA POR AQUI, em hipótese nenhuma. Ele é fala: sai pela
+    // boca do avatar, e traduzi-lo trocaria o idioma do vídeo entregue. Só
+    // `scene.motionPrompt` — a direção de cena, que o fornecedor lê e ninguém
+    // ouve.
+    // -----------------------------------------------------------------------
+    let motionPromptEn: string | null = null;
+    if (scene.motionPrompt) {
+      // A credencial de TEXTO, que é a mesma do "Gerar com IA". Sem ela não há
+      // como traduzir, e recusar aqui é melhor que mandar português: o
+      // fornecedor aceitaria os dois com 200, e só o vídeo pago mostraria a
+      // diferença.
+      const scriptCredential = await getCredential(req.tenantId, "script");
+      if (!scriptCredential) {
+        return reply.code(400).send({
+          error: "direction_translation_unavailable",
+          message:
+            "A Interpretação precisa ser traduzida antes de ir ao fornecedor, e nenhum provedor de texto " +
+            "está conectado. Conecte a chave em Configurações, ou apague o texto da Interpretação para " +
+            "gerar sem ela. Nada foi cobrado.",
+        });
+      }
+      try {
+        const traducao = await translateDirection({
+          tenantId: req.tenantId,
+          apiKey: scriptCredential.apiKey,
+          vendor: scriptCredential.vendor as ScriptVendor,
+          source: scene.motionPrompt,
+          locale: interfaceLocale,
+        });
+        motionPromptEn = traducao.english;
+      } catch (err) {
+        if (err instanceof DirectionTranslationError) {
+          // RECUSA, e nunca "segue sem traduzir". O precedente contrário está
+          // medido neste projeto: `background_asset_failed` cai num catch, a
+          // geração segue, o vídeo sai com o fundo errado, é cobrado por
+          // inteiro e a tela não diz nada. Aqui a pessoa fica sabendo, e o
+          // dinheiro fica na carteira.
+          return reply.code(502).send({ error: "direction_translation_failed", message: err.message });
+        }
+        throw err;
+      }
+    }
+
     const { rows } = await pool.query<Video>(
       `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated,
                            publish_platform, aspect_ratio, resolution,
                            background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id,
-                           captions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING *`,
+                           captions, motion_prompt_en)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING *`,
       [
         req.tenantId,
         avatar_id,
@@ -979,6 +1051,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // Gravada junto do resto do pedido, e antes da chamada: é o que faz
         // "Gerar novamente" repetir a MESMA escolha em vez de reconstruí-la.
         captions,
+        // SOBRESCRITA, e nunca acúmulo: cada clique em Gerar INSERE uma linha
+        // nova, com a tradução do texto que está no formulário agora. Não
+        // existe caminho em que a versão anterior sobreviva ao lado da nova —
+        // e é também o que faz "mudou o fonte, refaz a tradução" ser verdade
+        // sem nenhum código de invalidação.
+        motionPromptEn,
       ],
     );
     const video = rows[0];
@@ -1093,7 +1171,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // anterior não estava no fornecedor nem no montador de payload: estava
         // exatamente nesta chamada, que não passava os campos que a tela
         // coletava e o banco guardava.
-        scene,
+        // A cena que vai ao FORNECEDOR leva a direção em INGLÊS; a que foi
+        // gravada na linha, e é a única que a tela mostra, continua com o texto
+        // do usuário. É este o ponto exato em que os dois caminhos se separam.
+        scene: { ...scene, motionPrompt: motionPromptEn ?? scene.motionPrompt },
         engineChoice,
         captions,
       });

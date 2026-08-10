@@ -73,6 +73,20 @@ export type GenerationBlockerCode =
   | "no_avatar_credential"
   | "empty_script"
   | "script_too_long"
+  /**
+   * A Interpretação não pôde ser traduzida para o idioma do fornecedor.
+   *
+   * Está neste enum, ao lado dos outros dois de roteiro, mesmo não sendo
+   * avaliável ANTES do clique: a tradução só acontece na geração, porque
+   * depende de uma chamada a modelo que seria absurdo disparar a cada tecla. O
+   * código vive aqui para a tela ter UM vocabulário de recusa, e é assim que a
+   * rota o devolve.
+   *
+   * O que ele NUNCA significa: "seguimos sem traduzir". Ver o precedente de
+   * `background_asset_failed`, que segue e cobra calado.
+   */
+  | "direction_translation_failed"
+  | "direction_translation_unavailable"
   | "plan_limit_reached"
   | "live_budget_exhausted";
 

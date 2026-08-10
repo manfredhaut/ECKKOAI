@@ -49,6 +49,23 @@ export interface CompleteUsage {
 export interface CompleteResult {
   text: string;
   usage: CompleteUsage | null;
+  /**
+   * A resposta foi CORTADA por teto de tokens?
+   *
+   * MEDIDO em 10/08, e é um defeito silencioso: com `maxOutputTokens: 400`, uma
+   * direção de cena de 74 caracteres voltou cortada no meio de uma palavra
+   * ("…looking"), com `candidatesTokenCount: 15`. O orçamento não foi gasto
+   * pelo texto — foi gasto pelo RACIOCÍNIO do modelo, que conta para o mesmo
+   * teto e não aparece em `candidatesTokenCount`. Como o comentário de
+   * `completeGemini` registra, desligar o thinking não é um caminho disponível.
+   *
+   * Sem este campo, texto truncado é indistinguível de texto curto: os dois
+   * chegam como string não vazia. Quem consome decide o que fazer — a tradução
+   * de direção RECUSA, porque meia instrução de cena é pior que nenhuma.
+   *
+   * `null` quando o provedor não informa.
+   */
+  truncated: boolean | null;
 }
 
 interface ProviderEntry {
@@ -94,12 +111,13 @@ async function completeAnthropic(model: string, _baseUrl: string | null, input: 
 
   const data = (await res.json()) as {
     content: { type: string; text?: string }[];
+    stop_reason?: string;
     usage?: { input_tokens: number; output_tokens: number };
   };
   const text = data.content.find((block) => block.type === "text")?.text;
   if (!text) throw new AiEmptyResponseError("Anthropic API returned no text content");
   const usage = data.usage ? { inputTokens: data.usage.input_tokens, outputTokens: data.usage.output_tokens } : null;
-  return { text, usage };
+  return { text, usage, truncated: data.stop_reason === "max_tokens" };
 }
 
 async function completeGemini(model: string, _baseUrl: string | null, input: CompleteInput): Promise<CompleteResult> {
@@ -137,18 +155,23 @@ async function completeGemini(model: string, _baseUrl: string | null, input: Com
   }
 
   const data = (await res.json()) as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
     usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
   };
   const text = data.candidates?.[0]?.content?.parts?.find((p) => p.text)?.text;
   if (!text) throw new AiEmptyResponseError("Gemini API returned no text content");
+  // `MAX_TOKENS` é o fornecedor dizendo que parou por teto, e não por ter
+  // terminado. Lido aqui e repassado a quem chama, sem decidir nada: cortar um
+  // roteiro e cortar uma direção de cena têm consequências diferentes, e a
+  // decisão pertence a quem sabe qual dos dois está pedindo.
+  const truncated = data.candidates?.[0]?.finishReason === "MAX_TOKENS";
   const usage = data.usageMetadata
     ? {
         inputTokens: data.usageMetadata.promptTokenCount ?? 0,
         outputTokens: data.usageMetadata.candidatesTokenCount ?? 0,
       }
     : null;
-  return { text, usage };
+  return { text, usage, truncated };
 }
 
 // Generic client for the OpenAI Chat Completions request/response shape —
@@ -194,7 +217,7 @@ async function completeOpenAiChatCompletions(
   }
 
   const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
+    choices?: { message?: { content?: string }; finish_reason?: string }[];
     usage?: { prompt_tokens: number; completion_tokens: number };
   };
   const text = data.choices?.[0]?.message?.content;
@@ -202,7 +225,7 @@ async function completeOpenAiChatCompletions(
   const usage = data.usage
     ? { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens }
     : null;
-  return { text, usage };
+  return { text, usage, truncated: data.choices?.[0]?.finish_reason === "length" };
 }
 
 const REGISTRY: Record<ScriptVendor, ProviderEntry> = {

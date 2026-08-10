@@ -89,7 +89,7 @@ export const MUTANTS: Mutant[] = [
     // para pegar: campo escolhido que não chega ao corpo. Aí o formulário diz
     // que está lá e o servidor recebe vazio, e o resumo confirma a mentira.
     file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
-    find: "  const corpo = corpoDaGeracao(wizard);",
+    find: '  const corpo = corpoDaGeracao(wizard, "pt-BR");',
     replace:
       "  const corpo = {\n" +
       "    avatar_id: wizard.avatarId,\n" +
@@ -187,9 +187,15 @@ export async function checkPreflightSummaryPolicy(
     // comentário como se fosse o código. É a armadilha já registrada duas vezes
     // neste diretório — guarda tropeçando no texto escrito para descrevê-la — e
     // aqui ela custou um mutante inerte.
-    if (!/const corpo = corpoDaGeracao\(wizard\);/.test(resumo)) {
+    //
+    // A âncora casa a ATRIBUIÇÃO e o PRIMEIRO argumento, e ignora o resto da
+    // lista. `corpoDaGeracao` ganhou um segundo parâmetro (o locale da
+    // interface) no bloco TRADUCAO-1, e uma âncora presa ao fechamento do
+    // parêntese reprovou por mudança de assinatura — não pelo defeito. Guarda
+    // que reprova por refatoração ensina a ignorar guarda.
+    if (!/const corpo = corpoDaGeracao\(\s*wizard\s*[,)]/.test(resumo)) {
       failures.push(
-        `gerar: o resumo deixou de ser derivado do corpo — \`const corpo = corpoDaGeracao(wizard)\` não ` +
+        `gerar: o resumo deixou de ser derivado do corpo — \`const corpo = corpoDaGeracao(wizard, …)\` não ` +
           `está em ${RESUMO}. Montar o resumo a partir do wizard mostraria o que a pessoa escolheu; o ` +
           "defeito que ele existe para pegar é escolha que não chega ao corpo, e aí os dois discordam.",
       );

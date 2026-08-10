@@ -461,7 +461,10 @@ export function checkVoiceConnectionFixture(): void {
  * motivo ele nomeia o vendor que TERIA sido chamado — é o que permite conferir
  * que a seleção de vendor está certa sem gastar cota para descobrir.
  */
-export function completeFixture(vendor: string, promptChars: number): { text: string; usage: null } {
+export function completeFixture(
+  vendor: string,
+  promptChars: number,
+): { text: string; usage: null; truncated: false } {
   return {
     text:
       `[SIMULADO] Este texto não veio de um modelo de linguagem. O ambiente está em ` +
@@ -472,6 +475,10 @@ export function completeFixture(vendor: string, promptChars: number): { text: st
     // telas de custo com número que ninguém mediu, e a regra deste projeto é
     // que ausência de medição nunca vire zero — muito menos um valor plausível.
     usage: null,
+    // `false`, e não `null`: este texto é completo por construção — ele foi
+    // montado aqui, inteiro, sem teto nenhum no caminho. `null` significaria
+    // "o provedor não informou", que é outra coisa.
+    truncated: false,
   };
 }
 

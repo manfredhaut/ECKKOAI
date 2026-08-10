@@ -64,7 +64,11 @@ export function resumoDaGeracao(
   wizard: WizardState,
   nomes: { avatar?: string | null; look?: string | null },
 ): SummaryRow[] {
-  const corpo = corpoDaGeracao(wizard);
+  // O locale entra só para satisfazer a assinatura: nenhuma linha deste resumo
+  // depende dele. E é isso que se quer — o que o passo 4 mostra é o texto do
+  // usuário, o mesmo em qualquer idioma de interface. A versão que vai ao
+  // fornecedor não passa por aqui e nunca chega ao navegador.
+  const corpo = corpoDaGeracao(wizard, "pt-BR");
   const plataforma = PUBLISH_PLATFORMS.find((p) => p.id === corpo.publish_platform);
   return [
     { campo: "avatar", value: corpo.avatar_id ? (nomes.avatar ?? corpo.avatar_id) : null },

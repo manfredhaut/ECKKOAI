@@ -23,7 +23,7 @@ import { GenerationSummary } from "../GenerationSummary";
  * sabemos como o fornecedor lê a diferença. O servidor normaliza de novo, mas
  * mandar limpo daqui é o que mantém o corpo legível no log de prova.
  */
-export function corpoDaGeracao(wizard: WizardState) {
+export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string) {
   return {
     avatar_id: wizard.avatarId,
     script: wizard.script,
@@ -45,6 +45,13 @@ export function corpoDaGeracao(wizard: WizardState) {
     // mandar a escolha" com a mesma aparência no corpo — e é justamente essa
     // ambiguidade que o log de prova precisa não ter.
     captions: wizard.captions,
+    // O IDIOMA DA INTERFACE, e não uma detecção de língua sobre o texto.
+    //
+    // O cliente é quem sabe em que idioma a pessoa está usando o produto — ela
+    // escolheu no seletor. O servidor usa isso para decidir se a Interpretação
+    // passa pelo tradutor; o que ele faz com o texto depois disso não é assunto
+    // desta tela, e a versão traduzida nunca volta para cá.
+    interface_locale: interfaceLocale,
   };
 }
 
@@ -63,7 +70,10 @@ export function GenerateStep({
   /** Mesma forma dos outros passos: o estado mora na página, o passo avisa. */
   onCaptionsChange: (captions: boolean) => void;
 }) {
-  const { t } = useTranslation();
+  // `i18n.language` é o gatilho da tradução da Interpretação no servidor. Sai
+  // daqui, e não de uma detecção de língua sobre o texto: o idioma da interface
+  // é um fato que esta tela conhece.
+  const { t, i18n } = useTranslation();
   const [video, setVideo] = useState<Video | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const pollRef = useRef<number | null>(null);
@@ -148,7 +158,7 @@ export function GenerateStep({
     setSubmitting(true);
     setError(null);
     try {
-      const created = await api.post<Video>("/videos", corpoDaGeracao(wizard));
+      const created = await api.post<Video>("/videos", corpoDaGeracao(wizard, i18n.language));
       setVideo(created);
       pollRef.current = window.setInterval(async () => {
         const latest = await api.get<Video>(`/videos/${created.id}`);
