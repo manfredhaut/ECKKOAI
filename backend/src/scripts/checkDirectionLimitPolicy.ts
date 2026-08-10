@@ -33,7 +33,11 @@ export const MUTANTS: Mutant[] = [
     file: "backend/src/services/providers/videoScene.ts",
     find: "  return (motionPrompt?.trim().length ?? 0) > MOTION_PROMPT_MAX_CHARS;",
     replace: "  return false;",
-    expect: "passou pelo portão",
+    // A frase COMO ELA SAI. O campo dizia "passou" e a guarda escreve
+    // "passaram" — o arnês casa literal, e uma reprovação que não se consegue
+    // atribuir à guarda não prova nada. Mesmo tropeço já corrigido no bloco
+    // anterior, no `expect` da seleção de URL legendada.
+    expect: "passaram pelo portão",
   },
   {
     guard: "interpretação: acima do teto RECUSA, nunca corta",
