@@ -37,6 +37,12 @@ import {
   previewUnavailableMessage,
   voiceNameWithTimestamp,
 } from "../services/voice/voicePreview.js";
+import { VOICE_SPEED, buildSynthesisBody, supportsSpeed } from "../services/providers/voiceProvider.js";
+import {
+  CHARS_PER_SECOND,
+  SCRIPT_PACING,
+  estimateSecondsFromChars,
+} from "../services/video/scriptDuration.js";
 
 export interface VoiceSampleCheckResult {
   failures: string[];
@@ -44,6 +50,98 @@ export interface VoiceSampleCheckResult {
 }
 
 export const MUTANTS: Mutant[] = [
+  // --- G12: a velocidade da fala ------------------------------------------
+  {
+    guard: "voz: a velocidade da fala é enviada, e é a medida",
+    name: "a velocidade some de um dos dois ramos",
+    kind: "esperto",
+    // O ramo com timestamps responde quase sempre, então o defeito fica
+    // dormindo: só aparece quando o fallback entra em ação, e aí a voz sai
+    // 18% mais rápida sem que nada no sistema tenha mudado. Intermitente,
+    // sem sintoma e sem erro — a pior combinação para diagnosticar.
+    file: "backend/src/services/providers/voiceProvider.ts",
+    find: `      // O MESMO corpo do ramo acima, pela MESMA função. Dois ramos com modelos
+      // ou velocidades diferentes produziriam vozes diferentes conforme o
+      // endpoint que respondesse — um defeito que só apareceria de forma
+      // intermitente, e só quando o fallback entrasse.
+      body: JSON.stringify(buildSynthesisBody(text)),`,
+    replace: `      body: JSON.stringify({ text, model_id: ELEVENLABS_TTS_MODEL }),`,
+    expect: "não monta o corpo pela mesma função nos dois ramos",
+  },
+  {
+    guard: "voz: a velocidade da fala é enviada, e é a medida",
+    name: "a velocidade volta ao padrão do fornecedor",
+    kind: "esperto",
+    // Nada quebra. A fala fica 18% mais rápida, o vídeo fica MAIS BARATO, e
+    // a régua continua coerente consigo mesma. Parece melhoria até alguém
+    // ouvir — e foi exatamente esse o som que o operador reprovou em 09/08.
+    file: "backend/src/services/providers/voiceProvider.ts",
+    find: "export const VOICE_SPEED = 0.85;",
+    replace: "export const VOICE_SPEED = 1.0;",
+    expect: "a velocidade da fala deixou de ser a medida",
+  },
+  {
+    guard: "voz: a velocidade da fala é enviada, e é a medida",
+    name: "voice_settings vai sem speed",
+    kind: "esperto",
+    // O corpo continua válido e o campo continua lá — só o subcampo some. E
+    // isto é PIOR que não mandar nada: `voice_settings` sobrescreve o que
+    // está guardado na voz, então um objeto vazio devolve tudo ao default do
+    // fornecedor. O 0.85 salvo no painel deixa de valer.
+    file: "backend/src/services/providers/voiceProvider.ts",
+    find: "    body.voice_settings = { speed: VOICE_SPEED };",
+    replace: "    body.voice_settings = {};",
+    expect: "manda voice_settings sem speed",
+  },
+  {
+    guard: "voz: a velocidade da fala é enviada, e é a medida",
+    name: "o campo vai mesmo em modelo que não o suporta",
+    kind: "esperto",
+    // Cai no pior caso conhecido do projeto: o fornecedor aceita e ignora em
+    // silêncio, como `expressiveness` com `avatar_iii`. O sintoma seria uma
+    // fala mais rápida que ninguém saberia explicar.
+    file: "backend/src/services/providers/voiceProvider.ts",
+    find: "  return MODELS_WITH_SPEED.includes(modelId);",
+    replace: "  return true;",
+    expect: "envia speed para um modelo que não o suporta",
+  },
+  {
+    guard: "voz: a régua conhece a velocidade da fala",
+    name: "a régua ignora a velocidade e volta ao ritmo puro",
+    kind: "esperto",
+    // A estimativa volta a 15 s / 45 un para 194 caracteres, e o fornecedor
+    // debita 51. A tela fica coerente consigo mesma e errada contra a
+    // carteira — é o defeito 4 renascendo menor, e ele passou semanas
+    // invisível da primeira vez.
+    file: "backend/src/services/video/scriptDuration.ts",
+    find: "  return chars / CHARS_PER_SECOND / VOICE_SPEED;",
+    replace: "  return chars / CHARS_PER_SECOND;",
+    expect: "a régua deixou de dividir pela velocidade",
+  },
+  {
+    guard: "voz: a régua conhece a velocidade da fala",
+    name: "a constante é recalibrada para embutir a velocidade",
+    kind: "esperto",
+    // O jeito "esperto" de consertar que quebra na próxima mudança: 12,8151 ×
+    // 0,85 = 10,893 dá o MESMO resultado hoje, e passa a dar o errado no dia
+    // em que a velocidade mudar — sem que ninguém saiba qual dos dois números
+    // está errado.
+    file: "backend/src/services/video/scriptDuration.ts",
+    find: `export const CHARS_PER_SECOND =
+  SCRIPT_PACING.measuredChars / SCRIPT_PACING.measuredDeliveredSeconds;`,
+    replace: "export const CHARS_PER_SECOND = 10.8928;",
+    expect: "o ritmo deixou de ser derivado da medição",
+  },
+  {
+    guard: "voz: a velocidade da fala é enviada, e é a medida",
+    name: "não há velocidade nenhuma",
+    kind: "obvio",
+    file: "backend/src/services/providers/voiceProvider.ts",
+    find: "  if (supportsSpeed(modelId)) {\n    body.voice_settings = { speed: VOICE_SPEED };\n  }",
+    replace: "",
+    expect: "não envia voice_settings",
+  },
+
   // --- G11: a prévia da voz recém-clonada ---------------------------------
   {
     guard: "voz: a prévia sai da voz que acabou de ser criada",
@@ -1197,6 +1295,93 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
     "voz: a prévia é sintetizada com o id RECÉM-CLONADO (comparado com o de cloneVoice), a falha vira " +
       `preview_error sem derrubar o 201, o aviso de slot aparece DEPOIS no resultado, e o nome sai ` +
       `carimbado ("${carimbado}")`,
+  );
+
+  // --- G12: a VELOCIDADE DA FALA ------------------------------------------
+  //
+  // É a velocidade com que o avatar FALA, não a rapidez de produzir o vídeo.
+  // 0.85 foi aprovado pelo operador em 09/08; a 1.0 a fala saía rápida demais.
+  //
+  // O valor existe em DOIS lugares que precisam concordar: o corpo que vai ao
+  // fornecedor e a régua que estima o custo. Se divergirem, a tela mostra um
+  // preço e a carteira paga outro — e nenhum dos dois lados acusa nada.
+  const corpoV2 = buildSynthesisBody("oi", "eleven_multilingual_v2");
+  const settingsV2 = corpoV2.voice_settings as { speed?: number } | undefined;
+  if (!settingsV2 || settingsV2.speed !== VOICE_SPEED) {
+    failures.push(
+      `voz: o corpo da síntese não leva \`voice_settings.speed = ${VOICE_SPEED}\` com um modelo que o ` +
+        `suporta. Recebi ${JSON.stringify(corpoV2.voice_settings)}. Mandar \`voice_settings\` SEM speed é ` +
+        "pior que não mandar nada: ele sobrescreve o que está guardado na voz e devolve tudo ao default " +
+        "do fornecedor, jogando fora o 0.85 aprovado.",
+    );
+  }
+  if (VOICE_SPEED !== 0.85) {
+    failures.push(
+      `voz: a velocidade da fala deixou de ser a medida (${VOICE_SPEED} em vez de 0.85). O 0.85 foi ` +
+        "aprovado pelo operador no painel do fornecedor em 09/08, com eleven_multilingual_v2 — a 1.0 a " +
+        "fala sai rápida demais. Voltar ao padrão não quebra nada e deixa o vídeo mais barato: parece " +
+        "melhoria até alguém ouvir.",
+    );
+  }
+  if (VOICE_SPEED < 0.7 || VOICE_SPEED > 1.2) {
+    failures.push(`voz: a velocidade ${VOICE_SPEED} está fora da faixa 0.7–1.2 aceita pelo fornecedor.`);
+  }
+  // Modelo SEM suporte não pode receber o campo: o fornecedor aceita e ignora
+  // em silêncio, que é o pior caso — o mesmo de `expressiveness` com
+  // `avatar_iii`.
+  const corpoV3 = buildSynthesisBody("oi", "eleven_v3");
+  if ("voice_settings" in corpoV3) {
+    failures.push(
+      "voz: envia speed para um modelo que não o suporta (eleven_v3). O fornecedor aceita e ignora em " +
+        "silêncio, e o sintoma seria uma fala mais rápida que ninguém saberia explicar.",
+    );
+  }
+  if (supportsSpeed("eleven_v3")) {
+    failures.push("voz: `eleven_v3` foi declarado como suportando speed, e ele não tem o campo.");
+  }
+
+  // Os DOIS ramos montam o corpo pela MESMA função. Um corpo montado à mão no
+  // fallback só divergiria quando o fallback entrasse — raro e intermitente.
+  const provider = await readFile(
+    path.join(repoRoot, "backend/src/services/providers/voiceProvider.ts"),
+    "utf-8",
+  );
+  const chamadas = (provider.match(/body:\s*JSON\.stringify\(buildSynthesisBody\(/g) ?? []).length;
+  if (chamadas !== 2) {
+    failures.push(
+      `voz: não monta o corpo pela mesma função nos dois ramos de synthesizeSpeech (achei ${chamadas} de 2). ` +
+        "O ramo com timestamps responde quase sempre, então um corpo divergente no fallback fica dormindo " +
+        "até o dia em que ele entra — e aí a voz muda de ritmo sem nada ter mudado.",
+    );
+  }
+
+  // A RÉGUA precisa conhecer a velocidade. Exercitada de verdade, com o caso
+  // medido: 194 caracteres são a frase da demo.
+  const segundos = estimateSecondsFromChars(194);
+  const esperado = 194 / CHARS_PER_SECOND / VOICE_SPEED;
+  if (Math.abs(segundos - esperado) > 0.001) {
+    failures.push(
+      `voz: a régua deixou de dividir pela velocidade — 194 caracteres deram ${segundos.toFixed(3)} s, e a ` +
+        `0.85 são ${esperado.toFixed(3)} s. A estimativa volta a 45 unidades onde o fornecedor debita 51: ` +
+        "a tela fica coerente consigo mesma e errada contra a carteira, que é o defeito 4 renascendo.",
+    );
+  }
+  // E a constante tem de continuar DERIVADA da medição. Recalibrá-la para
+  // embutir a velocidade dá o mesmo número hoje e o errado amanhã.
+  const ritmoDerivado =
+    SCRIPT_PACING.measuredChars / SCRIPT_PACING.measuredDeliveredSeconds;
+  if (Math.abs(CHARS_PER_SECOND - ritmoDerivado) > 1e-9) {
+    failures.push(
+      `voz: o ritmo deixou de ser derivado da medição (${CHARS_PER_SECOND} contra ${ritmoDerivado}). ` +
+        "Embutir a velocidade na constante dá o mesmo resultado hoje e o errado no dia em que a " +
+        "velocidade mudar — e ninguém saberia qual dos dois números está errado.",
+    );
+  }
+
+  notes.push(
+    `voz: a fala vai a ${VOICE_SPEED} nos dois ramos pela mesma função, o campo não vai em modelo sem ` +
+      `suporte, e a régua divide pela velocidade (194 car → ${segundos.toFixed(3)} s → ` +
+      `${Math.trunc(segundos) * 3} un) com o ritmo ainda derivado da medição`,
   );
 
   return { failures, notes };
