@@ -222,13 +222,20 @@ export function SceneStep({
       </Field>
 
       <Field label={t("createVideo.scene.expressivenessLabel")} help={t("createVideo.scene.expressivenessHelp")}>
+        {/* Clicar SEMPRE fixa o nível clicado, e reclicar o que já está
+            selecionado deixa o valor onde estava. A forma anterior
+            (`expressiveness === nivel ? null : nivel`) devolvia o estado a
+            `null` — o mesmo defeito do Gap 1 entrando pela porta da interação:
+            `avatarProvider.ts:632` só inclui `expressiveness` quando há valor,
+            e o fornecedor aplica "low" em silêncio. Sem ramo não há como
+            produzir `null`. */}
         <div className="chip-group">
           {EXPRESSIVENESS.map((nivel) => (
             <button
               key={nivel}
               type="button"
               className={`chip${expressiveness === nivel ? " selected" : ""}`}
-              onClick={() => onExpressivenessChange(expressiveness === nivel ? null : nivel)}
+              onClick={() => onExpressivenessChange(nivel)}
             >
               {t(`createVideo.scene.expressiveness_${nivel}`)}
             </button>
