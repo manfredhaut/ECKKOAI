@@ -692,7 +692,7 @@
       "motionCounter": "{{used}} de {{max}} caracteres",
       "motionOurAdvice": "Esta orientação de escrita é recomendação nossa, não do serviço de vídeo: ele aceita texto livre e publica um único exemplo, sem regras de formato.",
       "expressivenessLabel": "Expressividade",
-      "expressivenessHelp": "Quanto o rosto e o corpo acompanham a fala. Sem escolha, o serviço usa o nível baixo.",
+      "expressivenessHelp": "Quanto o rosto e o corpo acompanham a fala. Já vem em \"Média\" por padrão — troque para Baixa ou Alta quando quiser.",
       "expressiveness_low": "Baixa",
       "expressiveness_medium": "Média",
       "expressiveness_high": "Alta",

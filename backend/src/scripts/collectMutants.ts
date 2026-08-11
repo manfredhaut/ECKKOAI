@@ -44,6 +44,7 @@ import { MUTANTS as scriptLimitMutants } from "./checkScriptLimitPolicy.js";
 import { MUTANTS as captionMutants } from "./checkCaptionPolicy.js";
 import { MUTANTS as translationMutants } from "./checkTranslationPolicy.js";
 import { MUTANTS as directionLimitMutants } from "./checkDirectionLimitPolicy.js";
+import { MUTANTS as expressivenessDefaultMutants } from "./checkExpressivenessDefaultPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 const all: Mutant[] = [
@@ -81,6 +82,7 @@ const all: Mutant[] = [
   ...captionMutants,
   ...translationMutants,
   ...directionLimitMutants,
+  ...expressivenessDefaultMutants,
 ];
 
 // Um mutante malformado só apareceria no meio da execução, com a árvore já

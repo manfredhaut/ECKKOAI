@@ -59,6 +59,7 @@ import { checkScriptLimitPolicy } from "./checkScriptLimitPolicy.js";
 import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
+import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -610,6 +611,11 @@ async function main(): Promise<void> {
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");
   directionLimit.failures.forEach((f) => failures.push(f));
   directionLimit.notes.forEach((n) => note(n));
+
+  // --- 25k. o passo Cena nasce com um nível de expressividade, nunca null -
+  const expressivenessDefault = checkExpressivenessDefaultPolicy(process.env.REPO_ROOT ?? "/repo");
+  expressivenessDefault.failures.forEach((f) => failures.push(f));
+  expressivenessDefault.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

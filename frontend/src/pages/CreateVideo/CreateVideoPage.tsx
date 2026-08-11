@@ -57,7 +57,11 @@ export function CreateVideoPage() {
     confirmAboveSeconds: null,
     background: null,
     motionPrompt: "",
-    expressiveness: null,
+    // PRÉ-SELECIONADO, nunca null: sem escolha, o campo some do corpo enviado
+    // ao fornecedor e ele aplica "low" em silêncio (doc: "Defaults to 'low'
+    // when omitted") — o vídeo saía apático sem a tela ter dito nada. "medium"
+    // é o meio-termo; o usuário continua livre para trocar antes de gerar.
+    expressiveness: "medium",
     avatarLookId: null,
     publishPlatform: DEFAULT_PUBLISH_PLATFORM,
     // SEM legenda por padrão. A escolha contrária muda o corpo enviado ao

@@ -692,7 +692,7 @@
       "motionCounter": "{{used}} of {{max}} characters",
       "motionOurAdvice": "This writing guidance is our recommendation, not the video service’s: it accepts free text and publishes a single example, with no formatting rules.",
       "expressivenessLabel": "Expressiveness",
-      "expressivenessHelp": "How much the face and body follow the speech. With no choice, the service uses the low level.",
+      "expressivenessHelp": "How much the face and body follow the speech. Set to \"Medium\" by default — switch to Low or High whenever you like.",
       "expressiveness_low": "Low",
       "expressiveness_medium": "Medium",
       "expressiveness_high": "High",
