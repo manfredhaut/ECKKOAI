@@ -12,14 +12,21 @@
  * tem git, e monta o repositório só parcialmente. Quem executa o gate continua
  * sendo o container — as mutações chegam lá pelo bind mount.
  *
- *   npm run check:mutants                 # todos
- *   npm run check:mutants -- --guard log  # só as guardas cujo nome casa
- *   npm run check:mutants -- --list       # não muta nada, só lista
+ *   npm run check:mutants                              # PASSADA COMPLETA
+ *   npm run check:mutants -- --guard "fal:"            # subconjunto por guarda
+ *   npm run check:mutants -- --guard "fal:" --guard egress   # a UNIÃO das duas
+ *   npm run check:mutants -- --name "request_id"       # subconjunto por mutante
+ *   npm run check:mutants -- --list                    # não muta nada, só lista
+ *
+ * Sem filtro a passada é completa — o subconjunto é sempre explícito na
+ * invocação, e toda passada filtrada carimba no começo E no fim quantos
+ * mutantes foram PULADOS. Um verde filtrado nunca deve poder ser lido como o
+ * arnês inteiro fechando.
  */
 import { execFileSync, execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -27,9 +34,79 @@ function sh(cmd, opts = {}) {
   return execSync(cmd, { cwd: repoRoot, encoding: "utf8", stdio: "pipe", ...opts });
 }
 
-/** Árvore limpa? É a única prova de que a reversão funcionou. */
+/**
+ * Espera SÍNCRONA, sem spawn.
+ *
+ * `sleep` seria um processo novo — justamente o que está falhando quando esta
+ * função é chamada. `Atomics.wait` bloqueia a thread sem pedir nada ao sistema
+ * operacional.
+ */
+function esperar(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * O processo FALHOU AO INICIAR — ou seja, o comando nunca rodou?
+ *
+ * ┌─ A distinção, e por que ela é segura ───────────────────────────────────┐
+ * │ Árvore suja NÃO passa por aqui. `git status --short` sai 0 mesmo com a   │
+ * │ árvore suja: ele imprime os arquivos e termina com sucesso. Esse caso    │
+ * │ volta pelo caminho de SUCESSO de `execSync` e é decidido pelo CONTEÚDO   │
+ * │ do stdout, nunca por exceção. Retentar aqui, portanto, não pode          │
+ * │ retentar uma árvore suja — são caminhos disjuntos no código, e não dois  │
+ * │ ramos de uma mesma condição.                                            │
+ * │                                                                          │
+ * │ O que se retenta é o 0xC0000142 medido em 12/08: a passada dos 222       │
+ * │ morreu entre o mutante 20 e o 21 porque o Windows não conseguiu criar o  │
+ * │ processo do git. `status: 3221225794`, `stdout: ''`, `stderr: ''` —      │
+ * │ nenhum byte escrito, porque não houve programa para escrever.            │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Dois testes, e os dois têm de passar quando o critério é o NTSTATUS:
+ *
+ *  · o código é de falha do carregador do Windows (>= 0xC0000000). Os códigos
+ *    do próprio git são 0, 1 e 128 — ele nunca devolve isso;
+ *  · nada foi escrito em stdout nem stderr. Um único byte prova que o processo
+ *    iniciou, e aí o problema não é spawn e retentar esconderia um erro real.
+ */
+function ehFalhaDeSpawn(err) {
+  // Erros em que o Node nem chegou a criar o processo. `EAGAIN` e `ENOMEM` são
+  // esgotamento de recurso, que é a família do 0xC0000142.
+  if (["ENOENT", "EAGAIN", "ENOMEM", "UNKNOWN", "ETXTBSY", "EBUSY"].includes(err?.code)) return true;
+
+  const status = err?.status;
+  if (typeof status === "number" && status >= 0xc000_0000) {
+    return !err.stdout && !err.stderr;
+  }
+  return false;
+}
+
+/**
+ * Árvore limpa? É a única prova de que a reversão funcionou.
+ *
+ * Até 3 tentativas, 2 s entre elas, e SÓ quando o processo não inicia. Uma
+ * árvore suja continua abortando na primeira leitura, com exit 2 — ver
+ * `ehFalhaDeSpawn` para por que os dois casos não podem se confundir.
+ */
 function treeStatus() {
-  return sh("git status --short").trim();
+  let ultimoErro;
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      return sh("git status --short").trim();
+    } catch (err) {
+      ultimoErro = err;
+      // Erro de verdade do git (repositório ausente, índice travado): sobe na
+      // hora. Retentar isso transformaria um diagnóstico claro em três.
+      if (!ehFalhaDeSpawn(err)) throw err;
+      console.error(
+        `  … git status NÃO INICIOU (tentativa ${tentativa}/3): ` +
+          `${err.code ?? `status ${err.status}`}. Isto é falha de spawn do sistema operacional, ` +
+          "não árvore suja — nova tentativa em 2 s.",
+      );
+      if (tentativa < 3) esperar(2000);
+    }
+  }
+  throw ultimoErro;
 }
 
 /**
@@ -117,10 +194,48 @@ function applyMutation(mutant) {
   return { full, original };
 }
 
+/**
+ * O aviso de passada filtrada, impresso no COMEÇO e no FIM.
+ *
+ * Nos dois lugares de propósito: quem lê um log de 227 linhas lê o fim, e um
+ * "N/N mutante(s) tiveram o comportamento esperado" no rodapé de uma passada
+ * de 5 é indistinguível de uma passada completa se o aviso ficar só no topo.
+ * O número de PULADOS é o que separa as duas leituras, então ele é o que
+ * aparece em destaque.
+ */
+function avisoDeFiltro(selecionados, total, filtros) {
+  const pulados = total - selecionados;
+  const borda = "=".repeat(78);
+  return [
+    "",
+    borda,
+    "  ATENCAO: PASSADA FILTRADA — ISTO NAO E A PASSADA COMPLETA",
+    `  ${selecionados} de ${total} mutante(s) selecionado(s).  ${pulados} PULADO(S).`,
+    `  filtro: ${filtros.map((f) => `--${f.campo} ${JSON.stringify(f.termo)}`).join(" ")}`,
+    "  Um verde aqui NAO autoriza dizer que o arnes fechou: ele fala apenas dos",
+    "  mutantes acima. A passada completa e `npm run check:mutants` sem filtro.",
+    borda,
+    "",
+  ].join("\n");
+}
+
 async function main() {
   const argv = process.argv.slice(2);
-  const filtro = argv.includes("--guard") ? argv[argv.indexOf("--guard") + 1] : null;
   const apenasListar = argv.includes("--list");
+
+  // Filtros REPETÍVEIS, por guarda ou por nome do mutante. A união, e não a
+  // interseção: quem escreve `--guard fal: --guard egress` quer as duas
+  // famílias, e exigir que um mutante case os dois termos daria conjunto vazio
+  // em toda combinação útil.
+  //
+  // Sem nenhum filtro, a passada é COMPLETA — o default não muda, e o
+  // subconjunto é sempre um ato explícito na invocação.
+  const filtros = [];
+  for (let i = 0; i < argv.length; i++) {
+    if ((argv[i] === "--guard" || argv[i] === "--name") && argv[i + 1] !== undefined) {
+      filtros.push({ campo: argv[i] === "--guard" ? "guard" : "name", termo: argv[i + 1] });
+    }
+  }
 
   const sujoAntes = treeStatus();
   if (sujoAntes) {
@@ -132,14 +247,33 @@ async function main() {
     process.exit(2);
   }
 
-  let mutantes = collectMutants();
-  if (filtro) mutantes = mutantes.filter((m) => m.guard.includes(filtro) || m.name.includes(filtro));
+  const todos = collectMutants();
+  const mutantes =
+    filtros.length === 0
+      ? todos
+      : todos.filter((m) => filtros.some((f) => String(m[f.campo]).includes(f.termo)));
+
+  // Filtro que não casa nada abortaria como "0/0 tiveram o comportamento
+  // esperado" — verde perfeito, zero verificação. É o mesmo universo-zero que
+  // as guardas deste projeto reprovam.
+  if (filtros.length > 0 && mutantes.length === 0) {
+    console.error(
+      `ABORTADO: o filtro não casou nenhum dos ${todos.length} mutantes.\n` +
+        `  filtro: ${filtros.map((f) => `--${f.campo} ${JSON.stringify(f.termo)}`).join(" ")}\n` +
+        "Uma passada de zero mutantes terminaria verde sem verificar nada.",
+    );
+    process.exit(2);
+  }
+
+  const filtrada = filtros.length > 0;
+  if (filtrada) console.log(avisoDeFiltro(mutantes.length, todos.length, filtros));
 
   if (apenasListar) {
     for (const m of mutantes) {
       console.log(`${m.kind === "obvio" ? "[óbvio ]" : "[esperto]"} ${m.guard} :: ${m.name}`);
     }
     console.log(`\n${mutantes.length} mutante(s).`);
+    if (filtrada) console.log(avisoDeFiltro(mutantes.length, todos.length, filtros));
     return;
   }
 
@@ -222,13 +356,34 @@ async function main() {
   const total = mutantes.length;
   console.log(`\n${ok}/${total} mutante(s) tiveram o comportamento esperado.`);
 
+  // O aviso repetido no rodapé. Vem ANTES do exit, para aparecer também quando
+  // a passada filtrada reprova.
+  if (filtrada) console.log(avisoDeFiltro(mutantes.length, todos.length, filtros));
+
   if (inertes.length > 0 || erros.length > 0) process.exit(1);
 
-  console.log("✓ Todas as guardas exercitadas reprovaram de verdade — e a árvore voltou limpa em cada uma.");
+  console.log(
+    filtrada
+      ? `✓ Os ${total} mutante(s) DESTE FILTRO reprovaram de verdade — e a árvore voltou limpa em cada ` +
+          `uma. Os outros ${todos.length - total} NÃO foram exercitados.`
+      : "✓ Todas as guardas exercitadas reprovaram de verdade — e a árvore voltou limpa em cada uma.",
+  );
 }
 
-main().catch((err) => {
-  console.error("arnês falhou de forma inesperada:", err);
-  console.error("\nCONFIRA A ÁRVORE À MÃO: git status --short");
-  process.exit(1);
-});
+/**
+ * A passada só dispara quando o arquivo é INVOCADO, nunca quando é importado.
+ *
+ * Sem esta guarda, importar o módulo para provar `ehFalhaDeSpawn` — que é como
+ * o critério do retry é exercitado, já que 0xC0000142 não se produz sob
+ * demanda — dispararia uma passada completa de 227 mutantes como efeito
+ * colateral do `import`.
+ */
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((err) => {
+    console.error("arnês falhou de forma inesperada:", err);
+    console.error("\nCONFIRA A ÁRVORE À MÃO: git status --short");
+    process.exit(1);
+  });
+}
+
+export { ehFalhaDeSpawn, treeStatus };

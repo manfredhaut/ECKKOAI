@@ -2,6 +2,22 @@ Always respond in Brazilian Portuguese.
 
 # eckko.ai (antigo TWINAI)
 
+> ## ⚠️ LEIA [ESTADO.md](ESTADO.md) PRIMEIRO — é o ponto de entrada de toda sessão.
+>
+> Ele diz onde o repositório está HOJE: HEAD, bloco atual e próximo da ordem de
+> execução, invocação exata do gate e das passadas, os gotchas do arnês, o que
+> está NÃO VERIFICADO e as dívidas abertas. **Este CLAUDE.md é o acumulado
+> histórico** — o que foi medido, o que custou dinheiro e por quê. Quando os
+> dois discordarem sobre o estado ATUAL, o ESTADO.md vence; quando discordarem
+> sobre uma medição do passado, este arquivo vence.
+>
+> **REGRA — o ESTADO.md é atualizado no ÚLTIMO commit de TODA sessão.** Não é
+> opcional e não é "quando houver mudança relevante": uma sessão que fecha sem
+> atualizá-lo entrega à seguinte um arquivo que MENTE sobre o HEAD, e um
+> ponto de entrada desatualizado é pior que nenhum — ele é lido com confiança.
+> Se ao abrir a sessão a data dele for mais velha que o último commit, conserte
+> isso antes de qualquer outra coisa.
+
 SaaS multi-tenant de vídeo com avatar digital. Docker Compose: `traefik` (única porta, **8090**), `postgres`, `backend` (Fastify/TS), `frontend` (React/Vite). **HEAD `84fdae3`** + o commit deste fechamento. Há uma **demo a apresentar**.
 
 **0 · REGRA DE ESCRITA — confira o número MEDIDO contra o número AFIRMADO antes de escrever a mensagem de commit.** Três imprecisões em três commits: `84fdae3` disse "nenhuma removida" com 3 guardas reescritas, e `5de2ed6` disse "8 mutantes novos" sendo 7. Nenhuma delas mudou o código; todas fizeram a mensagem valer menos do que o diff. Contar é barato — reler a afirmação com o número na mão custa segundos.
