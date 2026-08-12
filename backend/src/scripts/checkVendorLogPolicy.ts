@@ -72,13 +72,24 @@ export interface VendorLogCheckResult {
 const VENDOR_MODULES = [
   "backend/src/services/providers/avatarProvider.ts",
   "backend/src/services/providers/voiceProvider.ts",
+  // O cliente da fal entra na lista no mesmo bloco em que nasce. Ficar de fora
+  // é exatamente o que aconteceu com `voiceProvider` — o LOG-1 pôs a captura
+  // dentro do `fetchJson` do avatarProvider e os dois caminhos que gastam
+  // dinheiro no ElevenLabs foram os únicos sem rastro.
+  "backend/src/services/providers/falClient.ts",
 ];
 
 /**
  * Formas aceitas de registrar. As duas primeiras são helpers que registram
  * por dentro; as duas últimas, a chamada direta.
  */
-const LOGGING_CALLS = ["fetchJson(", "readVoiceJson(", "logVendorResponse(", "logVendorBinaryResponse("];
+const LOGGING_CALLS = [
+  "fetchJson(",
+  "readVoiceJson(",
+  "falFetchJson(",
+  "logVendorResponse(",
+  "logVendorBinaryResponse(",
+];
 
 /**
  * Helpers que a lista acima aceita como prova de registro, e que por isso
@@ -91,7 +102,7 @@ const LOGGING_CALLS = ["fetchJson(", "readVoiceJson(", "logVendorResponse(", "lo
  * registrava mais nada. Confiar no nome de uma função sem olhar o corpo é
  * cobertura aparente — o mesmo defeito que a guarda de feature flags teve.
  */
-const LOGGING_HELPERS = ["fetchJson", "readVoiceJson"];
+const LOGGING_HELPERS = ["fetchJson", "readVoiceJson", "falFetchJson"];
 
 /** O que conta como registrar de fato. */
 const LOG_PRIMITIVES = ["logVendorResponse(", "logVendorBinaryResponse("];

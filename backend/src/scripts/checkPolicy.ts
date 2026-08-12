@@ -63,6 +63,7 @@ import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPo
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
 import { checkVendorProbePolicy } from "./checkVendorProbePolicy.js";
 import { checkAudioDurationGatePolicy } from "./checkAudioDurationGatePolicy.js";
+import { checkFalClientPolicy } from "./checkFalClientPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -640,6 +641,15 @@ async function main(): Promise<void> {
   const audioGate = await checkAudioDurationGatePolicy();
   audioGate.failures.forEach((f) => failures.push(f));
   audioGate.notes.forEach((n) => note(n));
+
+  // --- 25m. fal: fila, ponteiro salvo primeiro, catálogo fechado ----------
+  //
+  // Vizinha da 25l pelo mesmo motivo: troca `globalThis.fetch` por um gravador
+  // e mexe em `PROVIDER_MODE`. Restaura os dois no `finally`, mas rodar cedo
+  // faria tudo que fala com fornecedor depois depender dessa restauração.
+  const falClient = await checkFalClientPolicy(process.env.REPO_ROOT ?? "/repo");
+  falClient.failures.forEach((f) => failures.push(f));
+  falClient.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

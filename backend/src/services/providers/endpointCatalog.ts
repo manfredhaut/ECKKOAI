@@ -33,7 +33,7 @@ export interface VendorEndpoint {
    * da Anthropic e o `generateContent` do Gemini eram, para toda trava deste
    * projeto, endpoints que não existiam.
    */
-  vendor: "heygen" | "did" | "elevenlabs" | "anthropic" | "gemini" | "openai";
+  vendor: "heygen" | "did" | "elevenlabs" | "anthropic" | "gemini" | "openai" | "fal";
   /** Caminho, com a versão. É o que o freio compara. */
   path: string;
   method: "GET" | "POST";
@@ -150,6 +150,58 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
     note:
       "leitura de consumo (character_count / character_limit). NÃO tarifado. Exige a permissão " +
       "`user_read`, que a chave em uso NÃO tem — ver o procedimento no CLAUDE.md.",
+  },
+  // ------------------------------------------------------------------- fal.ai
+  //
+  // Alcançados por `providers/falClient.ts`. Entram no catálogo ANTES de
+  // existir chamador — é o freio: `assertFalEndpointNoCatalogo()` recusa todo
+  // endpoint que não esteja aqui, e recusa antes do `fetch`.
+  //
+  // ⚠️ Os três ids de modelo são NÃO VERIFICADOS: vieram por escrito do
+  // operador e nenhuma chamada real da fal.ai saiu deste projeto — o
+  // repositório não tem uma linha sobre as gerações que ele aprovou lá. Um id
+  // errado aqui vira 404 no fornecedor, não cobrança; o que ele NÃO pode virar
+  // é endpoint fora do catálogo, e por isso a lista existe antes do uso.
+  {
+    vendor: "fal",
+    path: "/storage/upload/initiate",
+    method: "POST",
+    // Guardar arquivo não é trabalho tarifado em nenhuma tabela lida, mas vale
+    // a mesma doutrina do `/v3/assets` da HeyGen: ele só existe como insumo de
+    // geração, e tratá-lo como tarifável custa um endpoint a menos para o probe
+    // de validação usar como "inofensivo". Custo NÃO medido.
+    billable: true,
+    note: "upload de insumo (rest.fal.ai); dois passos, initiate + PUT no CDN. Custo NÃO medido.",
+  },
+  {
+    vendor: "fal",
+    path: "/fal-ai/nano-banana-2/edit",
+    method: "POST",
+    billable: true,
+    note:
+      "edição de imagem — a camada APARÊNCIA (rosto + traje + cenário → imagem-base, uma vez por " +
+      "look). Preço DECLARADO na auditoria de 11/08 como imagem-base 0,03–0,24 por imagem, " +
+      "reutilizável; NÃO MEDIDO por este projeto.",
+  },
+  {
+    vendor: "fal",
+    path: "/fal-ai/wan/v2.6/reference-to-video/flash",
+    method: "POST",
+    billable: true,
+    note:
+      "animação a partir de imagem de referência — a camada ANIMAÇÃO. Tarifação por segundo " +
+      "gerado, e a régua única de 3 unidades/s do providerCost.ts NÃO vale aqui: as três medições " +
+      "que a sustentam são todas de photo avatar 720p na HeyGen. NÃO MEDIDO.",
+  },
+  {
+    vendor: "fal",
+    path: "/fal-ai/sync-lipsync/v2",
+    method: "POST",
+    billable: true,
+    note:
+      "sincronia labial sobre vídeo + áudio já existentes. É o passo que preserva a VOZ como " +
+      "entrada, e por isso a duração do resultado é a do áudio — custo exato antes de gerar. " +
+      "NÃO MEDIDO.",
   },
   // ------------------------------------------------------- TEXTO (bloco 5D-1)
   // Alcançados por `complete()` em providerRegistry.ts, que atende TRÊS

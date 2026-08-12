@@ -48,6 +48,7 @@ import { MUTANTS as expressivenessDefaultMutants } from "./checkExpressivenessDe
 import { MUTANTS as audioDurationGateMutants } from "./checkAudioDurationGatePolicy.js";
 import { MUTANTS as avatarCardSelectableMutants } from "./checkAvatarCardSelectablePolicy.js";
 import { MUTANTS as vendorProbeMutants } from "./checkVendorProbePolicy.js";
+import { MUTANTS as falClientMutants } from "./checkFalClientPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 const all: Mutant[] = [
@@ -89,6 +90,7 @@ const all: Mutant[] = [
   ...audioDurationGateMutants,
   ...avatarCardSelectableMutants,
   ...vendorProbeMutants,
+  ...falClientMutants,
 ];
 
 // Um mutante malformado só apareceria no meio da execução, com a árvore já

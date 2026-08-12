@@ -235,6 +235,13 @@ export async function checkNetworkEgressPolicy(repoRoot: string): Promise<Egress
     "https://api.anthropic.com": "anthropic",
     "https://api.openai.com": "openai",
     "https://generativelanguage.googleapis.com": "gemini",
+    // fal.ai fala por DOIS hosts: `rest` guarda arquivo, `queue` faz trabalho.
+    // O terceiro host que a fal tem — o síncrono `https://fal.run` — está fora
+    // desta tabela DE PROPÓSITO: ele não deve ser alcançado por caminho nenhum
+    // deste projeto, e mantê-lo desconhecido faz esta guarda ser a segunda rede
+    // atrás de `checkFalClientPolicy`, que mede a URL realmente usada.
+    "https://rest.fal.ai": "fal",
+    "https://queue.fal.run": "fal",
   };
   const vendorsNoCatalogo = new Set(VENDOR_ENDPOINTS.map((e) => e.vendor));
   for (const host of [...hostsAlcancados].sort()) {
