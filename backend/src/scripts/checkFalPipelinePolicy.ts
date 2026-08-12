@@ -6,11 +6,27 @@
  * │ Ela não procura texto no arquivo. Roda `runFalPipeline` de verdade, com  │
  * │ `globalThis.fetch` substituído e um diário em memória, e observa a       │
  * │ SEQUÊNCIA do que aconteceu e os CORPOS que saíram.                       │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌─ A PRIMEIRA VERSÃO DESTA GUARDA NASCEU INERTE, e o arnês a pegou ───────┐
+ * │ Ela media a ordem entre "gravou cru" e "chegou o resultado" — e essa     │
+ * │ ordem NÃO MUDA quando alguém lê um campo antes de gravar. Ler campo não  │
+ * │ produz passo observável nenhum, então a guarda continuava verde com o    │
+ * │ defeito aplicado. O gate passou VERDE no mutante, MEDIDO em 12/08.       │
  * │                                                                          │
- * │ É a única forma de medir as três: "grava cru" continua verdade quando a  │
- * │ gravação desce para depois do parsing; "tem teto" continua verdade       │
- * │ quando o teto existe e nunca é comparado; e um default herdado não deixa │
- * │ rastro nenhum no nosso código — ele aparece só no corpo que sai.         │
+ * │ A correção é a mesma da G-2 do `falClient`: a ordem só é observável no   │
+ * │ caso em que a INTERPRETAÇÃO FALHA. Por isso existe a corrida             │
+ * │ `resultadoVazio` — o fornecedor conclui e devolve `{}`. Com a gravação   │
+ * │ antes, o corpo está salvo e o erro é NOSSO; com ela depois, a leitura    │
+ * │ estoura primeiro e o corpo se perde com a exceção. É exatamente o que    │
+ * │ acontece em produção quando o contrato muda: a resposta que se precisa   │
+ * │ ler para descobrir o que mudou é a que não foi gravada.                  │
+ * │                                                                          │
+ * │ A SEGUNDA guarda (teto) nasceu AMBÍGUA pelo mesmo tipo de erro: sem      │
+ * │ teto, o laço roda para sempre DENTRO do processo do gate e trava o gate  │
+ * │ inteiro — 10 min sem terminar, MEDIDO. O arnês via "reprovou, mas sem a  │
+ * │ mensagem". Daí o FUSÍVEL abaixo: o `fetch` substituído lança depois de   │
+ * │ um número de leituras que o caminho correto nunca alcança.               │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  * ┌─ Custo: ZERO ───────────────────────────────────────────────────────────┐
@@ -27,17 +43,18 @@ export const MUTANTS: Mutant[] = [
     name: "a gravação do corpo bruto desce para depois da leitura do campo",
     kind: "esperto",
     // ESPERTO: o corpo continua sendo gravado, com o mesmo conteúdo, e o
-    // caminho feliz termina idêntico — qualquer guarda que perguntasse "a
-    // resposta é persistida?" seguiria verde. Só a ORDEM muda, e com ela o
-    // que sobra quando a resposta vem em forma inesperada: justamente o corpo
-    // que se precisa ler para descobrir o que o fornecedor mudou.
+    // caminho feliz termina IDÊNTICO — qualquer guarda que perguntasse "a
+    // resposta é persistida?" seguiria verde, e a primeira versão desta aqui
+    // seguiu. O que muda é o que sobra quando a resposta vem em forma
+    // inesperada: a leitura estoura antes da gravação e o corpo morre com a
+    // exceção, que é justamente o corpo de que se precisa naquele momento.
     file: "backend/src/services/video/falPipeline.ts",
     find:
       "  // CRU ANTES DE INTERPRETADO. Nenhum campo de `saida` foi lido até aqui.\n" +
       "  await input.diario.gravarRespostaCrua(stepId, JSON.stringify(saida));",
     replace:
-      "  const jaInterpretado = (saida as any)?.images?.[0]?.url ?? (saida as any)?.video?.url;\n" +
-      "  void jaInterpretado;\n" +
+      "  const urlLida = (saida as any).images[0].url;\n" +
+      "  void urlLida;\n" +
       "  await input.diario.gravarRespostaCrua(stepId, JSON.stringify(saida));",
     expect: "pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua",
   },
@@ -46,37 +63,45 @@ export const MUTANTS: Mutant[] = [
     name: "o teto some e o laço passa a esperar para sempre",
     kind: "obvio",
     // O teto continua sendo PARÂMETRO — a assinatura não muda, o valor chega,
-    // e o `logEvent` de esgotamento continua no arquivo. O que sai é a
-    // comparação, que é a única linha que faz o teto existir.
+    // e o `logEvent` de esgotamento continua no arquivo. Sai só a comparação,
+    // que é a única linha que faz o teto existir.
     file: "backend/src/services/video/falPipeline.ts",
     find: "    if (Date.now() >= limite) {",
-    replace: "    if (false) {",
+    // `limite` continua sendo lido, senão o `tsc` reprova por variável não
+    // usada e o arnês devolveria AMBÍGUO sem a guarda ter opinado — o mesmo
+    // tropeço já registrado em `checkScriptLimitPolicy` e no portão de áudio.
+    replace: "    if (limite < 0) {",
     expect: "pipeline: o laço de polling não desistiu",
   },
   {
     guard: "pipeline: nenhum default do fornecedor é herdado",
     name: "generate_audio sai do payload do Wan e volta a ser o default",
     kind: "esperto",
-    // O mais caro dos cinco: com o default, o Wan sintetiza uma trilha PRÓPRIA
-    // e PAGA, que a etapa de sincronia descarta. Some do payload sem quebrar
-    // nada visível — o vídeo continua saindo, só que com áudio que ninguém
-    // pediu e por um preço que ninguém viu.
+    // O mais caro dos seis: com o default, o Wan sintetiza uma trilha PRÓPRIA
+    // e PAGA que a sincronia descarta. Some do payload sem quebrar nada
+    // visível — o vídeo continua saindo, só que com áudio que ninguém pediu e
+    // por um preço que ninguém viu.
     file: "backend/src/services/video/falPipeline.ts",
     find: "    generate_audio: false,\n    resolution: PIPELINE_RESOLUTION,",
     replace: "    resolution: PIPELINE_RESOLUTION,",
     expect: "pipeline: um default do fornecedor foi herdado em silêncio",
   },
   {
-    guard: "pipeline: nenhum default do fornecedor é herdado",
-    name: "o roteiro cresce dentro do teto de caracteres",
+    guard: "pipeline: o laço de polling tem teto de tempo",
+    name: "o INTERVALO entre leituras muda, e o teto continua de pé",
     kind: "esperto",
-    // CONTRAPONTO. Mexer no CONTEÚDO do roteiro, dentro do teto, não pode
-    // reprovar nada: a guarda mede os campos do payload e a ordem das
-    // gravações, não o texto. Uma guarda presa ao roteiro da prova passaria a
-    // cobrar autorização para editar uma string.
-    file: "backend/src/scripts/checkFalPipelinePolicy.ts",
-    find: 'const ROTEIRO_DA_PROVA = "Roteiro da prova, curto o bastante para caber no teto.";',
-    replace: 'const ROTEIRO_DA_PROVA = "Outro roteiro, tambem curto, tambem dentro do teto.";',
+    // CONTRAPONTO. Intervalo e teto são coisas diferentes: um decide a
+    // frequência das leituras, o outro decide quando desistir. Uma guarda que
+    // reprovasse isto estaria medindo o número de leituras em vez da
+    // existência do teto, e passaria a cobrar autorização para ajustar cadência.
+    //
+    // O contraponto ANTERIOR mexia no roteiro da prova — e o `find` casava
+    // DUAS vezes, porque a string aparecia na declaração e dentro do próprio
+    // mutante que a descrevia. Quinta vez neste projeto que uma guarda tropeça
+    // no texto escrito para explicá-la; aqui o alvo passou a ser outro arquivo.
+    file: "backend/src/services/video/falPipeline.ts",
+    find: "export const PIPELINE_POLL_INTERVAL_MS = 5_000;",
+    replace: "export const PIPELINE_POLL_INTERVAL_MS = 3_000;",
     expect: "pipeline: corpo cru gravado antes de qualquer leitura",
     expectGreen: true,
   },
@@ -89,19 +114,22 @@ export interface FalPipelineCheckResult {
 
 const ROTEIRO_DA_PROVA = "Roteiro da prova, curto o bastante para caber no teto.";
 
-/** O que aconteceu, na ordem em que aconteceu. */
-type Passo =
-  | `abriu:${string}`
-  | `request_id:${string}`
-  | `cru:${string}`
-  | `fechou:${string}`
-  | `POST:${string}`
-  | `STATUS:${string}`
-  | `RESULT:${string}`
-  | "UPLOAD";
+/**
+ * FUSÍVEL do laço de polling.
+ *
+ * Sem teto, o laço roda para sempre dentro do processo do gate e trava o gate
+ * inteiro — MEDIDO: 10 minutos sem terminar. O `fetch` substituído lança ao
+ * passar deste número, e a guarda reconhece o erro como "não desistiu".
+ *
+ * 5000 contra as ~130 leituras que o caminho CORRETO faz nos 50 ms de teto da
+ * prova: margem de ~38×, folgada o bastante para que carga de máquina não
+ * produza falso positivo.
+ */
+const FUSIVEL_DE_LEITURAS = 5000;
+const MARCA_DO_FUSIVEL = "FUSIVEL_DO_LACO_SEM_TETO";
 
 interface Corrida {
-  passos: Passo[];
+  passos: string[];
   corpos: { endpoint: string; corpo: any }[];
   crus: string[];
   erro: unknown;
@@ -111,12 +139,15 @@ interface Corrida {
 /**
  * Roda o pipeline REAL com tudo substituído.
  *
- * `statusEternamentePendente` é o que exercita o teto: a fila responde
- * `IN_PROGRESS` para sempre, e um laço sem teto nunca sai daqui.
+ *  · `statusEternamentePendente` — a fila nunca conclui. Exercita o teto.
+ *  · `resultadoVazio` — a fila CONCLUI e devolve `{}`. É o caso em que a
+ *    ordem entre gravar e interpretar deixa de ser invisível.
  */
-async function correr(opcoes: { statusEternamentePendente?: boolean } = {}): Promise<Corrida> {
+async function correr(
+  opcoes: { statusEternamentePendente?: boolean; resultadoVazio?: boolean } = {},
+): Promise<Corrida> {
   const { runFalPipeline } = await import("../services/video/falPipeline.js");
-  const passos: Passo[] = [];
+  const passos: string[] = [];
   const corpos: { endpoint: string; corpo: any }[] = [];
   const crus: string[] = [];
   let leiturasDeStatus = 0;
@@ -148,25 +179,27 @@ async function correr(opcoes: { statusEternamentePendente?: boolean } = {}): Pro
     }
     if (url.includes("/requests/") && url.endsWith("/status")) {
       leiturasDeStatus += 1;
+      if (leiturasDeStatus > FUSIVEL_DE_LEITURAS) throw new Error(MARCA_DO_FUSIVEL);
       passos.push(`STATUS:${leiturasDeStatus}`);
-      const status = opcoes.statusEternamentePendente ? "IN_PROGRESS" : "COMPLETED";
-      return new Response(JSON.stringify({ status }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ status: opcoes.statusEternamentePendente ? "IN_PROGRESS" : "COMPLETED" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
     }
     if (url.includes("/requests/")) {
       const endpoint = url.split("/requests/")[0].replace("https://queue.fal.run/", "");
       passos.push(`RESULT:${endpoint}`);
-      return new Response(
-        JSON.stringify({
-          images: [{ url: "https://exemplo.fal.invalido/imagem.png" }],
-          video: { url: "https://exemplo.fal.invalido/video.mp4" },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
+      const corpo = opcoes.resultadoVazio
+        ? {}
+        : {
+            images: [{ url: "https://exemplo.fal.invalido/imagem.png" }],
+            video: { url: "https://exemplo.fal.invalido/video.mp4" },
+          };
+      return new Response(JSON.stringify(corpo), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }
-    // Submissão.
     const endpoint = url.replace("https://queue.fal.run/", "");
     passos.push(`POST:${endpoint}`);
     corpos.push({ endpoint, corpo: JSON.parse(String(init?.body ?? "{}")) });
@@ -179,7 +212,6 @@ async function correr(opcoes: { statusEternamentePendente?: boolean } = {}): Pro
     );
   }) as typeof fetch;
 
-  // Diário em memória: um array, e a ORDEM dele é a medição.
   let seq = 0;
   const diario = {
     async abrirEtapa(etapa: string) {
@@ -187,9 +219,8 @@ async function correr(opcoes: { statusEternamentePendente?: boolean } = {}): Pro
       passos.push(`abriu:${etapa}`);
       return id;
     },
-    async gravarRequestId(stepId: string, requestId: string) {
+    async gravarRequestId(stepId: string) {
       passos.push(`request_id:${stepId}`);
-      void requestId;
     },
     async gravarRespostaCrua(stepId: string, raw: string) {
       passos.push(`cru:${stepId}`);
@@ -214,8 +245,6 @@ async function correr(opcoes: { statusEternamentePendente?: boolean } = {}): Pro
       fotoMimeType: "image/jpeg",
       promptDeComposicao: "traje e cenário da prova",
       diario: diario as never,
-      // Teto CURTO e espera que não espera: o laço com teto sai em
-      // milissegundos; o laço sem teto roda para sempre e é isso que se mede.
       pollTimeoutMs: 50,
       pollIntervalMs: 1,
       esperar: async () => {},
@@ -231,81 +260,69 @@ async function correr(opcoes: { statusEternamentePendente?: boolean } = {}): Pro
   return { passos, corpos, crus, erro, leiturasDeStatus };
 }
 
-/**
- * O laço sem teto não termina, então ele não pode ser esperado sem trava. A
- * corrida inteira ganha um limite de tempo próprio; estourá-lo É a reprovação.
- */
-async function correrComLimite(opcoes: { statusEternamentePendente?: boolean }, limiteMs: number) {
-  let estourou = false;
-  const corrida = await Promise.race([
-    correr(opcoes),
-    new Promise<Corrida>((resolve) =>
-      setTimeout(() => {
-        estourou = true;
-        resolve({ passos: [], corpos: [], crus: [], erro: null, leiturasDeStatus: -1 });
-      }, limiteMs),
-    ),
-  ]);
-  return { corrida, estourou };
-}
-
 export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> {
   const failures: string[] = [];
   const notes: string[] = [];
+  const { FalPipelineError } = await import("../services/video/falPipeline.js");
 
   const feliz = await correr();
 
   // -------------------------------------------------------------------------
   // 1. CRU ANTES DE INTERPRETADO.
   //
-  // Medido pela ORDEM: em cada etapa da fal, `cru:` tem de vir antes de o
-  // orquestrador ler qualquer campo — e ler campo é o que produz o passo
-  // seguinte (a submissão da etapa seguinte, ou o retorno).
+  // A metade que MEDE é a segunda: o fornecedor conclui e devolve `{}`. Com a
+  // gravação antes, o corpo está salvo e o erro é NOSSO; com ela depois, a
+  // leitura estoura primeiro e o corpo se perde junto.
   // -------------------------------------------------------------------------
-  for (const etapa of ["compor", "animar", "sincronizar"]) {
-    const iResult = feliz.passos.findIndex((p) => p.startsWith("RESULT:") && p.includes(etapa === "compor" ? "nano-banana" : etapa === "animar" ? "wan" : "sync-lipsync"));
-    const iCru = feliz.passos.findIndex((p) => p.startsWith("cru:") && p.includes(etapa));
-    if (iCru === -1) {
-      failures.push(
-        `pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua (${etapa}): ela ` +
-          `não foi gravada de forma alguma. Passos: ${feliz.passos.join(" → ")}. O corpo bruto é a base ` +
-          "da cobrança por camada e a única coisa que sobra quando o contrato muda.",
-      );
-    } else if (iResult !== -1 && iCru < iResult) {
-      failures.push(
-        `pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua (${etapa}): a ` +
-          `ordem observada foi ${feliz.passos.join(" → ")}.`,
-      );
-    }
-  }
-  // A prova direta: nenhum campo lido antes da gravação. Com a gravação
-  // deslocada, o `jaInterpretado` do mutante roda primeiro — e a única forma de
-  // observar isso de fora é o corpo cru já não ser o primeiro toque na resposta.
-  const cruDaComposicao = feliz.crus[0];
-  if (!cruDaComposicao || !cruDaComposicao.includes("images")) {
+  const vazio = await correr({ resultadoVazio: true });
+
+  if (vazio.crus.length === 0) {
     failures.push(
-      "pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua (composição): o " +
-        `primeiro corpo gravado foi ${JSON.stringify(String(cruDaComposicao).slice(0, 80))}, que não é a ` +
-        "resposta da composição. O que se grava tem de ser o corpo inteiro, como veio.",
+      "pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua — o fornecedor " +
+        "concluiu, devolveu um corpo em forma inesperada, e NENHUM corpo bruto foi gravado. Passos: " +
+        `${vazio.passos.join(" → ") || "(nenhum)"}; erro ` +
+        `${vazio.erro === null ? "nenhum" : JSON.stringify(String(vazio.erro).slice(0, 120))}. ` +
+        "É exatamente o corpo de que se precisa para descobrir o que mudou no contrato, e ele morreu " +
+        "com a exceção — depois de o trabalho ter sido feito e cobrado.",
+    );
+  } else if (vazio.crus[0] !== "{}") {
+    failures.push(
+      "pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua — o primeiro " +
+        `corpo gravado foi ${JSON.stringify(vazio.crus[0].slice(0, 80))}, e não o corpo que o ` +
+        "fornecedor devolveu. O que se grava tem de ser o corpo inteiro, como veio.",
+    );
+  }
+  if (vazio.crus.length > 0 && !(vazio.erro instanceof FalPipelineError)) {
+    failures.push(
+      "pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua, ou o erro não é " +
+        `nosso — veio ${JSON.stringify(String(vazio.erro).slice(0, 120))}. Um TypeError aqui significa ` +
+        "que a leitura do campo aconteceu sem rede de proteção; o erro precisa ser FalPipelineError e " +
+        "dizer que o corpo está gravado.",
+    );
+  }
+  // Contraponto interno: no caminho feliz as três etapas gravam o corpo.
+  if (feliz.crus.length < 3) {
+    failures.push(
+      `pipeline: apenas ${feliz.crus.length} corpo(s) bruto(s) gravado(s) no caminho feliz, e as etapas ` +
+        "pagas são três. Um corpo por etapa é o que sustenta a cobrança por camada.",
     );
   }
 
   // -------------------------------------------------------------------------
   // 2. O LAÇO TEM TETO.
-  //
-  // A fila responde IN_PROGRESS para sempre. Com teto, o pipeline desiste
-  // rápido e a mensagem diz que o trabalho NÃO deve ser refeito. Sem teto, a
-  // corrida não termina — e é o estouro do limite externo que reprova.
   // -------------------------------------------------------------------------
-  const { corrida: pendente, estourou } = await correrComLimite({ statusEternamentePendente: true }, 4000);
-  if (estourou) {
+  const pendente = await correr({ statusEternamentePendente: true });
+  const bateuOFusivel = String(pendente.erro).includes(MARCA_DO_FUSIVEL);
+
+  if (bateuOFusivel) {
     failures.push(
-      "pipeline: o laço de polling não desistiu — a fila respondeu IN_PROGRESS indefinidamente e a " +
-        "corrida ainda estava rodando 4000 ms depois, com o teto configurado em 50 ms. Sem teto, uma " +
-        "etapa que nunca conclui prende o processo para sempre, e quem paga por ela não tem como saber " +
-        "que ela parou de progredir.",
+      `pipeline: o laço de polling não desistiu — a fila respondeu IN_PROGRESS e o laço passou de ` +
+        `${FUSIVEL_DE_LEITURAS} leituras de status com o teto configurado em 50 ms. Sem teto, uma etapa ` +
+        "que nunca conclui prende o processo para sempre: MEDIDO em 12/08, o gate inteiro ficou 10 " +
+        "minutos sem terminar por causa disso. Quem paga pela etapa não tem como saber que ela parou " +
+        "de progredir.",
     );
-  } else if (!(pendente.erro instanceof Error) || !String(pendente.erro).includes("teto de")) {
+  } else if (!(pendente.erro instanceof FalPipelineError) || !String(pendente.erro).includes("teto de")) {
     failures.push(
       "pipeline: o laço de polling não desistiu com o erro certo — veio " +
         `${pendente.erro === null ? "sucesso" : JSON.stringify(String(pendente.erro).slice(0, 160))}. ` +
@@ -317,16 +334,16 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
   // -------------------------------------------------------------------------
   // 3. NENHUM DEFAULT HERDADO.
   //
-  // Conferido no CORPO que saiu, e não no código: um campo omitido não deixa
+  // Conferido no CORPO que saiu, não no código: um campo omitido não deixa
   // rastro nenhum do nosso lado — só na requisição.
   // -------------------------------------------------------------------------
   for (const [endpoint, campos] of Object.entries(DEFAULTS_NUNCA_HERDADOS)) {
     const enviado = feliz.corpos.find((c) => c.endpoint === endpoint);
     if (!enviado) {
       failures.push(
-        `pipeline: um default do fornecedor foi herdado em silêncio — nenhuma submissão para ` +
-          `${endpoint} foi observada, então os campos ${campos.join(", ")} não puderam ser conferidos. ` +
-          `Corpos observados: ${feliz.corpos.map((c) => c.endpoint).join(", ") || "(nenhum)"}.`,
+        "pipeline: um default do fornecedor foi herdado em silêncio — nenhuma submissão para " +
+          `${endpoint} foi observada, então ${campos.join(", ")} não puderam ser conferidos. Corpos ` +
+          `observados: ${feliz.corpos.map((c) => c.endpoint).join(", ") || "(nenhum)"}.`,
       );
       continue;
     }
@@ -345,16 +362,16 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
 
   if (failures.length === 0) {
     notes.push(
-      `  pipeline: corpo cru gravado antes de qualquer leitura nas 3 etapas da fal ` +
-        `(${feliz.crus.length} corpos registrados)`,
+      `  pipeline: corpo cru gravado antes de qualquer leitura — ${feliz.crus.length} corpos no caminho ` +
+        "feliz, e o corpo em forma inesperada também é gravado antes de a interpretação falhar",
     );
     notes.push(
-      `  pipeline: o laço de polling desistiu no teto e disse que o trabalho não deve ser refeito ` +
-        `(${pendente.leiturasDeStatus} leitura(s) antes de desistir)`,
+      `  pipeline: o laço de polling desistiu no teto após ${pendente.leiturasDeStatus} leitura(s) e ` +
+        "disse que o trabalho não deve ser refeito",
     );
     notes.push(
       `  pipeline: os ${Object.values(DEFAULTS_NUNCA_HERDADOS).flat().length} campos que não se herda ` +
-        `estão explícitos nos 3 corpos enviados`,
+        "estão explícitos nos 3 corpos enviados",
     );
   }
 
