@@ -90,7 +90,21 @@ export const MUTANTS: Mutant[] = [
       "                onKeyDown={(e) => {\n" +
       "                  if (e.key === \"Enter\" || e.key === \" \") onSelectAvatar(a.id);\n" +
       "                }}",
-    expect: "o handler de teclado do card não está travado",
+    // TRANSCRITO da mensagem que a guarda EMITE, e não uma paráfrase dela.
+    //
+    // Nasceu como "o handler de teclado do card não está travado" — uma frase
+    // que não existe em lugar nenhum do código. A guarda sempre funcionou: ela
+    // pega o defeito pelo regex `/onKeyDown=\{\s*selecionavel/` e reprova com
+    // "o `onKeyDown` do card não está travado por `selecionavel`". Só que o
+    // arnês exige a mensagem DAQUELA guarda na saída, e a frase esperada nunca
+    // podia aparecer — então o mutante dava AMBÍGUO em toda passada, para
+    // sempre, sem que houvesse defeito nenhum a corrigir no produto.
+    //
+    // Era o único não-verde de 215/216 (12/08), e custou duas passadas
+    // completas de investigação. A lição é a mesma do `find`: o que o mutante
+    // afirma sobre a guarda tem de ser COPIADO dela, nunca reescrito com outras
+    // palavras — uma paráfrase envelhece no instante em que é escrita.
+    expect: "o `onKeyDown` do card não está travado",
   },
 ];
 

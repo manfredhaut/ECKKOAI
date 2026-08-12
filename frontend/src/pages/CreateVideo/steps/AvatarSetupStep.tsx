@@ -126,7 +126,15 @@ export function AvatarSetupStep({
    * `failed` fica de fora de propósito: um traje que falhou não está vindo, e
    * travar por ele prenderia a pessoa no passo 1 sem saída nenhuma.
    */
-  const outfitPreparing = (lookInfo?.pendentes ?? []).some((p) => p.status === "processing");
+  // As DUAS leituras de `lookInfo` que a tela faz por campo, derivadas num
+  // lugar só. O payload chega da REDE, e a rota tem dois retornos: o completo e
+  // o do avatar que ainda não pode receber traje. Espalhar `lookInfo.x` pelo
+  // JSX faz cada ponto de uso apostar de novo que o campo veio — e foi assim
+  // que `lookCost.usd` derrubou o passo 1 no clique do card.
+  const lookPendentes = lookInfo?.pendentes ?? [];
+  /** Ausente = não há traje a criar, logo não há preço a declarar. Ver `types.ts`. */
+  const lookCostDoServidor = lookInfo?.lookCost ?? null;
+  const outfitPreparing = lookPendentes.some((p) => p.status === "processing");
   useEffect(() => {
     onOutfitPreparingChange?.(outfitPreparing);
   }, [outfitPreparing, onOutfitPreparingChange]);
@@ -620,22 +628,29 @@ export function AvatarSetupStep({
                   Um traje custa 60 unidades — US$ 1,00 medidos na conta real em
                   06/08, o mesmo que 20 segundos de vídeo cobrados. O número vem
                   do servidor; em simulação, o aviso é de que nada será cobrado. */}
-              {lookInfo && (
-                <p
-                  className="text-muted"
-                  style={{ fontSize: 12, marginBottom: 12, fontWeight: lookInfo.simulated ? undefined : 600 }}
-                >
-                  {lookInfo.simulated
-                    ? t("createVideo.avatarSetup.lookCostSimulated")
-                    : t("createVideo.avatarSetup.lookCostLive", {
-                        usd: lookInfo.lookCost.usd.toFixed(2).replace(".", ","),
-                        units: lookInfo.lookCost.units,
-                      })}
+              {lookInfo?.simulated && (
+                <p className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+                  {t("createVideo.avatarSetup.lookCostSimulated")}
                 </p>
               )}
-              {lookInfo && lookInfo.pendentes.length > 0 && (
+              {/* SEM CUSTO A DECLARAR é um estado próprio, e não um erro engolido.
+                  O servidor omite `lookCost` quando o avatar não pode receber traje
+                  — em treino, ou tenant sem credencial —, e ali a frase de preço
+                  não teria sujeito. O bloco simplesmente não existe nesse caso.
+                  Antes, ler `.usd` de um payload assim derrubava o passo 1 inteiro
+                  no clique do card; a checagem abaixo é a condição de renderizar,
+                  não um `try` em volta de uma expressão que se espera funcionar. */}
+              {!lookInfo?.simulated && lookCostDoServidor && (
+                <p className="text-muted" style={{ fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
+                  {t("createVideo.avatarSetup.lookCostLive", {
+                    usd: lookCostDoServidor.usd.toFixed(2).replace(".", ","),
+                    units: lookCostDoServidor.units,
+                  })}
+                </p>
+              )}
+              {lookPendentes.length > 0 && (
                 <ul className="text-muted" style={{ fontSize: 12, marginBottom: 12, paddingLeft: 18 }}>
-                  {lookInfo.pendentes.map((p) => (
+                  {lookPendentes.map((p) => (
                     <li key={p.id}>
                       {p.status === "processing"
                         ? t("createVideo.avatarSetup.lookPending", { name: p.name })

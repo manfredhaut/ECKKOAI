@@ -62,7 +62,22 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
 
     const credential = await getCredential(req.tenantId, "avatar");
     if (!credential || !avatar.provider_avatar_id) {
-      return { looks: [], canChoose: false, simulated: isFixtureMode() };
+      // SEM TRAJE POSSÍVEL, e é um estado legítimo: um avatar em treino ainda
+      // não tem `provider_avatar_id`, e um tenant sem credencial não tem a quem
+      // pedir. Os dois caem aqui.
+      //
+      // `pendentes: []` é a correção de um defeito MEDIDO: este retorno omitia
+      // o campo, a tela fazia `lookInfo.pendentes.length`, e o clique num card
+      // nesse estado derrubava o passo 1 inteiro. Lista vazia é a verdade —
+      // sem fornecedor não há preparo em andamento — e ela é o que a tela
+      // espera contar.
+      //
+      // `lookCost` continua FORA de propósito, e essa é a diferença entre os
+      // dois campos: declarar "criar um traje custa US$ 1,00" ao lado de um
+      // avatar que não pode receber traje nenhum é anunciar preço de coisa
+      // indisponível. A ausência aqui é informação, não lacuna — a tela lê
+      // isso como "não há custo a declarar" e não mostra a linha.
+      return { looks: [], pendentes: [], canChoose: false, simulated: isFixtureMode() };
     }
 
     const doFornecedor = await listAvatarLooks(

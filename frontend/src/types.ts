@@ -285,6 +285,20 @@ export interface AvatarLooksResponse {
   pendentes: { id: string; name: string; status: "processing" | "failed" }[];
   canChoose: boolean;
   simulated: boolean;
-  /** Custo de criar UM traje. MEDIDO no fornecedor, servido pelo backend. */
-  lookCost: { units: number; usd: number };
+  /**
+   * Custo de criar UM traje. MEDIDO no fornecedor, servido pelo backend.
+   *
+   * OPCIONAL, e a ausência é um caso VÁLIDO — não um payload defeituoso. O
+   * servidor omite este campo quando o avatar não pode receber traje nenhum
+   * (em treino, sem `provider_avatar_id`; ou tenant sem credencial de avatar):
+   * ali não há o que custar, e anunciar preço de coisa indisponível seria pior
+   * que calar.
+   *
+   * Declarado obrigatório, este campo derrubou a tela: `lookCost.usd` num
+   * payload que legitimamente não o trazia virou
+   * `Cannot read properties of undefined (reading 'usd')` no clique do card, e
+   * o TypeScript não tinha como avisar porque a promessa era falsa. Opcional, o
+   * compilador passa a exigir o tratamento em todo consumidor novo.
+   */
+  lookCost?: { units: number; usd: number };
 }
