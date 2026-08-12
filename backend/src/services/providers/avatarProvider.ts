@@ -18,6 +18,12 @@ import {
   logScriptDuration,
   SCRIPT_DURATION,
 } from "../script/scriptDuration.js";
+// O MESMO teto que a rota de estimativa e o portão de prontidão aplicam sobre o
+// roteiro. Duas constantes para o mesmo limite divergiriam, e o sintoma seria a
+// tela recusando num ponto e a chamada paga noutro — a lição da amostra de voz,
+// onde a recusa por tamanho e `checkSampleDuration` passaram a sair da mesma
+// função justamente porque discordavam na faixa de 109 a 120 s.
+import { MAX_SCRIPT_SECONDS } from "../video/scriptDuration.js";
 import type { AvatarVendor } from "./vendorCatalog.js";
 import { isFixtureMode } from "./providerMode.js";
 import { withLiveBudget } from "./liveGuard.js";
@@ -163,6 +169,27 @@ export interface GenerateVideoInput {
    * └─────────────────────────────────────────────────────────────────────────┘
    */
   captions?: boolean;
+  /**
+   * Avisa que a duração REAL do áudio acabou de ser medida — e é chamado ANTES
+   * da chamada que cobra.
+   *
+   * Existe porque este módulo não fala com o banco, e a duração precisava ser
+   * persistida antes do `POST /v3/videos`. Antes deste bloco ela só era gravada
+   * no `UPDATE` que a rota faz DEPOIS da resposta do fornecedor: uma geração
+   * recusada aqui — ou um processo morto no meio — perdia o único número exato
+   * do fluxo, que já tinha sido pago ao ElevenLabs.
+   *
+   * Callback, e não `pool.query` aqui dentro, para preservar a propriedade que
+   * torna este arquivo exercitável: `avatarProvider.ts` roda inteiro com
+   * `fetch` substituído e mais nada. Quem faz I/O de banco é a rota.
+   *
+   * É AGUARDADO: se a gravação falhar, a chamada paga não acontece. A ordem
+   * "mede → grava → decide → cobra" só vale se a gravação puder interromper.
+   */
+  onAudioMeasured?: (measured: {
+    seconds: number | null;
+    source: DurationSource | null;
+  }) => Promise<void>;
 }
 
 /**
@@ -668,8 +695,76 @@ function mimeTypeDaExtensao(url: string): string {
   return "image/jpeg";
 }
 
+/**
+ * A duração MEDIDA do áudio estourou o teto — e a chamada paga NÃO saiu.
+ *
+ * Classe PRÓPRIA, e não `AvatarProviderError`, pela mesma razão medida que fez
+ * `LiveBudgetExhaustedError` nascer: este teto é NOSSO, o fornecedor nunca foi
+ * chamado, e empacotar isso como falha de fornecedor entrega ao cliente "não
+ * foi possível concluir a operação no serviço de vídeo" — uma frase que manda
+ * procurar defeito na HeyGen quando a HeyGen sequer soube da tentativa.
+ *
+ * A mensagem é mostrada ao cliente como está: não há corpo de fornecedor aqui
+ * para sanitizar, e o que ela diz — quanto durou, qual o teto, que nada foi
+ * cobrado pelo vídeo — é exatamente o que permite a pessoa agir (encurtar o
+ * roteiro) em vez de tentar de novo.
+ */
+export class AudioTooLongError extends Error {
+  constructor(
+    readonly measuredSeconds: number,
+    readonly maxSeconds: number,
+  ) {
+    super(
+      `A fala sintetizada ficou em ${measuredSeconds.toFixed(2)} s, acima do teto de ${maxSeconds} s ` +
+        "deste aplicativo. Nenhum vídeo foi pedido ao fornecedor: o crédito volta e nada foi cobrado " +
+        "pela geração. A síntese de voz que produziu esta medição já aconteceu e custa frações de " +
+        "centavo. Encurte o roteiro e gere de novo.",
+    );
+    this.name = "AudioTooLongError";
+  }
+}
+
 async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateVideoResult> {
   const audio = await requireAudio(input);
+
+  // A duração REAL é gravada AQUI, e não depois da resposta do fornecedor.
+  //
+  // Ela é o único número exato do fluxo — medida pelos timestamps do ElevenLabs
+  // sobre o áudio que vai animar o vídeo —, e até este bloco ela vivia numa
+  // variável local até o `UPDATE` pós-resposta. Quem morresse no meio, ou fosse
+  // recusado pelo portão abaixo, perdia uma medição que já tinha sido paga.
+  if (input.onAudioMeasured) {
+    await input.onAudioMeasured({ seconds: audio.durationSeconds, source: audio.source });
+  }
+
+  // ---------------------------------------------------------------------------
+  // O PORTÃO SOBRE A DURAÇÃO REAL, na fronteira onde o preço muda de ordem de
+  // grandeza: o áudio acima custa frações de centavo, o `POST /v3/videos` abaixo
+  // custa dólares (3 unidades por segundo inteiro, US$ 0,05/s — 180 s são
+  // US$ 9,00).
+  //
+  // Por que ele não é redundante com os portões que já existem: aqueles julgam a
+  // ESTIMATIVA do texto (`CONFIRM_ABOVE_SECONDS`, `MAX_SCRIPT_SECONDS` em
+  // `generationReadiness`), e a estimativa é uma régua de um ponto medido. Ela
+  // erra +29,5% para CIMA em textos curtos, o que é o lado seguro — mas nada
+  // garante o sinal do erro: `speed` da voz é editável no painel do fornecedor,
+  // por fora deste produto e sem registro em lugar nenhum, e a mesma contagem de
+  // 145 caracteres já produziu 10,19 s e 11,12 s em duas gerações reais. No dia
+  // em que a estimativa subestimar, este é o único ponto do caminho que sabe a
+  // verdade antes de a chamada paga sair.
+  //
+  // MESMO teto da estimativa, de propósito: uma segunda régua para o mesmo
+  // limite abriria a faixa em que uma aceita e a outra recusa.
+  //
+  // Duração DESCONHECIDA (`null`) não recusa. Ela acontece quando o endpoint com
+  // timestamps não responde e o fallback por bitrate também não conclui, e
+  // transformar "não sei" em recusa quebraria gerações que hoje funcionam — o
+  // teto sobre a estimativa continua valendo nesse caminho.
+  // ---------------------------------------------------------------------------
+  if (audio.durationSeconds != null && audio.durationSeconds > MAX_SCRIPT_SECONDS) {
+    throw new AudioTooLongError(audio.durationSeconds, MAX_SCRIPT_SECONDS);
+  }
+
   const audioAssetId = await heygenUploadAsset(input.apiKey, audio.buffer, "audio/mpeg");
 
   // O fundo por IMAGEM vira asset do fornecedor antes do payload, pelo mesmo

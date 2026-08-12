@@ -32,6 +32,18 @@ export const VIDEO_FAILURE_REASONS = [
   /** Teto NOSSO de sessão live. Nenhuma chamada saiu; o débito foi estornado. */
   "live_budget_exhausted",
 
+  // --- a voz foi sintetizada; o vídeo não chegou a ser pedido --------------
+  /**
+   * Teto NOSSO sobre a duração MEDIDA do áudio. O `POST /v3/videos` não saiu, e
+   * o débito foi estornado.
+   *
+   * Motivo PRÓPRIO, e não `vendor_rejected`: o fornecedor de vídeo nunca soube
+   * da tentativa. Mas também não pertence ao bloco de cima — a síntese de voz
+   * ACONTECEU e foi cobrada (frações de centavo), então "antes de qualquer
+   * chamada" seria falso. É a única linha do enum com custo parcial real.
+   */
+  "audio_too_long",
+
   // --- a chamada de criação saiu ------------------------------------------
   /** O fornecedor recusou a criação. Não há job, não há render, não há cobrança. */
   "vendor_rejected",

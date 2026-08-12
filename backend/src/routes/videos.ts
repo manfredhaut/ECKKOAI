@@ -6,6 +6,7 @@ import {
   generateVideo,
   pollVideoJob,
   heygenIdempotencyKey,
+  AudioTooLongError,
   AvatarProviderError,
 } from "../services/providers/avatarProvider.js";
 import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCatalog.js";
@@ -1196,6 +1197,22 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         scene: { ...scene, motionPrompt: motionPromptEn ?? scene.motionPrompt },
         engineChoice,
         captions,
+        // A duração REAL, gravada ANTES do `POST /v3/videos`.
+        //
+        // O provider mede (timestamps do ElevenLabs), chama isto, e só depois
+        // decide se cobra. Sem esta gravação antecipada o único número exato do
+        // fluxo — já pago — vivia numa variável até o `UPDATE` pós-resposta, e
+        // uma recusa no portão de duração o perdia inteiro.
+        //
+        // Não sobrescreve com nulo: em `null` a medição não existe, e apagar o
+        // que já estava lá seria trocar informação por ausência.
+        onAudioMeasured: async ({ seconds, source }) => {
+          if (seconds == null) return;
+          await pool.query(
+            "UPDATE videos SET audio_duration_seconds = $2, audio_duration_source = $3 WHERE id = $1",
+            [video.id, seconds, source ?? null],
+          );
+        },
       });
       // A duração do áudio é gravada AGORA porque só agora ela é conhecida: o
       // registro de consumo acontece no laço de polling, noutra requisição. O
@@ -1239,11 +1256,48 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // id, então a regra ("se o dinheiro não saiu, o crédito volta") manda
       // estornar — e é a chave de idempotência, gravada ANTES da chamada, que
       // impede a repetição do cliente de virar um segundo vídeo cobrado.
-      const motivoDaCriacao: VideoFailureReason = ehTimeoutDeFornecedor(err)
-        ? "vendor_timeout"
-        : err instanceof LiveBudgetExhaustedError
-          ? "live_budget_exhausted"
-          : "vendor_rejected";
+      const motivoDaCriacao: VideoFailureReason = err instanceof AudioTooLongError
+        ? "audio_too_long"
+        : ehTimeoutDeFornecedor(err)
+          ? "vendor_timeout"
+          : err instanceof LiveBudgetExhaustedError
+            ? "live_budget_exhausted"
+            : "vendor_rejected";
+
+      // Teto NOSSO sobre a duração MEDIDA do áudio: a síntese de voz aconteceu
+      // (frações de centavo), o `POST /v3/videos` não saiu, e nada foi cobrado
+      // pela geração. Tratado ANTES do sanitizador de erro de vendor pela mesma
+      // razão que o teto de sessão: ele apagaria a única informação que permite
+      // agir — quanto durou, qual é o teto, que o crédito volta — e devolveria
+      // "problema no serviço de vídeo", mandando procurar defeito num
+      // fornecedor que sequer soube da tentativa.
+      //
+      // O ESTORNO VEM ANTES DO `UPDATE`, e a ordem é deliberada: o CHECK de
+      // `failure_reason` só conhece 'audio_too_long' depois de a migration 049
+      // ser aplicada, e nessa janela o `UPDATE` levanta. Estornando primeiro, a
+      // violação custa a MARCAÇÃO da linha — que a varredura de boot recolhe
+      // como `recovery_orphan`, com o mesmo veredito de dinheiro — e nunca o
+      // crédito.
+      if (err instanceof AudioTooLongError) {
+        await decidirEEstornar({
+          videoId: video.id,
+          tenantId: req.tenantId,
+          reason: motivoDaCriacao,
+          providerJobId: null,
+        });
+        logEvent("error", "audio_too_long", {
+          context: "videos.create",
+          videoId: video.id,
+          measuredSeconds: err.measuredSeconds,
+          maxSeconds: err.maxSeconds,
+          consequence: "o POST de vídeo NÃO saiu; o crédito foi estornado e a voz sintetizada foi cobrada",
+        });
+        const { rows: recusado } = await pool.query<Video>(
+          "UPDATE videos SET status = 'error', error_message = $2, failure_reason = $3 WHERE id = $1 RETURNING *",
+          [video.id, err.message, motivoDaCriacao],
+        );
+        return reply.code(422).send({ error: "audio_too_long", message: err.message, video: recusado[0] });
+      }
 
       // Teto NOSSO, não falha do fornecedor: nenhuma chamada saiu e nada foi
       // cobrado. Tratado ANTES do sanitizador de erro de vendor, porque ele

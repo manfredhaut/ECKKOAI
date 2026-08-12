@@ -60,6 +60,7 @@ import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
+import { checkAudioDurationGatePolicy } from "./checkAudioDurationGatePolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -616,6 +617,17 @@ async function main(): Promise<void> {
   const expressivenessDefault = checkExpressivenessDefaultPolicy(process.env.REPO_ROOT ?? "/repo");
   expressivenessDefault.failures.forEach((f) => failures.push(f));
   expressivenessDefault.notes.forEach((n) => note(n));
+
+  // --- 25l. nenhum POST de vídeo sai com áudio acima do teto --------------
+  //
+  // Perto do fim de propósito, e pelo mesmo motivo da 25i: ela troca
+  // `globalThis.fetch` por um gravador e mexe em `PROVIDER_MODE` e no teto de
+  // sessão live. Restaura os três no `finally` e zera o contador do teto nas duas
+  // pontas, mas rodar cedo faria tudo que fala com fornecedor depois depender
+  // dessa restauração.
+  const audioGate = await checkAudioDurationGatePolicy();
+  audioGate.failures.forEach((f) => failures.push(f));
+  audioGate.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

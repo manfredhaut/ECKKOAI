@@ -25,7 +25,7 @@
  * │ em todos os pontos é leitura.                                           │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Mutant } from "./mutants.js";
 import { pool } from "../db/pool.js";
@@ -296,6 +296,16 @@ async function ler(repoRoot: string, rel: string): Promise<string | null> {
     return await readFile(path.join(repoRoot, rel), "utf-8");
   } catch {
     return null;
+  }
+}
+
+/** Os arquivos de migration, por nome. Lista vazia se o diretório não existir. */
+async function listarMigrations(repoRoot: string): Promise<string[]> {
+  try {
+    const nomes = await readdir(path.join(repoRoot, "backend/src/db/migrations"));
+    return nomes.filter((n) => n.endsWith(".sql"));
+  } catch {
+    return [];
   }
 }
 
@@ -677,19 +687,44 @@ export async function checkVideoRecoveryPolicy(repoRoot: string): Promise<Recove
   );
 
   // O CHECK do banco e a constante do código precisam falar a mesma língua.
-  const migracaoMotivos = await ler(repoRoot, "backend/src/db/migrations/048_video_failure_reason.sql");
+  //
+  // A migration é DESCOBERTA, não nomeada: esta verificação lia
+  // `048_video_failure_reason.sql` por nome fixo, e o CHECK de um enum cresce
+  // trocando de arquivo — a 049 acrescentou `audio_too_long` substituindo a
+  // constraint inteira. Com o nome fixo a guarda continuaria conferindo uma
+  // lista SUPERADA: um motivo novo, presente no banco e ausente da 048, apareceria
+  // como violação; e um motivo que a migration mais nova esquecesse de repetir
+  // passaria verde por estar na antiga. Vale a ÚLTIMA que define a constraint.
+  const migracoes = await listarMigrations(repoRoot);
+  const definemCheck: { arquivo: string; conteudo: string }[] = [];
+  for (const arquivo of migracoes) {
+    const conteudo = await ler(repoRoot, `backend/src/db/migrations/${arquivo}`);
+    if (conteudo && conteudo.includes("videos_failure_reason_check")) {
+      definemCheck.push({ arquivo, conteudo });
+    }
+  }
+  // Ordem lexicográfica dos nomes prefixados por número é a ordem de aplicação —
+  // a mesma que o migrate usa.
+  const vigente = definemCheck.sort((a, b) => a.arquivo.localeCompare(b.arquivo)).at(-1);
+  const migracaoMotivos = vigente?.conteudo ?? null;
   if (!migracaoMotivos) {
-    failures.push("recuperação: não consegui ler a migration 048 — verificador cego é pior que reprovar.");
+    failures.push(
+      "recuperação: nenhuma migration define `videos_failure_reason_check` — verificador cego é pior " +
+        "que reprovar. Sem o CHECK, `failure_reason` volta a ser texto livre que ninguém consegue agrupar.",
+    );
   } else {
     for (const motivo of VIDEO_FAILURE_REASONS) {
       if (!migracaoMotivos.includes(`'${motivo}'`)) {
         failures.push(
-          `recuperação: o motivo "${motivo}" existe no código e NÃO está no CHECK da migration 048 — ` +
-            `gravá-lo derrubaria a escrita no banco, no meio de um caminho de falha.`,
+          `recuperação: o motivo "${motivo}" existe no código e NÃO está no CHECK de ` +
+            `${vigente?.arquivo} — gravá-lo derrubaria a escrita no banco, no meio de um caminho de falha.`,
         );
       }
     }
-    notes.push(`recuperação: os ${VIDEO_FAILURE_REASONS.length} motivos do código estão no CHECK do banco`);
+    notes.push(
+      `recuperação: os ${VIDEO_FAILURE_REASONS.length} motivos do código estão no CHECK do banco ` +
+        `(${vigente?.arquivo}, a mais nova das ${definemCheck.length} que definem a constraint)`,
+    );
   }
 
   void agora;
