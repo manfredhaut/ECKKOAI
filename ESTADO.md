@@ -15,13 +15,18 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **12/08/2026**, HEAD `faf7229` + o commit desta linha.
+Atualizado em **12/08/2026**, HEAD `9cd1bc5` + o commit desta linha (desfecho dos 231 já LIDO).
 
 ---
 
 ## 1 · Onde o repositório está
 
+*(o último commit desta lista é sempre o penúltimo do repositório: o próprio
+commit que atualiza este arquivo não caberia dentro dele. `git log -3
+--oneline` fecha a diferença.)*
+
 ```
+9cd1bc5  ESTADO.md: o desfecho dos 231 e o bloqueio do 3.5 viram o começo da próxima
 faf7229  Arnês: o gate podia estourar o buffer e virar AMBÍGUO com a guarda saudável
 94af14f  CORREÇÃO: duas das três guardas do pipeline nasceram INERTE e AMBÍGUA
 5a6cbbc  BLOCO 4 parte 1: o orquestrador em série, sem rota e sem ramo
@@ -179,21 +184,28 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
-**Passada de 12/08 noite, HEAD `faf7229`, 231 mutantes.** Lançada em
-background ao fim da sessão, sobre o código com o orquestrador e as três
-guardas novas. **Ninguém viu o desfecho.** Duração esperada ~80 min.
+**Passada de 12/08 noite, HEAD `faf7229`, 231 mutantes: COMPLETA E LIDA.**
+`mutants-231-2026-08-12-a.log` (cópia `-b` idêntica, md5 `a89b6440…`).
 
-**O primeiro comando desta sessão é este:**
+| desfecho | n |
+|---|---|
+| ok | **229** |
+| INERTE | **0** |
+| AMBÍGUO | 0 |
+| FALHOU | 0 |
+| ERRO (mutante desatualizado) | **2** |
 
-```bash
-tail -40 "C:/Users/manfr/Documents/1A_A_PROJETOS/_arnes-logs/mutants-231-2026-08-12-a.log"
-```
+Sem carimbo de PULADOS — completa. Retry de spawn: **não disparou nenhuma
+vez** (segunda passada seguida sem ocorrência; o 0xC0000142 não se repetiu).
 
-Cópia `-b` idêntica e independente no mesmo diretório. O que procurar, nesta
-ordem: `INERTE` (**PARE e relate, não conserte**), `AMBÍGUO` (antes de culpar
-a guarda, veja o gotcha 8 — meça o tamanho da saída), `ERRO` (`find` não
-casou), e a linha final `N/231`. Se terminar sem a linha final, foi morta:
-`exit_do_npm=` no fim é da morte, não do desfecho.
+**Os 2 ERRO estão nomeados na §7 e NÃO foram consertados** — é a regra:
+mutante desatualizado para a passada de prova daquela guarda, e consertar no
+mesmo fôlego em que se descobre é como se troca uma prova por outra sem
+ninguém conferir.
+
+**Nada aqui bloqueia o BLOCO 4 parte 2.** Zero INERTE significa que nenhuma
+guarda ficou verde com o defeito aplicado; as duas de `ERRO` continuam
+rodando no gate, o que não têm hoje é prova de que reprovam.
 
 **A passada anterior (227, HEAD `c88b187`) foi INCOMPLETA** — chegou a
 **38/227, todos `ok`**, zero INERTE/AMBÍGUO/ERRO, e foi morta pela sessão
@@ -230,6 +242,21 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
 
 ## 7 · Dívidas abertas
 
+- **2 MUTANTES PODRES, identificados por NOME (nunca por posição), medidos na
+  passada de 12/08 noite.** As duas guardas rodam verdes no gate; o que falta é
+  a prova de que reprovam.
+  - `formato: suporte declarado precisa de evidência :: vendor sem evidência
+    nenhuma passa a declarar suporte` — o `find` casa **2×** em
+    `videoFormat.ts`. **Causa: o próprio BLOCO 2 (`9d2d1e6`)**, que acrescentou
+    a linha da fal com `supported: false, evidence: "none"`. Ficou latente
+    porque nenhuma passada completa rodou desde então. O conserto é dar contexto
+    único ao `find` — não apagar a linha nova.
+  - `passo 1: traje em preparo trava o Avançar :: a trava passa a valer também
+    para o traje que falhou` — o `find` casa **0×**: a linha virou
+    `const outfitPreparing = lookPendentes.some((p) => p.status ===
+    "processing");` no commit `e483929`, anterior a esta série. Podre há mais
+    tempo, e só apareceu agora porque as duas passadas anteriores morreram antes
+    do mutante 165.
 - **`voiceId: avatar.voice_id` (`routes/videos.ts:1179`) não tem guarda ancorada
   no uso.** Trocá-lo por um id fixo passa o gate inteiro.
 - **Cenário e traje são coletados, persistidos e nunca enviados.** Não há campo
