@@ -471,15 +471,29 @@ export function AvatarSetupStep({
           </p>
         ) : (
           <div className="grid grid-cols-3" style={{ marginBottom: 16 }}>
-            {avatars.map((a) => (
+            {avatars.map((a) => {
+              // OR, e não AND: faltar UM dos dois já impede gerar. Sem
+              // `voice_id` a geração morre fechada em avatarProvider (a voz
+              // clonada é o que dirige a animação); sem `provider_avatar_id`
+              // não há avatar para o fornecedor animar. Com AND, um card
+              // meio-pronto continuaria selecionável e o erro apareceria só
+              // depois do débito.
+              //
+              // O MOTIVO não ganha texto novo: as duas `status-pill` abaixo já
+              // escrevem "avatar pendente" e "voz pendente". O que faltava era
+              // a trava — o card dizia que estava pendente e deixava clicar.
+              const selecionavel = Boolean(a.voice_id) && Boolean(a.provider_avatar_id);
+              return (
               <div
                 key={a.id}
-                role="button"
-                tabIndex={0}
+                role={selecionavel ? "button" : undefined}
+                tabIndex={selecionavel ? 0 : undefined}
+                aria-disabled={selecionavel ? undefined : true}
                 className={`card${selectedAvatarId === a.id ? " selected" : ""}`}
                 style={{
                   textAlign: "left",
-                  cursor: "pointer",
+                  cursor: selecionavel ? "pointer" : "not-allowed",
+                  opacity: selecionavel ? undefined : 0.6,
                   borderColor: selectedAvatarId === a.id ? "var(--color-primary)" : undefined,
                   // 1px de borda verde sobre fundo branco desaparece em
                   // projetor — MEDIDO na Fase 0 do 5D (o card renderizava com
@@ -492,10 +506,16 @@ export function AvatarSetupStep({
                     selectedAvatarId === a.id ? "0 0 0 4px color-mix(in srgb, var(--color-primary) 30%, transparent)" : undefined,
                   borderLeftWidth: selectedAvatarId === a.id ? 8 : undefined,
                 }}
-                onClick={() => onSelectAvatar(a.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") onSelectAvatar(a.id);
-                }}
+                // Os DOIS caminhos, senão o teclado continua selecionando o que
+                // o mouse já não seleciona.
+                onClick={selecionavel ? () => onSelectAvatar(a.id) : undefined}
+                onKeyDown={
+                  selecionavel
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") onSelectAvatar(a.id);
+                      }
+                    : undefined
+                }
               >
                 <strong>{a.name}</strong>
                 <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
@@ -529,7 +549,8 @@ export function AvatarSetupStep({
                   {t("knowledge.delete")}
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

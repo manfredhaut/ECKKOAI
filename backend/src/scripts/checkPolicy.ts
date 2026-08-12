@@ -60,6 +60,7 @@ import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
+import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
 import { checkAudioDurationGatePolicy } from "./checkAudioDurationGatePolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -617,6 +618,11 @@ async function main(): Promise<void> {
   const expressivenessDefault = checkExpressivenessDefaultPolicy(process.env.REPO_ROOT ?? "/repo");
   expressivenessDefault.failures.forEach((f) => failures.push(f));
   expressivenessDefault.notes.forEach((n) => note(n));
+
+  // --- 25k-bis. card de avatar sem voz ou sem treino não é selecionável ----
+  const avatarCard = checkAvatarCardSelectablePolicy(process.env.REPO_ROOT ?? "/repo");
+  avatarCard.failures.forEach((f) => failures.push(f));
+  avatarCard.notes.forEach((n) => note(n));
 
   // --- 25l. nenhum POST de vídeo sai com áudio acima do teto --------------
   //
