@@ -116,14 +116,22 @@ config`, `StartedAt`, `RestartCount` comparado ao valor **pós-boot** e não a
 zero, linha de boot — que pode estar fora da janela do log, e aí o `printenv` é
 evidência mais forte).
 
-## 5 · Desfecho da última passada completa
+## 5 · Desfecho da última passada completa — LEIA ISTO PRIMEIRO
 
-Lançada em 12/08 ao fim da sessão, em background. **O log é a única fonte** —
-não o exit do processo, não a memória desta sessão.
+**227 mutantes, lançada em 12/08/2026 ao fim da sessão, em background, sobre o
+HEAD desta mesma data.** Duração esperada ~79 min (DERIVADO de 20,84 s/mutante
+MEDIDO). Ninguém viu o desfecho — a sessão que a lançou terminou antes.
+
+**O primeiro comando desta sessão é este.** O log é a única fonte: não o exit
+do processo (o `| tee` já mascarou um exit 2 como 0), não a memória de sessão
+nenhuma.
 
 ```bash
 tail -40 "C:/Users/manfr/Documents/1A_A_PROJETOS/_arnes-logs/mutants-227-2026-08-12-a.log"
 ```
+
+Se o arquivo não existir ou estiver truncado no meio, a cópia `-b` no mesmo
+diretório é idêntica e independente.
 
 Duas cópias idênticas (`-a` e `-b`) no mesmo diretório. O que procurar, nesta
 ordem: `INERTE` (gate verde com o defeito aplicado — **PARE e relate, não
