@@ -64,6 +64,7 @@ import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePoli
 import { checkVendorProbePolicy } from "./checkVendorProbePolicy.js";
 import { checkAudioDurationGatePolicy } from "./checkAudioDurationGatePolicy.js";
 import { checkFalClientPolicy } from "./checkFalClientPolicy.js";
+import { checkFalPipelinePolicy } from "./checkFalPipelinePolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -650,6 +651,14 @@ async function main(): Promise<void> {
   const falClient = await checkFalClientPolicy(process.env.REPO_ROOT ?? "/repo");
   falClient.failures.forEach((f) => failures.push(f));
   falClient.notes.forEach((n) => note(n));
+
+  // --- 25n. pipeline: corpo cru antes do parsing, teto no laço, defaults ---
+  //
+  // Vizinha das duas anteriores: troca `globalThis.fetch` e `PROVIDER_MODE`,
+  // restaurando os dois no `finally`.
+  const falPipeline = await checkFalPipelinePolicy();
+  falPipeline.failures.forEach((f) => failures.push(f));
+  falPipeline.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //
