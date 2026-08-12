@@ -121,11 +121,11 @@ const ROTEIRO_DA_PROVA = "Roteiro da prova, curto o bastante para caber no teto.
  * inteiro — MEDIDO: 10 minutos sem terminar. O `fetch` substituído lança ao
  * passar deste número, e a guarda reconhece o erro como "não desistiu".
  *
- * 5000 contra as ~130 leituras que o caminho CORRETO faz nos 50 ms de teto da
- * prova: margem de ~38×, folgada o bastante para que carga de máquina não
+ * 800 contra as ~98 leituras que o caminho CORRETO faz nos 50 ms de teto da
+ * prova: margem de ~8×, folgada o bastante para que carga de máquina não
  * produza falso positivo.
  */
-const FUSIVEL_DE_LEITURAS = 5000;
+const FUSIVEL_DE_LEITURAS = 800;
 const MARCA_DO_FUSIVEL = "FUSIVEL_DO_LACO_SEM_TETO";
 
 interface Corrida {

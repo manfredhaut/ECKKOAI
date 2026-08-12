@@ -145,7 +145,21 @@ function runGate(env = {}) {
   for (const [k, v] of Object.entries(base)) args.push("-e", `${k}=${v}`);
   args.push("backend", "npm", "run", "check");
   try {
-    const out = execFileSync("docker", args, { cwd: repoRoot, encoding: "utf8", stdio: "pipe" });
+    // `maxBuffer` EXPLÍCITO, e ele não é enfeite: o default do `execFileSync` é
+    // 1 MiB, e a saída do gate passa disso com facilidade — MEDIDO em 12/08,
+    // 1.071.347 bytes num mutante que faz o produto emitir muitos eventos.
+    // Estourado o buffer, o stdout chega TRUNCADO e a mensagem da guarda, que
+    // sai no fim, se perde: o arnês vê "reprovou sem a mensagem" e reporta
+    // AMBÍGUO. Guarda saudável, mutante correto, veredito errado — e o
+    // diagnóstico manda reescrever a guarda, que é o pior lugar para procurar.
+    //
+    // O mesmo teto que `collectMutants` já usava. Aqui faltava.
+    const out = execFileSync("docker", args, {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: "pipe",
+      maxBuffer: 32 * 1024 * 1024,
+    });
     return { code: 0, output: out };
   } catch (err) {
     return { code: err.status ?? 1, output: `${err.stdout ?? ""}${err.stderr ?? ""}` };
