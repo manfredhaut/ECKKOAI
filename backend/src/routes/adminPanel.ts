@@ -3,7 +3,7 @@ import { pool } from "../db/pool.js";
 import { costBasisNote, costFor } from "../services/billing/providerCost.js";
 import { decrypt, encrypt, maskKey } from "../services/crypto.js";
 import { recordAuditLog } from "../services/auditLog.js";
-import { defaultVendor, isValidVendor } from "../services/providers/vendorCatalog.js";
+import { defaultVendor, hasConnectionProbe, isValidVendor } from "../services/providers/vendorCatalog.js";
 import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCatalog.js";
 import { checkAvatarConnection } from "../services/providers/avatarProvider.js";
 import { checkElevenLabsConnection } from "../services/providers/voiceProvider.js";
@@ -180,6 +180,30 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const vendor = credential.vendor ?? defaultVendor(provider);
+
+      // TRAVA DE VAZAMENTO, e ela vem ANTES do `decrypt` de propósito: a chave
+      // em claro não chega sequer a existir nesta função para um vendor sem
+      // sonda.
+      //
+      // `checkAvatarConnection` decide por ternário — `vendor === "did" ? did :
+      // heygen` —, e um ternário não tem ramo "nenhum dos dois". Sem esta
+      // recusa, testar a credencial de um vendor novo (fal, hoje) mandaria a
+      // chave DELE para `api.heygen.com` num `x-api-key`: não um teste que
+      // falha, mas uma credencial entregue ao fornecedor errado, em claro, por
+      // um clique num botão chamado "Testar".
+      //
+      // O `disabled` da tela cobre o mesmo caso e não substitui isto: ele é
+      // sugestão de interface, e esta rota é alcançável sem passar por ela.
+      if (!hasConnectionProbe(provider, vendor)) {
+        return reply.code(400).send({
+          error: "probe_unavailable",
+          message:
+            `No connection probe exists for vendor "${vendor}". The key was NOT sent anywhere — ` +
+            "testing it would have to guess a provider, and guessing means handing the key to the " +
+            "wrong one.",
+        });
+      }
+
       let apiKey: string;
       try {
         apiKey = decrypt(credential.encrypted_key);

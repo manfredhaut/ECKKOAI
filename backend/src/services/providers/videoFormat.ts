@@ -168,6 +168,16 @@ export const VENDOR_FORMAT_SUPPORT = {
       "que declarar a limitação — a proporção pedida pelo cliente é gravada mesmo assim, e fica visível " +
       "que o vendor não a honrou.",
   },
+  fal: {
+    supported: false,
+    evidence: "none" as FormatEvidence,
+    reason:
+      "A fal.ai entrou no catálogo apenas para a chave poder ser GUARDADA por tenant: não há ramo de " +
+      "geração para ela (`generateVideo` despacha só heygen/did), nenhum endpoint escolhido e nenhuma " +
+      "chamada feita. Sem caminho de geração não há formato a declarar, e `supported: true` aqui seria " +
+      "uma promessa sobre código que não existe. Quando o pipeline for escrito, esta linha muda junto " +
+      "com ele — e a evidência tem de subir de `none` antes de a UI prometer entrega.",
+  },
 } as const;
 
 export type VendorFormatSupportId = keyof typeof VENDOR_FORMAT_SUPPORT;

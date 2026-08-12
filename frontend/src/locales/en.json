@@ -245,6 +245,7 @@
       "test": "Test connection",
       "testing": "Testing…",
       "testHint": "Makes a real call to the provider, only when you click.",
+      "testUnavailable": "No connection probe for this provider — testing would mean guessing where to send the key. The key is still stored normally.",
       "testOk": "Connection succeeded — the provider accepted the key.",
       "testFailed": "Failed: {{message}}"
     },
@@ -409,6 +410,12 @@
         "keyLabel": "D-ID API key",
         "keyPlaceholder": "Paste API key",
         "help": "Generated at studio.d-id.com/account-settings. Used to train the photo avatar and generate the final video."
+      },
+      "fal": {
+        "label": "fal.ai",
+        "keyLabel": "fal.ai API key",
+        "keyPlaceholder": "Paste key in id:secret form",
+        "help": "Generated at fal.ai/dashboard/keys, in <id>:<secret> form. Stored for future use only: nothing generates through it yet, and the Test button is disabled because no connection probe exists."
       }
     },
     "apiKeyLabel": "API key",

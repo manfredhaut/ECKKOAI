@@ -45,6 +45,9 @@ const REDACTED = "***REDACTED***";
  *                    caracteres, e aceito como API key. Uma chave real que
  *                    quase foi descartada por "não parecer com AIza".
  *  · `xi-…`/`hg_…` — prefixos de ElevenLabs e HeyGen.
+ *  · `uuid:hex`    — fal.ai. Não tem prefixo nenhum, e nenhuma das duas
+ *                    metades é longa o bastante para o padrão genérico: passava
+ *                    inteira, em claro.
  *  · JWT           — três blocos base64 separados por ponto.
  *  · `Bearer …`    — o cabeçalho inteiro, quando ele vaza dentro de um texto.
  *  · hex/base64 longos — o caso genérico: 32+ caracteres de material opaco
@@ -58,6 +61,20 @@ const SECRET_SHAPES: Array<{ nome: string; re: RegExp }> = [
   { nome: "google_aq", re: /\bAQ\.[A-Za-z0-9_-]{20,}\b/g },
   { nome: "elevenlabs", re: /\bxi-[A-Za-z0-9]{24,}\b/g },
   { nome: "heygen", re: /\bhg_[A-Za-z0-9]{24,}\b/g },
+  // fal.ai — `<uuid>:<hex>`, e o par INTEIRO é o segredo. As duas metades vão
+  // juntas num match só porque o `id` sozinho já identifica a credencial e a
+  // metade hex sozinha é a senha: publicar uma delas entrega meio segredo, e
+  // meio segredo num log é o que se vaza sem perceber.
+  //
+  // MEDIDO em 12/08, contra o redator de então: `uuid:32hex` passava INTEIRA,
+  // em claro, e `uuid:64hex` saía com só a metade hex redigida (`uuid:***`).
+  // Nenhum dos dois casos era coberto — o genérico `opaco` exige 40+ caracteres
+  // contíguos, e nem o uuid (36) nem o hex de 32 chegam lá; o `:` corta o
+  // match. Por isso este padrão existe, e por isso ele vem ANTES do opaco.
+  //
+  // `{32,}` cobre as duas formas medidas com uma régua só: nada a manter em dia
+  // se a fal emitir um segredo mais longo.
+  { nome: "fal", re: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{32,}\b/gi },
   // Genérico, e o mais importante: qualquer bloco opaco longo. Fica por
   // último porque os específicos dão nome ao que foi encontrado, o que ajuda
   // a diagnosticar de onde veio.

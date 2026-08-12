@@ -245,6 +245,7 @@
       "test": "Testar conexão",
       "testing": "Testando…",
       "testHint": "Faz uma chamada real ao provedor, só quando você clica.",
+      "testUnavailable": "Sem sonda de conexão para este provedor — testar exigiria adivinhar para onde mandar a chave. A chave fica guardada normalmente.",
       "testOk": "Conexão bem-sucedida — o provedor aceitou a chave.",
       "testFailed": "Falhou: {{message}}"
     },
@@ -409,6 +410,12 @@
         "keyLabel": "Chave de API da D-ID",
         "keyPlaceholder": "Cole a chave de API",
         "help": "Gerada em studio.d-id.com/account-settings. Usada pra treinar o avatar de foto e gerar o vídeo final."
+      },
+      "fal": {
+        "label": "fal.ai",
+        "keyLabel": "Chave de API da fal.ai",
+        "keyPlaceholder": "Cole a chave no formato id:segredo",
+        "help": "Gerada em fal.ai/dashboard/keys, no formato <id>:<segredo>. Guardada por enquanto apenas para uso futuro: não há geração por ela ainda, e o botão Testar fica desabilitado porque não existe sonda de conexão."
       }
     },
     "apiKeyLabel": "Chave de API",

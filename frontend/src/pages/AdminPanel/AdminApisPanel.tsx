@@ -129,12 +129,25 @@ function IntegrationCard({
         <button
           className="btn btn-outline"
           onClick={handleTest}
-          disabled={testing || !credential?.connected}
-          title={t("adminPanel.apis.testHint")}
+          disabled={testing || !credential?.connected || !activeVendor.hasConnectionProbe}
+          title={
+            activeVendor.hasConnectionProbe
+              ? t("adminPanel.apis.testHint")
+              : t("adminPanel.apis.testUnavailable")
+          }
         >
           {testing ? t("adminPanel.apis.testing") : t("adminPanel.apis.test")}
         </button>
       </div>
+      {/* O MOTIVO VISÍVEL, e não só no `title`: um botão cinza sem explicação
+          faz procurar defeito onde há decisão. A frase diz as duas coisas que
+          importam — por que não dá para testar, e que a chave foi guardada
+          assim mesmo. Quem recusa de verdade é a rota; isto é o aviso. */}
+      {!activeVendor.hasConnectionProbe && (
+        <p className="text-muted" style={{ fontSize: 13, marginTop: 12, marginBottom: 0 }}>
+          {t("adminPanel.apis.testUnavailable")}
+        </p>
+      )}
 
       {testResult && (
         <p
