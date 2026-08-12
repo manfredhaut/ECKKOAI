@@ -15,18 +15,25 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **12/08/2026**.
+Atualizado em **12/08/2026**, HEAD `faf7229` + o commit desta linha.
 
 ---
 
 ## 1 · Onde o repositório está
 
 ```
-c88b187  ESTADO.md: o desfecho da passada dos 227 vira o primeiro comando da próxima sessão
+faf7229  Arnês: o gate podia estourar o buffer e virar AMBÍGUO com a guarda saudável
+94af14f  CORREÇÃO: duas das três guardas do pipeline nasceram INERTE e AMBÍGUA
+5a6cbbc  BLOCO 4 parte 1: o orquestrador em série, sem rota e sem ramo
+d49463e  Memória: o número do arnês passa a ser MEDIDO, e some a duplicação
+c88b187  ESTADO.md: o desfecho da passada dos 227 vira o primeiro comando da próxima
 4ea9fd7  Arnês: filtro explícito, retry de spawn, e um ponto de entrada por sessão
 cbe0e10  BLOCO 3: o cliente da fal nasce preso à fila, ao catálogo e ao tenant
-9d2d1e6  BLOCO 2: a chave da fal cabe no painel, e não vaza por nenhum dos dois lados
 ```
+
+⚠️ **A mensagem de `5a6cbbc` AFIRMA que os 4 mutantes foram provados; não
+foram** — a prova veio depois e devolveu 1/4. `94af14f` corrige e declara.
+Ao ler aquele commit, leia os dois.
 
 **ORDEM DE EXECUÇÃO do plano v6:**
 
@@ -35,9 +42,9 @@ cbe0e10  BLOCO 3: o cliente da fal nasce preso à fila, ao catálogo e ao tenant
 | 1 · chave da fal no painel | fechado (`9d2d1e6`) |
 | 2 · a chave não vaza por nenhum lado | fechado (`9d2d1e6`) |
 | 3 · `falClient` (upload, submit, poll, result) | fechado (`cbe0e10`) |
-| 3.5 · prova de contrato do upload | ver §6 |
-| **4 · pipeline em série — parte 1 (orquestrador)** | ver §1.1 |
-| 4 · parte 2 — o ramo em `avatarProvider.ts:1007` | não começado |
+| 3.5 · prova de contrato do upload | **BLOQUEADO — ver §1.2** |
+| 4 · pipeline em série — parte 1 (orquestrador) | fechado (`5a6cbbc`+`94af14f`) |
+| **4 · parte 2 — o ramo em `avatarProvider.ts:1007` — PRÓXIMO** | não começado |
 | 5 · a tela | não começado |
 | 6 · custo por camada, régua `(provider, model, resolution)` | não começado |
 
@@ -48,7 +55,34 @@ hoje atende só `heygen`/`did`. Enquanto ele não existir, o orquestrador não �
 alcançável por usuário nenhum — que é o estado desejado até a tela existir.
 
 Também pendente do BLOCO 4: `consumeLiveGeneration()` nas submissões pagas (o
-`falClient` **não** o chama, de propósito — o orçamento é do orquestrador).
+`falClient` **não** o chama, de propósito — o orquestrador ainda não o chama
+tampouco, e é ele quem deve).
+
+### 1.2 · BLOCO 3.5 — bloqueado por credencial ausente, NÃO por erro
+
+O upload real não aconteceu. **MEDIDO em 12/08, por três consultas
+independentes: a chave da fal NÃO está no banco.**
+
+- `SELECT count(*) FROM api_credentials WHERE vendor='fal'` → **0**
+- nenhuma linha de `api_credentials` tocada desde 09/08
+- `platform_credentials` contém **só** `elevenlabs`
+
+O caminho de gravação existe e aceita `fal` desde o BLOCO 2:
+`PUT /admin/tenants/:tenantId/credentials/:provider` com `provider=avatar` e
+`vendor=fal` (`adminPanel.ts`). **A rota do TENANT não serve** — `PUT
+/credentials/:provider` devolve 403 `managed_by_platform` desde a migração
+BYOK→plataforma.
+
+⚠️ **Atenção ao gravar:** a rota faz `ON CONFLICT (tenant_id, provider) DO
+UPDATE`, e o par é (tenant, provider) — **um tenant tem UMA credencial de
+`avatar`**. Gravar `fal` num tenant que já tem `heygen` SUBSTITUI a chave da
+HeyGen dele. Use um tenant de teste, ou aceite a troca conscientemente.
+
+Assim que a chave existir, o 3.5 é: `falUpload()` com um arquivo pequeno,
+`initiate` + `PUT`, e confrontar a resposta crua com o que o `falClient`
+assume (nomes de campo, formato do header `Authorization: Key`, forma do
+`file_url`, status). **O upload não é tarifado** — é a única chamada real que
+esta fase autoriza.
 
 ## 2 · Decisões fechadas — não reabrir
 
@@ -90,7 +124,18 @@ aqui.**
    wrapper de layout (`</Field>`): o recorte vaza para o bloco seguinte e a
    guarda acusa o vizinho. Toda guarda de recorte carrega rede anti-vazamento.
 7. **Mutante se identifica por NOME, nunca por posição.**
-8. **Log de passada NUNCA em `/tmp`** (= `%TEMP%` no Windows): já foi apagado
+8. **AMBÍGUO pode ser estouro de buffer, não guarda ruim.** MEDIDO em 12/08: a
+   saída do gate chega a 1.071.347 bytes e o default do `execFileSync` é 1 MiB
+   — truncado, o stdout perde a mensagem da guarda, que sai no fim. Corrigido
+   em `faf7229` (`maxBuffer` no `runGate`). Se um AMBÍGUO aparecer, **meça o
+   tamanho da saída antes de reescrever a guarda**: quantos falsos AMBÍGUOS
+   isso já causou é NÃO VERIFICADO.
+9. **Guarda de ORDEM só é observável quando a interpretação FALHA.** Duas
+   guardas deste projeto nasceram inertes por medir ordem entre passos que não
+   mudam: ler um campo não produz passo observável. A corrida que mede é a do
+   corpo em forma inesperada — ali "gravou antes" e "gravou depois" viram
+   estados distintos.
+10. **Log de passada NUNCA em `/tmp`** (= `%TEMP%` no Windows): já foi apagado
    por fora com o processo escrevendo nele, e o watcher ficou cego. Duas cópias,
    em `_arnes-logs/`, com nome datado.
 
@@ -134,18 +179,42 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
-**Passada de 12/08 (HEAD `c88b187`, 227 mutantes): INCOMPLETA.** Chegou a
-**38/227, todos `ok`** — zero INERTE, zero AMBÍGUO, zero ERRO, sem carimbo de
-PULADOS (era completa) — e foi **morta pela sessão seguinte** para liberar a
-árvore. O `exit_do_npm=127` no fim daquele log é a morte, não um desfecho.
-Retry de spawn: **nunca disparou** nos 38.
+**Passada de 12/08 noite, HEAD `faf7229`, 231 mutantes.** Lançada em
+background ao fim da sessão, sobre o código com o orquestrador e as três
+guardas novas. **Ninguém viu o desfecho.** Duração esperada ~80 min.
+
+**O primeiro comando desta sessão é este:**
+
+```bash
+tail -40 "C:/Users/manfr/Documents/1A_A_PROJETOS/_arnes-logs/mutants-231-2026-08-12-a.log"
+```
+
+Cópia `-b` idêntica e independente no mesmo diretório. O que procurar, nesta
+ordem: `INERTE` (**PARE e relate, não conserte**), `AMBÍGUO` (antes de culpar
+a guarda, veja o gotcha 8 — meça o tamanho da saída), `ERRO` (`find` não
+casou), e a linha final `N/231`. Se terminar sem a linha final, foi morta:
+`exit_do_npm=` no fim é da morte, não do desfecho.
+
+**A passada anterior (227, HEAD `c88b187`) foi INCOMPLETA** — chegou a
+**38/227, todos `ok`**, zero INERTE/AMBÍGUO/ERRO, e foi morta pela sessão
+seguinte para liberar a árvore. Retry de spawn: **nunca disparou** nos 38.
+Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
 
 ## 6 · NÃO VERIFICADO
 
-- **A fal.ai, exceto o upload.** `falSubmit`/`falPoll`/`falResult` nunca
-  tocaram a rede: as formas de resposta (`request_id`, `status_url`,
-  vocabulário de status) são da documentação, e os três ids de modelo vieram por
-  escrito. Um id errado vira 404, não cobrança.
+- **A fal.ai INTEIRA, o upload inclusive.** Nenhuma chamada real saiu deste
+  repositório até 12/08 — o 3.5 foi bloqueado por credencial ausente (§1.2). As
+  formas de resposta (`file_url`, `upload_url`, `request_id`, `status_url`,
+  vocabulário de status, `images[].url`, `video.url`) são todas da documentação,
+  e os três ids de modelo vieram por escrito. Um id errado vira 404, não
+  cobrança.
+- **`sync_mode: "loop"` foi escolhido por ELIMINAÇÃO, não por medição.** Sabe-se
+  o que `cut_off` faria no caso inverso (cortar a fala); o que `loop` faz quando
+  o vídeo é MAIS LONGO que o áudio — que é o caso desta fase, 10 s de clipe para
+  ~8,72 s de fala — não está documentado nem foi observado.
+- **A régua de 10,89 car/s desta fase.** Não é medição deste projeto: é o número
+  desta fase, e não se mistura com `CHARS_PER_SECOND` (12,8151) nem com
+  `VOICE_SPEED` (0,85).
 - **Os vídeos que o operador aprovou foram feitos na fal.ai e não há registro
   nenhum disso aqui** — quatro varreduras deram zero. Qual modelo e qual prompt
   os produziram é informação que só ele tem.
