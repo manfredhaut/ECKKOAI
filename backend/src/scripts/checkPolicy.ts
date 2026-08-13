@@ -67,6 +67,7 @@ import { checkFalClientPolicy } from "./checkFalClientPolicy.js";
 import { checkFalPipelinePolicy } from "./checkFalPipelinePolicy.js";
 import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js";
 import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
+import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -675,6 +676,14 @@ async function main(): Promise<void> {
   const falApproval = await checkFalApprovalPolicy();
   falApproval.failures.forEach((f) => failures.push(f));
   falApproval.notes.forEach((n) => note(n));
+
+  // --- 24o-quater. a cena chega ao fornecedor (BLOCO B5) -----------------
+  //
+  // Mesma vizinhança e o mesmo motivo: troca `globalThis.fetch` e
+  // `PROVIDER_MODE`, restaurando os dois no `finally`.
+  const falSceneWiring = await checkFalSceneWiringPolicy();
+  falSceneWiring.failures.forEach((f) => failures.push(f));
+  falSceneWiring.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //
