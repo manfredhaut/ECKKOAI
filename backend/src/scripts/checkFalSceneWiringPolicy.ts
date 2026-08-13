@@ -1,8 +1,9 @@
 /**
  * A CENA chega ao fornecedor — as duas invariantes do BLOCO B5.
  *
- *  G-1  o cenário e o traje escolhidos na tela chegam a `image_urls` ou ao
- *       prompt da composição enviada à fal
+ *  G-1  o cenário e o traje escolhidos na tela chegam à composição enviada à
+ *       fal — a imagem em `image_urls`, o texto no `prompt`, cada um pelo canal
+ *       que é seu
  *  G-2  a direção traduzida chega ao prompt do Wan
  *
  * ┌─ Por que estas duas, e não uma só ───────────────────────────────────────┐
@@ -375,17 +376,36 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
       const chegouPorImagem = url !== null && imagens.includes(url);
       const chegouPorTexto = prompt.includes(textoEsperado);
 
-      // A invariante é "OU" de propósito: os dois caminhos são legítimos e o
-      // produto aceita os dois ao mesmo tempo. O que ela proíbe é o campo ter
-      // sido escolhido na tela e não estar em NENHUM dos dois.
-      if (!chegouPorImagem && !chegouPorTexto) {
+      // ┌─ CADA CANAL RESPONDE PELO QUE RECEBEU, e não "um dos dois basta" ───┐
+      // │ A corrida desta guarda preenche os DOIS: o campo de arquivo e o de  │
+      // │ texto, que é o caso que o produto aceita e a tela oferece. A versão │
+      // │ frouxa desta conferência — "chegou por imagem OU por texto" —       │
+      // │ NASCEU INERTE, e isso está MEDIDO: com o cenário removido de        │
+      // │ `image_urls`, o `scenario_prompt` sozinho ainda satisfazia o "ou", o │
+      // │ gate passou VERDE com o defeito aplicado e o arnês acusou a guarda. │
+      // │                                                                      │
+      // │ O "ou" descreve corretamente o que o PRODUTO aceita (mandar só um    │
+      // │ dos dois é legítimo) e descreve mal o que a GUARDA pode afirmar: com │
+      // │ os dois dados, os dois têm de chegar, cada um pelo canal que é seu — │
+      // │ a imagem para `image_urls`, o texto para o `prompt`. Um cenário que  │
+      // │ vira só texto é uma composição diferente da que a pessoa pediu, e é  │
+      // │ paga do mesmo jeito.                                                 │
+      // └──────────────────────────────────────────────────────────────────────┘
+      if (!chegouPorImagem) {
         failures.push(
-          `${rotulo}: escolhido na tela e ausente da composição enviada à fal — nem em \`image_urls\` ` +
-            `(publicado como ${JSON.stringify(url)}, lista enviada: ${JSON.stringify(imagens)}) nem no ` +
-            `\`prompt\` (${JSON.stringify(prompt)}). O campo é coletado pelo passo 1, gravado em ` +
-            `\`videos.${campoDeTexto.replace("_prompt", "")}\`/\`${campoDeTexto}\` e transportado até a ` +
-            "ponte: sumir aqui é o defeito que esta guarda existe para pegar, e ele é INVISÍVEL — a " +
-            "composição sai, é paga, e devolve uma imagem plausível sem o que a pessoa escolheu.",
+          `${rotulo}: escolhido na tela como IMAGEM e ausente da composição enviada à fal — publicado ` +
+            `como ${JSON.stringify(url)} e a lista enviada foi ${JSON.stringify(imagens)}. O campo é ` +
+            `coletado pelo passo 1, gravado em \`videos.${campoDeTexto.replace("_prompt", "")}\` e ` +
+            "transportado até a ponte: sumir aqui é INVISÍVEL — a composição sai, é paga, e devolve uma " +
+            "imagem plausível sem a referência que a pessoa escolheu. O texto chegar no lugar dela não " +
+            "compensa: descrever um cenário não é o mesmo que mostrá-lo.",
+        );
+      }
+      if (!chegouPorTexto) {
+        failures.push(
+          `${rotulo}: escolhido na tela como TEXTO e ausente do prompt da composição — esperado ` +
+            `${JSON.stringify(textoEsperado)} em \`prompt\`, que saiu ${JSON.stringify(prompt)}. A coluna ` +
+            `\`videos.${campoDeTexto}\` é preenchida pelo passo 1 e some aqui sem nada reclamar.`,
         );
       }
     }
