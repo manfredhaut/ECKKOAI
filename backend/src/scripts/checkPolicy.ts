@@ -65,6 +65,7 @@ import { checkVendorProbePolicy } from "./checkVendorProbePolicy.js";
 import { checkAudioDurationGatePolicy } from "./checkAudioDurationGatePolicy.js";
 import { checkFalClientPolicy } from "./checkFalClientPolicy.js";
 import { checkFalPipelinePolicy } from "./checkFalPipelinePolicy.js";
+import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -660,6 +661,11 @@ async function main(): Promise<void> {
   const falPipeline = await checkFalPipelinePolicy();
   falPipeline.failures.forEach((f) => failures.push(f));
   falPipeline.notes.forEach((n) => note(n));
+
+  // --- 24o-bis. o caminho da fal ligado ao produto (BLOCO B2) -------------
+  const falGenerationPath = await checkFalGenerationPathPolicy();
+  falGenerationPath.failures.forEach((f) => failures.push(f));
+  falGenerationPath.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //
