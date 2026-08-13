@@ -15,7 +15,7 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **13/08/2026**, HEAD `54bb282` + o commit desta linha.
+Atualizado em **13/08/2026**, HEAD `52fad44` + o commit desta linha.
 
 ---
 
@@ -68,16 +68,24 @@ tampouco, e é ele quem deve).
 
 ### 1.2 · BLOCO 3.5 — falta a CHAVE, e só ela
 
-**Reconfirmado em 13/08: a chave da fal não está em lugar nenhum** — nem no
-host (`FAL_API_KEY` ausente), nem no container, nem no banco. A rodada de 13/08
-tinha autorização para gastar US$ 2,00 e gastou **US$ 0,00**.
+⚠️ **RECONFIRMADO em 13/08 pela SEGUNDA vez, contra uma afirmação de que ela
+já estaria lá: a chave da fal NÃO está no banco.** `vendor='fal'` → 0 linhas, e
+**nenhuma linha de `api_credentials` foi tocada desde 09/08**. Nem no host
+(`FAL_API_KEY` ausente), nem no container. Duas rodadas seguidas com
+autorização para gastar US$ 2,00 gastaram **US$ 0,00**.
+
+**Antes de tentar de novo, conferir o resultado do salvamento** — a gravação
+parece não ter chegado ao banco, e o sintoma é silencioso. O que foi
+descartado como causa: o frontend está com bundle POSTERIOR ao BLOCO 2 (subiu
+13/08, o commit é 12/08 14:47), então o seletor `fal` existe na UI. Por que não
+gravou segue **NÃO VERIFICADO**.
 
 **Todo o resto está pronto:** teto duro no orquestrador, `pararApos` por etapa,
 a sonda (`probeFalPipeline.ts`) e o semeador (`seedFalKey.ts`). O passo a passo
 com os comandos exatos está em **[PROXIMA-RODADA.md](PROXIMA-RODADA.md)** — é
 por ele que se começa.
 
-**MEDIDO em 12/08, por três consultas independentes:**
+**MEDIDO nas duas rodadas, por consultas independentes:**
 
 - `SELECT count(*) FROM api_credentials WHERE vendor='fal'` → **0**
 - nenhuma linha de `api_credentials` tocada desde 09/08
@@ -175,8 +183,29 @@ npm run check:mutants -- --guard "fal:"
 `--guard` e `--name` são repetíveis, seleção pela UNIÃO. Filtro que não casa
 nada aborta com exit 2 em vez de terminar verde sem verificar nada.
 
-> **REGRA — o filtro serve para iterar DENTRO de uma rodada, NUNCA para
-> fechá-la.** Ele existe para que validar as guardas tocadas custe ~5 min em vez
+> **REGRA (13/08, substitui a anterior) — a passada AFETADA fecha rodada; a
+> COMPLETA roda fora do horário de trabalho.**
+>
+> ```bash
+> npm run check:mutants -- --affected --base <ref-do-inicio-da-rodada>
+> ```
+>
+> A seleção é DERIVADA do `git diff`, nunca de escolha humana: entra o mutante
+> cujo ALVO foi tocado, o cujo arquivo de GUARDA foi tocado, e todos os de
+> AMBIENTE (que vigiam o que não aparece em diff). **MEDIDO em 13/08:** 3
+> arquivos tocados → 8 de 234 mutantes → **1,9 min**, contra ~82 min da
+> completa. Uma rodada maior (16 arquivos) seleciona 47 → ~16 min.
+>
+> **A troca só é honesta por causa da conferência de cadastro:** o único
+> defeito que só a completa pegava era mutante podre, e ele agora aparece no
+> gate em segundos.
+>
+> ⚠️ **A COMPLETA é OBRIGATÓRIA antes de qualquer rodada que gaste dinheiro.**
+> Uma etapa paga é irreversível; entrar nela sem o arnês inteiro verde é apostar
+> a carteira numa cobertura parcial.
+>
+> **Antiga, ainda válida para o filtro manual:** `--guard`/`--name` servem para
+> iterar DENTRO de uma rodada, NUNCA para fechá-la. Ele existe para que validar as guardas tocadas custe ~5 min em vez
 > de 79. Fechar rodada com passada filtrada é declarar verde o que não foi
 > exercitado. **Toda rodada termina com a passada COMPLETA em background**, sem
 > filtro, e o ponteiro do log entra na §5 abaixo.

@@ -1,8 +1,15 @@
-# PRÓXIMA RODADA — o BLOCO 3.5, que ficou a uma chave de distância
+# PRÓXIMA RODADA — a chave, e só a chave
 
-A rodada de 13/08 foi autorizada a gastar até US$ 2,00 e gastou **US$ 0,00**:
-a chave da fal não estava em lugar nenhum. Tudo que não dependia dela está
-pronto e provado. O que falta é colar a chave e rodar.
+⚠️ **Duas rodadas seguidas pararam no mesmo ponto.** Em 13/08 a chave foi dada
+como já gravada, e a medição mostrou o contrário: `vendor='fal'` → **0 linhas**,
+e nenhuma linha de `api_credentials` tocada **desde 09/08**. Autorização de
+US$ 2,00 nas duas, gasto de **US$ 0,00** nas duas.
+
+**Antes de mais nada, conferir se o salvamento CHEGOU AO BANCO** — o comando
+está no fim do Passo 1. O sintoma é silencioso: a tela pode parecer ter salvo.
+
+Já descartado como causa: o bundle do frontend é posterior ao BLOCO 2, então o
+seletor `fal` existe na UI. Por que não gravou: **NÃO VERIFICADO**.
 
 ---
 
