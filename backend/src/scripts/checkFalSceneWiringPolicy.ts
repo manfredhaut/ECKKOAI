@@ -83,7 +83,10 @@ export const MUTANTS: Mutant[] = [
       "    });\n" +
       "  }\n",
     replace: "",
-    expect: "cenário: escolhido na tela e ausente da composição enviada à fal",
+    // TRANSCRITO da mensagem que a guarda emite, com o rótulo como ele existe
+    // no código (`cenario`, sem acento — é o valor de `EntradaDeComposicao`, e
+    // não o nome do campo em português). Gotcha 2 do ESTADO.md.
+    expect: "cenario: escolhido na tela como IMAGEM e ausente da composição enviada à fal",
   },
   {
     guard: "a direção traduzida chega ao prompt do Wan",
