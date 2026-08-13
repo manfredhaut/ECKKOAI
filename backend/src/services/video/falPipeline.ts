@@ -134,16 +134,41 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  *    que impede o fornecedor de mudar esse comportamento sem aviso num pipeline
  *    cujo entregável inteiro depende dele. Qual valor, e por quê, está em
  *    `SYNC_MODE`.
+ *  · `model` (lipsync) — **é o único default desta lista que troca de PREÇO em
+ *    silêncio.** Os outros mudam o resultado; este muda a fatura: a variante
+ *    `pro` custa cerca de 67% mais (DOCUMENTADO pelo operador em 13/08, não
+ *    medido aqui), e qual delas o fornecedor entrega quando o campo não vai é
+ *    escolha dele, revogável sem aviso. Omitir é assinar um cheque em branco
+ *    numa etapa que já é a segunda mais cara da corrida.
  */
 export const DEFAULTS_NUNCA_HERDADOS = {
   "fal-ai/nano-banana-2/edit": ["num_images", "resolution"],
   "fal-ai/wan/v2.6/reference-to-video/flash": ["generate_audio", "resolution", "duration"],
-  "fal-ai/sync-lipsync/v2": ["sync_mode"],
+  "fal-ai/sync-lipsync/v2": ["sync_mode", "model"],
 } as const;
 
 export const ENDPOINT_COMPOR = "fal-ai/nano-banana-2/edit";
 export const ENDPOINT_ANIMAR = "fal-ai/wan/v2.6/reference-to-video/flash";
 export const ENDPOINT_SINCRONIZAR = "fal-ai/sync-lipsync/v2";
+
+/**
+ * `lipsync-2`, EXPLÍCITO — e esta constante existe por causa do preço.
+ *
+ * A variante `pro` custa ~67% mais (DOCUMENTADO pelo operador em 13/08; nenhuma
+ * fatura foi conferida aqui). O campo nunca foi enviado, então qual das duas
+ * rodava era decisão do fornecedor — e o custo desta etapa entrava na conta
+ * como um número que ninguém deste lado tinha escolhido.
+ *
+ * Não é o mesmo caso de `SYNC_MODE`: ali o default mudava o RESULTADO e dava
+ * para descobrir olhando o vídeo. Aqui ele muda a FATURA, e a única evidência
+ * chega no fim do mês, quando já não há o que decidir.
+ *
+ * ⚠️ **NÃO VERIFICADO que `lipsync-2` seja o nome aceito**, e o modo de falha é
+ * benigno: campo desconhecido volta 4xx da fila, ANTES de renderizar — a etapa
+ * não sai e não custa. É o oposto do risco de omitir, que sai, funciona e cobra
+ * o preço da variante que o fornecedor escolher.
+ */
+export const LIPSYNC_MODEL = "lipsync-2";
 
 /**
  * `cut_off` — mudado de `loop` no BLOCO B5, e a razão é dupla.
@@ -717,8 +742,13 @@ async function animarNarrarSincronizar(
   const sincronia = await etapaNaFal(input, "sincronizar", 4, ENDPOINT_SINCRONIZAR, {
     video_url: String(videoMudoUrl),
     audio_url: audioUrl,
-    // `cut_off` cortaria a fala, que é a entrada preservada deste pipeline.
+    // O que se corta aqui é o VÍDEO mudo do fim, não a fala: o clipe tem 10 s e
+    // a fala cabe em ~8,72 s. Ver `SYNC_MODE` — inclusive o que isso passa a
+    // depender do teto de caracteres.
     sync_mode: SYNC_MODE,
+    // A VARIANTE, explícita. Sem ela o fornecedor escolhe, e a `pro` custa ~67%
+    // mais. Ver `LIPSYNC_MODEL`.
+    model: LIPSYNC_MODEL,
   });
   const videoFinalUrl = sincronia.saida?.video?.url;
   if (!videoFinalUrl) {
