@@ -1,119 +1,115 @@
-# PRÓXIMA RODADA — a chave, e só a chave
+# PRÓXIMA RODADA — o BLOCO B3, e o que decidir antes de gastar
 
-⚠️ **Duas rodadas seguidas pararam no mesmo ponto.** Em 13/08 a chave foi dada
-como já gravada, e a medição mostrou o contrário: `vendor='fal'` → **0 linhas**,
-e nenhuma linha de `api_credentials` tocada **desde 09/08**. Autorização de
-US$ 2,00 nas duas, gasto de **US$ 0,00** nas duas.
-
-**Antes de mais nada, conferir se o salvamento CHEGOU AO BANCO** — o comando
-está no fim do Passo 1. O sintoma é silencioso: a tela pode parecer ter salvo.
-
-Já descartado como causa: o bundle do frontend é posterior ao BLOCO 2, então o
-seletor `fal` existe na UI. Por que não gravou: **NÃO VERIFICADO**.
+⚠️ **A chave da fal JÁ ESTÁ no banco desde 13/08** (`api_credentials`, tenant
+`c77a5b8a`, provider `avatar`, vendor `fal`). O bloqueio das duas rodadas
+anteriores acabou; o que sobrou não é credencial, é **decisão**.
 
 ---
 
-## Passo 1 — colar a chave (ação do OPERADOR, não do assistente)
+## O que o B2 deixou pronto, e onde ele parou de propósito
 
-**Duas opções. A primeira é a mais segura** — a chave não passa por variável de
-ambiente nem por chat.
+O caminho existe do começo ao fim e **não é alcançável por usuário nenhum** —
+esse é o estado desejado, não uma pendência:
 
-### (A) Pelo painel admin — recomendado
-
-1. `http://localhost:8090/admin`
-2. Seção de APIs → escolher o **tenant**
-3. Provider **avatar** → vendor **fal** → colar a chave → salvar
-
-O botão **Testar** fica desabilitado para a fal, e isso é deliberado: ela não
-tem sonda de conexão, e inventar uma exigiria escolher um endpoint e mandar a
-chave para ele. A ausência do teste **não** impede salvar.
-
-### (B) Pelo semeador, se preferir linha de comando
-
-```bash
-docker compose exec -T -e FAL_API_KEY=<a-chave> backend npx tsx src/scripts/seedFalKey.ts --tenant <uuid>
+```
+generateVideo(vendor: "fal")  →  generateVideoFal  →  runFalPipeline
+                                                          ↓
+                                  publicarEntradas (ordem 0, não tarifada)
+                                                          ↓
+                                  autorizarGasto("compor")  ← o freio
+                                                          ↓
+                                  compor  →  PARA. A URL vai ao diário.
 ```
 
-Não toca o `.env`; a chave morre com o processo. Ele **recusa** sobrescrever
-credencial de outro vendor sem `--forcar`.
-
-> ⚠️ **O par é (tenant, provider): um tenant tem UMA credencial de `avatar`.**
-> Semear `fal` num tenant que já tem `heygen` **apaga** a chave da HeyGen dele.
-> O tenant `fd371b16-c051-4b4b-8129-2a3163d48874` (manfred) tem `heygen` — use
-> outro, ou aceite a troca conscientemente.
-
-### Conferir, sem imprimir a chave
-
-```bash
-docker compose exec -T postgres psql -U twinai -d twinai -c "SELECT tenant_id, vendor, length(encrypted_key) FROM api_credentials WHERE vendor='fal';"
-```
+O porteiro de `routes/videos.ts` recusa `fal` com 403
+`vendor_sem_caminho_de_geracao`, **antes do débito e antes da linha em
+`videos`**. Quem alcança o ramo é a sonda.
 
 ---
 
-## Passo 2 — a sonda, etapa a etapa
+## Passo 1 — a DECISÃO que abre o B3: onde o débito mora
 
-Cada linha é uma decisão de dinheiro. **Parar entre elas é o ponto.**
+Não é código, é escolha, e ela é a razão de a fal estar fora de
+`VENDORS_WITH_GENERATION_PATH`.
+
+O conflito, MEDIDO por leitura:
+
+- `debitCredit` acontece em `routes/videos.ts`, **antes** de `generateVideo`;
+- a rota **INSERE a linha em `videos`** antes disso;
+- `recovery.ts:211` encerra como `recovery_orphan` **qualquer** vídeo sem
+  `provider_job_id`, em qualquer idade;
+- uma corrida que para em `compor` **não tem job id de vídeo** para dar.
+
+As três saídas, e nenhuma é obviamente melhor:
+
+1. **Estado novo em `videos`** (`awaiting_approval`), com `recovery.ts`
+   ensinado a não reclamar dele. Migration + guarda de recuperação.
+2. **A corrida só em `fal_pipeline_runs`**, e a linha em `videos` nasce apenas
+   quando a animação for aprovada. É o que o B2 faz hoje; falta o débito.
+3. **Débito no orquestrador**, com estorno próprio. Cria um SEGUNDO lugar que
+   cobra — e este projeto já pagou caro por ter duas cópias de uma régua.
+
+**Nada disso deve ser escolhido escrevendo código.** Escolher primeiro.
+
+## Passo 2 — a passada COMPLETA, com log EM ARQUIVO
+
+**Pré-condição do B3, não desta rodada.** A última completa e válida é
+**234/234 de 13/08 de manhã** (HEAD `23dce3a`); o arnês está em **237**.
 
 ```bash
-# 1. upload — NÃO é tarifado. Mede o contrato de storage de graça.
+npm run check:mutants
+```
+
+⚠️ Ela leva ~82 min e **trava a árvore** (gotcha 4): qualquer edição a mata no
+mutante seguinte. Lance-a por último, e **nunca** com timeout de 10 minutos em
+volta — foi assim que a passada afetada desta rodada morreu na primeira
+tentativa, com `0xC0000142` no log.
+
+## Passo 3 — a sonda, se e quando houver autorização de gasto
+
+O contrato da fal está MEDIDO até a composição (ESTADO §1.3). O que segue **NÃO
+VERIFICADO** e só uma corrida paga responde:
+
+| suposição | onde vive |
+|---|---|
+| `video.url` na animação e na sincronia | `runFalPipeline` |
+| `resolution: "720p"` aceito pelo Wan | `RESOLUCAO_VIDEO` |
+| `sync_mode: "loop"` com áudio ~8,7 s e vídeo 10 s | `SYNC_MODE` |
+| a régua de 10,89 car/s e a dispersão de 14,36% | `falPipeline.ts` |
+
+```bash
+# 1. upload — NÃO é tarifado.
 docker compose exec -T backend npx tsx src/scripts/probeFalPipeline.ts --tenant <uuid> --foto /app/uploads/<algum>.jpg --ate upload
 
 # 2. + composição (~US$ 0,08)
 docker compose exec -T backend npx tsx src/scripts/probeFalPipeline.ts --tenant <uuid> --foto <...> --ate compor --teto 0.10
-
-# 3. + animação (~US$ 1,00) — o número frágil do plano
-docker compose exec -T backend npx tsx src/scripts/probeFalPipeline.ts --tenant <uuid> --foto <...> --ate narrar --teto 1.20
-
-# 4. tudo, até o vídeo final
-docker compose exec -T backend npx tsx src/scripts/probeFalPipeline.ts --tenant <uuid> --foto <...> --teto 2.00
 ```
 
-O `--teto` vai ao porteiro do orquestrador, que recusa **antes** de cada
-submissão. O `--ate` encerra a corrida sem disparar as seguintes.
+**O container precisa estar em `live`** — em fixture o `falClient` desvia antes
+da rede e não mediria contrato nenhum.
 
-**O container precisa estar em `live`** — a sonda recusa rodar em fixture,
-porque ali o `falClient` desvia antes da rede e não mediria contrato nenhum.
-
----
-
-## O que conferir em cada corpo cru
-
-Estas são as suposições que nunca foram medidas. Cada uma que bater vira
-**MEDIDO**; cada divergência é conserto **antes** da etapa seguinte.
-
-| suposição | onde vive |
-|---|---|
-| `file_url` e `upload_url` no `initiate` | `falClient.falUpload` |
-| header `Authorization: Key <chave>` | idem |
-| `request_id` e `status_url` na submissão | `falClient.falSubmit` |
-| estados **`IN_QUEUE` / `IN_PROGRESS` / `COMPLETED`** em MAIÚSCULO | `normalizeFalStatus` |
-| `status_url` devolvido é SEGUIDO, não montado | conferir no cru |
-| `images[0].url` na composição | `runFalPipeline` |
-| `video.url` na animação e na sincronia | idem |
-| `sync_mode: "loop"` com áudio ~8,7 s e vídeo 10 s | ver abaixo |
-
-### A decisão que ficou pendente: `sync_mode`
-
-`loop` foi escolhido **por eliminação**, não por medição. Sabe-se o que
-`cut_off` faria no caso inverso (cortar a fala, que é a entrada preservada).
-O que `loop` faz quando o vídeo é **mais longo** que o áudio — o caso desta
-fase — não está documentado nem foi observado. Se a fala **recomeçar** no
-vídeo produzido, a escolha certa passa a ser `silence` (se existir) ou
-`cut_off`, e a justificativa muda: com vídeo maior que áudio, `cut_off` corta
-**vídeo**, não fala.
+⚠️ **`COMPLETED` não significa sucesso.** MEDIDO em 13/08: a submissão inválida
+voltou 200/IN_QUEUE, o status foi a COMPLETED, e só o **RESULTADO** trouxe o
+422 — com `inference_time: 0.058`, o tempo de não ter feito nada. Quem lê só o
+status segue para a etapa seguinte, que custa 12× mais.
 
 ---
 
-## Depois da sonda
+## A dívida que o B2 abriu, e que não deve ser esquecida
 
-1. **Guardas** para tudo que o contrato corrigir, cada uma provada reprovando.
-2. **Reconciliar** o previsto com o painel da fal (Requests/Analytics) e
-   registrar o cobrado real — hoje os preços estão **DOCUMENTADO**.
-3. **Dívida de reconciliação já aberta:** o v6 anota ~US$ 1,14 nos testes A/B e
-   o painel mostra **US$ 5,30 em 7 dias com 12 requisições**. Não há explicação
-   registrada, e inventar uma seria pior que deixar aberta.
-4. **BLOCO 4 parte 2** — o ramo em `avatarProvider.ts:1007`. Antes dele,
-   lembrar: **o débito de crédito acontece ANTES da chamada ao fornecedor**
-   (MEDIDO: `debitCredit` em `routes/videos.ts:1088`, `generateVideo` em
-   `:1174`). Com crédito de avatar zerado, o clique morre no crédito sem chegar
-   à fal, e o erro parece falha de pipeline.
+**A dispersão de 14,36% que deriva o teto de 95 caracteres não tem medição
+registrada neste repositório.** Ela veio fixada do desenho do B0+B1. Nenhuma
+tabela daqui a reproduz — as seis gerações do caminho HeyGen dispersam ~12%,
+sobre outra régua e com dois fatores. Está nomeada em
+`PIPELINE_RITMO_DISPERSAO` para poder ser cobrada; enquanto não for, o teto é
+**derivado de um número declarado**, e isso é diferente de derivado de uma
+medição.
+
+## E a dívida herdada, que continua aberta
+
+- **Reconciliação:** o plano v6 anota ~US$ 1,14 nos testes A/B e o painel da fal
+  mostra **US$ 5,30 em 7 dias com 12 requisições**. Sem hipótese registrada —
+  inventar uma seria pior que deixar aberta.
+- **`voiceId: avatar.voice_id`** (`routes/videos.ts`) segue sem guarda ancorada
+  no uso: trocá-lo por um id fixo passa o gate inteiro.
+- **4 mutantes DEVIDOS** do congelamento de 05/08, por NOME (ESTADO §7).

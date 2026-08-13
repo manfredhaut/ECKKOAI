@@ -15,7 +15,8 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **13/08/2026** (fim do dia), HEAD `5595280` + o commit desta linha.
+Atualizado em **13/08/2026** (fecho do BLOCO B2), HEAD `bcba0c3` + os dois
+commits que fecham a rodada (o do mutante da G-a e o desta linha).
 
 ---
 
@@ -50,23 +51,35 @@ Ao ler aquele commit, leia os dois.
 | 1 · chave da fal no painel | fechado (`9d2d1e6`) |
 | 2 · a chave não vaza por nenhum lado | fechado (`9d2d1e6`) |
 | 3 · `falClient` (upload, submit, poll, result) | fechado (`cbe0e10`) |
-| **3.5 · prova de contrato — PRÓXIMO, falta só a chave** | ver [PROXIMA-RODADA.md](PROXIMA-RODADA.md) |
+| 3.5 · prova de contrato | fechado (`e886c5d`) — o contrato está MEDIDO, ver §1.3 |
 | 4 · pipeline em série — parte 1 (orquestrador) | fechado (`5a6cbbc`+`94af14f`) |
-| **4 · parte 2 — o ramo em `avatarProvider.ts:1007` — PRÓXIMO** | não começado |
-| 5 · a tela | não começado |
+| 4 · parte 2 — o ramo por vendor | fechado no **B2** (ver §1.4) |
+| **B3 · onde o débito mora, e o caminho de produto — PRÓXIMO** | ver [PROXIMA-RODADA.md](PROXIMA-RODADA.md) |
+| 5 · a tela (aprovação da imagem composta) | não começado |
 | 6 · custo por camada, régua `(provider, model, resolution)` | não começado |
 
 ### 1.1 · BLOCO 4, o que falta
 
-A **parte 2** é o ramo de despacho por vendor em `avatarProvider.ts:1007`, que
-hoje atende só `heygen`/`did`. Enquanto ele não existir, o orquestrador não é
-alcançável por usuário nenhum — que é o estado desejado até a tela existir.
+> ⚠️ **SUPERADA pela §1.4 (B2).** A parte 2 está fechada: o ramo existe, e o
+> orquestrador continua inalcançável por usuário — agora por DECISÃO explícita
+> (o porteiro), e não por ausência de código. O que segue valendo desta seção é
+> só o parágrafo do `consumeLiveGeneration()`.
 
-Também pendente do BLOCO 4: `consumeLiveGeneration()` nas submissões pagas (o
-`falClient` **não** o chama, de propósito — o orquestrador ainda não o chama
-tampouco, e é ele quem deve).
+~~A **parte 2** é o ramo de despacho por vendor em `avatarProvider.ts:1007`, que
+hoje atende só `heygen`/`did`.~~
+
+Segue pendente: `consumeLiveGeneration()` nas submissões pagas (o `falClient`
+**não** o chama, de propósito — o orquestrador tampouco, e é ele quem deve). O
+ramo da fal está FORA do `withLiveBudget`, e a razão está na §1.4.
 
 ### 1.2 · A FIAÇÃO DA TELA NÃO ALCANÇA A FAL — medido em 13/08
+
+> ⚠️ **PARCIALMENTE SUPERADA pela §1.4 (B2).** Três dos seis pontos abaixo
+> deixaram de valer: cenário e traje agora ATRAVESSAM até o provider (item 1e),
+> o rosto sai de `photo_urls` **pelo fluxo** e não só pela sonda, e o ramo por
+> vendor existe. O que continua exato é o descompasso ESTRUTURAL (`generateVideo`
+> devolve job id + polling; `runFalPipeline` é síncrono) — é ele que faz o B3
+> ser construção, e é por isso que o porteiro recusa a fal na rota.
 
 **A chave está semeada e o contrato da fal foi medido de verdade** (ver §1.3).
 O que impede um vídeo sair de "Criar vídeo direto" é a FIAÇÃO, e ela é assim:
@@ -152,6 +165,117 @@ Assim que a chave existir, o 3.5 é: `falUpload()` com um arquivo pequeno,
 assume (nomes de campo, formato do header `Authorization: Key`, forma do
 `file_url`, status). **O upload não é tarifado** — é a única chamada real que
 esta fase autoriza.
+
+### 1.4 · BLOCO B2 — o caminho da fal alcança o produto, e PARA na composição
+
+**Fechado em 13/08.** Custo: **US$ 0,00** — nenhuma chamada a fornecedor, nem
+uma. A prova é por fixture, por `fetch` substituído e por `pararApos`.
+
+**A DECISÃO DO RECOVERY, registrada como decisão e não como acidente:** nesta
+rodada a composição **NÃO cria linha em `videos`**. Ela grava só em
+`fal_pipeline_runs`/`fal_pipeline_steps`. Motivo MEDIDO por leitura:
+`recovery.ts:211` encerra como `recovery_orphan` qualquer vídeo sem
+`provider_job_id`, **em qualquer idade** — e uma corrida que para em `compor`
+não tem job id de VÍDEO nenhum para dar. Sem linha em `videos`, não há colisão.
+
+**Consequência aceita: o débito único no `compor` SAI desta rodada e vira
+decisão do B3.** Não foi esquecimento — é o preço da decisão acima: o débito
+vive na rota, a rota não é o caminho que alcança a fal hoje, e inventar um
+débito no orquestrador criaria um segundo lugar que cobra.
+
+**A fal está FORA de `VENDORS_WITH_GENERATION_PATH`, mesmo tendo ramo.** É a
+mesma decisão vista da rota: `POST /videos` INSERE a linha em `videos` antes de
+chamar o provider, então deixar passar produziria exatamente a colisão que a
+decisão evita. Quem alcança o ramo hoje é a **sonda**, que não passa pela rota.
+Ligar o caminho de produto é o B3, e ele começa decidindo onde o débito mora.
+
+**O TETO DE 95 CARACTERES deixou de ser literal.** Agora é
+`floor(PIPELINE_TARGET_SECONDS × PIPELINE_CHARS_PER_SECOND ÷ (1 + 0,1436))` =
+`floor(108,9 ÷ 1,1436)` = `floor(95,2256)` = **95**. Divide-se (em vez de
+multiplicar por 0,8564) porque o teto é o que cabe no clipe **no pior caso do
+ritmo**: se a voz sair 14,36% mais lenta, os 95 caracteres ainda cabem nos 10 s.
+
+⚠️ **A dispersão de 14,36% é NÃO VERIFICADA neste repositório.** Ela foi FIXADA
+no desenho do B0+B1 e a medição que a produziu não está registrada aqui —
+nenhuma tabela deste projeto a reproduz (as seis gerações do caminho HeyGen
+dispersam ~12%, sobre outra régua, com dois fatores). Ela ganhou nome
+(`PIPELINE_RITMO_DISPERSAO`) exatamente para a origem poder ser cobrada depois:
+um `95` solto não tinha onde pendurar a dúvida. **A disputa do 10,89 NÃO foi
+reaberta** — não era desta rodada.
+
+**O que ficou de pé, item a item:**
+
+| item | o que é | onde |
+|---|---|---|
+| 1a | porteiro do vendor **antes** do débito, 403 sem tocar em crédito | `vendorCatalog.ts`, `routes/videos.ts` |
+| 1b | ramo `if (input.vendor === "fal")` ACIMA do ternário, que fica intacto | `avatarProvider.ts` |
+| 1c | `publicarEntradas` em série, cada `file_url` como etapa **ordem 0** | `falPipeline.ts` |
+| 1d | `image_urls = [rosto, traje?, cenário?]` sobre colunas que já existiam | `falPipeline.ts`, `avatarProvider.ts` |
+| 1e | o fio: `scenario`/`outfit` saem da tela e chegam ao provider | `GenerateStep.tsx`, `routes/videos.ts` |
+| 1f | `pararApos: "compor"` é o default; a URL da imagem vai ao diário | `falPipeline.ts` |
+| 1g | teto de 95 DERIVADO | `falPipeline.ts` |
+| 1h | `_arnes-logs/` no `.gitignore` por nome | `.gitignore` |
+
+**`publicarEntradas` roda ANTES do primeiro `autorizarGasto`, e a ordem é a
+propriedade.** Publicar não custa (upload não tarifado, MEDIDO em 13/08);
+autorizar é o freio da primeira etapa paga. O caso ruim de inverter não é
+gastar à toa — é a corrida ser autorizada, um upload falhar no meio, e sobrar
+uma corrida `failed` que já passou pelo porteiro do dinheiro. Falha de upload
+fecha a etapa como `failed` com motivo `upload_failed` e custa zero.
+
+**Em SÉRIE, e não em paralelo:** a ordem das `image_urls` é significativa para o
+`nano-banana`, e em paralelo ela passaria a ser decidida pela ordem de
+conclusão — variando de corrida para corrida sem nada no código dizendo isso.
+
+**AS TRÊS GUARDAS, PROVADAS REPROVANDO (3/3, MEDIDO em 13/08):**
+
+- `vendor sem caminho de geração é recusado antes do débito`
+- `publicarEntradas roda antes do primeiro autorizarGasto`
+- `o ramo da fal não altera o ternário did/heygen`
+
+Log: `_arnes-logs/mutants-b2-guardas-2026-08-13-b.log`. Arnês passou de **234
+para 237 mutantes**.
+
+⚠️ **`if (false && …)` NÃO SERVE COMO MUTANTE — MEDIDO nesta rodada.** O
+TypeScript trata o corpo como inalcançável, para de propagar o narrowing para
+dentro dele, e o gate sai **2 pelo `tsc`**: o arnês devolveu **AMBÍGUO** com a
+guarda saudável e sem ela ter opinado. Custou uma passada. O mutante que
+funcionou antecipa o débito — mesma inversão sobre o que a guarda mede, numa
+linha contígua que compila.
+
+**G-c mede FORMA, e isso está declarado no fonte.** Transformar o `if` num
+terceiro braço do ternário não muda comportamento nenhum — heygen, did e vendor
+desconhecido continuam indo para o mesmo lugar, e nenhuma corrida distingue as
+duas versões. O que ela mede por EXECUÇÃO é o despacho (fal alcança o pipeline,
+did não alcança); o que mede por forma é o ternário estar inteiro.
+
+**Duas guardas EXISTENTES precisaram de conserto, e as duas foram efeito
+colateral desta rodada — o gate as pegou em segundos:**
+
+1. `checkFalPipelinePolicy` media "`crus[0]` é o corpo do fornecedor", e a
+   publicação passou a gravar antes dela. A propriedade não mudou; o filtro
+   passou a ser por conteúdo em vez de por posição. **Provada reprovando à mão**
+   com o mutante que ela já tinha.
+2. O mutante `fal entra na lista de sondas sem ganhar uma` passou a casar **2×**:
+   `VENDORS_WITH_GENERATION_PATH` tem corpo idêntico ao de
+   `VENDORS_WITH_CONNECTION_PROBE`. Ganhou CONTEXTO ÚNICO (a linha do `export`).
+   **Segunda vez** que este `find` precisa disso — o conserto é dar contexto,
+   nunca apagar a linha nova do produto.
+
+**O QUE FICOU FORA, e é escolha declarada:**
+
+- **Débito de crédito no caminho da fal** — B3, junto com a decisão de onde ele
+  mora.
+- **`consumeLiveGeneration()` nas submissões pagas da fal.** O ramo está FORA do
+  `withLiveBudget`: o orçamento de sessão conta GERAÇÕES de vídeo, e esta
+  corrida para em `compor`. O freio dela é o teto em dólares, que soma antes de
+  cada etapa paga.
+- **`awaiting_approval`, rota de aprovação e tela** — BLOCO 5.
+- **`pollFalRun` e retomada após morte do processo** — não foi desta rodada.
+- **`mutants:dirty` não existe neste repositório.** O P2 o pedia; no lugar dele,
+  as guardas foram provadas à mão durante o desenvolvimento e por **passada
+  filtrada** depois do commit — e nenhuma mensagem de commit afirmou prova antes
+  de ela existir.
 
 ## 2 · Decisões fechadas — não reabrir
 
@@ -269,27 +393,34 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
-⚠️ **A passada de 13/08 fim do dia foi INTERROMPIDA aos ~30% (69 de 234) e NÃO
-tem desfecho.** Morta ao encerrar a sessão, com um mutante aplicado que foi
-revertido por `git checkout --` (árvore conferida limpa depois). O log em
-`_arnes-logs/mutants-2026-08-13-noite-{a,b}.log` cobre só esses 69 e **não vale
-como resultado**.
+**A rodada do B2 fechou com a passada AFETADA: 73/73, zero INERTE, zero
+AMBÍGUO, zero ERRO, zero FALHOU.** `--affected --base 22e644f` → 12 arquivos
+tocados → **73 de 237** mutantes selecionados (164 pulados). Log em
+`_arnes-logs/mutants-b2-afetada-final-{a,b}.log`, duas cópias, md5
+`8802b134cd32204f1cc72106264e3b85` nas duas. Árvore limpa em cada reversão.
 
-**A última passada COMPLETA e válida é 234/234, de 13/08 de manhã** (HEAD
-`23dce3a`): zero INERTE, zero AMBÍGUO, zero ERRO.
+Os **três mutantes das guardas novas** estão entre os 73 e reprovaram: log
+próprio em `_arnes-logs/mutants-b2-guardas-2026-08-13-b.log`.
 
-🔴 **DÍVIDA: relançar a passada completa ANTES da próxima rodada que gaste
-dinheiro.** O diff acumulado desde a última válida é o contrato da fal
-(`e886c5d`), a sonda (`5595280`) e os dois commits de ESTADO — mudanças em
-caminho pago, que é exatamente onde a cobertura parcial não serve.
+⚠️ **A PRIMEIRA tentativa desta mesma passada MORREU aos 37/73**, com
+`status: 3221225794` (`0xC0000142`, a falha de spawn do Windows) no log. A
+causa foi o **timeout de 10 minutos** em que ela estava envolvida: a passada
+leva ~25 min. A árvore voltou limpa e nada ficou aplicado, mas aquele log **não
+vale como desfecho**. **Passada do arnês roda em BACKGROUND, sem timeout em
+volta** — o gotcha 10 fala de onde gravar o log; este fala de como lançá-la.
+
+🔴 **DÍVIDA, que segue aberta e é PRÉ-CONDIÇÃO do B3: a passada COMPLETA.** A
+última completa e válida continua sendo **234/234 de 13/08 de manhã** (HEAD
+`23dce3a`), e o arnês está em **237**. A afetada cobre o que esta rodada tocou,
+não o resto — e o B3 é a rodada que gasta dinheiro.
 
 ```bash
 npm run check:mutants
 ```
 
-**A anterior (13/08 manhã, HEAD `23dce3a`) fechou 234/234, 100% verde** — zero
-INERTE, zero AMBÍGUO, zero ERRO. O diff desde então é o contrato da fal
-(`e886c5d`), a sonda (`5595280`) e este ESTADO.
+**A última COMPLETA (13/08 manhã, HEAD `23dce3a`) fechou 234/234, 100% verde**
+— zero INERTE, zero AMBÍGUO, zero ERRO. O diff desde então é o contrato da fal
+(`e886c5d`), a sonda (`5595280`), os commits de ESTADO e **o BLOCO B2 inteiro**.
 
 ---
 
@@ -367,6 +498,12 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
   anota ~US$ 1,14 nos testes A/B e o painel da fal mostra **US$ 5,30 em 7 dias
   com 12 requisições**. Nenhuma hipótese registrada — os preços do
   `providerCost.ts` estão marcados **DOCUMENTADO** até uma fatura ser conferida.
+- 🔴 **O DÉBITO DO CAMINHO DA FAL FICOU FORA DO B2, e é decisão adiada, não
+  esquecimento.** A composição não cobra crédito de tenant nenhum. A razão está
+  na §1.4: a rota (que é quem debita) recusa a fal de propósito, e criar um
+  débito dentro do orquestrador abriria um SEGUNDO lugar que cobra. **Escolher
+  onde ele mora é o primeiro passo do B3**, e as três saídas estão listadas em
+  [PROXIMA-RODADA.md](PROXIMA-RODADA.md).
 - **O débito de crédito acontece ANTES da chamada ao fornecedor** — MEDIDO por
   leitura: `debitCredit` em `routes/videos.ts:1088`, `generateVideo` em `:1174`.
   Com crédito de avatar zerado o clique morre no crédito sem chegar à fal, e o
