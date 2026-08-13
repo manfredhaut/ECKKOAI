@@ -87,6 +87,20 @@ export const MUTANTS: Mutant[] = [
     expect: "pipeline: um default do fornecedor foi herdado em silêncio",
   },
   {
+    guard: "pipeline: nenhuma etapa paga sai acima do teto de gasto",
+    name: "o porteiro do teto de gasto some do caminho",
+    kind: "obvio",
+    // A fal NÃO expõe endpoint de saldo, então o teto é a única coisa entre uma
+    // corrida e a carteira. Sem o porteiro, as três etapas disparam em série
+    // sem ninguém somar nada — e o estouro só aparece na fatura.
+    file: "backend/src/services/video/falPipeline.ts",
+    find: "  if (previsto > tetoUsd) {",
+    // `previsto` continua lido, senão o tsc reprova por variável não usada e o
+    // arnês devolveria AMBÍGUO sem a guarda opinar.
+    replace: "  if (previsto < 0) {",
+    expect: "pipeline: uma etapa paga saiu com o previsto acima do teto",
+  },
+  {
     guard: "pipeline: o laço de polling tem teto de tempo",
     name: "o INTERVALO entre leituras muda, e o teto continua de pé",
     kind: "esperto",
@@ -129,6 +143,7 @@ const FUSIVEL_DE_LEITURAS = 800;
 const MARCA_DO_FUSIVEL = "FUSIVEL_DO_LACO_SEM_TETO";
 
 interface Corrida {
+  gastoPrevistoUsd: number;
   passos: string[];
   corpos: { endpoint: string; corpo: any }[];
   crus: string[];
@@ -144,7 +159,7 @@ interface Corrida {
  *    ordem entre gravar e interpretar deixa de ser invisível.
  */
 async function correr(
-  opcoes: { statusEternamentePendente?: boolean; resultadoVazio?: boolean } = {},
+  opcoes: { statusEternamentePendente?: boolean; resultadoVazio?: boolean; tetoDeGastoUsd?: number } = {},
 ): Promise<Corrida> {
   const { runFalPipeline } = await import("../services/video/falPipeline.js");
   const passos: string[] = [];
@@ -232,11 +247,12 @@ async function correr(
   };
 
   let erro: unknown = null;
+  let gastoPrevistoUsd = 0;
   const modoOriginal = process.env.PROVIDER_MODE;
   try {
     // `live` porque em fixture o falClient desvia e nada disto acontece.
     process.env.PROVIDER_MODE = "live";
-    await runFalPipeline({
+    const r = await runFalPipeline({
       apiKeyFal: "chave-irrelevante-fetch-substituido",
       apiKeyElevenLabs: "chave-irrelevante-fetch-substituido",
       voiceId: "0hQuq0q2JEk1SY4lZaM9",
@@ -245,10 +261,12 @@ async function correr(
       fotoMimeType: "image/jpeg",
       promptDeComposicao: "traje e cenário da prova",
       diario: diario as never,
+      tetoDeGastoUsd: opcoes.tetoDeGastoUsd,
       pollTimeoutMs: 50,
       pollIntervalMs: 1,
       esperar: async () => {},
     });
+    gastoPrevistoUsd = r.gastoPrevistoUsd;
   } catch (err) {
     erro = err;
   } finally {
@@ -257,7 +275,7 @@ async function correr(
     else process.env.PROVIDER_MODE = modoOriginal;
   }
 
-  return { passos, corpos, crus, erro, leiturasDeStatus };
+  return { gastoPrevistoUsd, passos, corpos, crus, erro, leiturasDeStatus };
 }
 
 export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> {
@@ -332,6 +350,37 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
   }
 
   // -------------------------------------------------------------------------
+  // 2b. O TETO DE GASTO.
+  //
+  // Corrida com teto ABAIXO do custo da primeira etapa: nenhuma submissão pode
+  // sair. E o contraponto no mesmo lugar — com teto folgado, as três saem.
+  // -------------------------------------------------------------------------
+  const { PRECOS_FAL } = await import("../services/video/falPipeline.js");
+  const pobre = await correr({ tetoDeGastoUsd: PRECOS_FAL.comporUsd / 2 });
+
+  if (pobre.corpos.length > 0) {
+    failures.push(
+      `pipeline: uma etapa paga saiu com o previsto acima do teto — ${pobre.corpos.length} submissão(ões) ` +
+        `com teto de US$ ${(PRECOS_FAL.comporUsd / 2).toFixed(3)}, abaixo do custo da PRIMEIRA etapa ` +
+        `(US$ ${PRECOS_FAL.comporUsd.toFixed(2)}). A fal não expõe endpoint de saldo: este acumulador é a ` +
+        "única coisa entre uma corrida e a carteira, e ele tem de recusar ANTES da submissão — depois, o " +
+        "dinheiro já saiu e o teto vira relatório.",
+    );
+  }
+  if (!(pobre.erro instanceof FalPipelineError) || !String(pobre.erro).includes("TETO DE GASTO")) {
+    failures.push(
+      "pipeline: uma etapa paga saiu com o previsto acima do teto, ou a recusa não é nossa — veio " +
+        `${pobre.erro === null ? "sucesso" : JSON.stringify(String(pobre.erro).slice(0, 140))}.`,
+    );
+  }
+  if (feliz.corpos.length !== 3) {
+    failures.push(
+      `pipeline: com teto folgado saíram ${feliz.corpos.length} submissões, e as etapas pagas são 3. ` +
+        "Um teto que recusa o caso normal não protege a carteira: apaga o produto.",
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // 3. NENHUM DEFAULT HERDADO.
   //
   // Conferido no CORPO que saiu, não no código: um campo omitido não deixa
@@ -368,6 +417,10 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
     notes.push(
       `  pipeline: o laço de polling desistiu no teto após ${pendente.leiturasDeStatus} leitura(s) e ` +
         "disse que o trabalho não deve ser refeito",
+    );
+    notes.push(
+      `  pipeline: teto de gasto recusa antes da 1a submissão quando não cabe, e libera as 3 quando cabe ` +
+        `(previsto do caminho feliz: US$ ${feliz.gastoPrevistoUsd.toFixed(2)})`,
     );
     notes.push(
       `  pipeline: os ${Object.values(DEFAULTS_NUNCA_HERDADOS).flat().length} campos que não se herda ` +

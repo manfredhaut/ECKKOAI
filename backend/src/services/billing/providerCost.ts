@@ -290,3 +290,37 @@ function round(value: number, casas: number): number {
   const f = 10 ** casas;
   return Math.round(value * f) / f;
 }
+
+/**
+ * PREÇOS DE LISTA DA FAL, por etapa do pipeline.
+ *
+ * ⚠️ **DOCUMENTADO, não MEDIDO.** Vieram do painel da fal em 13/08 e nenhuma
+ * fatura foi conferida contra eles. A distinção importa aqui mais que em
+ * qualquer outro número deste arquivo: `HEYGEN_VIDEO_COST` tem quatro medições
+ * exatas atrás dele, e estes três não têm nenhuma.
+ *
+ * Servem ao TETO, não à cobrança do cliente — a régua por camada é o BLOCO 6.
+ * Aqui eles respondem uma pergunta só: "o que a PRÓXIMA etapa vai custar, no
+ * pior caso?", que é o que permite recusar antes de gastar. A fal não expõe
+ * endpoint de saldo, então não há como perguntar quanto ainda resta.
+ *
+ * Moram aqui, e não no orquestrador, porque a guarda de custo cobra que todo
+ * número de dinheiro viva neste arquivo: duas cópias de uma medição divergem em
+ * silêncio, e o produto passa a ter duas verdades sobre dinheiro.
+ */
+export const PRECOS_FAL = {
+  /** por imagem, `nano-banana-2/edit` */
+  comporUsd: 0.08,
+  /** por segundo de vídeo gerado, `wan/v2.6/reference-to-video/flash` 720p */
+  animarUsdPorSegundo: 0.1,
+  /** por segundo de ÁUDIO, `sync-lipsync/v2` — o áudio é que define a duração */
+  sincronizarUsdPorSegundoDeAudio: 0.05,
+} as const;
+
+/**
+ * TETO DURO de uma corrida do pipeline da fal, em dólares.
+ *
+ * Não é preço: é o freio. Vive junto dos preços porque só faz sentido lido ao
+ * lado deles.
+ */
+export const PIPELINE_TETO_USD = 2.0;

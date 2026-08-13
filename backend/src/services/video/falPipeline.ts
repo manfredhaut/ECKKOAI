@@ -30,6 +30,7 @@ import { randomUUID } from "node:crypto";
 import { falPoll, falResult, falSubmit, falUpload } from "../providers/falClient.js";
 import { synthesizeSpeech } from "../providers/voiceProvider.js";
 import { logEvent } from "../log/safeLog.js";
+import { PIPELINE_TETO_USD, PRECOS_FAL } from "../billing/providerCost.js";
 
 // ---------------------------------------------------------------------------
 // A RÉGUA DESTE PIPELINE — separada da do caminho HeyGen, DE PROPÓSITO
@@ -66,6 +67,11 @@ export const PIPELINE_CHARS_PER_SECOND = 10.89;
  * e esticar o vídeo. Com folga, ela não escolhe.
  */
 export const PIPELINE_MAX_CHARS = 95;
+
+// Os preços e o teto vivem em `billing/providerCost.ts`: a guarda de custo
+// cobra que todo número de dinheiro more lá, e duas cópias de uma medição
+// divergem em silêncio.
+export { PRECOS_FAL, PIPELINE_TETO_USD } from "../billing/providerCost.js";
 
 /** Teto do laço de polling. Ver `aguardarConclusao`. */
 export const PIPELINE_POLL_TIMEOUT_MS = 300_000;
@@ -170,11 +176,23 @@ export interface FalPipelineInput {
   /** Sobrescrito só pela guarda; o produto usa o default. */
   pollTimeoutMs?: number;
   pollIntervalMs?: number;
+  /** Teto de gasto PREVISTO. Default `PIPELINE_TETO_USD`. */
+  tetoDeGastoUsd?: number;
+  /**
+   * Encerra a corrida DEPOIS desta etapa, sem disparar as seguintes.
+   *
+   * Existe para a sonda de contrato: cada etapa paga custa dinheiro real, e
+   * medir o contrato de uma delas não deve obrigar a pagar as outras duas.
+   */
+  pararApos?: EtapaDoPipeline;
   /** Injetável para a guarda não esperar de verdade. */
   esperar?: (ms: number) => Promise<void>;
 }
 
 export interface FalPipelineResult {
+  /** O que a corrida PREVIU gastar. Não é o cobrado — ver BLOCO 6. */
+  gastoPrevistoUsd: number;
+  /** Vazio quando a corrida parou antes da sincronia (`pararApos`). */
   videoUrl: string;
   audioDurationSeconds: number | null;
   requestIds: { compor: string; animar: string; sincronizar: string };
@@ -262,6 +280,37 @@ export async function aguardarConclusao(
  * gravar depois deixaria toda resposta de forma inesperada sem registro — que é
  * exatamente a resposta que se precisa ler para descobrir o que mudou.
  */
+/**
+ * O PORTEIRO do teto. Roda ANTES de cada submissão paga, nunca depois.
+ *
+ * Depois da submissão o dinheiro já saiu: um teto conferido no fim é um
+ * relatório, não um freio. A conta é sempre do ACUMULADO — a etapa 4 pode
+ * caber sozinha e ainda assim estourar o orçamento somada às anteriores.
+ */
+function autorizarGasto(
+  gastoAcumuladoUsd: number,
+  custoDestaEtapaUsd: number,
+  tetoUsd: number,
+  etapa: EtapaDoPipeline,
+): number {
+  const previsto = gastoAcumuladoUsd + custoDestaEtapaUsd;
+  if (previsto > tetoUsd) {
+    throw new FalPipelineError(
+      `TETO DE GASTO: a etapa "${etapa}" custaria US$ ${custoDestaEtapaUsd.toFixed(2)} e levaria o ` +
+        `previsto desta corrida a US$ ${previsto.toFixed(2)}, acima do teto de US$ ${tetoUsd.toFixed(2)}. ` +
+        "Nada foi pedido ao fornecedor nesta etapa. As etapas anteriores JA foram pagas e os request_id " +
+        "delas estao gravados: o resultado parcial e recuperavel e nao deve ser refeito.",
+    );
+  }
+  logEvent("info", "fal_pipeline_gasto_autorizado", {
+    etapa,
+    custoDestaEtapaUsd,
+    previstoAcumuladoUsd: Number(previsto.toFixed(4)),
+    tetoUsd,
+  });
+  return previsto;
+}
+
 async function etapaNaFal(
   input: FalPipelineInput,
   etapa: EtapaDoPipeline,
@@ -303,6 +352,10 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
 
   // --- 1. COMPOR -----------------------------------------------------------
   const fotoUrl = await falUpload(input.apiKeyFal, input.fotoBase, input.fotoMimeType);
+  const teto = input.tetoDeGastoUsd ?? PIPELINE_TETO_USD;
+  let gastoPrevistoUsd = 0;
+
+  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, PRECOS_FAL.comporUsd, teto, "compor");
   const composicao = await etapaNaFal(input, "compor", 1, ENDPOINT_COMPOR, {
     prompt: input.promptDeComposicao,
     image_urls: [fotoUrl],
@@ -319,6 +372,14 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
   }
 
   // --- 2. ANIMAR -----------------------------------------------------------
+  if (input.pararApos === "compor") return pararAqui("compor", gastoPrevistoUsd);
+
+  gastoPrevistoUsd = autorizarGasto(
+    gastoPrevistoUsd,
+    PRECOS_FAL.animarUsdPorSegundo * PIPELINE_TARGET_SECONDS,
+    teto,
+    "animar",
+  );
   const animacao = await etapaNaFal(input, "animar", 2, ENDPOINT_ANIMAR, {
     prompt: input.promptDeComposicao,
     image_url: String(imagemUrl),
@@ -349,6 +410,18 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
   const audioUrl = await falUpload(input.apiKeyFal, fala.audio, "audio/mpeg");
 
   // --- 4. SINCRONIZAR ------------------------------------------------------
+  if (input.pararApos === "narrar") return pararAqui("narrar", gastoPrevistoUsd);
+
+  // O custo depende da duração REAL do áudio, que agora é conhecida. Quando a
+  // medição falha, a estimativa pela régua entra no lugar — e para o TETO ela
+  // tem de ser a MAIOR das duas, senão o freio afrouxa justamente no caso em
+  // que se sabe menos.
+  gastoPrevistoUsd = autorizarGasto(
+    gastoPrevistoUsd,
+    PRECOS_FAL.sincronizarUsdPorSegundoDeAudio * Math.max(fala.durationSeconds ?? 0, segundosEstimados),
+    teto,
+    "sincronizar",
+  );
   const sincronia = await etapaNaFal(input, "sincronizar", 4, ENDPOINT_SINCRONIZAR, {
     video_url: String(videoMudoUrl),
     audio_url: audioUrl,
@@ -369,6 +442,7 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
   await input.diario.fecharEtapa(biblioteca, "completed");
 
   return {
+    gastoPrevistoUsd,
     videoUrl: String(videoFinalUrl),
     audioDurationSeconds: fala.durationSeconds,
     requestIds: {
@@ -376,6 +450,23 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
       animar: animacao.requestId,
       sincronizar: sincronia.requestId,
     },
+  };
+}
+
+/**
+ * Encerra a corrida numa etapa intermediária, a pedido da sonda.
+ *
+ * `videoUrl` vazio: quem chamou PEDIU para parar, então "sem vídeo" é o
+ * resultado esperado e não uma falha — lançar aqui faria a sonda de contrato
+ * parecer erro.
+ */
+function pararAqui(etapa: EtapaDoPipeline, gastoPrevistoUsd: number): FalPipelineResult {
+  logEvent("info", "fal_pipeline_parou_a_pedido", { etapa, gastoPrevistoUsd });
+  return {
+    gastoPrevistoUsd,
+    videoUrl: "",
+    audioDurationSeconds: null,
+    requestIds: { compor: "", animar: "", sincronizar: "" },
   };
 }
 

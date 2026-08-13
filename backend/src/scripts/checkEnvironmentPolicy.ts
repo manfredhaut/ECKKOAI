@@ -430,6 +430,16 @@ const ENV_FORA_DO_COMPOSE: { nome: string; motivo: string }[] = [
       "processo do backend responde vazio para ela, e o gate roda verde — o default é o caminho real.",
   },
   {
+    nome: "FAL_API_KEY",
+    motivo:
+      "PROIBIDA no compose, e não apenas dispensável. Ela existe para UMA invocação de " +
+      "`seedFalKey.ts`, que lê a chave e a grava cifrada em `api_credentials` — o caminho por TENANT. " +
+      "Declará-la em `environment:` deixaria a chave da fal de pé no processo do backend o tempo todo, " +
+      "que é exatamente o estado que `checkFalClientPolicy` reprova (`a chave deixou de vir do tenant`) " +
+      "e que custou um dia em 09/08. O script a recebe pelo `-e` de uma invocação e ela morre com o " +
+      "processo.",
+  },
+  {
     nome: "ARNES_EM_CURSO",
     motivo:
       "injetada pelo RUNNER do arnês em cada `docker compose exec -e`, nunca pelo `environment:` do " +
