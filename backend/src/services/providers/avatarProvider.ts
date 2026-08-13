@@ -1105,6 +1105,23 @@ function promptDaComposicao(input: GenerateVideoInput): string {
 }
 
 /**
+ * A DIREÇÃO que vai ao Wan — o mesmo `scene.motionPrompt` que a HeyGen recebe.
+ *
+ * Lê de `input.scene` porque é ali que a rota deposita a versão INGLESA: em
+ * `routes/videos.ts` a cena entregue ao provider leva `motion_prompt_en` no
+ * lugar do texto do usuário, e a linha gravada em `videos` mantém o original.
+ * Este é o ponto em que o caminho da fal passa a consumir a mesma direção que o
+ * outro caminho já consumia — antes ela chegava até aqui e não era lida por
+ * ninguém.
+ *
+ * String vazia quando não há direção: o campo é obrigatório no orquestrador de
+ * propósito, e "não escreveram nada" é um valor, não uma ausência.
+ */
+function promptDaDirecao(input: GenerateVideoInput): string {
+  return input.scene?.motionPrompt?.trim() ?? "";
+}
+
+/**
  * Gera pelo pipeline da fal — e PARA na composição.
  *
  * ┌─ Por que ela para, e por que isso não é uma sonda ───────────────────────┐
@@ -1183,6 +1200,7 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
     fotoMimeType: mimeDoUpload(fotoUrl),
     entradasExtras,
     promptDeComposicao: promptDaComposicao(input),
+    promptDeDirecao: promptDaDirecao(input),
     diario: input.falDiario,
     // O default é o FREIO, e não o pipeline inteiro: quem quiser ir além tem de
     // dizer isso explicitamente, e hoje ninguém diz.

@@ -264,6 +264,11 @@ async function refazer(): Promise<{ submetidos: string[]; erro: string }> {
       fotoBase: Buffer.from("foto-da-prova"),
       fotoMimeType: "image/jpeg",
       promptDeComposicao: "traje e cenário da prova",
+      // DISTINGUÍVEL do texto acima, e é essa diferença que a guarda mede: um
+      // valor igual faria "o Wan recebeu a direção" e "o Wan recebeu a
+      // composição" produzirem exatamente o mesmo corpo, e a guarda seguiria
+      // verde com os dois campos trocados.
+      promptDeDirecao: "direção da prova em inglês",
       diario: diario as never,
       // Teto FOLGADO de propósito: com um teto apertado, quem barraria o Wan
       // seria o dinheiro, e a guarda passaria a medir o teto em vez do

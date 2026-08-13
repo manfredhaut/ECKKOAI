@@ -261,6 +261,7 @@ async function correr(
       fotoBase: Buffer.from("foto-da-prova"),
       fotoMimeType: "image/jpeg",
       promptDeComposicao: "traje e cenário da prova",
+      promptDeDirecao: "direção da prova em inglês",
       diario: diario as never,
       tetoDeGastoUsd: opcoes.tetoDeGastoUsd,
       pollTimeoutMs: 50,
@@ -419,8 +420,8 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
           `pipeline: um default do fornecedor foi herdado em silêncio — "${campo}" não está no corpo ` +
             `enviado a ${endpoint}. O default é do FORNECEDOR e muda sem aviso: omitir aceita a mudança ` +
             "em silêncio. `generate_audio` é o caro — o Wan sintetiza uma trilha PRÓPRIA e paga que a " +
-            "sincronia descarta; `sync_mode: cut_off` corta a fala, que é a entrada preservada deste " +
-            `pipeline. Campos presentes: ${Object.keys(enviado.corpo).join(", ")}.`,
+            "sincronia descarta; `sync_mode` decide o que se perde quando vídeo e áudio têm durações " +
+            `diferentes, que nesta fase é sempre. Campos presentes: ${Object.keys(enviado.corpo).join(", ")}.`,
         );
       }
     }

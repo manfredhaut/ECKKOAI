@@ -129,9 +129,11 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  *    e a etapa 4 recebe um vídeo que já tem som.
  *  · `resolution` (Wan) — o default de 1080p custa mais que 720p por segundo
  *    gerado, e nada nesta fase pede 1080p.
- *  · `sync_mode` (lipsync) — o default `cut_off` CORTA quando as durações
- *    divergem. Como a voz é a entrada preservada, cortar é exatamente o que não
- *    pode acontecer: perde-se o fim da fala num vídeo que já foi pago.
+ *  · `sync_mode` (lipsync) — ele decide o que acontece quando vídeo e áudio têm
+ *    durações diferentes, que nesta fase é SEMPRE o caso. Enviá-lo explícito é o
+ *    que impede o fornecedor de mudar esse comportamento sem aviso num pipeline
+ *    cujo entregável inteiro depende dele. Qual valor, e por quê, está em
+ *    `SYNC_MODE`.
  */
 export const DEFAULTS_NUNCA_HERDADOS = {
   "fal-ai/nano-banana-2/edit": ["num_images", "resolution"],
@@ -144,13 +146,35 @@ export const ENDPOINT_ANIMAR = "fal-ai/wan/v2.6/reference-to-video/flash";
 export const ENDPOINT_SINCRONIZAR = "fal-ai/sync-lipsync/v2";
 
 /**
- * `sync_mode` NÃO VERIFICADO: `loop` é o valor escolhido por eliminação, não por
- * medição. Nenhuma resposta real do `sync-lipsync/v2` foi observada, e a
- * documentação não diz o que ele faz quando o vídeo é MAIS LONGO que o áudio —
- * que é o caso desta fase (10 s de clipe para ~8,72 s de fala). O que se sabe é
- * o que `cut_off` faria no caso inverso, e por isso ele está fora.
+ * `cut_off` — mudado de `loop` no BLOCO B5, e a razão é dupla.
+ *
+ * ┌─ 1. `loop` nunca foi documentado NEM observado ──────────────────────────┐
+ * │ Ele tinha sido escolhido por ELIMINAÇÃO: sabia-se o que `cut_off` faria  │
+ * │ no caso inverso (cortar a fala), e `loop` sobrou. Mas o que `loop` faz   │
+ * │ quando o vídeo é mais longo que o áudio não está na documentação e nunca │
+ * │ foi visto — e este pipeline não pode ter, na etapa mais cara, o único    │
+ * │ parâmetro que ninguém sabe ler. `cut_off` é o comportamento DOCUMENTADO. │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌─ 2. Nesta fase o que sobra é VÍDEO, não fala ────────────────────────────┐
+ * │ O clipe tem `PIPELINE_TARGET_SECONDS` (10 s) e a fala cabe em            │
+ * │ `PIPELINE_MAX_CHARS ÷ PIPELINE_CHARS_PER_SECOND` = ~8,72 s. Cortar o     │
+ * │ excedente corta os ~1,3 s de vídeo mudo do fim — a fala sai inteira,     │
+ * │ porque ela é a mais CURTA das duas. A objeção original a `cut_off`       │
+ * │ descrevia o caso oposto (áudio maior que vídeo), que o teto de           │
+ * │ caracteres existe para não deixar acontecer.                             │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ⚠️ **A segurança disto REPOUSA no teto, e o teto repousa num número NÃO
+ * VERIFICADO.** Se a fala exceder o clipe, `cut_off` corta a FALA — e o que
+ * impede a fala de exceder é `PIPELINE_MAX_CHARS`, derivado de
+ * `PIPELINE_RITMO_DISPERSAO` (14,36%), que não tem medição registrada neste
+ * repositório. Um ritmo pior que a dispersão fixada devolve exatamente o
+ * defeito que `loop` fora escolhido para evitar. A dependência mudou de lugar:
+ * antes estava num parâmetro que ninguém conhecia, agora está num teto que está
+ * escrito, nomeado e cobrável.
  */
-export const SYNC_MODE = "loop";
+export const SYNC_MODE = "cut_off";
 
 /**
  * DOIS vocabulários de resolução, e eles NÃO são intercambiáveis.
@@ -240,6 +264,34 @@ export interface FalPipelineInput {
   entradasExtras?: EntradaDeComposicao[];
   /** Texto livre: traje e cenário. */
   promptDeComposicao: string;
+  /**
+   * A DIREÇÃO DE CENA, e ela vai SÓ ao Wan.
+   *
+   * ┌─ Campo separado, e não concatenado no `promptDeComposicao` ─────────────┐
+   * │ Os dois textos descrevem coisas diferentes e vão a modelos diferentes.  │
+   * │ `promptDeComposicao` descreve o que a imagem TEM — traje, cenário — e   │
+   * │ alimenta o `nano-banana`, que produz um quadro PARADO. A direção        │
+   * │ descreve o que a pessoa FAZ — gesto, postura, olhar, ritmo — e só faz   │
+   * │ sentido para o Wan, que é quem tem tempo para executá-la.               │
+   * │                                                                         │
+   * │ Concatenar os dois num campo só era o caminho barato, e ele custaria a  │
+   * │ imagem: "gesto calmo, olhar direto para a câmera" entregue ao gerador   │
+   * │ de imagem vira instrução sobre uma pose ESTÁTICA, e a composição — que  │
+   * │ é a entrada de tudo o que vem depois — passa a ser negociada por um     │
+   * │ texto escrito para outro modelo. O defeito apareceria na imagem, que é  │
+   * │ o artefato que um humano aprova antes de liberar os ~US$ 1,44 seguintes.│
+   * └─────────────────────────────────────────────────────────────────────────┘
+   *
+   * Chega em INGLÊS: quem traduz é `directionTranslation.ts`, na rota, e a
+   * tradução acontece antes de qualquer coisa custar. String vazia é o estado
+   * normal de quem não escreveu direção nenhuma.
+   *
+   * OBRIGATÓRIO, e não opcional com default: um campo opcional deixaria cada
+   * call site novo herdar "sem direção" em silêncio, que é precisamente o
+   * defeito que esta rodada veio consertar — a direção existia, era traduzida,
+   * era gravada, e morria porque ninguém a passava adiante.
+   */
+  promptDeDirecao: string;
   diario: DiarioDoPipeline;
   /** Sobrescrito só pela guarda; o produto usa o default. */
   pollTimeoutMs?: number;
@@ -614,7 +666,12 @@ async function animarNarrarSincronizar(
     "animar",
   );
   const animacao = await etapaNaFal(input, "animar", 2, ENDPOINT_ANIMAR, {
-    prompt: input.promptDeComposicao,
+    // A DIREÇÃO, e não a composição. O Wan recebe a imagem pronta em
+    // `image_url` — repetir ali a descrição do traje e do cenário seria pedir a
+    // ele que redesenhasse o que já está no quadro. O que falta ao Wan é a única
+    // coisa que uma imagem parada não carrega: o que a pessoa FAZ. Ver
+    // `promptDeDirecao`.
+    prompt: input.promptDeDirecao,
     image_url: imagemUrl,
     // `generate_audio: false` é o mais caro de omitir: o default sintetiza uma
     // trilha paga que a etapa 4 descartaria.

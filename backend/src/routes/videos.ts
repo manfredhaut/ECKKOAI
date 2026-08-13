@@ -1575,6 +1575,41 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     };
   }
 
+  /**
+   * O texto da COMPOSIÇÃO — traje e cenário, e mais nada.
+   *
+   * Extraído porque as duas rotas abaixo o montavam com a mesma expressão
+   * escrita duas vezes, e a direção (que agora sai por outro campo) tornaria a
+   * divergência entre as cópias invisível: bastaria uma delas ganhar o novo
+   * texto para os dois botões passarem a compor imagens diferentes.
+   */
+  function promptDaComposicaoDaLinha(video: VideoRow): string {
+    return [video.scenario_prompt, video.outfit_prompt]
+      .map((t) => t?.trim())
+      .filter(Boolean)
+      .join(". ");
+  }
+
+  /**
+   * A DIREÇÃO que vai ao Wan, relida da LINHA — e em inglês.
+   *
+   * `motion_prompt_en` é a coluna velada onde a tradução foi gravada no momento
+   * da criação (`CAMPOS_VELADOS`, `tenantView.ts`), e é ela que o fornecedor
+   * deve ler. O `??` cobre dois casos reais e nenhum deles é hipótese: linhas
+   * criadas antes da migration 050, que não têm a coluna preenchida, e o caminho
+   * em que a interface já estava em inglês. Cair no texto original é pior que a
+   * tradução e melhor que mandar vazio — mandar vazio apagaria em silêncio uma
+   * instrução que a pessoa escreveu, que é exatamente o defeito desta rodada.
+   *
+   * A aprovação NÃO retraduz: a chamada ao modelo já aconteceu, custou tokens e
+   * está registrada. Traduzir de novo no clique gastaria de novo para obter o
+   * mesmo texto — e faria uma etapa de US$ 1,44 depender de um segundo serviço
+   * poder falhar.
+   */
+  function promptDaDirecaoDaLinha(video: VideoRow): string {
+    return (video.motion_prompt_en ?? video.motion_prompt)?.trim() ?? "";
+  }
+
   /** As entradas da composição, em bytes. A mesma ordem de `generateVideoFal`. */
   async function entradasDaComposicao(video: VideoRow): Promise<EntradaDeComposicao[]> {
     const extras: EntradaDeComposicao[] = [];
@@ -1647,10 +1682,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // `runFalPipelineDaImagem`.
                 fotoBase: Buffer.alloc(0),
                 fotoMimeType: "image/jpeg",
-                promptDeComposicao: [video.scenario_prompt, video.outfit_prompt]
-                  .map((t) => t?.trim())
-                  .filter(Boolean)
-                  .join(". "),
+                promptDeComposicao: promptDaComposicaoDaLinha(video),
+                // ESTE é o call site que importa para a direção: a aprovação é o
+                // único caminho que chega a submeter o Wan, e o `prompt` dele é
+                // o que a pessoa escreveu na Interpretação. Sem esta linha o
+                // vídeo pago sai sem direção nenhuma.
+                promptDeDirecao: promptDaDirecaoDaLinha(video),
                 diario: criarDiarioNoBanco(runId),
               },
               imagemAprovada,
@@ -1786,10 +1823,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           fotoBase: await readUpload(fotoUrl),
           fotoMimeType: mimeDoUpload(fotoUrl),
           entradasExtras: await entradasDaComposicao(video),
-          promptDeComposicao: [video.scenario_prompt, video.outfit_prompt]
-            .map((t) => t?.trim())
-            .filter(Boolean)
-            .join(". "),
+          promptDeComposicao: promptDaComposicaoDaLinha(video),
+          // A recomposição para em `compor` (`PARAR_APOS_RECOMPOR`) e não chega
+          // ao Wan, então este campo não é lido nesta corrida. Vai mesmo assim:
+          // o dia em que `pararApos` mudar aqui, o Wan receberia direção VAZIA
+          // sem nada no código dizendo que ela foi perdida — e o sintoma seria
+          // um vídeo pago e sem direção, não um erro.
+          promptDeDirecao: promptDaDirecaoDaLinha(video),
           diario: criarDiarioNoBanco(runId),
         });
         await fecharCorrida(runId, "completed");

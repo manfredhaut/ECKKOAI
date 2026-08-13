@@ -76,6 +76,14 @@ async function main(): Promise<void> {
     arg("--prompt") ??
     "Retrato de meio corpo da mesma pessoa, jaleco branco, fundo de consultório claro e desfocado, " +
       "iluminação suave, olhando para a câmera, boca fechada e expressão neutra.";
+  // A DIREÇÃO é do Wan, e por isso tem bandeira própria: sondar a composição e
+  // sondar a animação passaram a ser coisas com entradas diferentes, e reusar
+  // `--prompt` nas duas faria a sonda medir um payload que o produto não manda.
+  // Em INGLÊS porque é assim que ela chega ao fornecedor pelo caminho real —
+  // quem traduz é a rota, e a sonda não passa por ela.
+  const DIRECAO =
+    arg("--direcao") ??
+    "Speak calmly to camera with small natural head movements and relaxed shoulders.";
 
   if (isFixtureMode()) {
     console.error(
@@ -137,6 +145,7 @@ async function main(): Promise<void> {
       fotoBase: foto,
       fotoMimeType: "image/jpeg",
       promptDeComposicao: PROMPT,
+      promptDeDirecao: DIRECAO,
       diario: criarDiarioNoBanco(runId),
       tetoDeGastoUsd: teto,
       pararApos: (ate || undefined) as EtapaDoPipeline | undefined,

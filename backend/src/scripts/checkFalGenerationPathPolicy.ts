@@ -224,6 +224,7 @@ async function correr(opcoes: { uploadQuebrado?: boolean; teto?: number }): Prom
       fotoBase: Buffer.from("foto-da-prova"),
       fotoMimeType: "image/jpeg",
       promptDeComposicao: "cena da prova",
+      promptDeDirecao: "direção da prova em inglês",
       diario: diario as never,
       tetoDeGastoUsd: opcoes.teto,
       pollTimeoutMs: 50,
