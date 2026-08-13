@@ -25,6 +25,12 @@ import {
 // função justamente porque discordavam na faixa de 109 a 120 s.
 import { MAX_SCRIPT_SECONDS } from "../video/scriptDuration.js";
 import type { AvatarVendor } from "./vendorCatalog.js";
+import type {
+  DiarioDoPipeline,
+  EntradaDeComposicao,
+  EtapaDoPipeline,
+} from "../video/falPipeline.js";
+import { runFalPipeline } from "../video/falPipeline.js";
 import { isFixtureMode } from "./providerMode.js";
 import { withLiveBudget } from "./liveGuard.js";
 import { vendorAcceptsFormat, type VideoFormat } from "./videoFormat.js";
@@ -190,6 +196,38 @@ export interface GenerateVideoInput {
     seconds: number | null;
     source: DurationSource | null;
   }) => Promise<void>;
+  /**
+   * AS ENTRADAS DO CAMINHO DA FAL. Nenhuma delas é coluna nova: `photo_urls`,
+   * `scenario`, `scenario_prompt`, `outfit` e `outfit_prompt` já existem em
+   * `avatars` e `videos` desde as migrations 002 e 013 — o que faltava era o
+   * transporte até aqui.
+   *
+   * Todas opcionais: os caminhos heygen/did não as consomem, e exigi-las
+   * quebraria os dois por causa de um terceiro.
+   */
+  photoUrls?: string[] | null;
+  /** Caminho `/uploads/...` da imagem de CENÁRIO, quando veio por arquivo. */
+  scenario?: string | null;
+  /** O cenário descrito em TEXTO. Entra no prompt de composição. */
+  scenarioPrompt?: string | null;
+  /** Caminho `/uploads/...` da imagem de TRAJE, quando veio por arquivo. */
+  outfit?: string | null;
+  /** O traje descrito em TEXTO. Entra no prompt de composição. */
+  outfitPrompt?: string | null;
+  /**
+   * O DIÁRIO da corrida, injetado.
+   *
+   * Injetado pela mesma razão de `onAudioMeasured` ser callback: este módulo
+   * não fala com o banco, e é essa ausência de I/O que o torna exercitável com
+   * `globalThis.fetch` substituído e mais nada. Quem abre a corrida em
+   * `fal_pipeline_runs` e devolve o gravador é quem tem `pool` — a sonda hoje,
+   * a rota quando o B3 existir.
+   */
+  falDiario?: DiarioDoPipeline | null;
+  /**
+   * Onde a corrida PARA. Default `"compor"` — ver `generateVideoFal`.
+   */
+  falPararApos?: EtapaDoPipeline | null;
 }
 
 /**
@@ -1041,6 +1079,132 @@ async function checkDidConnection(apiKey: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// fal.ai — a PONTE até o orquestrador
+// ---------------------------------------------------------------------------
+
+/** Tipo do arquivo pela extensão. O storage local não guarda content-type. */
+function mimeDoCaminho(caminho: string): string {
+  const ext = caminho.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  return "image/jpeg";
+}
+
+/**
+ * O TEXTO da composição: o que veio por prompt, dos dois campos.
+ *
+ * Traje e cenário chegam de dois jeitos e os dois valem ao mesmo tempo — uma
+ * imagem de referência E uma descrição. A imagem vira `image_urls`; o texto
+ * vira este prompt. Quem mandou só texto continua descrevendo a cena inteira;
+ * quem mandou só imagem manda um prompt vazio e deixa a imagem falar.
+ */
+function promptDaComposicao(input: GenerateVideoInput): string {
+  return [input.scenarioPrompt?.trim(), input.outfitPrompt?.trim()].filter(Boolean).join(". ");
+}
+
+/**
+ * Gera pelo pipeline da fal — e PARA na composição.
+ *
+ * ┌─ Por que ela para, e por que isso não é uma sonda ───────────────────────┐
+ * │ `pararApos: "compor"` é o comportamento NORMAL desta fase (BLOCO B2).    │
+ * │ Nada dispara o Wan na mesma invocação: a imagem-base fica gravada em     │
+ * │ `fal_pipeline_steps` e a etapa seguinte espera quem a aprove — que é o   │
+ * │ BLOCO 5, com estado, rota e tela. Construir a aprovação aqui seria       │
+ * │ construir metade dela sem onde mostrá-la.                                │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * NÃO cria linha em `videos`, e isso é decisão registrada, não omissão:
+ * `recovery.ts` encerra como `recovery_orphan` qualquer vídeo sem
+ * `provider_job_id` em qualquer idade, e uma corrida que para em `compor` não
+ * tem job id de VÍDEO nenhum para dar. A corrida vive só no diário. Quem
+ * garante que nenhum caminho de produto chegue aqui enquanto isso não muda é o
+ * porteiro de `routes/videos.ts` — a fal está fora de
+ * `VENDORS_WITH_GENERATION_PATH`.
+ *
+ * `providerJobId` é o `request_id` da COMPOSIÇÃO: o ponteiro para o trabalho
+ * que de fato foi pedido e pago. Devolver string vazia seria perder o único
+ * vínculo com o que já custou dinheiro.
+ */
+async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVideoResult> {
+  if (!input.falDiario) {
+    throw new AvatarProviderError(
+      "fal: nenhum diário de corrida foi injetado. O orquestrador registra cada etapa em " +
+        "fal_pipeline_runs/fal_pipeline_steps, e este módulo não fala com o banco de propósito — " +
+        "quem abre a corrida é quem tem `pool`. Sem diário não há onde gravar o request_id, e uma " +
+        "etapa paga sem ponteiro é trabalho perdido com a fatura chegando do mesmo jeito.",
+    );
+  }
+  if (!input.elevenLabsApiKey || !input.voiceId) {
+    throw new AvatarProviderError(
+      "fal: a voz é ENTRADA deste pipeline, não subproduto — sem chave do ElevenLabs e sem voice_id " +
+        "não há o que sincronizar. A recusa acontece antes da primeira chamada paga.",
+    );
+  }
+
+  const fotoUrl = input.photoUrls?.[0];
+  if (!fotoUrl) {
+    throw new AvatarProviderError(
+      "fal: a composição parte do ROSTO, e o avatar não tem nenhuma foto registrada. Nada foi pedido " +
+        "ao fornecedor.",
+    );
+  }
+
+  // O I/O DE DISCO ACONTECE AQUI, e não no orquestrador. `falPipeline.ts` recebe
+  // bytes e é por isso que ele roda inteiro com `fetch` substituído e mais nada.
+  const fotoBase = await readUpload(fotoUrl);
+
+  // A ORDEM É SIGNIFICATIVA: `[rosto, traje?, cenário?]` — a mesma que vai em
+  // `image_urls`. Traje antes de cenário porque é o que veste a pessoa; o
+  // cenário é o que está atrás dela.
+  const entradasExtras: EntradaDeComposicao[] = [];
+  if (input.outfit) {
+    entradasExtras.push({
+      rotulo: "traje",
+      bytes: await readUpload(input.outfit),
+      mimeType: mimeDoCaminho(input.outfit),
+    });
+  }
+  if (input.scenario) {
+    entradasExtras.push({
+      rotulo: "cenario",
+      bytes: await readUpload(input.scenario),
+      mimeType: mimeDoCaminho(input.scenario),
+    });
+  }
+
+  const corrida = await runFalPipeline({
+    apiKeyFal: input.apiKey,
+    apiKeyElevenLabs: input.elevenLabsApiKey,
+    voiceId: input.voiceId,
+    script: input.script,
+    fotoBase,
+    fotoMimeType: mimeDoCaminho(fotoUrl),
+    entradasExtras,
+    promptDeComposicao: promptDaComposicao(input),
+    diario: input.falDiario,
+    // O default é o FREIO, e não o pipeline inteiro: quem quiser ir além tem de
+    // dizer isso explicitamente, e hoje ninguém diz.
+    pararApos: input.falPararApos ?? "compor",
+  });
+
+  logEvent("info", "fal_pipeline_encerrado", {
+    imagemCompostaUrl: corrida.imagemCompostaUrl,
+    gastoPrevistoUsd: corrida.gastoPrevistoUsd,
+    videoUrl: corrida.videoUrl || null,
+  });
+
+  return {
+    providerJobId: corrida.requestIds.compor,
+    audioDurationSeconds: corrida.audioDurationSeconds,
+    audioDurationSource: corrida.audioDurationSeconds == null ? null : "tts_timestamps",
+    // A fal não tem o conceito de motor da HeyGen. `null` com razão declarada é
+    // o que este projeto grava quando o campo não se aplica — ver `engineReason`.
+    engine: null,
+    engineReason: "vendor_unsupported",
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Vendor dispatch
 // ---------------------------------------------------------------------------
 
@@ -1118,6 +1282,27 @@ export async function generateVideo(input: GenerateVideoInput): Promise<Generate
   // GASTO se a chamada lançar — o fornecedor não chegou a aceitar o trabalho,
   // mesma fronteira do estorno de crédito. A TENTATIVA não volta, e é ela que
   // continua barrando o laço.
+  // O RAMO DA FAL, e por que ele é um `if` acima do ternário e não um terceiro
+  // braço dele.
+  //
+  // O ternário abaixo é `did ? … : heygen` — não tem caso "nenhum dos dois", e
+  // é essa ausência que faz todo vendor novo cair na HeyGen. Transformá-lo em
+  // `fal ? … : did ? … : heygen` resolveria o despacho e criaria outra coisa:
+  // a ordem passaria a ser lida da direita para a esquerda, e `heygen` — que é
+  // o `defaultVendor()` e o destino de todo tenant que nunca escolheu — sairia
+  // do fim de UM ternário para o fim de DOIS. Um `if` de saída antecipada deixa
+  // a linha seguinte idêntica ao que ela era, byte a byte, e a ordem
+  // heygen-primeiro continua sendo uma propriedade de um ternário só.
+  //
+  // FORA do `withLiveBudget`, e isto é consequência aceita, não descuido: o
+  // orçamento de sessão conta GERAÇÕES de vídeo, e esta corrida para em
+  // `compor` — não há geração de vídeo a contar. O freio dela é outro e é
+  // próprio: `autorizarGasto` soma o previsto em dólares antes de CADA etapa
+  // paga (`PIPELINE_TETO_USD`). Ligar `consumeLiveGeneration()` às submissões
+  // pagas da fal é do BLOCO 4/B3, junto com a decisão de onde o débito de
+  // crédito acontece.
+  if (input.vendor === "fal") return generateVideoFal(input);
+
   return withLiveBudget("geração de vídeo", "gerar vídeo", async () =>
     input.vendor === "did" ? generateVideoDid(input) : generateVideoHeygen(input),
   );

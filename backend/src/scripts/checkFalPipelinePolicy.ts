@@ -295,7 +295,20 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
   // -------------------------------------------------------------------------
   const vazio = await correr({ resultadoVazio: true });
 
-  if (vazio.crus.length === 0) {
+  // O corpo do FORNECEDOR, entre os crus gravados — e não mais `crus[0]`.
+  //
+  // Desde o B2 a corrida abre com a PUBLICAÇÃO das entradas (ordem 0, não
+  // tarifada), e cada `file_url` é gravado como cru da própria etapa. O
+  // primeiro cru da corrida passou a ser dela, e a asserção antiga —
+  // "`crus[0]` é o corpo do fornecedor" — passou a reprovar o caminho correto.
+  //
+  // A propriedade medida NÃO mudou: o corpo que o fornecedor devolveu tem de
+  // estar gravado antes de qualquer campo dele ser lido. Mudou só onde ele
+  // está na fila, e é por isso que o filtro é por conteúdo (o registro da
+  // publicação é o único que carrega `fileUrl`) em vez de por posição.
+  const crusDoFornecedor = vazio.crus.filter((c) => !c.includes('"fileUrl"'));
+
+  if (crusDoFornecedor.length === 0) {
     failures.push(
       "pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua — o fornecedor " +
         "concluiu, devolveu um corpo em forma inesperada, e NENHUM corpo bruto foi gravado. Passos: " +
@@ -304,14 +317,14 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
         "É exatamente o corpo de que se precisa para descobrir o que mudou no contrato, e ele morreu " +
         "com a exceção — depois de o trabalho ter sido feito e cobrado.",
     );
-  } else if (vazio.crus[0] !== "{}") {
+  } else if (crusDoFornecedor[0] !== "{}") {
     failures.push(
       "pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua — o primeiro " +
-        `corpo gravado foi ${JSON.stringify(vazio.crus[0].slice(0, 80))}, e não o corpo que o ` +
+        `corpo gravado foi ${JSON.stringify(crusDoFornecedor[0].slice(0, 80))}, e não o corpo que o ` +
         "fornecedor devolveu. O que se grava tem de ser o corpo inteiro, como veio.",
     );
   }
-  if (vazio.crus.length > 0 && !(vazio.erro instanceof FalPipelineError)) {
+  if (crusDoFornecedor.length > 0 && !(vazio.erro instanceof FalPipelineError)) {
     failures.push(
       "pipeline: a resposta do fornecedor foi interpretada ANTES de ser gravada crua, ou o erro não é " +
         `nosso — veio ${JSON.stringify(String(vazio.erro).slice(0, 120))}. Um TypeError aqui significa ` +
@@ -319,11 +332,14 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
         "dizer que o corpo está gravado.",
     );
   }
-  // Contraponto interno: no caminho feliz as três etapas gravam o corpo.
-  if (feliz.crus.length < 3) {
+  // Contraponto interno: no caminho feliz as três etapas gravam o corpo. Os
+  // registros da publicação ficam de fora da conta — eles não são resposta de
+  // etapa paga, e contá-los faria o número passar mesmo com uma etapa muda.
+  const crusPagosNoFeliz = feliz.crus.filter((c) => !c.includes('"fileUrl"'));
+  if (crusPagosNoFeliz.length < 3) {
     failures.push(
-      `pipeline: apenas ${feliz.crus.length} corpo(s) bruto(s) gravado(s) no caminho feliz, e as etapas ` +
-        "pagas são três. Um corpo por etapa é o que sustenta a cobrança por camada.",
+      `pipeline: apenas ${crusPagosNoFeliz.length} corpo(s) bruto(s) gravado(s) no caminho feliz, e as ` +
+        "etapas pagas são três. Um corpo por etapa é o que sustenta a cobrança por camada.",
     );
   }
 
