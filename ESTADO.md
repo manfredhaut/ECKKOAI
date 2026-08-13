@@ -195,17 +195,27 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
-**Passada de 13/08, HEAD `23dce3a`, 234 mutantes.** Lançada em background ao
-fim da sessão; **ninguém viu o desfecho**. Primeiro comando desta sessão:
+**Passada de 13/08, HEAD `23dce3a`, 234 mutantes: COMPLETA, LIDA e 100% VERDE.**
+`mutants-234-2026-08-13-a.log` (cópia `-b` idêntica, md5 `22243452…`).
 
-```bash
-tail -40 "C:/Users/manfr/Documents/1A_A_PROJETOS/_arnes-logs/mutants-234-2026-08-13-a.log"
-```
+| desfecho | n |
+|---|---|
+| ok | **234** |
+| INERTE | **0** |
+| AMBÍGUO | **0** |
+| FALHOU | **0** |
+| ERRO | **0** |
 
-Cópia `-b` idêntica no mesmo diretório. Procurar, nesta ordem: `INERTE`
-(**PARE e relate**), `AMBÍGUO` (antes de culpar a guarda, gotcha 8), `ERRO`
-(agora improvável — a conferência de cadastro roda no gate), e a linha final
-`N/234`.
+Sem carimbo de PULADOS — completa. Retry de spawn: não disparou (terceira
+passada seguida sem o 0xC0000142).
+
+**É a primeira passada sem NENHUM ERRO deste projeto** — a anterior fechou
+229/231 com 2 mutantes podres. A diferença é a guarda de cadastro (`2cd2987`):
+ela pega o mesmo defeito em segundos, no gate, então mutante podre não chega
+mais à passada. O ciclo deixou de descobrir isso 80 min depois.
+
+**Nada aqui bloqueia nada.** O próximo passo é o BLOCO 3.5, e ele depende só
+da chave — ver §1.2 e o [PROXIMA-RODADA.md](PROXIMA-RODADA.md).
 
 ---
 
