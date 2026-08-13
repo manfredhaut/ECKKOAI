@@ -54,10 +54,13 @@ function arg(nome: string): string | null {
   return i >= 0 ? argv[i + 1] ?? null : null;
 }
 
-/** A voz é REUSADA. Clonar consome slot irreversível e a conta está em 10/10. */
-const VOZ = "0hQuq0q2JEk1SY4lZaM9";
+/**
+ * A voz é REUSADA, sempre. MEDIDO em 13/08: a conta tem 10 vozes próprias de
+ * 10 slots — clonar aqui seria recusado pela nossa régua antes de sair.
+ */
+const VOZ_PADRAO = "0hQuq0q2JEk1SY4lZaM9";
 
-const ROTEIRO = "Oi! Este é um teste do pipeline novo. Dez segundos, nada mais.";
+const ROTEIRO_PADRAO = "Oi! Este é um teste do pipeline novo. Dez segundos, nada mais.";
 
 async function main(): Promise<void> {
   const tenantId = arg("--tenant");
@@ -67,6 +70,12 @@ async function main(): Promise<void> {
   }
   const ate = (arg("--ate") ?? "") as EtapaDoPipeline | "upload" | "";
   const teto = Number(arg("--teto") ?? "0.10");
+  const ROTEIRO = arg("--roteiro") ?? ROTEIRO_PADRAO;
+  const VOZ = arg("--voz") ?? VOZ_PADRAO;
+  const PROMPT =
+    arg("--prompt") ??
+    "Retrato de meio corpo da mesma pessoa, jaleco branco, fundo de consultório claro e desfocado, " +
+      "iluminação suave, olhando para a câmera, boca fechada e expressão neutra.";
 
   if (isFixtureMode()) {
     console.error(
@@ -127,9 +136,7 @@ async function main(): Promise<void> {
       script: ROTEIRO,
       fotoBase: foto,
       fotoMimeType: "image/jpeg",
-      promptDeComposicao:
-        "Retrato de meio corpo da mesma pessoa, jaleco branco, fundo de consultório claro e desfocado, " +
-        "iluminação suave, olhando para a câmera.",
+      promptDeComposicao: PROMPT,
       diario: criarDiarioNoBanco(runId),
       tetoDeGastoUsd: teto,
       pararApos: (ate || undefined) as EtapaDoPipeline | undefined,
