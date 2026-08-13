@@ -55,22 +55,32 @@ const RAMO_FAL = '  if (input.vendor === "fal") return generateVideoFal(input);'
 export const MUTANTS: Mutant[] = [
   {
     guard: "vendor sem caminho de geração é recusado antes do débito",
-    name: "o porteiro desce para depois de debitCredit",
+    name: "o débito passa a acontecer antes do porteiro",
     kind: "esperto",
     // ESPERTO, e é a forma mais provável de isto regredir de verdade: ninguém
-    // apaga um porteiro: alguém o move "para perto de quem usa". A recusa
-    // continua acontecendo, o 403 continua saindo, a tela continua igual — e o
-    // crédito já foi consumido por uma geração que nunca poderia acontecer,
-    // deixando para trás uma linha `queued` sem `provider_job_id` que
-    // `recovery.ts` encerra como órfã. Uma guarda que só perguntasse "a rota
-    // recusa vendor sem caminho?" ficaria verde.
+    // apaga um porteiro — alguém desce o débito "para perto de quem lê o
+    // avatar", ou sobe uma reserva de crédito para o começo do handler. A
+    // recusa continua acontecendo, o 403 continua saindo, a tela continua
+    // idêntica — e o crédito já foi consumido por uma geração que nunca
+    // poderia acontecer. Uma guarda que só perguntasse "a rota recusa vendor
+    // sem caminho?" ficaria verde.
+    //
+    // Mover o BLOCO do porteiro para depois do débito exigiria um `find` de
+    // ~130 linhas contíguas (o INSERT e a tradução estão entre os dois), e um
+    // `find` desse tamanho apodrece na primeira edição do meio. Antecipar o
+    // débito produz exatamente a mesma inversão sobre o que a guarda mede — a
+    // primeira ocorrência de `await debitCredit({` passa a estar ANTES da
+    // chamada ao porteiro — num trecho contíguo de uma linha.
+    //
+    // ⚠️ NÃO usar `if (false && …)` aqui: o TypeScript trata o corpo como
+    // inalcançável, para de propagar o narrowing de `avatarCredential` para
+    // dentro dele, e o gate sai 2 pelo `tsc`. MEDIDO nesta rodada — o arnês
+    // devolveu AMBÍGUO, com a guarda saudável e sem ter opinado.
     file: ROTA_DE_VIDEOS,
     find: "    if (!hasGenerationPath(\"avatar\", avatarCredential.vendor)) {",
-    // Trocar a condição por uma que nunca é verdadeira no ponto certo é o
-    // equivalente exato de mover o bloco para depois do débito: o porteiro
-    // deixa de barrar antes, e quem barra passa a ser ninguém. O mutante
-    // COMPILA — exigência do arnês — e o gate só pode reprovar pela guarda.
-    replace: "    if (false && !hasGenerationPath(\"avatar\", avatarCredential.vendor)) {",
+    replace:
+      "    await debitCredit({ tenantId: req.tenantId, creditType: \"video\", relatedVideoId: req.tenantId });\n" +
+      "    if (!hasGenerationPath(\"avatar\", avatarCredential.vendor)) {",
     expect: "vendor sem caminho de geração não é recusado antes do débito",
   },
   {
