@@ -10,6 +10,7 @@ import {
   AvatarProviderError,
 } from "../services/providers/avatarProvider.js";
 import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCatalog.js";
+import { hasGenerationPath } from "../services/providers/vendorCatalog.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 import { createNotification } from "../services/notifications.js";
@@ -977,6 +978,36 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     if (!avatar?.provider_avatar_id || !avatarCredential) {
       throw new Error("readiness passou mas avatar/credencial sumiram entre as duas leituras");
     }
+
+    // -----------------------------------------------------------------------
+    // O PORTEIRO DO VENDOR — antes da linha, antes do débito, antes de tudo.
+    //
+    // A ordem é a propriedade, não a existência da recusa. Um vendor sem
+    // caminho de geração recusado DEPOIS de `debitCredit` produziria os dois
+    // piores efeitos deste fluxo de uma vez: crédito consumido por uma
+    // geração que nunca poderia acontecer, e uma linha `queued` em `videos`
+    // sem `provider_job_id` — que `recovery.ts` encerra como
+    // `recovery_orphan`, em qualquer idade. Aqui não há o que estornar nem o
+    // que reconciliar: nada foi criado.
+    //
+    // A lista de quem TEM vive em `vendorCatalog.ts`, junto da de sondas, e é
+    // de inclusão explícita: vendor novo nasce recusado.
+    if (!hasGenerationPath("avatar", avatarCredential.vendor)) {
+      logEvent("warn", "video_vendor_sem_caminho_de_geracao", {
+        context: "videos.create",
+        vendor: avatarCredential.vendor,
+        consequence: "recusado antes do débito; nenhuma linha criada e nenhum crédito tocado",
+      });
+      return reply.code(403).send({
+        error: "vendor_sem_caminho_de_geracao",
+        message:
+          `O provedor de vídeo conectado a esta conta (${avatarCredential.vendor}) não tem caminho ` +
+          "de geração no produto: a chave pode ser guardada por tenant, mas nenhuma geração sai por " +
+          "ela. Nada foi cobrado e nenhum vídeo foi criado — a recusa acontece antes do débito de " +
+          "crédito e antes de qualquer chamada a fornecedor.",
+      });
+    }
+
     const voiceCredential = await getCredential(req.tenantId, "voice");
 
     // -----------------------------------------------------------------------
@@ -1195,6 +1226,22 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // gravada na linha, e é a única que a tela mostra, continua com o texto
         // do usuário. É este o ponto exato em que os dois caminhos se separam.
         scene: { ...scene, motionPrompt: motionPromptEn ?? scene.motionPrompt },
+        // CENÁRIO E TRAJE — o fio que faltava.
+        //
+        // Os quatro campos são coletados pela tela e gravados no INSERT acima
+        // desde a migration 013, e paravam ali: `generateVideo` não os recebia,
+        // e por isso `grep scenario|outfit` nos providers dava zero. Não é
+        // campo novo nem coluna nova — é o transporte que nunca existiu.
+        //
+        // Só o caminho da fal os consome (a composição é o que junta rosto,
+        // traje e cenário numa imagem). A HeyGen não tem campo para eles no
+        // contrato — ver o item 1 dos cinco defeitos no CLAUDE.md —, então
+        // passá-los aqui não muda nada naquele caminho.
+        photoUrls: avatar.photo_urls ?? null,
+        scenario,
+        scenarioPrompt,
+        outfit,
+        outfitPrompt,
         engineChoice,
         captions,
         // A duração REAL, gravada ANTES do `POST /v3/videos`.

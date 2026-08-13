@@ -130,8 +130,20 @@ export const MUTANTS: Mutant[] = [
     // passou a mentir, e mentir aqui manda a chave da fal para a HeyGen. Uma
     // guarda que só verificasse "a trava é chamada" ficaria verde.
     file: "backend/src/services/providers/vendorCatalog.ts",
-    find: '  avatar: ["heygen", "did"],\n  voice: ["elevenlabs"],\n};',
-    replace: '  avatar: ["heygen", "did", "fal"],\n  voice: ["elevenlabs"],\n};',
+    // CONTEXTO ÚNICO, e a segunda vez que este `find` precisa dele. Antes ele
+    // era só as três linhas do objeto — e desde o B2 existe uma SEGUNDA lista
+    // com exatamente o mesmo corpo (`VENDORS_WITH_GENERATION_PATH`), o que fez
+    // o trecho casar 2× e o mutante virar ERRO no meio da passada. A linha do
+    // `export` é o que distingue as duas; apagar a lista nova do produto para
+    // desambiguar seria trocar uma proteção por um `find` mais curto.
+    find:
+      "export const VENDORS_WITH_CONNECTION_PROBE: Readonly<Record<CredentialProvider, readonly string[]>> = {\n" +
+      '  script: ["anthropic", "gemini", "openai"],\n' +
+      '  avatar: ["heygen", "did"],',
+    replace:
+      "export const VENDORS_WITH_CONNECTION_PROBE: Readonly<Record<CredentialProvider, readonly string[]>> = {\n" +
+      '  script: ["anthropic", "gemini", "openai"],\n' +
+      '  avatar: ["heygen", "did", "fal"],',
     expect: "alcançaria a rede no teste de credencial",
   },
   {

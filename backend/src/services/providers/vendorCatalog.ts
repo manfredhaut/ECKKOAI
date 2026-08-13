@@ -39,6 +39,40 @@ export function hasConnectionProbe(provider: CredentialProvider, vendor: string)
   return VENDORS_WITH_CONNECTION_PROBE[provider].includes(vendor);
 }
 
+/**
+ * Vendors com CAMINHO DE GERAÇÃO PELO PRODUTO — os únicos que `POST /videos`
+ * pode aceitar.
+ *
+ * Mesma forma da lista acima, e pelo mesmo motivo: é a lista de quem TEM, não
+ * de quem não tem. Vendor novo nasce FORA dela e é recusado por omissão; a
+ * alternativa — enumerar os proibidos — deixa o próximo vazar por esquecimento.
+ *
+ * ┌─ Por que `fal` está de fora mesmo tendo ramo em `generateVideo` ─────────┐
+ * │ O ramo existe (`generateVideoFal`), e ainda assim a rota o recusa. Não é │
+ * │ esquecimento: é a decisão do BLOCO B2. A corrida da fal grava em         │
+ * │ `fal_pipeline_runs`/`fal_pipeline_steps` e **não cria linha em           │
+ * │ `videos`** — porque `recovery.ts:211` encerra como `recovery_orphan`     │
+ * │ qualquer vídeo sem `provider_job_id`, em qualquer idade, e a corrida     │
+ * │ para deliberadamente em `compor`, sem job id de vídeo nenhum. A rota,    │
+ * │ porém, INSERE a linha em `videos` antes de chamar o provider. Deixar     │
+ * │ passar aqui produziria exatamente a colisão que a decisão evita.         │
+ * │                                                                          │
+ * │ Enquanto isso, quem alcança o ramo é a sonda (`probeFalPipeline.ts`),    │
+ * │ que não passa por esta rota. Ligar o caminho de produto é o B3 — e ele   │
+ * │ começa por decidir onde o débito de crédito acontece.                    │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+export const VENDORS_WITH_GENERATION_PATH: Readonly<Record<CredentialProvider, readonly string[]>> = {
+  script: ["anthropic", "gemini", "openai"],
+  avatar: ["heygen", "did"],
+  voice: ["elevenlabs"],
+};
+
+/** O vendor pode gerar pelo produto? Quem responde `false` é recusado na rota. */
+export function hasGenerationPath(provider: CredentialProvider, vendor: string): boolean {
+  return VENDORS_WITH_GENERATION_PATH[provider].includes(vendor);
+}
+
 export type ScriptVendor = (typeof VENDORS_BY_PROVIDER)["script"][number];
 export type AvatarVendor = (typeof VENDORS_BY_PROVIDER)["avatar"][number];
 export type VoiceVendor = (typeof VENDORS_BY_PROVIDER)["voice"][number];
