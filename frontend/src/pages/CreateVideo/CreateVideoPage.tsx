@@ -37,11 +37,16 @@ export function CreateVideoPage() {
   /**
    * HERANÇA do passo 1: cenário e traje "padrão" do avatar.
    *
-   * Continua aqui porque o passo 1 ainda desenha esse bloco, e continua sendo
-   * estado local porque ele NÃO alimenta mais geração nenhuma — o fundo que
-   * chega ao fornecedor é o do passo Cena, e traje é look. Enquanto o bloco
-   * existir na tela do avatar, ele é o último resto do defeito que este bloco
-   * fechou: coleta que não vai a lugar nenhum.
+   * ⚠️ **Deixou de ser coleta órfã no BLOCO B2.** Até então este estado não
+   * alimentava geração nenhuma: os arquivos subiam, a tela escrevia "Imagem
+   * salva", e `corpoDaGeracao` não os mandava — morriam aqui, a um passo do
+   * servidor. Agora eles descem para o passo 4 (`defaults={defaults}`) e saem
+   * no corpo de `POST /videos`.
+   *
+   * O que eles alimentam é a COMPOSIÇÃO da fal, que junta rosto, traje e
+   * cenário numa imagem-base. No caminho HeyGen eles continuam sem destino, e
+   * isso não é descuido: aquele contrato não tem campo para cenário nem para
+   * traje — traje lá é look, e fundo é o do passo Cena.
    */
   const [defaults, setDefaults] = useState<AssetDefaults>({
     scenario: "",
@@ -173,6 +178,10 @@ export function CreateVideoPage() {
         <GenerateStep
           wizard={wizard}
           onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))}
+          // O passo 1 coleta cenário e traje; é aqui que eles atravessam até o
+          // corpo de `POST /videos`. Antes desta linha o bloco do passo 1 era o
+          // último resto de coleta que não ia a lugar nenhum.
+          defaults={defaults}
         />
       )}
 
