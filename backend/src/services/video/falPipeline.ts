@@ -128,8 +128,22 @@ export const ENDPOINT_SINCRONIZAR = "fal-ai/sync-lipsync/v2";
  */
 export const SYNC_MODE = "loop";
 
-/** Resolução da imagem-base e do clipe. 720p, não o 1080p default do Wan. */
-export const PIPELINE_RESOLUTION = "720p";
+/**
+ * DOIS vocabulários de resolução, e eles NÃO são intercambiáveis.
+ *
+ * ⚠️ MEDIDO em 13/08, e custou uma composição: `nano-banana-2/edit` recusa
+ * `"720p"` com 422 — `Input should be '0.5K', '1K', '2K' or '4K'`. O Wan usa a
+ * escala em `p`. Uma constante só para os dois parecia economia e era um erro
+ * esperando o momento mais caro para aparecer.
+ *
+ * Pior: a fila ACEITOU a submissão (200, IN_QUEUE) e o erro só apareceu no
+ * RESULTADO, com `status: COMPLETED` e `inference_time: 0.058` — ou seja, o
+ * status diz concluído mesmo quando o worker recusou o payload.
+ */
+export const RESOLUCAO_IMAGEM = "1K";
+
+/** A do clipe. `720p` NÃO VERIFICADO no Wan — só o vocabulário do nano foi medido. */
+export const RESOLUCAO_VIDEO = "720p";
 
 // ---------------------------------------------------------------------------
 // O DIÁRIO — a persistência, injetada
@@ -233,7 +247,7 @@ export function conferirRoteiro(script: string): { chars: number; segundosEstima
  */
 export async function aguardarConclusao(
   apiKey: string,
-  endpointId: string,
+  statusUrl: string,
   requestId: string,
   opcoes: { timeoutMs: number; intervalMs: number; esperar: (ms: number) => Promise<void> },
 ): Promise<void> {
@@ -241,28 +255,28 @@ export async function aguardarConclusao(
   let tentativas = 0;
 
   for (;;) {
-    const { status } = await falPoll(apiKey, endpointId, requestId);
+    const { status } = await falPoll(apiKey, statusUrl);
     tentativas += 1;
 
     if (status === "completed") {
-      logEvent("info", "fal_pipeline_poll_concluido", { endpointId, requestId, tentativas });
+      logEvent("info", "fal_pipeline_poll_concluido", { statusUrl, requestId, tentativas });
       return;
     }
     if (status === "failed") {
       throw new FalPipelineError(
-        `fal: ${endpointId} reportou FALHA no request ${requestId} após ${tentativas} leitura(s).`,
+        `fal: ${statusUrl} reportou FALHA no request ${requestId} após ${tentativas} leitura(s).`,
       );
     }
 
     if (Date.now() >= limite) {
       logEvent("warn", "fal_pipeline_poll_esgotado", {
-        endpointId,
+        statusUrl,
         requestId,
         tentativas,
         timeoutMs: opcoes.timeoutMs,
       });
       throw new FalPipelineError(
-        `fal: o teto de ${opcoes.timeoutMs} ms de espera se esgotou em ${endpointId} depois de ` +
+        `fal: o teto de ${opcoes.timeoutMs} ms de espera se esgotou em ${statusUrl} depois de ` +
           `${tentativas} leitura(s) de status. O trabalho NÃO foi perdido e NÃO deve ser refeito: ` +
           `ele já foi aceito e já custa, e o request_id ${requestId} está gravado — a recuperação é ` +
           "por ele. Repetir a etapa paga duas vezes pelo mesmo resultado.",
@@ -320,19 +334,19 @@ async function etapaNaFal(
 ): Promise<{ requestId: string; saida: any }> {
   const stepId = await input.diario.abrirEtapa(etapa, ordem, "fal", endpointId);
 
-  const { requestId } = await falSubmit(input.apiKeyFal, endpointId, corpo, async (id) => {
+  const { requestId, statusUrl, responseUrl } = await falSubmit(input.apiKeyFal, endpointId, corpo, async (id) => {
     // O PONTEIRO primeiro. `falSubmit` chama isto antes do próprio
     // processamento local dele, e o diário o persiste antes do nosso.
     await input.diario.gravarRequestId(stepId, id);
   });
 
-  await aguardarConclusao(input.apiKeyFal, endpointId, requestId, {
+  await aguardarConclusao(input.apiKeyFal, statusUrl, requestId, {
     timeoutMs: input.pollTimeoutMs ?? PIPELINE_POLL_TIMEOUT_MS,
     intervalMs: input.pollIntervalMs ?? PIPELINE_POLL_INTERVAL_MS,
     esperar: input.esperar ?? dormir,
   });
 
-  const saida = await falResult(input.apiKeyFal, endpointId, requestId);
+  const saida = await falResult(input.apiKeyFal, responseUrl);
 
   // CRU ANTES DE INTERPRETADO. Nenhum campo de `saida` foi lido até aqui.
   await input.diario.gravarRespostaCrua(stepId, JSON.stringify(saida));
@@ -361,7 +375,7 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
     image_urls: [fotoUrl],
     // Explícitos, sempre. Ver DEFAULTS_NUNCA_HERDADOS.
     num_images: 1,
-    resolution: PIPELINE_RESOLUTION,
+    resolution: RESOLUCAO_IMAGEM,
   });
   const imagemUrl = composicao.saida?.images?.[0]?.url;
   if (!imagemUrl) {
@@ -386,7 +400,7 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
     // `generate_audio: false` é o mais caro de omitir: o default sintetiza uma
     // trilha paga que a etapa 4 descartaria.
     generate_audio: false,
-    resolution: PIPELINE_RESOLUTION,
+    resolution: RESOLUCAO_VIDEO,
     duration: PIPELINE_TARGET_SECONDS,
   });
   const videoMudoUrl = animacao.saida?.video?.url;

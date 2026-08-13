@@ -82,8 +82,8 @@ export const MUTANTS: Mutant[] = [
     // visível — o vídeo continua saindo, só que com áudio que ninguém pediu e
     // por um preço que ninguém viu.
     file: "backend/src/services/video/falPipeline.ts",
-    find: "    generate_audio: false,\n    resolution: PIPELINE_RESOLUTION,",
-    replace: "    resolution: PIPELINE_RESOLUTION,",
+    find: "    generate_audio: false,\n    resolution: RESOLUCAO_VIDEO,",
+    replace: "    resolution: RESOLUCAO_VIDEO,",
     expect: "pipeline: um default do fornecedor foi herdado em silêncio",
   },
   {
@@ -222,6 +222,7 @@ async function correr(
       JSON.stringify({
         request_id: `req-${endpoint.replace(/[^a-z0-9]+/gi, "-")}`,
         status_url: `https://queue.fal.run/${endpoint}/requests/req/status`,
+        response_url: `https://queue.fal.run/${endpoint}/requests/req`,
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );

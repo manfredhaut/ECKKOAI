@@ -196,6 +196,7 @@ async function correr(endpointId: string, statusUrlDevolvido: string | null): Pr
     return new Response(
       JSON.stringify({
         request_id: REQUEST_ID_DA_PROVA,
+        response_url: `https://queue.fal.run/${endpointId}/requests/req`,
         ...(statusUrlDevolvido === null ? {} : { status_url: statusUrlDevolvido }),
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -213,8 +214,8 @@ async function correr(endpointId: string, statusUrlDevolvido: string | null): Pr
         gravado = requestId;
       },
     );
-    await falPoll("chave-irrelevante-fetch-substituido", endpointId, submetido.requestId);
-    await falResult("chave-irrelevante-fetch-substituido", endpointId, submetido.requestId);
+    await falPoll("chave-irrelevante-fetch-substituido", submetido.statusUrl);
+    await falResult("chave-irrelevante-fetch-substituido", submetido.responseUrl);
   } catch (err) {
     erro = err;
   } finally {

@@ -83,8 +83,19 @@ export type FalQueueStatus = "queued" | "processing" | "completed" | "failed";
 
 export interface FalSubmitResult {
   requestId: string;
-  /** Devolvido pela fila. Conferido contra o host de fila; ver `falSubmit`. */
+  /**
+   * As URLs que a FILA devolveu, para serem SEGUIDAS — nunca montadas.
+   *
+   * MEDIDO em 13/08, e custou US$ 0,08 para descobrir: o caminho de status usa
+   * o app id BASE (`fal-ai/nano-banana-2`), sem o sub-path do endpoint
+   * (`/edit`). A URL montada com o sub-path devolve **405**, e o trabalho já
+   * estava pago e rodando quando isso apareceu.
+   *
+   * Seguir o que o fornecedor devolve não é só mais curto: é a única forma que
+   * não depende de adivinhar a regra de composição do caminho dele.
+   */
   statusUrl: string;
+  responseUrl: string;
 }
 
 /**
@@ -122,6 +133,26 @@ export async function resolveFalApiKey(tenantId: string): Promise<string> {
  * ANTES de qualquer `fetch` — recusar depois de a requisição sair não recusa
  * nada.
  */
+/**
+ * A URL veio da FILA?
+ *
+ * O catálogo barra o ENDPOINT na submissão; esta trava cuida do passo seguinte,
+ * em que a URL não é escolhida por nós e sim devolvida pelo fornecedor. Seguir
+ * cegamente o que vem na resposta seria deixar o outro lado apontar para
+ * qualquer host — inclusive o `fal.run` síncrono, que é o que a guarda G-1
+ * existe para impedir.
+ */
+export function assertUrlDaFila(url: string, contexto: string): void {
+  if (!url.startsWith(`${FAL_QUEUE_BASE}/`)) {
+    throw new FalProviderError(
+      `fal: ${contexto} recebeu a URL ${JSON.stringify(url)}, que não é da fila ` +
+        `(${FAL_QUEUE_BASE}). As URLs de status e resultado são SEGUIDAS, e não montadas — mas seguir ` +
+        "não pode virar seguir qualquer coisa: um host fora da fila aqui é o caminho síncrono voltando " +
+        "pela porta dos fundos.",
+    );
+  }
+}
+
 export function assertFalEndpointNoCatalogo(endpointId: string): void {
   const caminho = endpointId.startsWith("/") ? endpointId : `/${endpointId}`;
   const conhecido = VENDOR_ENDPOINTS.some((e) => e.vendor === "fal" && e.path === caminho);
@@ -258,7 +289,11 @@ export async function falSubmit(
   if (isFixtureMode()) {
     const requestId = `fixture-fal-${endpointId.replace(/[^a-z0-9]+/gi, "-")}`;
     await onRequestId(requestId);
-    return { requestId, statusUrl: `${FIXTURE_BASE}/fixture-queue/${requestId}/status` };
+    return {
+      requestId,
+      statusUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}/status`,
+      responseUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}`,
+    };
   }
 
   let res: Response;
@@ -288,6 +323,13 @@ export async function falSubmit(
   // aceito por um caminho que não é o que este arquivo pediu — e nesse caso o
   // ponteiro já está salvo, que é o ponto da ordem acima.
   const statusUrl = String(data?.status_url ?? "");
+  const responseUrl = String(data?.response_url ?? "");
+  if (!responseUrl.startsWith(`${FAL_QUEUE_BASE}/`)) {
+    throw new FalProviderError(
+      `fal.queue.submit: a fila devolveu response_url ${JSON.stringify(responseUrl)}, que não é da fila. ` +
+        `O request_id ${String(requestId)} JÁ foi gravado — o trabalho existe e é recuperável por ele.`,
+    );
+  }
   if (!statusUrl.startsWith(`${FAL_QUEUE_BASE}/`)) {
     throw new FalProviderError(
       `fal.queue.submit: a fila devolveu status_url ${JSON.stringify(statusUrl)}, que não é da fila. ` +
@@ -295,7 +337,7 @@ export async function falSubmit(
     );
   }
 
-  return { requestId: String(requestId), statusUrl };
+  return { requestId: String(requestId), statusUrl, responseUrl };
 }
 
 /**
@@ -306,18 +348,17 @@ export async function falSubmit(
  */
 export async function falPoll(
   apiKey: string,
-  endpointId: string,
-  requestId: string,
+  statusUrl: string,
 ): Promise<{ status: FalQueueStatus; raw: unknown }> {
-  assertFalEndpointNoCatalogo(endpointId);
+  assertUrlDaFila(statusUrl, "falPoll");
 
   if (isFixtureMode()) {
-    return { status: "completed", raw: { status: "COMPLETED", request_id: requestId } };
+    return { status: "completed", raw: { status: "COMPLETED", status_url: statusUrl } };
   }
 
   let res: Response;
   try {
-    res = await fetch(`${FAL_QUEUE_BASE}/${endpointId}/requests/${requestId}/status`, {
+    res = await fetch(statusUrl, {
       method: "GET",
       headers: { authorization: `Key ${apiKey}` },
       signal: vendorSignal(),
@@ -355,20 +396,16 @@ function normalizeFalStatus(bruto: unknown): FalQueueStatus {
 }
 
 /** A saída do trabalho concluído. */
-export async function falResult(
-  apiKey: string,
-  endpointId: string,
-  requestId: string,
-): Promise<unknown> {
-  assertFalEndpointNoCatalogo(endpointId);
+export async function falResult(apiKey: string, responseUrl: string): Promise<unknown> {
+  assertUrlDaFila(responseUrl, "falResult");
 
   if (isFixtureMode()) {
-    return { fixture: true, request_id: requestId, endpoint: endpointId };
+    return { fixture: true, response_url: responseUrl };
   }
 
   let res: Response;
   try {
-    res = await fetch(`${FAL_QUEUE_BASE}/${endpointId}/requests/${requestId}`, {
+    res = await fetch(responseUrl, {
       method: "GET",
       headers: { authorization: `Key ${apiKey}` },
       signal: vendorSignal(),
