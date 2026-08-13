@@ -28,4 +28,12 @@ previews/
 # conter corpo de resposta de fornecedor.
 *.log
 ultimas.txt
+
+# Logs das passadas do arnês. O runner CRIA este diretório e grava duas cópias
+# ali (ESTADO.md §3, gotcha 10). O `*.log` acima já cobre os arquivos de hoje,
+# e mesmo assim o diretório entra por nome: uma passada que passe a gravar um
+# `.json` de resumo sujaria a árvore, e árvore suja aborta a passada seguinte
+# com exit 2 — o mais caro dos modos de falhar, porque o arnês morre antes do
+# primeiro mutante e a causa não aparece no relatório dele.
+_arnes-logs/
 .claude/settings.local.json
