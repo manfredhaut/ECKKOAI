@@ -66,6 +66,7 @@ import { checkAudioDurationGatePolicy } from "./checkAudioDurationGatePolicy.js"
 import { checkFalClientPolicy } from "./checkFalClientPolicy.js";
 import { checkFalPipelinePolicy } from "./checkFalPipelinePolicy.js";
 import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js";
+import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -666,6 +667,14 @@ async function main(): Promise<void> {
   const falGenerationPath = await checkFalGenerationPathPolicy();
   falGenerationPath.failures.forEach((f) => failures.push(f));
   falGenerationPath.notes.forEach((n) => note(n));
+
+  // --- 24o-ter. a aprovação da imagem composta (BLOCO B3) ----------------
+  //
+  // Vizinha das anteriores pelo mesmo motivo: troca `globalThis.fetch`,
+  // `pool.query` e `PROVIDER_MODE`, restaurando os três no `finally`.
+  const falApproval = await checkFalApprovalPolicy();
+  falApproval.failures.forEach((f) => failures.push(f));
+  falApproval.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //
