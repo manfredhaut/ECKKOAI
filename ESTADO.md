@@ -269,17 +269,23 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
-**Passada de 13/08 FIM DO DIA, HEAD `5595280` + o commit do ESTADO, 234
-mutantes.** Lançada em background ao encerrar a sessão; **ninguém viu o
-desfecho**. Primeiro comando desta sessão:
+⚠️ **A passada de 13/08 fim do dia foi INTERROMPIDA aos ~30% (69 de 234) e NÃO
+tem desfecho.** Morta ao encerrar a sessão, com um mutante aplicado que foi
+revertido por `git checkout --` (árvore conferida limpa depois). O log em
+`_arnes-logs/mutants-2026-08-13-noite-{a,b}.log` cobre só esses 69 e **não vale
+como resultado**.
+
+**A última passada COMPLETA e válida é 234/234, de 13/08 de manhã** (HEAD
+`23dce3a`): zero INERTE, zero AMBÍGUO, zero ERRO.
+
+🔴 **DÍVIDA: relançar a passada completa ANTES da próxima rodada que gaste
+dinheiro.** O diff acumulado desde a última válida é o contrato da fal
+(`e886c5d`), a sonda (`5595280`) e os dois commits de ESTADO — mudanças em
+caminho pago, que é exatamente onde a cobertura parcial não serve.
 
 ```bash
-tail -40 "C:/Users/manfr/Documents/1A_A_PROJETOS/_arnes-logs/mutants-2026-08-13-noite-a.log"
+npm run check:mutants
 ```
-
-Cópia `-b` idêntica no mesmo diretório. Procurar, nesta ordem: `INERTE`
-(**PARE e relate**), `AMBÍGUO` (gotcha 8 antes de culpar a guarda), `ERRO`, e a
-linha final `N/234`.
 
 **A anterior (13/08 manhã, HEAD `23dce3a`) fechou 234/234, 100% verde** — zero
 INERTE, zero AMBÍGUO, zero ERRO. O diff desde então é o contrato da fal
