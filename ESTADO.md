@@ -15,7 +15,7 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **12/08/2026**, HEAD `9cd1bc5` + o commit desta linha (desfecho dos 231 já LIDO).
+Atualizado em **13/08/2026**, HEAD `54bb282` + o commit desta linha.
 
 ---
 
@@ -26,6 +26,9 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 --oneline` fecha a diferença.)*
 
 ```
+54bb282  BLOCO 3.5: o teto de gasto, a sonda de contrato, e a chave que ainda não chegou
+2cd2987  Arnês: mutante podre passa a aparecer no commit, não 80 min depois
+c0e57f7  ESTADO.md: o desfecho dos 231 foi lido — 229/231, zero INERTE, 2 podres
 9cd1bc5  ESTADO.md: o desfecho dos 231 e o bloqueio do 3.5 viram o começo da próxima
 faf7229  Arnês: o gate podia estourar o buffer e virar AMBÍGUO com a guarda saudável
 94af14f  CORREÇÃO: duas das três guardas do pipeline nasceram INERTE e AMBÍGUA
@@ -47,7 +50,7 @@ Ao ler aquele commit, leia os dois.
 | 1 · chave da fal no painel | fechado (`9d2d1e6`) |
 | 2 · a chave não vaza por nenhum lado | fechado (`9d2d1e6`) |
 | 3 · `falClient` (upload, submit, poll, result) | fechado (`cbe0e10`) |
-| 3.5 · prova de contrato do upload | **BLOQUEADO — ver §1.2** |
+| **3.5 · prova de contrato — PRÓXIMO, falta só a chave** | ver [PROXIMA-RODADA.md](PROXIMA-RODADA.md) |
 | 4 · pipeline em série — parte 1 (orquestrador) | fechado (`5a6cbbc`+`94af14f`) |
 | **4 · parte 2 — o ramo em `avatarProvider.ts:1007` — PRÓXIMO** | não começado |
 | 5 · a tela | não começado |
@@ -63,10 +66,18 @@ Também pendente do BLOCO 4: `consumeLiveGeneration()` nas submissões pagas (o
 `falClient` **não** o chama, de propósito — o orquestrador ainda não o chama
 tampouco, e é ele quem deve).
 
-### 1.2 · BLOCO 3.5 — bloqueado por credencial ausente, NÃO por erro
+### 1.2 · BLOCO 3.5 — falta a CHAVE, e só ela
 
-O upload real não aconteceu. **MEDIDO em 12/08, por três consultas
-independentes: a chave da fal NÃO está no banco.**
+**Reconfirmado em 13/08: a chave da fal não está em lugar nenhum** — nem no
+host (`FAL_API_KEY` ausente), nem no container, nem no banco. A rodada de 13/08
+tinha autorização para gastar US$ 2,00 e gastou **US$ 0,00**.
+
+**Todo o resto está pronto:** teto duro no orquestrador, `pararApos` por etapa,
+a sonda (`probeFalPipeline.ts`) e o semeador (`seedFalKey.ts`). O passo a passo
+com os comandos exatos está em **[PROXIMA-RODADA.md](PROXIMA-RODADA.md)** — é
+por ele que se começa.
+
+**MEDIDO em 12/08, por três consultas independentes:**
 
 - `SELECT count(*) FROM api_credentials WHERE vendor='fal'` → **0**
 - nenhuma linha de `api_credentials` tocada desde 09/08
@@ -184,7 +195,21 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
-**Passada de 12/08 noite, HEAD `faf7229`, 231 mutantes: COMPLETA E LIDA.**
+**Passada de 13/08, HEAD `23dce3a`, 234 mutantes.** Lançada em background ao
+fim da sessão; **ninguém viu o desfecho**. Primeiro comando desta sessão:
+
+```bash
+tail -40 "C:/Users/manfr/Documents/1A_A_PROJETOS/_arnes-logs/mutants-234-2026-08-13-a.log"
+```
+
+Cópia `-b` idêntica no mesmo diretório. Procurar, nesta ordem: `INERTE`
+(**PARE e relate**), `AMBÍGUO` (antes de culpar a guarda, gotcha 8), `ERRO`
+(agora improvável — a conferência de cadastro roda no gate), e a linha final
+`N/234`.
+
+---
+
+**Passada anterior, de 12/08 noite, HEAD `faf7229`, 231 mutantes: COMPLETA E LIDA.**
 `mutants-231-2026-08-12-a.log` (cópia `-b` idêntica, md5 `a89b6440…`).
 
 | desfecho | n |
@@ -242,9 +267,9 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
 
 ## 7 · Dívidas abertas
 
-- **2 MUTANTES PODRES, identificados por NOME (nunca por posição), medidos na
-  passada de 12/08 noite.** As duas guardas rodam verdes no gate; o que falta é
-  a prova de que reprovam.
+- ~~2 MUTANTES PODRES~~ **CONSERTADOS em 13/08** (`2cd2987`), e agora há guarda
+  que os pega em segundos no `npm run check` em vez de 80 min na passada. O
+  histórico do que eram:
   - `formato: suporte declarado precisa de evidência :: vendor sem evidência
     nenhuma passa a declarar suporte` — o `find` casa **2×** em
     `videoFormat.ts`. **Causa: o próprio BLOCO 2 (`9d2d1e6`)**, que acrescentou
@@ -252,11 +277,18 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
     porque nenhuma passada completa rodou desde então. O conserto é dar contexto
     único ao `find` — não apagar a linha nova.
   - `passo 1: traje em preparo trava o Avançar :: a trava passa a valer também
-    para o traje que falhou` — o `find` casa **0×**: a linha virou
-    `const outfitPreparing = lookPendentes.some((p) => p.status ===
-    "processing");` no commit `e483929`, anterior a esta série. Podre há mais
-    tempo, e só apareceu agora porque as duas passadas anteriores morreram antes
-    do mutante 165.
+    para o traje que falhou` — casava **0×**: a linha foi renomeada em
+    `e483929`.
+- **DÍVIDA DE RECONCILIAÇÃO, aberta e sem explicação inventada:** o plano v6
+  anota ~US$ 1,14 nos testes A/B e o painel da fal mostra **US$ 5,30 em 7 dias
+  com 12 requisições**. Nenhuma hipótese registrada — os preços do
+  `providerCost.ts` estão marcados **DOCUMENTADO** até uma fatura ser conferida.
+- **O débito de crédito acontece ANTES da chamada ao fornecedor** — MEDIDO por
+  leitura: `debitCredit` em `routes/videos.ts:1088`, `generateVideo` em `:1174`.
+  Com crédito de avatar zerado o clique morre no crédito sem chegar à fal, e o
+  erro parece falha de pipeline. Precisa ser resolvido antes do fluxo por
+  produto (BLOCO 4 parte 2). A SONDA não passa por aqui: ela não consome
+  crédito de tenant nem orçamento live, só o teto em dólares.
 - **`voiceId: avatar.voice_id` (`routes/videos.ts:1179`) não tem guarda ancorada
   no uso.** Trocá-lo por um id fixo passa o gate inteiro.
 - **Cenário e traje são coletados, persistidos e nunca enviados.** Não há campo
