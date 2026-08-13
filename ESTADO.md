@@ -15,7 +15,7 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **13/08/2026**, HEAD `52fad44` + o commit desta linha.
+Atualizado em **13/08/2026** (fim do dia), HEAD `5595280` + o commit desta linha.
 
 ---
 
@@ -66,19 +66,64 @@ Também pendente do BLOCO 4: `consumeLiveGeneration()` nas submissões pagas (o
 `falClient` **não** o chama, de propósito — o orquestrador ainda não o chama
 tampouco, e é ele quem deve).
 
-### 1.2 · BLOCO 3.5 — falta a CHAVE, e só ela
+### 1.2 · A FIAÇÃO DA TELA NÃO ALCANÇA A FAL — medido em 13/08
 
-⚠️ **RECONFIRMADO em 13/08 pela SEGUNDA vez, contra uma afirmação de que ela
-já estaria lá: a chave da fal NÃO está no banco.** `vendor='fal'` → 0 linhas, e
-**nenhuma linha de `api_credentials` foi tocada desde 09/08**. Nem no host
-(`FAL_API_KEY` ausente), nem no container. Duas rodadas seguidas com
-autorização para gastar US$ 2,00 gastaram **US$ 0,00**.
+**A chave está semeada e o contrato da fal foi medido de verdade** (ver §1.3).
+O que impede um vídeo sair de "Criar vídeo direto" é a FIAÇÃO, e ela é assim:
 
-**Antes de tentar de novo, conferir o resultado do salvamento** — a gravação
-parece não ter chegado ao banco, e o sintoma é silencioso. O que foi
-descartado como causa: o frontend está com bundle POSTERIOR ao BLOCO 2 (subiu
-13/08, o commit é 12/08 14:47), então o seletor `fal` existe na UI. Por que não
-gravou segue **NÃO VERIFICADO**.
+- **Cenário vai para `background{type,value}` — campo do HeyGen.** Não há
+  caminho para o `image_urls[]` do `nano-banana-2/edit`.
+- **Traje vai para `avatar_look_id` — look do HeyGen**, que lá SUBSTITUI o
+  avatar. **Não chega à fal.**
+- **O rosto usado nas composições veio de `photo_urls` do avatar cadastrado**,
+  lido direto pela sonda — **não de upload do fluxo**.
+- **`generateVideo` devolve `providerJobId` + polling em `setInterval`;
+  `runFalPipeline` é SÍNCRONO e tem 3 `request_id`.** É descompasso
+  ESTRUTURAL: o ramo em `avatarProvider.ts:1007` é **CONSTRUÇÃO** (estado novo
+  em `videos`, rota de aprovação, tela), **não refiação**.
+- **O teto de 95 caracteres NÃO é cobrado**: tela e rota usam **1960** (180 s).
+  O 95 só existe dentro do pipeline, que nenhum caminho de produto chama.
+- **Crédito de avatar do tenant `c77a5b8a` está em 10**, concedido pelo caminho
+  normal (`dev:grant-credits`), com saldo e ledger conferindo.
+- **Chave da fal semeada** (`api_credentials`, provider avatar, vendor fal,
+  last_four **cc1c**). O **backup cifrado da HeyGen** daquele tenant está em
+  `uploads/_prova/backup-credenciais/heygen-c77a5b8a.enc` — a HeyGen NÃO deve
+  ser restaurada (decisão do v6).
+- **Gasto da sessão de 13/08: ~US$ 0,24. Saldo restante ~US$ 4,46.**
+
+⚠️ **A composição pendente foi DESCARTADA pelo operador** — rosto de outro
+avatar, cenário e traje nunca chegaram à fal. As 3 corridas em
+`fal_pipeline_runs` estão `failed` com o motivo escrito, 1 etapa cada: nenhuma
+passou de `compor`. **Nada de Wan, TTS ou lipsync rodou.**
+
+### 1.3 · BLOCO 3.5 — o contrato da fal, MEDIDO
+
+**A chave foi semeada em 13/08** (estava no ambiente como `FAL_KEY`, não
+`FAL_API_KEY`) e o pipeline chamou a fal DE VERDADE. O contrato saiu de
+DEDUZIDO para MEDIDO, e duas suposições estavam erradas:
+
+1. **`falPoll` MONTAVA a URL de status — e a montada devolve 405.** O caminho
+   usa o app id **BASE** (`fal-ai/nano-banana-2`), sem o sub-path (`/edit`). A
+   fila devolve `status_url`/`response_url`/`cancel_url` prontas: **seguir é o
+   contrato**. Corrigido em `e886c5d`.
+2. **`resolution: "720p"` é inválido no nano-banana** — ele exige
+   `0.5K|1K|2K|4K`. Agora são duas constantes (`RESOLUCAO_IMAGEM = "1K"`
+   MEDIDO, `RESOLUCAO_VIDEO = "720p"` NÃO VERIFICADO no Wan).
+
+⚠️ **E o achado que muda como se lê a fila: `COMPLETED` NÃO significa sucesso.**
+A submissão inválida voltou **200 / IN_QUEUE**, o status foi a **COMPLETED**, e
+só o **RESULTADO** trouxe o 422 — com `inference_time: 0.058`, o tempo de não
+ter feito nada. Quem lê só o status segue para a etapa seguinte, que custa 12×
+mais.
+
+**MEDIDO no caminho feliz:** `IN_QUEUE` → `IN_PROGRESS` (HTTP **202**) →
+`COMPLETED` (200); `images[0].url` como o pipeline assume; `num_images:1`
+devolvendo 1 imagem; `resolution:"1K"` → 1195×896; `inference_time` de 7,99 s e
+21,40 s em duas composições. Host dos artefatos: **`v3b.fal.media`** — o mesmo
+das gerações que o operador aprovou fora do produto.
+
+**O upload NÃO é tarifado e funciona**: `initiate` 200 com `file_url` +
+`upload_url`, header `Authorization: Key` aceito, `PUT` 200.
 
 **Todo o resto está pronto:** teto duro no orquestrador, `pararApos` por etapa,
 a sonda (`probeFalPipeline.ts`) e o semeador (`seedFalKey.ts`). O passo a passo
@@ -224,27 +269,21 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
-**Passada de 13/08, HEAD `23dce3a`, 234 mutantes: COMPLETA, LIDA e 100% VERDE.**
-`mutants-234-2026-08-13-a.log` (cópia `-b` idêntica, md5 `22243452…`).
+**Passada de 13/08 FIM DO DIA, HEAD `5595280` + o commit do ESTADO, 234
+mutantes.** Lançada em background ao encerrar a sessão; **ninguém viu o
+desfecho**. Primeiro comando desta sessão:
 
-| desfecho | n |
-|---|---|
-| ok | **234** |
-| INERTE | **0** |
-| AMBÍGUO | **0** |
-| FALHOU | **0** |
-| ERRO | **0** |
+```bash
+tail -40 "C:/Users/manfr/Documents/1A_A_PROJETOS/_arnes-logs/mutants-2026-08-13-noite-a.log"
+```
 
-Sem carimbo de PULADOS — completa. Retry de spawn: não disparou (terceira
-passada seguida sem o 0xC0000142).
+Cópia `-b` idêntica no mesmo diretório. Procurar, nesta ordem: `INERTE`
+(**PARE e relate**), `AMBÍGUO` (gotcha 8 antes de culpar a guarda), `ERRO`, e a
+linha final `N/234`.
 
-**É a primeira passada sem NENHUM ERRO deste projeto** — a anterior fechou
-229/231 com 2 mutantes podres. A diferença é a guarda de cadastro (`2cd2987`):
-ela pega o mesmo defeito em segundos, no gate, então mutante podre não chega
-mais à passada. O ciclo deixou de descobrir isso 80 min depois.
-
-**Nada aqui bloqueia nada.** O próximo passo é o BLOCO 3.5, e ele depende só
-da chave — ver §1.2 e o [PROXIMA-RODADA.md](PROXIMA-RODADA.md).
+**A anterior (13/08 manhã, HEAD `23dce3a`) fechou 234/234, 100% verde** — zero
+INERTE, zero AMBÍGUO, zero ERRO. O diff desde então é o contrato da fal
+(`e886c5d`), a sonda (`5595280`) e este ESTADO.
 
 ---
 
