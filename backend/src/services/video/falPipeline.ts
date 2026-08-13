@@ -517,10 +517,11 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
 
   // --- 2. ANIMAR -----------------------------------------------------------
   //
-  // O FREIO desta fase. `pararApos: "compor"` é o modo NORMAL do B2, não um
-  // caso de sonda: nada dispara o Wan na mesma invocação, e a URL da imagem
-  // composta fica gravada em `fal_pipeline_steps` — é dela que a etapa
-  // seguinte parte, quando existir quem a aprove (BLOCO 5).
+  // O FREIO desta fase, e ele continua sendo o default do produto:
+  // `pararApos: "compor"` faz a corrida terminar com a imagem gravada em
+  // `fal_pipeline_steps` e nada disparando o Wan na mesma invocação. Quem parte
+  // dali é `runFalPipelineDaImagem`, chamada pela rota de aprovação — depois de
+  // um humano clicar.
   if (input.pararApos === "compor") {
     const guardado = await input.diario.abrirEtapa("biblioteca", 0, "eckko", null);
     await input.diario.gravarRespostaCrua(guardado, JSON.stringify({ imagemCompostaUrl: String(imagemUrl) }));
@@ -531,6 +532,81 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
     });
   }
 
+  return animarNarrarSincronizar(input, {
+    imagemUrl: String(imagemUrl),
+    gastoAcumuladoUsd: gastoPrevistoUsd,
+    teto,
+    segundosEstimados,
+    composicaoRequestId: composicao.requestId,
+  });
+}
+
+/**
+ * RETOMA de uma imagem JÁ COMPOSTA — as etapas 2 a 5, e nenhuma antes dela.
+ *
+ * ┌─ Por que existe, e por que ela não republica nada ───────────────────────┐
+ * │ A composição e a animação são separadas por um clique humano, e entre os │
+ * │ dois momentos há uma requisição HTTP inteira: quem aprova não é quem     │
+ * │ compôs. Repetir `publicarEntradas` aqui subiria de novo bytes que já     │
+ * │ estão no storage da fal (o `file_url` sobrevive à corrida), e repetir    │
+ * │ `compor` pagaria US$ 0,08 pela MESMA imagem que a pessoa acabou de olhar │
+ * │ e aprovar — e devolveria outra, porque o fornecedor não promete          │
+ * │ determinismo.                                                            │
+ * │                                                                          │
+ * │ `gastoAcumuladoUsd` começa em ZERO, e isso é decisão declarada: o teto   │
+ * │ desta corrida é o teto do que AINDA vai ser gasto. Carregar o gasto da   │
+ * │ composição para cá faria a segunda metade ser recusada por dinheiro que  │
+ * │ já saiu, numa corrida em que não há mais nada a impedir.                 │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+export async function runFalPipelineDaImagem(
+  input: FalPipelineInput,
+  imagemCompostaUrl: string,
+  /** O `request_id` da composição que produziu esta imagem, quando conhecido. */
+  composicaoRequestId = "",
+): Promise<FalPipelineResult> {
+  const { chars, segundosEstimados } = conferirRoteiro(input.script);
+  logEvent("info", "fal_pipeline_retomado", {
+    chars,
+    segundosEstimados,
+    imagemCompostaUrl,
+    composicaoRequestId: composicaoRequestId || null,
+  });
+
+  return animarNarrarSincronizar(input, {
+    imagemUrl: imagemCompostaUrl,
+    gastoAcumuladoUsd: 0,
+    teto: input.tetoDeGastoUsd ?? PIPELINE_TETO_USD,
+    segundosEstimados,
+    composicaoRequestId,
+  });
+}
+
+interface ContextoDaAnimacao {
+  imagemUrl: string;
+  gastoAcumuladoUsd: number;
+  teto: number;
+  segundosEstimados: number;
+  composicaoRequestId: string;
+}
+
+/**
+ * As etapas 2 a 5 — animar, narrar, sincronizar, guardar.
+ *
+ * Extraída de `runFalPipeline` para ter DOIS chamadores: a corrida inteira (que
+ * ainda existe, e é o que a sonda exercita) e a retomada pós-aprovação. A
+ * alternativa era um `if` no começo de `runFalPipeline` pulando as etapas 0 e 1
+ * — e isso reescreveria o bloco publicar→teto→autorizar que o mutante G-b
+ * transcreve, fazendo uma guarda do B2 virar ERRO por causa de uma mudança que
+ * não tem nada a ver com ela.
+ */
+async function animarNarrarSincronizar(
+  input: FalPipelineInput,
+  contexto: ContextoDaAnimacao,
+): Promise<FalPipelineResult> {
+  const { imagemUrl, teto, segundosEstimados, composicaoRequestId } = contexto;
+  let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
+
   gastoPrevistoUsd = autorizarGasto(
     gastoPrevistoUsd,
     PRECOS_FAL.animarUsdPorSegundo * PIPELINE_TARGET_SECONDS,
@@ -539,7 +615,7 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
   );
   const animacao = await etapaNaFal(input, "animar", 2, ENDPOINT_ANIMAR, {
     prompt: input.promptDeComposicao,
-    image_url: String(imagemUrl),
+    image_url: imagemUrl,
     // `generate_audio: false` é o mais caro de omitir: o default sintetiza uma
     // trilha paga que a etapa 4 descartaria.
     generate_audio: false,
@@ -568,7 +644,7 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
 
   // --- 4. SINCRONIZAR ------------------------------------------------------
   if (input.pararApos === "narrar") {
-    return pararAqui("narrar", gastoPrevistoUsd, { imagemCompostaUrl: String(imagemUrl) });
+    return pararAqui("narrar", gastoPrevistoUsd, { imagemCompostaUrl: imagemUrl });
   }
 
   // O custo depende da duração REAL do áudio, que agora é conhecida. Quando a
@@ -603,10 +679,10 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
   return {
     gastoPrevistoUsd,
     videoUrl: String(videoFinalUrl),
-    imagemCompostaUrl: String(imagemUrl),
+    imagemCompostaUrl: imagemUrl,
     audioDurationSeconds: fala.durationSeconds,
     requestIds: {
-      compor: composicao.requestId,
+      compor: composicaoRequestId,
       animar: animacao.requestId,
       sincronizar: sincronia.requestId,
     },

@@ -17,8 +17,13 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
       status: string;
       created_at: string;
     }>(
+      // `awaiting_approval` ENTRA, e é o que mais precisa entrar: ele é o único
+      // estado que não sai sozinho. Um vídeo em `processing` termina com ou sem
+      // ninguém olhando; uma aprovação pendente expira em 24 h e joga fora a
+      // composição já paga. Deixá-lo de fora daqui seria esconder justamente o
+      // item que depende de alguém lembrar dele.
       `SELECT id, script, status, created_at FROM videos
-       WHERE tenant_id = $1 AND status IN ('queued', 'processing')
+       WHERE tenant_id = $1 AND status IN ('queued', 'processing', 'awaiting_approval')
        ORDER BY created_at DESC`,
       [req.tenantId],
     );

@@ -1,4 +1,9 @@
-export type VideoStatus = "queued" | "processing" | "ready" | "error";
+/**
+ * `awaiting_approval` é EXCLUSIVO do caminho da fal: a imagem composta existe
+ * e foi paga, e a etapa seguinte (~US$ 1,50) espera um clique humano. É o único
+ * estado desta lista que NÃO sai sozinho.
+ */
+export type VideoStatus = "queued" | "processing" | "awaiting_approval" | "ready" | "error";
 
 export interface Avatar {
   id: string;
@@ -50,6 +55,8 @@ export interface Video {
   /** Estimativa fracionária derivada do roteiro, para exibir antes da medição. */
   estimated_seconds?: number;
   status: VideoStatus;
+  /** A imagem-base a aprovar, quando `status === "awaiting_approval"`. */
+  fal_composed_image_url?: string | null;
   output_url: string | null;
   /**
    * A URL a EXIBIR, escolhida pelo SERVIDOR entre a versão limpa e a legendada.

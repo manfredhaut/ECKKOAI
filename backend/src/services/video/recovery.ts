@@ -12,8 +12,11 @@
  *
  * ISTO NÃO É UMA FILA, e a distinção importa: não há tabela de trabalho, não
  * há consumidor, não há concorrência entre processos e não há reentrega. É uma
- * varredura ÚNICA, no boot, que faz três coisas com o que encontra preso:
+ * varredura ÚNICA, no boot, que faz quatro coisas com o que encontra:
  *
+ *   · está aguardando aprovação e é recente → NÃO TOCA. Ver abaixo.
+ *   · está aguardando aprovação há tempo demais → encerra como
+ *                                          `approval_expired`, SEM estornar;
  *   · tem `provider_job_id` e é recente  → re-arma o MESMO acompanhamento;
  *   · não tem `provider_job_id`          → o fornecedor nunca aceitou:
  *                                          encerra como `recovery_orphan` e
@@ -57,6 +60,56 @@ export function videoRecoveryMaxAgeMs(): number {
   return Math.floor(n);
 }
 
+/** O estado do caminho da fal em que a composição espera um clique humano. */
+export const STATUS_AGUARDANDO_APROVACAO = "awaiting_approval";
+
+/**
+ * Os estados que a varredura SELECIONA.
+ *
+ * `awaiting_approval` está aqui de propósito, e isso é o contrário do que
+ * parece: ele entra para poder ser IGNORADO com conhecimento de causa, e para
+ * poder EXPIRAR. Deixá-lo fora do `SELECT` daria o mesmo resultado no caso
+ * recente — a linha nunca chegaria ao laço — e nenhum no caso velho: uma
+ * aprovação abandonada ficaria na galeria para sempre, e `awaiting_approval`
+ * viraria o novo `queued` preso que esta varredura existe para não deixar
+ * existir.
+ */
+export const STATUS_VARRIDOS: readonly string[] = ["queued", "processing", STATUS_AGUARDANDO_APROVACAO];
+
+/** Idade acima da qual uma aprovação pendente é dada por abandonada. */
+export const VIDEO_APPROVAL_MAX_AGE_ENV = "VIDEO_APPROVAL_MAX_AGE_MS";
+
+/**
+ * 24 horas — e ele é DELIBERADAMENTE quatro vezes o de `recovery`.
+ *
+ * ┌─ Por que não as mesmas 6 h ─────────────────────────────────────────────┐
+ * │ As 6 h descrevem trabalho EM VOO: o polling desiste em ~7,5 min e a URL │
+ * │ assinada do fornecedor expira, então reacompanhar algo velho tende a    │
+ * │ achar um artefato que não dá mais para baixar. Uma aprovação pendente   │
+ * │ não tem NADA em voo — ninguém está gastando enquanto ela espera, não há │
+ * │ job a reacompanhar, e o trabalho que existe (a imagem) já está pago e   │
+ * │ gravado.                                                                │
+ * │                                                                         │
+ * │ O que pode expirar aqui é o ARTEFATO: a imagem composta vive em         │
+ * │ `v3b.fal.media` e a validade dessa URL é NÃO VERIFICADA. 24 h é o maior │
+ * │ prazo que ainda se chama "hoje".                                        │
+ * │                                                                         │
+ * │ E o custo de errar é assimétrico: expirar cedo demais obriga a recompor │
+ * │ (US$ 0,08) quem compôs à noite e aprovou de manhã — que é o caso de uso │
+ * │ real —, enquanto expirar tarde só deixa uma linha parada mais tempo,    │
+ * │ sem consumir nada de ninguém.                                           │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ */
+export const DEFAULT_VIDEO_APPROVAL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export function videoApprovalMaxAgeMs(): number {
+  const bruto = process.env[VIDEO_APPROVAL_MAX_AGE_ENV];
+  if (!bruto) return DEFAULT_VIDEO_APPROVAL_MAX_AGE_MS;
+  const n = Number(bruto);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_VIDEO_APPROVAL_MAX_AGE_MS;
+  return Math.floor(n);
+}
+
 export interface VideoEmVoo {
   id: string;
   tenant_id: string;
@@ -86,6 +139,10 @@ export interface RecoveryResult {
   encerradosVelhos: number;
   estornados: number;
   falhas: number;
+  /** Deixados em paz: a composição está paga e espera um clique humano. */
+  aguardandoAprovacao: number;
+  /** Aprovações abandonadas, encerradas SEM estorno. */
+  aprovacoesExpiradas: number;
 }
 
 const MENSAGEM_ORFAO =
@@ -97,22 +154,41 @@ const MENSAGEM_VELHO =
   "concluído no serviço de vídeo; o identificador do job está guardado para conferência.";
 
 /**
+ * A mensagem da expiração diz o que foi gasto, e diz que NÃO volta.
+ *
+ * Não é rigor de contabilidade: é a diferença entre a pessoa entender que
+ * perdeu US$ 0,08 de composição e achar que perdeu o vídeo inteiro. Sem isso,
+ * a leitura natural de "encerrada" é a mais cara.
+ */
+const MENSAGEM_APROVACAO_EXPIRADA =
+  "A imagem composta ficou esperando aprovação por tempo demais e esta geração foi encerrada. " +
+  "A composição já havia sido feita e cobrada, então o crédito não volta — mas nenhuma etapa " +
+  "seguinte chegou a ser paga. Comece uma geração nova quando quiser.";
+
+/**
  * Encerra um registro preso, gravando o MOTIVO junto do estado.
  *
  * `AND status = ANY(...)` no `UPDATE`: se o polling de outro caminho tiver
  * resolvido a linha entre o `SELECT` e este `UPDATE`, não se sobrescreve um
  * estado terminal — é a mesma proteção que o caminho de timeout já usava com
  * `AND status != 'ready'`.
+ *
+ * `deEstados` é parâmetro porque a expiração de aprovação parte de um estado
+ * que os outros três encerramentos nunca veem. Fixá-lo em `queued|processing`
+ * faria o `UPDATE` da expiração casar zero linhas e falhar CALADO — a linha
+ * continuaria em `awaiting_approval`, a varredura continuaria contando uma
+ * expiração que não aconteceu, e o próximo boot repetiria tudo.
  */
 async function encerrar(
   linha: VideoEmVoo,
   reason: VideoFailureReason,
   mensagem: string,
+  deEstados: readonly string[] = ["queued", "processing"],
 ): Promise<{ encerrado: boolean; estornado: boolean }> {
   const { rowCount } = await pool.query(
     `UPDATE videos SET status = 'error', error_message = $2, failure_reason = $3
       WHERE id = $1 AND status = ANY($4)`,
-    [linha.id, mensagem, reason, ["queued", "processing"]],
+    [linha.id, mensagem, reason, deEstados],
   );
   if (!rowCount) return { encerrado: false, estornado: false };
 
@@ -171,8 +247,11 @@ export async function recoverInFlightVideos(reacompanhar: Reacompanhar): Promise
     encerradosVelhos: 0,
     estornados: 0,
     falhas: 0,
+    aguardandoAprovacao: 0,
+    aprovacoesExpiradas: 0,
   };
   const idadeMax = videoRecoveryMaxAgeMs();
+  const idadeMaxAprovacao = videoApprovalMaxAgeMs();
 
   let linhas: VideoEmVoo[];
   try {
@@ -183,7 +262,7 @@ export async function recoverInFlightVideos(reacompanhar: Reacompanhar): Promise
          FROM videos
         WHERE status = ANY($1)
         ORDER BY created_at ASC`,
-      [["queued", "processing"]],
+      [STATUS_VARRIDOS],
     );
     linhas = rows.map((r) => ({ ...r, idade_ms: Number(r.idade_ms) }));
   } catch (err) {
@@ -204,6 +283,35 @@ export async function recoverInFlightVideos(reacompanhar: Reacompanhar): Promise
 
   for (const linha of linhas) {
     try {
+      // A APROVAÇÃO PENDENTE VEM PRIMEIRO, e antes das duas condições abaixo.
+      //
+      // Ela tem `provider_job_id` — o `request_id` da COMPOSIÇÃO, que a rota
+      // grava —, então sem esta exceção ela não cai no ramo do órfão: cai no
+      // de REACOMPANHAR. E reacompanhar chama `pollVideoJob`, que despacha por
+      // `did ? … : heygen`: com vendor `fal`, a chave do tenant sairia em
+      // claro para `api.heygen.com`. É o mesmo vazamento que
+      // `VENDORS_WITH_CONNECTION_PROBE` existe para impedir, por outra porta.
+      //
+      // E não há o que acompanhar: a corrida terminou onde devia terminar. O
+      // que falta é um humano clicar.
+      if (linha.status === STATUS_AGUARDANDO_APROVACAO) {
+        if (linha.idade_ms > idadeMaxAprovacao) {
+          const r = await encerrar(linha, "approval_expired", MENSAGEM_APROVACAO_EXPIRADA, [
+            STATUS_AGUARDANDO_APROVACAO,
+          ]);
+          if (r.encerrado) resultado.aprovacoesExpiradas += 1;
+          if (r.estornado) resultado.estornados += 1;
+          continue;
+        }
+        resultado.aguardandoAprovacao += 1;
+        logEvent("info", "video_recovery_aguardando_aprovacao", {
+          context: "video.recovery",
+          videoId: linha.id,
+          idadeMs: linha.idade_ms,
+          maxAgeMs: idadeMaxAprovacao,
+        });
+        continue;
+      }
       // A ORDEM das duas condições não é arbitrária: órfão vem primeiro porque
       // um registro sem job id é irrecuperável em qualquer idade — trocar a
       // ordem faria um órfão recente ser "reacompanhado", e reacompanhar o que

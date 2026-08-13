@@ -84,6 +84,11 @@ export function corpoDaGeracao(
 const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   queued: 15,
   processing: 65,
+  // A METADE, e não 90: a composição é o primeiro dos quatro trabalhos, e é o
+  // BARATO. Uma barra quase cheia num ponto em que 95% do dinheiro ainda não
+  // saiu convida ao clique distraído — que é exatamente o clique que o botão
+  // logo abaixo existe para não receber.
+  awaiting_approval: 50,
   ready: 100,
   error: 100,
 };
@@ -187,6 +192,43 @@ export function GenerateStep({
     };
   }, []);
 
+  // Aprovar e Refazer são as duas ações do passo 4 no caminho da fal, e as duas
+  // são LENTAS: o Wan leva minutos, a recomposição leva dezenas de segundos. Um
+  // estado só para as duas deixaria os dois botões cinzas sem dizer qual está
+  // acontecendo — e "não sei o que está rodando" num botão que custa US$ 1,50 é
+  // pior do que um botão desabilitado.
+  const [approving, setApproving] = useState(false);
+  const [recomposing, setRecomposing] = useState(false);
+  const busy = approving || recomposing;
+
+  async function handleApprove() {
+    if (!video) return;
+    setApproving(true);
+    setError(null);
+    try {
+      // SÍNCRONA de propósito: o pipeline da fal são três trabalhos em série e
+      // não há polling deste lado. A requisição fica aberta até o vídeo existir.
+      setVideo(await api.post<Video>(`/videos/${video.id}/approve`, {}));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleRecompose() {
+    if (!video) return;
+    setRecomposing(true);
+    setError(null);
+    try {
+      setVideo(await api.post<Video>(`/videos/${video.id}/recompose`, {}));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setRecomposing(false);
+    }
+  }
+
   async function handleGenerate() {
     setSubmitting(true);
     setError(null);
@@ -196,7 +238,15 @@ export function GenerateStep({
       pollRef.current = window.setInterval(async () => {
         const latest = await api.get<Video>(`/videos/${created.id}`);
         setVideo(latest);
-        if (latest.status === "ready" || latest.status === "error") {
+        // `awaiting_approval` é TERMINAL para o polling, e não um estado de
+        // passagem: nada do outro lado vai mudá-lo. Continuar consultando aqui
+        // seria bater no servidor para sempre esperando um clique que só pode
+        // acontecer nesta mesma tela.
+        if (
+          latest.status === "ready" ||
+          latest.status === "error" ||
+          latest.status === "awaiting_approval"
+        ) {
           if (pollRef.current) window.clearInterval(pollRef.current);
         }
       }, 2000);
@@ -360,6 +410,42 @@ export function GenerateStep({
               />
             </div>
           </div>
+
+          {/* O FREIO. Nada dispara o Wan sem este clique — é o que protege
+              ~US$ 1,50 de uma composição que saiu errada, e é o único ponto do
+              fluxo em que a pessoa vê o que vai ser animado ANTES de pagar por
+              isso. A imagem não é prévia nem miniatura: é literalmente a
+              entrada da etapa seguinte. */}
+          {video.status === "awaiting_approval" && (
+            <>
+              <p style={{ fontSize: 14, marginTop: 0 }}>{t("createVideo.generate.approveIntro")}</p>
+              {video.fal_composed_image_url && (
+                <img
+                  src={video.fal_composed_image_url}
+                  alt={t("createVideo.generate.approveImageAlt")}
+                  style={{ maxWidth: "100%", borderRadius: 8, display: "block" }}
+                />
+              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => void handleApprove()}
+                  disabled={busy || !video.fal_composed_image_url}
+                >
+                  {approving ? t("createVideo.generate.approving") : t("createVideo.generate.approve")}
+                </button>
+                <button className="btn btn-outline" onClick={() => void handleRecompose()} disabled={busy}>
+                  {recomposing ? t("createVideo.generate.recomposing") : t("createVideo.generate.recompose")}
+                </button>
+              </div>
+              {/* Os dois preços, lado a lado, na hora da decisão. Escondê-los
+                  aqui repetiria o defeito que o painel de custo veio corrigir um
+                  passo antes: informar o preço depois da compra. */}
+              <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+                {t("createVideo.generate.approveCost")}
+              </p>
+            </>
+          )}
 
           {video.status === "ready" && video.output_url && (
             <>

@@ -1,4 +1,9 @@
-export type VideoStatus = "queued" | "processing" | "ready" | "error";
+/**
+ * `awaiting_approval` é EXCLUSIVO do caminho da fal, e é o único estado deste
+ * enum que não sai sozinho: a composição já foi paga, a imagem existe, e a
+ * etapa seguinte (~US$ 1,50) espera um clique humano. Ver migration 052.
+ */
+export type VideoStatus = "queued" | "processing" | "awaiting_approval" | "ready" | "error";
 
 export interface Avatar {
   id: string;
@@ -49,6 +54,12 @@ export interface Video {
   provider_engine: string | null;
   /** Por que este motor — gravado inclusive quando nenhum foi enviado. */
   provider_engine_reason: string | null;
+  /** A corrida do pipeline da fal que produziu esta linha. Ver migration 052. */
+  fal_run_id: string | null;
+  /** A imagem-base composta, aprovada ou à espera de aprovação. Migration 052. */
+  fal_composed_image_url: string | null;
+  /** Quando a aprovação passou a ser esperada. Reiniciado a cada recomposição. */
+  approval_requested_at: string | null;
   /** Legenda queimada foi PEDIDA nesta geração? Ver migration 049. */
   captions: boolean;
   /**

@@ -15,10 +15,16 @@
  * │ qual dos sete pontos a escreveu nem se houve cobrança.                  │
  * └─────────────────────────────────────────────────────────────────────────┘
  *
- * A MÁQUINA DE ESTADOS NÃO MUDA. Continuam os quatro valores do `CHECK` da
- * migration 002 — `queued`, `processing`, `ready`, `error`. O que entra é uma
- * coluna ao LADO do estado, dizendo por quê. Acrescentar um estado novo
- * quebraria todo consumidor que hoje trata `error` como terminal.
+ * A MÁQUINA DE ESTADOS NÃO MUDA **por causa deste arquivo**. O que entra aqui é
+ * uma coluna ao LADO do estado, dizendo por quê — distinguir cinco significados
+ * de `error` nunca precisou de estado novo, e inventar um teria sido custo sem
+ * ganho.
+ *
+ * ⚠️ Ela MUDOU depois, e por outro motivo: a migration 052 acrescentou
+ * `awaiting_approval`, porque o caminho da fal para no meio com dinheiro já
+ * gasto e dinheiro ainda por gastar, e nenhum dos quatro descreve isso.
+ * O aviso original continua valendo como aviso — todo consumidor de
+ * `videos.status` teve de ser tocado naquela rodada.
  */
 
 /**
@@ -65,6 +71,14 @@ export const VIDEO_FAILURE_REASONS = [
   "recovery_orphan",
   /** Preso além da idade máxima: velho demais para valer a pena reacompanhar. */
   "recovery_stale",
+  /**
+   * Ninguém aprovou a composição dentro da janela (24 h — ver `recovery.ts`).
+   *
+   * NÃO estorna, e é o segundo motivo do enum com gasto `saiu`: a composição
+   * aconteceu, foi cobrada, e a imagem está gravada. Devolver crédito aqui
+   * seria devolver dinheiro por serviço prestado.
+   */
+  "approval_expired",
 ] as const;
 
 export type VideoFailureReason = (typeof VIDEO_FAILURE_REASONS)[number];
@@ -97,6 +111,14 @@ export type VendorSpend = "nao_saiu" | "saiu" | "indeterminado";
  * que renderizou.
  */
 export function classificarGasto(reason: VideoFailureReason, temJobId: boolean): VendorSpend {
+  // ANTES do `temJobId`, e de propósito: o gasto de uma aprovação expirada não
+  // depende de haver job id, porque ele é anterior ao estado. Uma linha só
+  // chega a `awaiting_approval` DEPOIS de a composição ter sido paga e a
+  // imagem ter sido gravada — o dinheiro saiu por construção. Deixá-lo depois
+  // faria uma linha sem `provider_job_id` (uma gravação que falhou, por
+  // exemplo) ser classificada como `nao_saiu` e ESTORNAR uma composição que
+  // aconteceu.
+  if (reason === "approval_expired") return "saiu";
   if (!temJobId) return "nao_saiu";
   if (reason === "artifact_invalid") return "saiu";
   return "indeterminado";

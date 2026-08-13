@@ -186,7 +186,13 @@ export const MUTANTS: Mutant[] = [
     kind: "obvio",
     file: BOOT,
     find: "  const recuperacao = await recoverInFlightVideos(rearmVideoPolling);",
-    replace: "  const recuperacao = { encontrados: 0, reacompanhados: 0, encerradosOrfaos: 0, encerradosVelhos: 0, estornados: 0, falhas: 0 };",
+    // Os dois últimos campos entraram com a migration 052 (`awaiting_approval`).
+    // Sem eles o literal deixa de satisfazer `RecoveryResult`, o mutante para de
+    // COMPILAR, e o arnês devolveria AMBÍGUO pelo `tsc` — com a guarda saudável
+    // e sem ela ter opinado. Adaptar o mutante ao alvo que mudou não é o mesmo
+    // que consertar mutante podre: a propriedade medida (o boot não chama a
+    // varredura) continua exatamente a mesma.
+    replace: "  const recuperacao = { encontrados: 0, reacompanhados: 0, encerradosOrfaos: 0, encerradosVelhos: 0, estornados: 0, falhas: 0, aguardandoAprovacao: 0, aprovacoesExpiradas: 0 };",
     expect: "o boot não chama a varredura de registros presos",
   },
   {

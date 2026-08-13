@@ -456,6 +456,18 @@ const ENV_FORA_DO_COMPOSE: { nome: string; motivo: string }[] = [
       "aplicação ela não existe, e no compose ela não teria a quem servir.",
   },
   {
+    nome: "VIDEO_APPROVAL_MAX_AGE_MS",
+    motivo:
+      "AUSÊNCIA DELIBERADA, e ela é diferente da de `VIDEO_RECOVERY_MAX_AGE_MS` — que está no compose " +
+      "porque ajustar a janela de um trabalho EM VOO é operação de plantão. Esta não é: a janela de " +
+      "24 h é um default derivado de um raciocínio de produto (nada está em voo, ninguém está " +
+      "gastando, e o único relógio real é a validade NÃO VERIFICADA da URL em `v3b.fal.media`), e " +
+      "encurtá-la joga fora composições já pagas. O caminho de mudá-la é discutir o número, não " +
+      "exportar a variável. O `override` existe no código para o dia em que houver medição da " +
+      "validade daquela URL, e é a guarda de aprovação que o exercita — ela lê `videoApprovalMaxAgeMs()` " +
+      "em vez de digitar 24 h.",
+  },
+  {
     nome: "QUOTA_BASELINE_TENANT",
     motivo:
       "override de operador para os scripts de leitura de saldo (`quotaBaseline`, `probeLookEndpoints`), " +

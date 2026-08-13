@@ -64,7 +64,18 @@ export function hasConnectionProbe(provider: CredentialProvider, vendor: string)
  */
 export const VENDORS_WITH_GENERATION_PATH: Readonly<Record<CredentialProvider, readonly string[]>> = {
   script: ["anthropic", "gemini", "openai"],
-  avatar: ["heygen", "did"],
+  // `fal` ENTROU no B3. No B2 ela ficava de fora por uma razão precisa: a
+  // corrida para em `compor` e não tem job id de VÍDEO, e a varredura de boot
+  // encerrava como `recovery_orphan` qualquer vídeo sem `provider_job_id`, em
+  // qualquer idade — enquanto a rota INSERE a linha antes de chamar o
+  // provider. O B3 fechou os dois lados: a linha vai para `awaiting_approval`
+  // com o `request_id` da composição como `provider_job_id`, e o recovery
+  // passou a conhecer esse estado. Não há mais órfão a produzir.
+  //
+  // O que NÃO mudou: a fal continua FORA de `VENDORS_WITH_CONNECTION_PROBE`.
+  // Ter caminho de geração e ter sonda são coisas diferentes, e é o ternário
+  // do botão "Testar" que mandaria a chave dela para a HeyGen.
+  avatar: ["heygen", "did", "fal"],
   voice: ["elevenlabs"],
 };
 

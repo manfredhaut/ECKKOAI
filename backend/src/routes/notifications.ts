@@ -17,7 +17,10 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       [req.tenantId],
     );
     const { rows: videoRows } = await pool.query<{ count: string }>(
-      "SELECT count(*) FROM videos WHERE tenant_id = $1 AND status IN ('queued', 'processing')",
+      // Inclui `awaiting_approval` pelo mesmo motivo de `/jobs/processing`: é o
+      // único estado que exige uma AÇÃO da pessoa, e o que expira sozinho em
+      // 24 h descartando uma composição paga.
+      "SELECT count(*) FROM videos WHERE tenant_id = $1 AND status IN ('queued', 'processing', 'awaiting_approval')",
       [req.tenantId],
     );
     const { rows: documentRows } = await pool.query<{ count: string }>(

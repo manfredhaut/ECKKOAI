@@ -25,3 +25,18 @@ export async function readUpload(url: string): Promise<Buffer> {
   const relative = url.replace(/^\/uploads\//, "");
   return readFile(path.join(config.uploadsDir, relative));
 }
+
+/**
+ * Tipo do arquivo pela EXTENSÃO. O storage local não guarda content-type.
+ *
+ * Mora aqui, ao lado de `readUpload`, porque é sempre ela que produz os bytes a
+ * que este mime se refere. Enquanto viveu privada em `avatarProvider.ts`, o
+ * segundo chamador (a rota de recomposição) só tinha duas saídas: copiar as
+ * quatro linhas, ou importar de um módulo cuja razão de existir é outra.
+ */
+export function mimeDoUpload(caminho: string): string {
+  const ext = caminho.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  return "image/jpeg";
+}

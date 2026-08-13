@@ -578,6 +578,16 @@ button.nav-link {
   border-color: var(--color-secondary);
 }
 
+/* AGUARDANDO APROVAÇÃO pede AÇÃO, e por isso NÃO compartilha o selo de
+   `processing`/`queued`. Aqueles dizem "espere"; este diz "clique". Um selo
+   passivo num estado que só sai por clique humano é o que faz a linha ficar
+   parada até expirar — e a expiração descarta a composição já paga. */
+.status-pill.status-awaiting_approval {
+  color: #ffffff;
+  background: var(--color-accent-avatar);
+  border-color: var(--color-accent-avatar);
+}
+
 .status-pill.status-error {
   color: var(--color-tertiary-text);
   background: var(--color-tertiary);

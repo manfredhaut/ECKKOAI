@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import path from "node:path";
 import { pool } from "../db/pool.js";
 import type { Avatar, Video } from "../types.js";
@@ -53,6 +53,15 @@ import {
 } from "../services/video/directionTranslation.js";
 import { ehTimeoutDeFornecedor } from "../services/providers/vendorTimeout.js";
 import type { VideoEmVoo } from "../services/video/recovery.js";
+import { mimeDoUpload, readUpload } from "../services/storage.js";
+import {
+  PIPELINE_CHARS_PER_SECOND,
+  PIPELINE_TARGET_SECONDS,
+  runFalPipelineDaImagem,
+  type EntradaDeComposicao,
+} from "../services/video/falPipeline.js";
+import { abrirCorrida, criarDiarioNoBanco, fecharCorrida } from "../services/video/falPipelineJournal.js";
+import { aprovarEAnimar, recompor } from "../services/video/falApproval.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -1194,6 +1203,24 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       "UPDATE videos SET provider_idempotency_key = $2, provider_request_at = now() WHERE id = $1",
       [video.id, idempotencyKey],
     );
+
+    // O DIÁRIO da corrida da fal, aberto ANTES da chamada e pelo mesmo motivo
+    // da gravação acima: ele é onde o `request_id` de cada etapa paga aterrissa,
+    // e uma etapa paga sem ponteiro é trabalho perdido com a fatura chegando do
+    // mesmo jeito. `avatarProvider.ts` não fala com o banco de propósito — quem
+    // tem `pool` é esta rota, e é ela que injeta o gravador.
+    const ehFal = avatarCredential.vendor === "fal";
+    const falRunId = ehFal
+      ? await abrirCorrida({
+          tenantId: req.tenantId,
+          script,
+          targetSeconds: PIPELINE_TARGET_SECONDS,
+          charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+        })
+      : null;
+    if (falRunId) {
+      await pool.query("UPDATE videos SET fal_run_id = $2 WHERE id = $1", [video.id, falRunId]);
+    }
     logEvent("info", "video_tentativa_registrada", {
       context: "videos.create",
       videoId: video.id,
@@ -1202,7 +1229,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     });
 
     try {
-      const { providerJobId, audioDurationSeconds, audioDurationSource, engine, engineReason } = await generateVideo({
+      const { providerJobId, audioDurationSeconds, audioDurationSource, engine, engineReason, imagemCompostaUrl } = await generateVideo({
+        // O diário só existe no caminho da fal; nos outros ele é `null` e o
+        // provider nem o consulta.
+        falDiario: falRunId ? criarDiarioNoBanco(falRunId) : null,
         apiKey: avatarCredential.apiKey,
         vendor: avatarCredential.vendor as AvatarVendor,
         providerAvatarId,
@@ -1278,6 +1308,46 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           engineReason ?? null,
         ],
       );
+      // ---------------------------------------------------------------------
+      // O CAMINHO DA FAL NÃO ENTRA NO POLLING, e isso não é economia.
+      //
+      // `pollVideoJob` despacha por ternário (`did ? … : heygen`) e não tem
+      // caso "nenhum dos dois": chamá-lo com vendor `fal` mandaria a chave do
+      // tenant, em claro, para `api.heygen.com` num header `x-api-key`. É o
+      // MESMO vazamento que `VENDORS_WITH_CONNECTION_PROBE` existe para
+      // impedir no botão "Testar", por outra porta.
+      //
+      // E não haveria o que perguntar: a corrida da fal é SÍNCRONA e já
+      // terminou onde devia terminar. O que falta não é o fornecedor concluir
+      // — é um humano olhar a imagem e clicar. Daí o estado próprio.
+      // ---------------------------------------------------------------------
+      if (ehFal) {
+        if (!imagemCompostaUrl) {
+          // Sem imagem não há o que aprovar, e deixar a linha em `queued` a
+          // entregaria à varredura de boot como órfã — que ESTORNARIA uma
+          // composição possivelmente paga. `throw` cai no catch abaixo, que
+          // classifica pelo `providerJobId` (o request_id do `compor`).
+          throw new AvatarProviderError(
+            "fal: a corrida terminou sem devolver a imagem composta. O corpo bruto está no diário da " +
+              "corrida — isto é contrato quebrado, não erro de geração.",
+          );
+        }
+        if (falRunId) await fecharCorrida(falRunId, "completed");
+        const { rows: aguardando } = await pool.query<Video>(
+          `UPDATE videos SET status = 'awaiting_approval', fal_composed_image_url = $2,
+                             approval_requested_at = now()
+             WHERE id = $1 RETURNING *`,
+          [video.id, imagemCompostaUrl],
+        );
+        logEvent("info", "fal_composicao_aguardando_aprovacao", {
+          context: "videos.create",
+          videoId: video.id,
+          falRunId,
+          consequence: "nenhuma etapa paga posterior sai sem um clique humano",
+        });
+        return reply.code(201).send(withDeliveredSeconds(aguardando[0] as VideoRow));
+      }
+
       pollJob(
         video.id,
         req.tenantId,
@@ -1289,6 +1359,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         engine ?? null,
       );
     } catch (err) {
+      if (falRunId) {
+        await fecharCorrida(
+          falRunId,
+          "failed",
+          err instanceof Error ? err.message.slice(0, 200) : String(err),
+        );
+      }
       // O job nunca foi aceito pelo fornecedor — nada foi renderizado, nenhuma
       // cota gasta. Este é o ÚLTIMO ponto do fluxo de vídeo em que o estorno
       // vale: assim que `generateVideo()` devolve um `providerJobId`, o
@@ -1423,4 +1500,338 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.code(201).send(withDeliveredSeconds(video));
   });
+
+  // =========================================================================
+  // A APROVAÇÃO DA IMAGEM COMPOSTA — o freio entre US$ 0,08 e ~US$ 1,50
+  //
+  // Duas rotas, e as duas partem da MESMA linha em `awaiting_approval`:
+  //
+  //   · aprovar  → anima, narra, sincroniza. É a etapa cara.
+  //   · refazer  → recompõe, e SÓ. Volta a `awaiting_approval`.
+  //
+  // Nenhuma delas debita crédito de novo. Um crédito é um vídeo PEDIDO, e ele
+  // já foi cobrado no clique em Gerar; criar um segundo débito aqui abriria o
+  // segundo lugar que cobra — exatamente o que a decisão do B3 evitou. O freio
+  // do dinheiro na fal é `PIPELINE_TETO_USD`, por corrida.
+  // =========================================================================
+
+  /**
+   * O que as duas rotas precisam ler antes de gastar. Devolve `null` e já
+   * respondeu quando alguma pré-condição falhou.
+   */
+  async function carregarCorridaAprovavel(
+    tenantId: string,
+    videoId: string,
+    reply: FastifyReply,
+  ): Promise<{
+    video: VideoRow;
+    avatar: Avatar;
+    apiKeyFal: string;
+    apiKeyElevenLabs: string;
+  } | null> {
+    const { rows } = await pool.query<VideoRow>(
+      "SELECT * FROM videos WHERE id = $1 AND tenant_id = $2",
+      [videoId, tenantId],
+    );
+    const video = rows[0];
+    if (!video) {
+      await reply.code(404).send({ error: "not_found", message: "Vídeo não encontrado." });
+      return null;
+    }
+    if (video.status !== "awaiting_approval") {
+      // 409 e não 400: o pedido está certo, o ESTADO é que não permite. É o
+      // segundo clique, e ele precisa ser distinguível de um id errado — é
+      // dele que a tela deduz "alguém já aprovou".
+      await reply.code(409).send({
+        error: "approval_not_pending",
+        message:
+          `Este vídeo está em "${video.status}", e não aguardando aprovação. Nada foi cobrado: nenhuma ` +
+          "etapa paga é disparada por uma aprovação que já aconteceu.",
+      });
+      return null;
+    }
+
+    const { rows: avatarRows } = await pool.query<Avatar>(
+      "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
+      [video.avatar_id, tenantId],
+    );
+    const avatar = avatarRows[0];
+    const avatarCredential = await getCredential(tenantId, "avatar");
+    const voiceCredential = await getCredential(tenantId, "voice");
+    if (!avatar || !avatarCredential || avatarCredential.vendor !== "fal" || !voiceCredential) {
+      await reply.code(409).send({
+        error: "approval_unavailable",
+        message:
+          "A aprovação só existe no caminho da fal, e ela precisa do avatar, da chave da fal e da chave " +
+          "de voz. Alguma das três não está disponível agora. Nada foi cobrado.",
+      });
+      return null;
+    }
+    return {
+      video,
+      avatar,
+      apiKeyFal: avatarCredential.apiKey,
+      apiKeyElevenLabs: voiceCredential.apiKey,
+    };
+  }
+
+  /** As entradas da composição, em bytes. A mesma ordem de `generateVideoFal`. */
+  async function entradasDaComposicao(video: VideoRow): Promise<EntradaDeComposicao[]> {
+    const extras: EntradaDeComposicao[] = [];
+    if (video.outfit) {
+      extras.push({ rotulo: "traje", bytes: await readUpload(video.outfit), mimeType: mimeDoUpload(video.outfit) });
+    }
+    if (video.scenario) {
+      extras.push({ rotulo: "cenario", bytes: await readUpload(video.scenario), mimeType: mimeDoUpload(video.scenario) });
+    }
+    return extras;
+  }
+
+  app.post<{ Params: { id: string } }>(
+    "/videos/:id/approve",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, reply);
+      if (!carga) return reply;
+      const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
+
+      // Capturada numa `const` porque o `animar` abaixo é um closure, e o
+      // narrowing de uma PROPRIEDADE não atravessa closure — o `tsc` volta a
+      // ver `string | null` lá dentro mesmo com a recusa logo acima.
+      const imagemAprovada = video.fal_composed_image_url;
+      if (!imagemAprovada) {
+        return reply.code(409).send({
+          error: "approval_without_image",
+          message:
+            "Esta geração está aguardando aprovação mas não tem imagem composta gravada. Animar sem ela " +
+            "seria pagar o Wan por uma entrada que não existe. Nada foi cobrado.",
+        });
+      }
+
+      const runId = await abrirCorrida({
+        tenantId: req.tenantId,
+        script: video.script,
+        targetSeconds: PIPELINE_TARGET_SECONDS,
+        charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+      });
+
+      try {
+        const r = await aprovarEAnimar({
+          videoId: video.id,
+          registro: {
+            // O REGISTRO E A TRAVA na MESMA escrita, e não em duas.
+            //
+            // `AND status = 'awaiting_approval'` é o que faz o segundo clique
+            // devolver `rowCount = 0`: dois cliques simultâneos disputam a
+            // mesma linha e só um a leva. Fazer isso em duas consultas (ler,
+            // decidir, escrever) reabriria a janela entre elas — e o que cabe
+            // nessa janela é uma animação de ~US$ 1,00 paga duas vezes.
+            async marcarAprovado() {
+              const { rowCount } = await pool.query(
+                `UPDATE videos SET status = 'processing', fal_run_id = $3
+                   WHERE id = $1 AND tenant_id = $2 AND status = 'awaiting_approval'`,
+                [video.id, req.tenantId, runId],
+              );
+              return rowCount === 1;
+            },
+          },
+          animar: () =>
+            runFalPipelineDaImagem(
+              {
+                apiKeyFal,
+                apiKeyElevenLabs,
+                voiceId: avatar.voice_id ?? "",
+                script: video.script,
+                // A composição não é refeita, então nada disto sobe de novo — os
+                // campos existem porque o input é o mesmo tipo. Ver
+                // `runFalPipelineDaImagem`.
+                fotoBase: Buffer.alloc(0),
+                fotoMimeType: "image/jpeg",
+                promptDeComposicao: [video.scenario_prompt, video.outfit_prompt]
+                  .map((t) => t?.trim())
+                  .filter(Boolean)
+                  .join(". "),
+                diario: criarDiarioNoBanco(runId),
+              },
+              imagemAprovada,
+              video.provider_job_id ?? "",
+            ),
+        });
+
+        if (!r.aprovado || !r.resultado) {
+          await fecharCorrida(runId, "failed", "aprovacao_ja_consumida");
+          return reply.code(409).send({
+            error: "approval_not_pending",
+            message:
+              "Esta aprovação já tinha acontecido. NENHUMA etapa paga foi disparada por este clique — a " +
+              "aprovação é registrada antes de qualquer coisa custar.",
+          });
+        }
+
+        const corrida = r.resultado;
+        await fecharCorrida(runId, "completed");
+
+        // O artefato passa a ser NOSSO, pelo mesmo caminho do polling da HeyGen:
+        // a URL de `v3b.fal.media` expira, e a Biblioteca guardaria um ponteiro
+        // para um host de terceiro. Falhar aqui não invalida o vídeo — ele foi
+        // renderizado e cobrado — e cai na URL remota.
+        let servedUrl = corrida.videoUrl;
+        let providerUrl: string | null = null;
+        try {
+          const saved = await persistRemoteArtifact(req.tenantId, corrida.videoUrl, `${video.id}.mp4`);
+          if (saved) {
+            servedUrl = saved.localUrl;
+            providerUrl = corrida.videoUrl;
+          }
+        } catch (err) {
+          logEvent("error", "artifact_persist_failed", {
+            context: "videos.approve",
+            videoId: video.id,
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        const { rows: pronto } = await pool.query<Video>(
+          `UPDATE videos SET status = 'ready', output_url = $2, provider_output_url = $3,
+                             audio_duration_seconds = COALESCE($4, audio_duration_seconds),
+                             audio_duration_source = CASE WHEN $4 IS NULL THEN audio_duration_source ELSE 'tts_timestamps' END
+             WHERE id = $1 RETURNING *`,
+          [video.id, servedUrl, providerUrl, corrida.audioDurationSeconds],
+        );
+
+        await recordProviderUsage({
+          tenantId: req.tenantId,
+          videoId: video.id,
+          provider: "avatar",
+          vendor: "fal",
+          unitType: "seconds",
+          // A duração do ÁUDIO, que neste pipeline é a do entregável: a voz é
+          // ENTRADA e é preservada por construção. Não é a duração pedida.
+          unitCount: corrida.audioDurationSeconds ?? PIPELINE_TARGET_SECONDS,
+          requestedUnitCount: video.duration_seconds,
+          unitSource: corrida.audioDurationSeconds != null ? "tts_timestamps" : "requested",
+          aspectRatio: video.aspect_ratio,
+          resolution: video.resolution,
+          providerEngine: null,
+          // O ponteiro para o trabalho PAGO mais caro da corrida.
+          providerJobId: corrida.requestIds.animar,
+        });
+
+        await createNotification(req.tenantId, "video_ready", "Your video is ready.");
+        return reply.send(withDeliveredSeconds(pronto[0] as VideoRow));
+      } catch (err) {
+        await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
+        const { failure, message } = toClientVendorError("avatar", "videos.approve", err);
+        // NÃO ESTORNA, e o motivo é o mesmo dos outros pontos pós-aceite: a
+        // composição ACONTECEU e foi cobrada. `providerJobId` é o request_id
+        // dela, e é ele que faz `classificarGasto` responder "indeterminado"
+        // em vez de "nao_saiu" — devolver crédito aqui criaria crédito do nada.
+        //
+        // O vídeo NÃO volta para `awaiting_approval`: a etapa paga pode ter
+        // saído. Quem decide relançar é uma pessoa, com a linha em `error` e o
+        // motivo na frente.
+        const { rows: errado } = await pool.query<Video>(
+          "UPDATE videos SET status = 'error', error_message = $2, failure_reason = $3 WHERE id = $1 RETURNING *",
+          [video.id, message, "vendor_rejected"],
+        );
+        await recordFailedProviderUsage({
+          tenantId: req.tenantId,
+          videoId: video.id,
+          provider: "avatar",
+          vendor: "fal",
+          unitType: "seconds",
+          requestedUnitCount: video.duration_seconds,
+          failureReason: message,
+          aspectRatio: video.aspect_ratio,
+          resolution: video.resolution,
+          providerJobId: video.provider_job_id,
+        });
+        return reply.code(vendorErrorStatus(failure)).send(errado[0]);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/videos/:id/recompose",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, reply);
+      if (!carga) return reply;
+      const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
+
+      const fotoUrl = avatar.photo_urls?.[0];
+      if (!fotoUrl) {
+        return reply.code(409).send({
+          error: "approval_unavailable",
+          message: "O avatar não tem foto registrada, e a composição parte do rosto. Nada foi cobrado.",
+        });
+      }
+
+      // Uma corrida NOVA, com teto próprio: a anterior já gastou o que gastou, e
+      // somar as duas faria a segunda recomposição ser recusada por dinheiro que
+      // já saiu.
+      const runId = await abrirCorrida({
+        tenantId: req.tenantId,
+        script: video.script,
+        targetSeconds: PIPELINE_TARGET_SECONDS,
+        charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+      });
+
+      try {
+        const corrida = await recompor({
+          apiKeyFal,
+          apiKeyElevenLabs,
+          voiceId: avatar.voice_id ?? "",
+          script: video.script,
+          fotoBase: await readUpload(fotoUrl),
+          fotoMimeType: mimeDoUpload(fotoUrl),
+          entradasExtras: await entradasDaComposicao(video),
+          promptDeComposicao: [video.scenario_prompt, video.outfit_prompt]
+            .map((t) => t?.trim())
+            .filter(Boolean)
+            .join(". "),
+          diario: criarDiarioNoBanco(runId),
+        });
+        await fecharCorrida(runId, "completed");
+
+        if (!corrida.imagemCompostaUrl) {
+          throw new Error("a recomposição terminou sem imagem — o corpo bruto está gravado na etapa");
+        }
+
+        // `approval_requested_at` REINICIA: a aprovação pendente passa a ser da
+        // imagem NOVA, e a janela de 24 h conta a partir de agora. Sem isto, a
+        // terceira recomposição herdaria o relógio da primeira e poderia
+        // expirar já nascendo.
+        const { rows: recomposto } = await pool.query<Video>(
+          `UPDATE videos SET fal_composed_image_url = $2, fal_run_id = $3, provider_job_id = $4,
+                             approval_requested_at = now()
+             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval' RETURNING *`,
+          [video.id, corrida.imagemCompostaUrl, runId, corrida.requestIds.compor, req.tenantId],
+        );
+        if (!recomposto[0]) {
+          // A imagem existe e foi paga; o que sumiu foi o estado que a receberia.
+          // O `request_id` está no diário, então ela é recuperável.
+          return reply.code(409).send({
+            error: "approval_not_pending",
+            message:
+              "A recomposição terminou, mas o vídeo saiu de \"aguardando aprovação\" enquanto ela rodava. " +
+              "A imagem nova está gravada no diário da corrida e não foi perdida.",
+          });
+        }
+        return reply.send(withDeliveredSeconds(recomposto[0] as VideoRow));
+      } catch (err) {
+        await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
+        const { failure, message } = toClientVendorError("avatar", "videos.recompose", err);
+        // A linha CONTINUA em `awaiting_approval`: a imagem anterior segue
+        // válida e aprovável. Uma recomposição que falha não pode destruir a
+        // composição que já estava paga e na tela.
+        logEvent("error", "fal_recomposicao_falhou", {
+          context: "videos.recompose",
+          videoId: video.id,
+          consequence: "a imagem anterior continua válida e a linha segue aguardando aprovação",
+        });
+        return reply.code(vendorErrorStatus(failure)).send({ error: "recompose_failed", message });
+      }
+    },
+  );
 }

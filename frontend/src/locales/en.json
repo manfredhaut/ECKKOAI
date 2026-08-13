@@ -12,6 +12,7 @@
     "status": {
       "queued": "queued",
       "processing": "processing",
+      "awaiting_approval": "awaiting approval",
       "ready": "ready",
       "indexed": "indexed",
       "error": "error",
@@ -639,7 +640,14 @@
       "captionsOn": "With captions",
       "captionsUnverified": "Captions are burned into the video by the provider. The field is in their documentation, but no generation from this system has sent it yet — if it is rejected, the attempt fails at validation, before billing, and nothing is charged.",
       "captionsMissing": "You asked for captions, but the provider did not return the captioned version. The video below is the version without captions — it was charged normally.",
-      "captionsIrreversible": "Captions are set before generating and cannot be turned on or off afterwards: changing this means generating a NEW video, at a new cost."
+      "captionsIrreversible": "Captions are set before generating and cannot be turned on or off afterwards: changing this means generating a NEW video, at a new cost.",
+      "approveIntro": "This is the image that will be animated. Check the face, the scene and the outfit before moving on — animation is the expensive step, and it starts exactly from here.",
+      "approveImageAlt": "Composed image that will be animated",
+      "approve": "Approve and generate the video",
+      "approving": "Generating the video… this takes a few minutes",
+      "recompose": "Redo the image",
+      "recomposing": "Redoing the image…",
+      "approveCost": "Redoing the image costs about US$ 0.08. Approving triggers animation, narration and lip sync — about US$ 1.50 in total. Nothing is charged until you click."
     },
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",

@@ -12,6 +12,7 @@
     "status": {
       "queued": "na fila",
       "processing": "processando",
+      "awaiting_approval": "aguardando aprovação",
       "ready": "pronto",
       "indexed": "indexado",
       "error": "erro",
@@ -639,7 +640,14 @@
       "captionsOn": "Com legenda",
       "captionsUnverified": "A legenda é queimada no vídeo pelo fornecedor. O campo está na documentação dele, mas nenhuma geração deste sistema o enviou ainda — se ele for recusado, a tentativa falha na validação, antes da cobrança, e nada é debitado.",
       "captionsMissing": "Você pediu legenda, mas o fornecedor não devolveu a versão legendada. O vídeo abaixo é a versão sem legenda — ele foi cobrado normalmente.",
-      "captionsIrreversible": "A legenda é definida antes de gerar e não pode ser ligada ou desligada depois: para trocar, é preciso gerar um vídeo NOVO, com novo custo."
+      "captionsIrreversible": "A legenda é definida antes de gerar e não pode ser ligada ou desligada depois: para trocar, é preciso gerar um vídeo NOVO, com novo custo.",
+      "approveIntro": "Esta é a imagem que vai ser animada. Confira o rosto, o cenário e o traje antes de seguir — a animação é a etapa cara, e ela parte exatamente daqui.",
+      "approveImageAlt": "Imagem composta que vai ser animada",
+      "approve": "Aprovar e gerar o vídeo",
+      "approving": "Gerando o vídeo… isto leva alguns minutos",
+      "recompose": "Refazer a imagem",
+      "recomposing": "Refazendo a imagem…",
+      "approveCost": "Refazer a imagem custa cerca de US$ 0,08. Aprovar dispara a animação, a narração e a sincronia — cerca de US$ 1,50 no total. Nada é cobrado enquanto você não clicar."
     },
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",

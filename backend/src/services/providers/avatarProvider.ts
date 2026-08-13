@@ -5,7 +5,7 @@
 // are meant to be corrected against the real HTTP response on first use,
 // same as the Gemini script adapter's model id was.
 import { createHash } from "node:crypto";
-import { readUpload } from "../storage.js";
+import { mimeDoUpload, readUpload } from "../storage.js";
 import { synthesizeSpeech } from "./voiceProvider.js";
 import { processVoiceAudio } from "../audioProcessing.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
@@ -258,6 +258,15 @@ export interface GenerateVideoResult {
    * escolhido antes de arriscar enviá-lo.
    */
   engineReason?: EngineReason | "flag_off" | "vendor_unsupported" | null;
+  /**
+   * A imagem-base composta, no caminho da fal. `null`/ausente nos outros.
+   *
+   * Sobe até aqui porque é ela que a rota grava em `videos` e a tela mostra no
+   * passo 4 — sem este campo, o único produto de uma corrida que parou em
+   * `compor` ficaria dentro do diário, e a tela teria de fazer `JSON.parse` no
+   * corpo bruto do fornecedor para saber o que aprovar.
+   */
+  imagemCompostaUrl?: string | null;
 }
 
 export type PollResult =
@@ -1082,13 +1091,6 @@ async function checkDidConnection(apiKey: string): Promise<void> {
 // fal.ai — a PONTE até o orquestrador
 // ---------------------------------------------------------------------------
 
-/** Tipo do arquivo pela extensão. O storage local não guarda content-type. */
-function mimeDoCaminho(caminho: string): string {
-  const ext = caminho.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "png") return "image/png";
-  if (ext === "webp") return "image/webp";
-  return "image/jpeg";
-}
 
 /**
  * O TEXTO da composição: o que veio por prompt, dos dois campos.
@@ -1161,14 +1163,14 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
     entradasExtras.push({
       rotulo: "traje",
       bytes: await readUpload(input.outfit),
-      mimeType: mimeDoCaminho(input.outfit),
+      mimeType: mimeDoUpload(input.outfit),
     });
   }
   if (input.scenario) {
     entradasExtras.push({
       rotulo: "cenario",
       bytes: await readUpload(input.scenario),
-      mimeType: mimeDoCaminho(input.scenario),
+      mimeType: mimeDoUpload(input.scenario),
     });
   }
 
@@ -1178,7 +1180,7 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
     voiceId: input.voiceId,
     script: input.script,
     fotoBase,
-    fotoMimeType: mimeDoCaminho(fotoUrl),
+    fotoMimeType: mimeDoUpload(fotoUrl),
     entradasExtras,
     promptDeComposicao: promptDaComposicao(input),
     diario: input.falDiario,
@@ -1201,6 +1203,10 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
     // o que este projeto grava quando o campo não se aplica — ver `engineReason`.
     engine: null,
     engineReason: "vendor_unsupported",
+    // O único produto de uma corrida que parou em `compor`. É ela que a rota
+    // grava em `videos.fal_composed_image_url` e que a tela mostra para ser
+    // aprovada — sem isto, o que foi pago ficaria só dentro do diário.
+    imagemCompostaUrl: corrida.imagemCompostaUrl,
   };
 }
 
