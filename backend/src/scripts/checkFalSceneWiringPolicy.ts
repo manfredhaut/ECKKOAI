@@ -63,15 +63,25 @@ export const MUTANTS: Mutant[] = [
     // corrida passaria a mandar UMA imagem, e uma guarda preguiçosa que só
     // contasse "mais de uma" ainda pegaria. Tirando um só, a contagem cai de 3
     // para 2 e continua parecendo uma composição legítima.
+    //
+    // ⚠️ O BLOCO INTEIRO, e não a condição desligada. MEDIDO nesta rodada: um
+    // mutante que trocasse só o `if` por `if (false as boolean)` sai 2 pelo
+    // `tsc` — o corpo vira inalcançável, o narrowing de `input.scenario` para
+    // de propagar para dentro dele, e `readUpload(input.scenario)` volta a ver
+    // `string | null | undefined`. O arnês devolveu AMBÍGUO com a guarda
+    // saudável e sem ela ter opinado. É o mesmo gotcha do `false &&` registrado
+    // no B2, numa forma nova: a mutação precisa levar o corpo junto, porque é o
+    // corpo que depende do estreitamento que a condição dava.
     file: PROVIDER,
     find:
       "  if (input.scenario) {\n" +
       "    entradasExtras.push({\n" +
-      '      rotulo: "cenario",',
-    replace:
-      "  if (false as boolean) {\n" +
-      "    entradasExtras.push({\n" +
-      '      rotulo: "cenario",',
+      '      rotulo: "cenario",\n' +
+      "      bytes: await readUpload(input.scenario),\n" +
+      "      mimeType: mimeDoUpload(input.scenario),\n" +
+      "    });\n" +
+      "  }\n",
+    replace: "",
     expect: "cenário: escolhido na tela e ausente da composição enviada à fal",
   },
   {
