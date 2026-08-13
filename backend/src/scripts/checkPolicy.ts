@@ -65,6 +65,7 @@ import { checkVendorProbePolicy } from "./checkVendorProbePolicy.js";
 import { checkAudioDurationGatePolicy } from "./checkAudioDurationGatePolicy.js";
 import { checkFalClientPolicy } from "./checkFalClientPolicy.js";
 import { checkFalPipelinePolicy } from "./checkFalPipelinePolicy.js";
+import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -659,6 +660,15 @@ async function main(): Promise<void> {
   const falPipeline = await checkFalPipelinePolicy();
   falPipeline.failures.forEach((f) => failures.push(f));
   falPipeline.notes.forEach((n) => note(n));
+
+  // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
+  //
+  // Milissegundos: lê arquivo e conta ocorrências, sem aplicar mutação nem
+  // rodar gate. Existe para que um mutante podre apareça no commit, e não 80
+  // min depois, no meio da passada completa.
+  const mutantRegistry = await checkMutantRegistryPolicy(process.env.REPO_ROOT ?? "/repo");
+  mutantRegistry.failures.forEach((f) => failures.push(f));
+  mutantRegistry.notes.forEach((n) => note(n));
 
   // --- 26. memória de engenharia fora de todo copiloto, provada montando --
   //

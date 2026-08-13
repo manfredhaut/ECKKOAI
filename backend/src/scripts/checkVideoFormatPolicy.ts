@@ -85,9 +85,15 @@ export const MUTANTS: Mutant[] = [
     // `true` — e a tela passa a oferecer proporção a um vendor que ninguém
     // nunca viu honrar uma. Uma guarda que só cobrasse "todo vendor está no
     // registro, com motivo" passaria: o registro está lá, e o motivo também.
-    find: `    supported: false,
+    // ÂNCORA NO VENDOR, e não no par de linhas: com a fal no registro (BLOCO 2)
+    // o trecho passou a casar DUAS vezes e o mutante virou inaplicável — abortava
+    // com ERRO no meio da passada e deixava esta guarda sem prova. O conserto é
+    // dar contexto único, NUNCA apagar a linha nova do produto.
+    find: `  did: {
+    supported: false,
     evidence: "none" as FormatEvidence,`,
-    replace: `    supported: true,
+    replace: `  did: {
+    supported: true,
     evidence: "none" as FormatEvidence,`,
     expect: "declara suporte a formato com evidência",
   },

@@ -141,7 +141,10 @@ function runGate(env = {}) {
   const base = Object.prototype.hasOwnProperty.call(env, "PROVIDER_MODE")
     ? env
     : { PROVIDER_MODE: "fixture", ...env };
-  const args = ["compose", "exec", "-T"];
+  // Sinaliza que HÁ mutante aplicado. `checkMutantRegistryPolicy` usa isto
+  // para pular a conferência de cadastro: sob mutação, "todo find casa 1x" é
+  // falso por construção, e acusá-lo derrubaria todos os contrapontos.
+  const args = ["compose", "exec", "-T", "-e", "ARNES_EM_CURSO=1"];
   for (const [k, v] of Object.entries(base)) args.push("-e", `${k}=${v}`);
   args.push("backend", "npm", "run", "check");
   try {

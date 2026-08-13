@@ -122,8 +122,10 @@ export const MUTANTS: Mutant[] = [
     // ele prende a pessoa no passo 1 sem saída nenhuma — e a única forma de
     // sair seria criar outro traje, gastando mais US$ 1,00.
     file: "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx",
-    find: '  const outfitPreparing = (lookInfo?.pendentes ?? []).some((p) => p.status === "processing");',
-    replace: "  const outfitPreparing = (lookInfo?.pendentes ?? []).length > 0;",
+    // A linha foi renomeada em `e483929` (o payload passou a ser desembrulhado
+    // uma vez só, em `lookPendentes`), e o find apodreceu junto — 0 ocorrências.
+    find: '  const outfitPreparing = lookPendentes.some((p) => p.status === "processing");',
+    replace: "  const outfitPreparing = lookPendentes.length > 0;",
     expect: "passo 1: a trava do Avançar deixou de distinguir preparo de falha",
   },
   {

@@ -430,6 +430,22 @@ const ENV_FORA_DO_COMPOSE: { nome: string; motivo: string }[] = [
       "processo do backend responde vazio para ela, e o gate roda verde — o default é o caminho real.",
   },
   {
+    nome: "ARNES_EM_CURSO",
+    motivo:
+      "injetada pelo RUNNER do arnês em cada `docker compose exec -e`, nunca pelo `environment:` do " +
+      "serviço. Declará-la no compose seria pior que omiti-la: o valor ficaria de pé no processo do " +
+      "backend em todo momento, e a conferência de cadastro de mutantes — que ela existe para PULAR " +
+      "durante uma passada — ficaria desligada também no gate de árvore limpa, que é o único lugar " +
+      "onde ela vale.",
+  },
+  {
+    nome: "ARNES_CONFERE_REGISTRO",
+    motivo:
+      "declarada pelos dois mutantes de `checkMutantRegistryPolicy` para FORÇAR a conferência que o " +
+      "arnês pula. Chega pelo `-e` que o runner monta a partir do campo `env` do mutante; fora dessa " +
+      "aplicação ela não existe, e no compose ela não teria a quem servir.",
+  },
+  {
     nome: "QUOTA_BASELINE_TENANT",
     motivo:
       "override de operador para os scripts de leitura de saldo (`quotaBaseline`, `probeLookEndpoints`), " +
