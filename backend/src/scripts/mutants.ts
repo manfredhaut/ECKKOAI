@@ -74,4 +74,10 @@ export interface Mutant {
    * "processing continua processando" junto com os casos de erro.
    */
   expectGreen?: boolean;
+  /**
+   * Arquivo da GUARDA que declara este mutante. Preenchido pelo registro, não
+   * escrito à mão — é o que permite à passada AFETADA incluir os mutantes de
+   * uma guarda editada mesmo quando o alvo dela não mudou.
+   */
+  sourceFile?: string;
 }

@@ -17,6 +17,13 @@
  *   npm run check:mutants -- --guard "fal:" --guard egress   # a UNIÃO das duas
  *   npm run check:mutants -- --name "request_id"       # subconjunto por mutante
  *   npm run check:mutants -- --list                    # não muta nada, só lista
+ *   npm run check:mutants -- --affected                # só o que a rodada tocou
+ *   npm run check:mutants -- --affected --base <ref>   # idem, contra outra base
+ *
+ * A AFETADA fecha rodada normal; a COMPLETA roda fora do horário de trabalho.
+ * A troca só é honesta porque a conferência de cadastro (`checkMutantRegistry`)
+ * pega mutante podre em SEGUNDOS no gate — era essa a função que tornava a
+ * completa obrigatória a cada rodada.
  *
  * Sem filtro a passada é completa — o subconjunto é sempre explícito na
  * invocação, e toda passada filtrada carimba no começo E no fim quantos
@@ -212,6 +219,23 @@ function applyMutation(mutant) {
 }
 
 /**
+ * Os arquivos que a rodada tocou, segundo o git — nunca segundo alguém.
+ *
+ * `<base>...HEAD` (três pontos) usa o ancestral comum, então a lista é o que
+ * ESTA linha de trabalho mudou, e não o que o outro lado mudou em paralelo.
+ */
+function arquivosTocados(base) {
+  const saida = sh(`git diff --name-only ${base}...HEAD`).trim();
+  if (!saida) return [];
+  // `String.fromCharCode(10)` e nao um literal com escape: este arquivo ja
+  // foi editado por heredoc, e a barra invertida sumiu no caminho tres vezes.
+  return saida
+    .split(String.fromCharCode(10))
+    .map((linha) => linha.trim())
+    .filter(Boolean);
+}
+
+/**
  * O aviso de passada filtrada, impresso no COMEÇO e no FIM.
  *
  * Nos dois lugares de propósito: quem lê um log de 227 linhas lê o fim, e um
@@ -228,7 +252,7 @@ function avisoDeFiltro(selecionados, total, filtros) {
     borda,
     "  ATENCAO: PASSADA FILTRADA — ISTO NAO E A PASSADA COMPLETA",
     `  ${selecionados} de ${total} mutante(s) selecionado(s).  ${pulados} PULADO(S).`,
-    `  filtro: ${filtros.map((f) => `--${f.campo} ${JSON.stringify(f.termo)}`).join(" ")}`,
+    `  seleção: ${filtros.length > 0 ? filtros.map((f) => `--${f.campo} ${JSON.stringify(f.termo)}`).join(" ") : "--affected (derivada do diff)"}`,
     "  Um verde aqui NAO autoriza dizer que o arnes fechou: ele fala apenas dos",
     "  mutantes acima. A passada completa e `npm run check:mutants` sem filtro.",
     borda,
@@ -247,6 +271,9 @@ async function main() {
   //
   // Sem nenhum filtro, a passada é COMPLETA — o default não muda, e o
   // subconjunto é sempre um ato explícito na invocação.
+  const afetada = argv.includes("--affected");
+  const base = argv.includes("--base") ? argv[argv.indexOf("--base") + 1] : "HEAD~1";
+
   const filtros = [];
   for (let i = 0; i < argv.length; i++) {
     if ((argv[i] === "--guard" || argv[i] === "--name") && argv[i + 1] !== undefined) {
@@ -265,10 +292,26 @@ async function main() {
   }
 
   const todos = collectMutants();
-  const mutantes =
-    filtros.length === 0
-      ? todos
-      : todos.filter((m) => filtros.some((f) => String(m[f.campo]).includes(f.termo)));
+
+  let mutantes = todos;
+  let tocados = null;
+  if (afetada) {
+    tocados = arquivosTocados(base);
+    // Um mutante entra se o ALVO dele foi tocado, ou se a GUARDA que o declara
+    // foi tocada. A segunda metade é a que importa: editar uma guarda sem tocar
+    // o alvo é justamente quando os mutantes dela precisam rodar.
+    //
+    // Os mutantes de AMBIENTE (sem `file`) entram SEMPRE. O que eles vigiam —
+    // NODE_ENV, limiter, fixture em produção — muda sem aparecer em diff de
+    // código, então excluí-los por ausência de arquivo os desligaria justamente
+    // no caso que eles cobrem. São 8, e o custo de tê-los é conhecido.
+    mutantes = todos.filter(
+      (m) => !m.file || tocados.includes(m.file) || tocados.includes(m.sourceFile),
+    );
+  }
+  if (filtros.length > 0) {
+    mutantes = mutantes.filter((m) => filtros.some((f) => String(m[f.campo]).includes(f.termo)));
+  }
 
   // Filtro que não casa nada abortaria como "0/0 tiveram o comportamento
   // esperado" — verde perfeito, zero verificação. É o mesmo universo-zero que
@@ -282,7 +325,21 @@ async function main() {
     process.exit(2);
   }
 
-  const filtrada = filtros.length > 0;
+  const filtrada = filtros.length > 0 || afetada;
+  if (afetada) {
+    console.log(
+      [
+        "",
+        "=".repeat(78),
+        `  PASSADA AFETADA — base ${base} (git diff --name-only ${base}...HEAD)`,
+        `  ${tocados.length} arquivo(s) tocado(s); ${mutantes.length} de ${todos.length} mutante(s) selecionado(s).`,
+        "  Seleção DERIVADA do diff: alvo tocado, guarda tocada, ou mutante de ambiente.",
+        ...tocados.map((f) => `    · ${f}`),
+        "=".repeat(78),
+        "",
+      ].join(String.fromCharCode(10)),
+    );
+  }
   if (filtrada) console.log(avisoDeFiltro(mutantes.length, todos.length, filtros));
 
   if (apenasListar) {
