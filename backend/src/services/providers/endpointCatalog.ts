@@ -185,13 +185,17 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
   },
   {
     vendor: "fal",
-    path: "/fal-ai/wan/v2.6/reference-to-video/flash",
+    // SEM prefixo `fal-ai/` — MEDIDO por fusível em 14/08 (ENDPOINTS-3). Wan
+    // 2.6 é Partner e mora direto em `wan/`; ver o comentário de
+    // `ENDPOINT_ANIMAR` em falPipeline.ts para a causa raiz dos dois 404
+    // anteriores.
+    path: "/wan/v2.6/image-to-video/flash",
     method: "POST",
     billable: true,
     note:
-      "animação a partir de imagem de referência — a camada ANIMAÇÃO. Tarifação por segundo " +
-      "gerado, e a régua única de 3 unidades/s do providerCost.ts NÃO vale aqui: as três medições " +
-      "que a sustentam são todas de photo avatar 720p na HeyGen. NÃO MEDIDO.",
+      "animação a partir de imagem — a camada ANIMAÇÃO. Tarifação por segundo gerado, e a régua " +
+      "única de 3 unidades/s do providerCost.ts NÃO vale aqui: as três medições que a sustentam " +
+      "são todas de photo avatar 720p na HeyGen. Preço DOCUMENTADO (não medido) em PRECOS_FAL.",
   },
   {
     vendor: "fal",

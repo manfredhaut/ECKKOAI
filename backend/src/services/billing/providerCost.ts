@@ -311,8 +311,22 @@ function round(value: number, casas: number): number {
 export const PRECOS_FAL = {
   /** por imagem, `nano-banana-2/edit` */
   comporUsd: 0.08,
-  /** por segundo de vídeo gerado, `wan/v2.6/reference-to-video/flash` 720p */
-  animarUsdPorSegundo: 0.1,
+  /**
+   * Por segundo de vídeo gerado, `wan/v2.6/image-to-video/flash` 720p, COM
+   * `generate_audio: false` — que é o que este pipeline sempre manda.
+   *
+   * ⚠️ **DOCUMENTADO (não MEDIDO), com URL — corrigido em 14/08 (ENDPOINTS-3),
+   * o valor anterior (0,10) era o preço do tier PADRÃO (não-flash) do Wan, não
+   * o do flash com áudio mudo.** Citação verbatim da doc:
+   * <https://fal.ai/models/wan/v2.6/image-to-video/flash/api> — "Audio video
+   * (generate_audio=True, default) is billed at half the standard I2V rate;
+   * silent video (generate_audio=False) at 25%." O "standard I2V rate" é
+   * US$ 0,10/s a 720p (tier não-flash, `wan/v2.6/reference-to-video`
+   * <https://fal.ai/models/wan/v2.6/reference-to-video/api>) — as duas
+   * porcentagens (50% e 25%) são do MESMO número-base, não uma da outra.
+   * `0,10 × 0,25 = 0,025`.
+   */
+  animarUsdPorSegundo: 0.025,
   /** por segundo de ÁUDIO, `sync-lipsync/v2` — o áudio é que define a duração */
   sincronizarUsdPorSegundoDeAudio: 0.05,
 } as const;

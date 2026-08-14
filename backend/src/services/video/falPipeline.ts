@@ -15,7 +15,7 @@
  * AS CINCO ETAPAS, e por que nesta ordem:
  *
  *   1. COMPOR    `nano-banana-2/edit`  — rosto + traje + cenário → imagem-base.
- *   2. ANIMAR    `wan/v2.6/reference-to-video/flash` — imagem → vídeo MUDO.
+ *   2. ANIMAR    `wan/v2.6/image-to-video/flash` — imagem → vídeo MUDO.
  *   3. NARRAR    ElevenLabs TTS — o roteiro → áudio, com duração REAL medida.
  *   4. SINCRONIZAR `sync-lipsync/v2` — vídeo + áudio → o entregável.
  *   5. BIBLIOTECA — persistir o resultado.
@@ -39,7 +39,7 @@ import { PIPELINE_TETO_USD, PRECOS_FAL } from "../billing/providerCost.js";
 /**
  * Duração do vídeo, em segundos. FIXA nesta fase.
  *
- * O `wan/v2.6/reference-to-video/flash` produz um clipe de duração declarada, e
+ * O `wan/v2.6/image-to-video/flash` produz um clipe de duração declarada, e
  * 10 s é o que esta fase pede. Não é estimativa nem teto: é o parâmetro.
  */
 export const PIPELINE_TARGET_SECONDS = 10;
@@ -129,6 +129,17 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  *    e a etapa 4 recebe um vídeo que já tem som.
  *  · `resolution` (Wan) — o default de 1080p custa mais que 720p por segundo
  *    gerado, e nada nesta fase pede 1080p.
+ *  · `enable_prompt_expansion` (Wan) — MEDIDO em 14/08 (ENDPOINTS-3) que o
+ *    fornecedor aceita o campo e o valor `false` sem erro de schema. O default
+ *    é `true`: um LLM do fornecedor REESCREVE `promptDeDirecao` antes de
+ *    animar. Para 10 s de avatar falando de frente para a câmera, uma reescrita
+ *    fora do nosso controle é risco de qualidade, não de dinheiro — mas é o
+ *    mesmo padrão dos outros: aceitar o default é aceitar uma mudança do
+ *    fornecedor em silêncio, aqui na DIREÇÃO da cena em vez do preço dela.
+ *  · `multi_shots` (Wan) — MEDIDO junto com o de cima, mesmo aceite sem erro.
+ *    O default é `true` e segmenta o clipe em várias tomadas; um clipe de 10 s
+ *    de uma pessoa falando não tem cena para cortar, e a segmentação automática
+ *    é o mesmo risco de qualidade do campo acima.
  *  · `sync_mode` (lipsync) — ele decide o que acontece quando vídeo e áudio têm
  *    durações diferentes, que nesta fase é SEMPRE o caso. Enviá-lo explícito é o
  *    que impede o fornecedor de mudar esse comportamento sem aviso num pipeline
@@ -143,12 +154,28 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  */
 export const DEFAULTS_NUNCA_HERDADOS = {
   "fal-ai/nano-banana-2/edit": ["num_images", "resolution"],
-  "fal-ai/wan/v2.6/reference-to-video/flash": ["generate_audio", "resolution", "duration"],
+  "wan/v2.6/image-to-video/flash": [
+    "generate_audio",
+    "resolution",
+    "duration",
+    "enable_prompt_expansion",
+    "multi_shots",
+  ],
   "fal-ai/sync-lipsync/v2": ["sync_mode", "model"],
 } as const;
 
 export const ENDPOINT_COMPOR = "fal-ai/nano-banana-2/edit";
-export const ENDPOINT_ANIMAR = "fal-ai/wan/v2.6/reference-to-video/flash";
+/**
+ * SEM prefixo `fal-ai/` — MEDIDO por fusível em 14/08 (ENDPOINTS-3), e é a
+ * causa raiz dos dois 404 anteriores (COMPOR-1 e ENDPOINTS-2). O Wan 2.6 é
+ * modelo Partner e mora direto no namespace `wan/`; `fal-ai/wan` EXISTE como
+ * app (é onde vive a família Wan 2.2) e por isso o fornecedor devolvia 404 no
+ * SUB-PATH, nunca no app — a submissão sempre aceitava (200/IN_QUEUE) e o
+ * erro só aparecia no resultado, o mesmo padrão enganoso medido duas vezes
+ * antes. `fal-ai/nano-banana-2/edit` (owned, prefixo `fal-ai/`) serviu de
+ * gabarito e por isso o prefixo errado não chamou atenção.
+ */
+export const ENDPOINT_ANIMAR = "wan/v2.6/image-to-video/flash";
 export const ENDPOINT_SINCRONIZAR = "fal-ai/sync-lipsync/v2";
 
 /**
@@ -703,6 +730,11 @@ async function animarNarrarSincronizar(
     generate_audio: false,
     resolution: RESOLUCAO_VIDEO,
     duration: PIPELINE_TARGET_SECONDS,
+    // Ver DEFAULTS_NUNCA_HERDADOS: sem eles, o fornecedor reescreve a direção
+    // e pode segmentar os 10 s em tomadas — os dois aceitos sem erro de schema
+    // (MEDIDO em 14/08), então `false` explícito não corre risco de 422.
+    enable_prompt_expansion: false,
+    multi_shots: false,
   });
   const videoMudoUrl = animacao.saida?.video?.url;
   if (!videoMudoUrl) {

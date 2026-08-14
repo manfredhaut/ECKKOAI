@@ -119,6 +119,34 @@ export const MUTANTS: Mutant[] = [
     expect: "pipeline: corpo cru gravado antes de qualquer leitura",
     expectGreen: true,
   },
+  {
+    guard: "pipeline: nenhum default do fornecedor é herdado",
+    name: "a chave do Wan em DEFAULTS_NUNCA_HERDADOS desalinha do endpoint em uso",
+    kind: "esperto",
+    // A chave do mapa e `ENDPOINT_ANIMAR` são duas cópias do mesmo id,
+    // atualizadas à mão — foi exatamente essa dupla cópia que ficou
+    // dessincronizada nos 404 do COMPOR-1 e do ENDPOINTS-2 (id errado nos TRÊS
+    // lugares ao mesmo tempo, então nunca vazou por aqui). Este mutante
+    // desalinha só a CHAVE, mantendo `ENDPOINT_ANIMAR` correto, para provar
+    // que corrigir dois de três lugares não passa despercebido.
+    file: "backend/src/services/video/falPipeline.ts",
+    find: '  "wan/v2.6/image-to-video/flash": [',
+    replace: '  "wan/v2.6/reference-to-video/flash": [',
+    expect: "pipeline: um default do fornecedor foi herdado em silêncio",
+  },
+  {
+    guard: "pipeline: as três etapas pagas completam no caminho feliz",
+    name: "o catálogo desalinha do endpoint que falPipeline.ts realmente usa",
+    kind: "esperto",
+    // O catálogo é a TERCEIRA cópia do mesmo id. `assertFalEndpointNoCatalogo`
+    // roda de verdade dentro desta guarda (só o `fetch` é substituído) — se o
+    // catálogo não bater com `ENDPOINT_ANIMAR`, `runFalPipeline` lança antes
+    // de completar as 3 submissões pagas, e é essa contagem que acusa.
+    file: "backend/src/services/providers/endpointCatalog.ts",
+    find: '    path: "/wan/v2.6/image-to-video/flash",',
+    replace: '    path: "/wan/v2.6/reference-to-video/flash",',
+    expect: "pipeline: com teto folgado saíram",
+  },
 ];
 
 export interface FalPipelineCheckResult {
