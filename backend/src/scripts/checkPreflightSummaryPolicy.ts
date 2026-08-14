@@ -274,20 +274,33 @@ export async function checkPreflightSummaryPolicy(
     }
 
     // ------------------------------------------------------------- 3 -------
-    for (const [origem, oQueE] of [
-      ["defaults.scenarioName", "o cenário"],
-      ["lookImageName", "a imagem do traje"],
+    //
+    // POR CONTAGEM, não por presença — corrigido no BLOCO B5c, MEDIDO pelo
+    // próprio arnês: `defaults.scenarioName` passou a ter DUAS instâncias
+    // legítimas do mesmo padrão (o bloco de "criar avatar novo", que já
+    // existia, e o bloco novo de "avatar existente"). Um `.test()` sem `g`
+    // pergunta só "existe em algum lugar?", e a passada `--affected` desta
+    // rodada pegou o resultado: um mutante que apaga a instância ANTIGA
+    // continuava achando a NOVA e o gate passava verde com o defeito
+    // aplicado — guarda INERTE. Contar exige as `minimoOcorrencias`
+    // conhecidas; cair abaixo é a única forma de reprovar de verdade.
+    for (const [origem, oQueE, minimoOcorrencias] of [
+      ["defaults.scenarioName", "o cenário", 2],
+      ["lookImageName", "a imagem do traje", 1],
     ] as const) {
       const usa = new RegExp(
         `${origem.replace(".", "\\.")}\\s*\\?\\s*t\\("createVideo\\.avatarSetup\\.imageSavedNamed"`,
+        "g",
       );
-      if (!usa.test(passo1)) {
+      const ocorrencias = (passo1.match(usa) ?? []).length;
+      if (ocorrencias < minimoOcorrencias) {
         failures.push(
-          `passo 1: ${oQueE} já salvo não aparece pelo nome — \`${origem}\` não alimenta ` +
-            `\`imageSavedNamed\` em ${PASSO1}. O campo de arquivo volta vazio a cada remontagem (o ` +
-            "navegador não repõe arquivo escolhido, por segurança) e o armazenamento renomeia para " +
-            "`<uuid>.<ext>`, então sem o nome guardado à parte a tela diz \"nenhum ficheiro\" sobre uma " +
-            "imagem que está salva e em uso.",
+          `passo 1: ${oQueE} já salvo não aparece pelo nome — \`${origem}\` alimenta ` +
+            `\`imageSavedNamed\` em ${ocorrencias} lugar(es) de ${PASSO1}, esperado ao menos ` +
+            `${minimoOcorrencias}. O campo de arquivo volta vazio a cada remontagem (o navegador não ` +
+            "repõe arquivo escolhido, por segurança) e o armazenamento renomeia para `<uuid>.<ext>`, " +
+            "então sem o nome guardado à parte a tela diz \"nenhum ficheiro\" sobre uma imagem que está " +
+            "salva e em uso.",
         );
       }
     }
