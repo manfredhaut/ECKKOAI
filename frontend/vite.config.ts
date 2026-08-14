@@ -33,10 +33,33 @@ function imageStampPlugin(): Plugin {
 }
 
 const traefikHttpPort = Number(process.env.TRAEFIK_HTTP_PORT) || 8090;
+
+// Mesmo padrão de backend/src/config.ts, adaptado: lá `required()` sempre
+// lança, porque o backend não tem modo dev tolerante. Aqui só lança com
+// NODE_ENV=production (fixado literal em docker-compose.prod.yml) — fora de
+// produção a ausência ainda cai no default de desenvolvimento, como sempre.
+//
+// Existe porque a leitura de BASE_DOMAIN deixou de acontecer a cada boot do
+// dev server (VITE-PROD-1/2/3: o frontend passou a ser build+nginx) e passou
+// a acontecer UMA VEZ, no build da imagem. Sem isto, um build de produção
+// sem BASE_DOMAIN no ambiente assaria "twinai.localhost" no bundle, sem erro
+// nenhum — links e QR codes de tenant errados, com aparência normal, na
+// frente de quem estiver vendo.
+function required(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value && process.env.NODE_ENV === "production") {
+    throw new Error(
+      `vite.config.ts: ${name} é obrigatória com NODE_ENV=production e está ausente. ` +
+        "Build de produção não pode cair no default de desenvolvimento em silêncio.",
+    );
+  }
+  return value ?? "";
+}
+
 // Single source of truth is backend/src/domainConfig.ts — this is just the
 // same BASE_DOMAIN env var, read here because Vite's config can't import
 // backend TS code across containers.
-const baseDomain = process.env.BASE_DOMAIN ?? "twinai.localhost";
+const baseDomain = required("BASE_DOMAIN") || "twinai.localhost";
 // Same idea: read once from the environment here, exposed to React via
 // `define` below — see src/publicConfig.ts.
 const whatsappNumber = process.env.WHATSAPP_NUMBER ?? "";
