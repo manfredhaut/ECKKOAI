@@ -15,8 +15,8 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **13/08/2026** (fecho do BLOCO B5c), HEAD `cf8d869` + o commit
-desta linha.
+Atualizado em **14/08/2026** (fecho do BLOCO COMPOR-1), HEAD `cfe7401` + o
+commit desta linha.
 
 ---
 
@@ -67,7 +67,9 @@ commit, e mensagem de commit não se reescreve.)
 | B3 · onde o débito mora, e o caminho de produto | fechado (`c849b50`+`ff9628e`) |
 | 5 · a tela (aprovação da imagem composta) | fechado no **B3** (`awaiting_approval`, rotas de aprovar/refazer) |
 | BLOCO B5 · vídeo de 10 s pelo Wan — direção ligada, `sync_mode: cut_off`, `model` do lipsync | fechado (`1f4b0d4`…`5ccd090`) |
-| **BLOCO B5c · cenário/traje no fluxo de avatar EXISTENTE — PRÓXIMO: retomar o vídeo de teste pago** | fechado (`dfd5657`+`cf8d869`) |
+| BLOCO B5c · cenário/traje no fluxo de avatar EXISTENTE | fechado (`dfd5657`+`cf8d869`) |
+| **COMPOR-1 · a composição paga, ponta a ponta pela tela** | fechado (ver §1.6) — **a animação bateu em 404** |
+| **PRÓXIMO · achar o id correto do Wan (e conferir o do lipsync antes de gastar)** | bloqueado por NÃO VERIFICADO — ver §7 |
 | 6 · custo por camada, régua `(provider, model, resolution)` | não começado |
 
 ### 1.1 · BLOCO 4, o que falta
@@ -364,6 +366,70 @@ crédito). Preencher cenário/traje para um avatar recém-criado exige passar
 primeiro por ele já pronto (existente), ou esperar uma rodada que também mexa
 no fluxo de criação.
 
+### 1.6 · BLOCO COMPOR-1 — a composição saiu, a animação não. 14/08
+
+**Custo real da rodada: US$ 0,16 na fal (2 composições) + 2 créditos de vídeo +
+1 chamada ao Gemini.** Saldo de vídeo: 21 → **19**. Nenhum código de produto
+tocado — só documentação.
+
+**O QUE FUNCIONOU PELA PRIMEIRA VEZ:**
+
+- **Duas composições pagas saíram inteiras** (`nano-banana-2/edit`), 20 s e
+  19 s, `inference_time` 11,78 s na segunda. O caminho tela → rota → provider →
+  fal → `awaiting_approval` está MEDIDO ponta a ponta.
+- **O cache de tradução FUNCIONA e está provado:** a 1ª geração emitiu
+  `direction_translated` (`tokensIn 101, tokensOut 30`); a 2ª, com o mesmo texto,
+  emitiu **`direction_translation_reused`** e `provider_usage` **não ganhou
+  linha nova de gemini**. ⚠️ **A métrica certa é `provider_usage`, não
+  `count(*) WHERE motion_prompt_en IS NOT NULL`** — este último conta LINHAS DE
+  VÍDEO (foi de 1 para 2 justamente porque a 2ª geração copiou a tradução
+  reusada), e lê-lo como "chamadas" inverte a conclusão.
+- **O 409 do segundo clique em Aprovar funcionou:** `approval_not_pending`,
+  nenhuma etapa paga disparada.
+
+**⚠️ O ACHADO QUE PARA O PIPELINE: `ENDPOINT_ANIMAR` NÃO EXISTE NA FAL.**
+`fal-ai/wan/v2.6/reference-to-video/flash`
+([falPipeline.ts:151](backend/src/services/video/falPipeline.ts:151), espelhado
+em [endpointCatalog.ts:188](backend/src/services/providers/endpointCatalog.ts:188))
+devolve **404 `Path /v2.6/reference-to-video/flash not found`**. A fal resolveu
+`fal-ai/wan` como app e o resto como sub-path inexistente.
+
+**E ele falhou pelo caminho MAIS CARO DE LER, que é o segundo caso registrado
+do mesmo padrão:** `POST` → **200 IN_QUEUE** com `request_id` legítimo →
+status → **COMPLETED (200)** → e só o **RESULTADO** trouxe o 404.
+`inference_time: 0.049` — o tempo de não ter feito nada. É exatamente o que a
+§1.3 registrou em 13/08 com o 422 (`inference_time: 0.058`). **Duas ocorrências
+independentes: `COMPLETED` não é sucesso, e ler só o status faria o pipeline
+seguir para a etapa seguinte com o trabalho anterior inexistente.**
+
+**O ESTADO §6 previu isto por escrito** — "os três ids de modelo vieram por
+escrito. Um id errado vira 404, não cobrança." **A previsão está MEDIDA**, e o
+custo dela foi zero na fal.
+
+**O que segue NÃO VERIFICADO, e é o bloqueio da próxima rodada:** qual é o id
+correto do Wan. Não foi procurado — exigiria consultar a fal, e esta rodada
+estava fechada em leitura. **`ENDPOINT_SINCRONIZAR` e o preço do lipsync
+seguem igualmente sem uma única corrida real.**
+
+**O PREÇO DO WAN NÃO FOI RESOLVIDO, e não podia ter sido.** O Wan não rodou.
+Além disso, **o custo REAL de nenhuma etapa é observável deste repositório**:
+`gastoPrevistoUsd` é PREVISTO, calculado por `PRECOS_FAL` antes da chamada, e
+nenhuma resposta da fal traz preço. Só o painel/fatura da fal responde — é a
+mesma dívida de reconciliação já aberta no §7.
+
+**Estado das duas linhas ao fim da rodada:**
+
+| linha | estado | imagem |
+|---|---|---|
+| `de2a366e` | `awaiting_approval` — **intacta e aprovável** | paga, US$ 0,08 |
+| `ca88822c` | `error` / `vendor_rejected` — **NÃO volta a ser aprovável** | paga, US$ 0,08, viva no diário |
+
+**A imagem de `ca88822c` foi paga e está inalcançável pela tela** — a linha em
+`error` não retorna a `awaiting_approval` por decisão declarada
+([videos.ts:1767](backend/src/routes/videos.ts:1767): a etapa paga pode ter
+saído). A URL continua em `videos.fal_composed_image_url` e no diário da corrida
+`fb4577a3`. **Não estornou, e está correto:** a composição aconteceu.
+
 ## 2 · Decisões fechadas — não reabrir
 
 Só as do caminho da fal. As de fornecedor (HeyGen: fundo, Avatar V, presets de
@@ -590,6 +656,81 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
   todas de photo avatar 720p na HeyGen.
 
 ## 7 · Dívidas abertas
+
+- 🔴 **BLOQUEIO DURO — `ENDPOINT_ANIMAR` está ERRADO e o pipeline não passa da
+  composição. Aberta em 14/08 (COMPOR-1), MEDIDA numa aprovação real.**
+  `fal-ai/wan/v2.6/reference-to-video/flash` → **404 `Path
+  /v2.6/reference-to-video/flash not found`**. Vive em dois lugares que precisam
+  mudar juntos: [falPipeline.ts:151](backend/src/services/video/falPipeline.ts:151)
+  e [endpointCatalog.ts:188](backend/src/services/providers/endpointCatalog.ts:188)
+  — mais `DEFAULTS_NUNCA_HERDADOS`
+  ([falPipeline.ts:146](backend/src/services/video/falPipeline.ts:146)), que é
+  chaveado pelo mesmo id e ficaria órfão em silêncio se só um dos três mudasse.
+  **Qual é o id CORRETO é NÃO VERIFICADO** — não foi procurado nesta rodada.
+  ⚠️ **`ENDPOINT_SINCRONIZAR` (`fal-ai/sync-lipsync/v2`) está sob a MESMA
+  suspeita e nunca foi exercitado** — a corrida morreu antes dele. Descobrir o
+  id do Wan sem conferir o do lipsync troca um 404 por outro, uma etapa e
+  US$ 1,00 depois.
+- **O custo REAL de etapa nenhuma é observável deste repositório.** MEDIDO no
+  COMPOR-1: `gastoPrevistoUsd` é calculado por `PRECOS_FAL` **antes** da
+  chamada, e nenhuma resposta da fal traz preço — nem no submit, nem no status,
+  nem no resultado. `metrics` traz só `inference_time`. Toda pergunta de
+  "quanto custou de verdade" depende do painel/fatura da fal, e é a mesma
+  dívida de reconciliação de 11/08 (US$ 1,14 previsto × US$ 5,30 no painel)
+  vista por outro ângulo. **`animarUsdPorSegundo: 0.1` segue DECLARADO, não
+  medido** — a corrida que o mediria foi a que deu 404.
+
+- 🔴 **BLOQUEIA TERCEIROS — o campo "Cenário · Gerar via IA" é, de fato, o
+  prompt da IMAGEM INTEIRA, e o rótulo não diz isso. Aberta em 14/08
+  (COMPOR-1), MEDIDA numa composição real paga.** O que entra em
+  `scenario_prompt`+`outfit_prompt` vira o **único** `prompt` do
+  `nano-banana-2/edit` ([falPipeline.ts:579](backend/src/services/video/falPipeline.ts:579),
+  montado em [avatarProvider.ts:1104](backend/src/services/providers/avatarProvider.ts:1104)):
+  cenário, traje, **pose, orientação do rosto e enquadramento**, tudo. E a
+  **Interpretação — o único campo onde a pose PARECE caber — não chega a esse
+  modelo**: ela vira `promptDeDirecao`, lido só em
+  [falPipeline.ts:699](backend/src/services/video/falPipeline.ts:699), dentro do
+  Wan, que é a etapa DEPOIS da aprovação.
+  **O sintoma medido:** com Interpretação dizendo "de frente para a câmera",
+  foto de referência frontal (conferida a olho: `photo_urls[0]`, plano do peito,
+  olhando para a lente) e um prompt de composição sem nenhuma palavra sobre
+  pose, a imagem voltou **de perfil, olhando para fora do quadro**. Custou
+  US$ 0,08 e 1 crédito. Nada falhou — o produto fez exatamente o que o texto
+  pedia, e o texto não pedia pose porque nada na tela sugere pedi-la ali.
+  **Por que é dívida e não preferência:** nenhum usuário adivinha que pose se
+  escreve no campo de cenário, e a frente de deploy pressupõe terceiros
+  operando isto sem ler o código. A separação em si é DELIBERADA e está
+  justificada em [falPipeline.ts:295-308](backend/src/services/video/falPipeline.ts:295)
+  (concatenar faria a imagem ser negociada por um texto escrito para o Wan) —
+  **o defeito não é a separação, é a TELA não explicá-la.** Consertos possíveis,
+  nenhum escolhido: renomear o campo e reescrever o `help`; um terceiro campo
+  explícito de pose/enquadramento que entre no `promptDeComposicao`; ou um
+  trecho fixo de enquadramento anexado por nós — este último **mente menos só
+  se for visível na tela**, senão é o mesmo defeito do "prompt mínimo default"
+  já recusado. **Não corrigir sem decidir qual.**
+- **O CORPO ENVIADO À FAL NÃO É GRAVADO — "que prompt foi enviado" é sempre
+  RECONSTRUÇÃO. Aberta em 14/08 (COMPOR-1).**
+  `gravarRespostaCrua` grava só a **saída**
+  ([falPipeline.ts:553](backend/src/services/video/falPipeline.ts:553)); o
+  `corpo` que vai em `etapaNaFal`
+  ([:534](backend/src/services/video/falPipeline.ts:534)) morre na chamada.
+  Responder "por que a imagem saiu assim?" exige reaplicar
+  `promptDaComposicao` aos campos da linha — determinístico, verificável, e
+  ainda assim **DEDUZIDO**. A pergunta só aparece quando a imagem sai errada, e
+  é exatamente aí que a reconstrução vale menos que o registro.
+  **O que custaria, dimensionado por leitura — a elisão NÃO é o trabalho:**
+  `redactDeep` já existe, já cobre aninhamento, `Error` e referência circular
+  ([safeLog.ts:114](backend/src/services/log/safeLog.ts:114)), e
+  `JSON.stringify(redactDeep(corpo))` resolve o sigilo numa linha. O trabalho é
+  o resto: **coluna nova** (`request_body` em `fal_pipeline_steps`, migration),
+  **método novo** na interface `DiarioDoPipeline`
+  ([falPipeline.ts:244-252](backend/src/services/video/falPipeline.ts:244)) e na
+  implementação ([falPipelineJournal.ts:73](backend/src/services/video/falPipelineJournal.ts:73)),
+  **a chamada** em `etapaNaFal` entre `abrirEtapa` e `falSubmit`, e — o item que
+  já mordeu uma vez — **revisar `checkFalPipelinePolicy`**, que mede a ORDEM das
+  gravações e no B2 quebrou por exatamente este motivo (uma gravação nova
+  passou a acontecer antes da que ela media). Some uma guarda nova ("o corpo é
+  gravado ANTES da submissão") e o mutante dela. **Nenhuma linha escrita.**
 
 - **BAIXO RISCO — `VENDOR_FORMAT_SUPPORT.fal` ([videoFormat.ts:171-180](backend/src/services/providers/videoFormat.ts:171))
   tem texto DESATUALIZADO desde o B2, achado em 13/08 lendo a tela do passo

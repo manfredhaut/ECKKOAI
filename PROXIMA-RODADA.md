@@ -1,8 +1,42 @@
-# PRÓXIMA RODADA — o BLOCO B3, e o que decidir antes de gastar
+# PRÓXIMA RODADA — achar o id do Wan, e conferir o do lipsync ANTES de gastar
 
-⚠️ **A chave da fal JÁ ESTÁ no banco desde 13/08** (`api_credentials`, tenant
-`c77a5b8a`, provider `avatar`, vendor `fal`). O bloqueio das duas rodadas
-anteriores acabou; o que sobrou não é credencial, é **decisão**.
+> **PONTO DE RETOMADA, escrito em 14/08 no fecho do COMPOR-1.** O que está
+> abaixo desta caixa é histórico do B3 e continua válido como registro; o que
+> vale como PRÓXIMO PASSO é isto aqui.
+
+**A composição está PROVADA em produção pela tela** (duas corridas pagas,
+US$ 0,16, ESTADO §1.6). **A animação nunca rodou:** `ENDPOINT_ANIMAR` =
+`fal-ai/wan/v2.6/reference-to-video/flash` devolve **404 `Path
+/v2.6/reference-to-video/flash not found`**.
+
+**Passo 1 — descobrir o id correto do Wan, e o do lipsync JUNTO. Custo zero.**
+Os dois vieram "por escrito" e nenhum foi exercitado; achar um e gastar sem
+conferir o outro troca um 404 por outro **uma etapa e US$ 1,00 depois**. A
+sonda de contrato existe e usa `avatar_id` inexistente como fusível
+(`probeFalPipeline.ts`) — mas para um id de ENDPOINT o fusível é diferente: um
+POST à fila com corpo vazio já separa "app não existe" (404 no resultado) de
+"app existe, corpo inválido" (422). **Ler a doc/console da fal é mais barato
+que sondar, e é por onde se começa.**
+
+**Passo 2 — trocar o id em TRÊS lugares, nunca em um.** Ele vive em
+`falPipeline.ts:151`, `endpointCatalog.ts:188` e como **chave** de
+`DEFAULTS_NUNCA_HERDADOS` (`falPipeline.ts:146`) — este último fica órfão em
+silêncio se for esquecido, e o efeito é o pipeline voltar a herdar
+`generate_audio`, que é o default mais caro de omitir.
+
+**Passo 3 — a passada COMPLETA antes de qualquer novo gasto** (§4). A última
+válida é 243/243 em `cf8d869`; desde então **nenhum código de produto mudou**,
+só documentação, então ela ainda vale — mas trocar o id É código.
+
+**⚠️ Ao ler qualquer resultado da fal: `COMPLETED` NÃO é sucesso.** Duas
+ocorrências MEDIDAS (13/08 com 422, 14/08 com 404), as duas com submit 200
+IN_QUEUE, status COMPLETED e o erro só no RESULTADO, com `inference_time` de
+centésimos. Quem lê o status segue para a etapa seguinte, que custa 12× mais.
+
+**Sobra aproveitável:** a linha `de2a366e` continua em `awaiting_approval` com
+imagem paga e válida — ela é o material de teste do dia em que o id estiver
+certo, sem pagar composição de novo. A varredura de recuperação só roda no
+BOOT, então ela não expira sozinha enquanto o backend não reiniciar.
 
 ---
 
