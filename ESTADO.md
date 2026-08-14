@@ -552,6 +552,23 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
 
 ## 7 · Dívidas abertas
 
+- **BAIXO RISCO — `VENDOR_FORMAT_SUPPORT.fal` ([videoFormat.ts:171-180](backend/src/services/providers/videoFormat.ts:171))
+  tem texto DESATUALIZADO desde o B2, achado em 13/08 lendo a tela do passo
+  Cena.** O `reason` ainda afirma "não há ramo de geração para ela
+  (`generateVideo` despacha só heygen/did)" — verdade até `9d2d1e6`, falsa
+  desde que o B2 acrescentou `if (input.vendor === "fal") return
+  generateVideoFal(input);` acima do ternário. Nunca foi revisado no B2, B3,
+  B5 nem B5c. **NÃO bloqueia nem distorce a geração** — MEDIDO por leitura do
+  call site: `vendorAcceptsFormat()` em `avatarProvider.ts:1296` só decide se
+  um `logEvent("warn", "video_format_not_applied", …)` é emitido; não há
+  `return` nem `throw`, e o despacho para `generateVideoFal` que vem depois é
+  indiferente a esse descritor. O sintoma visível é só o aviso vermelho de
+  proporção no passo Cena (que renderiza `PublishStep` internamente,
+  [SceneStep.tsx:268](frontend/src/pages/CreateVideo/steps/SceneStep.tsx:268)) — a
+  afirmação em si (a fal não recebe `aspect_ratio`/`resolution`) segue
+  verdadeira, só a explicação do "por quê" que mente. Conserto: reescrever o
+  `reason` para refletir a realidade atual do Wan, numa rodada de limpeza de
+  dívidas — não é desta.
 - ~~2 MUTANTES PODRES~~ **CONSERTADOS em 13/08** (`2cd2987`), e agora há guarda
   que os pega em segundos no `npm run check` em vez de 80 min na passada. O
   histórico do que eram:
