@@ -19,6 +19,7 @@
  */
 import path from "node:path";
 import type { Mutant } from "./mutants.js";
+import { FRONTEND_STAMP_URL, fetchStamp } from "./frontendStampFetch.js";
 
 export interface ImageFreshnessResult {
   failures: string[];
@@ -56,14 +57,54 @@ export const MUTANTS: Mutant[] = [
     replace: `export const STAMPED_FILES = [];`,
     expect: "não cobre arquivo nenhum",
   },
+  {
+    guard: "frescor: imagem do frontend corresponde ao repositório",
+    name: "404 do carimbo volta a virar NOTA, não FALHA",
+    kind: "esperto",
+    // O defeito real que a migração para nginx (VITE-PROD-3) expôs: um
+    // `dist/__image-stamp` ausente faz nginx devolver 404, e a versão antiga
+    // desta guarda tratava QUALQUER res.ok===false — inclusive uma resposta
+    // HTTP de verdade — como "serviço fora do ar", uma NOTA em vez de FALHA.
+    // Este mutante reintroduz exatamente isso: colapsa "respondeu com
+    // erro" de volta em "não respondeu", dentro de fetchStamp()
+    // (frontendStampFetch.ts) — sem tocar no autoteste, que continua em
+    // checkImageFreshnessPolicy.ts chamando a MESMA fetchStamp() mutada.
+    // Mirar o arquivo EXTRAÍDO, e não este, evita a auto-colisão: um
+    // mutante que mira o arquivo que o declara conta 2x para
+    // checkMutantRegistryPolicy (uma vez dentro do próprio `find`, outra no
+    // código real) e reprova por ambiguidade antes de rodar gate nenhum.
+    file: "backend/src/scripts/frontendStampFetch.ts",
+    find: `  if (!response.ok) return { kind: "http-error", status: response.status };`,
+    replace: `  if (!response.ok) return { kind: "off" };`,
+    expect: "autoteste — uma resposta HTTP não-2xx",
+  },
 ];
-
-/** Onde o frontend responde, de dentro da rede do compose. */
-const FRONTEND_STAMP_URL = "http://frontend:5173/__image-stamp";
 
 export async function checkImageFreshnessPolicy(repoRoot: string): Promise<ImageFreshnessResult> {
   const failures: string[] = [];
   const notes: string[] = [];
+
+  // Autoteste sintético: prova que "respondeu, mas não-2xx" vira FALHA, sem
+  // depender do que o frontend REAL está servindo agora (que pode ser 200
+  // legitimamente, e nesse caso o ramo abaixo nunca executaria na prática).
+  // Troca `globalThis.fetch` por uma resposta 404 fabricada, chama a MESMA
+  // `fetchStamp()` que a checagem real usa mais abaixo — não uma cópia da
+  // lógica — e restaura no `finally`. Mesmo padrão de `checkPollPolicy.ts`.
+  const fetchOriginal = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => new Response("not found", { status: 404 })) as typeof fetch;
+    const autoteste = await fetchStamp();
+    if (autoteste.kind !== "http-error") {
+      failures.push(
+        'frescor: autoteste — uma resposta HTTP não-2xx do endpoint do carimbo deveria ser ' +
+          `classificada como "http-error", veio "${autoteste.kind}". Se isto ficar "off", um 404 ` +
+          "(serviço no ar, carimbo ausente) fica indistinguível de serviço fora do ar — e essa " +
+          "distinção é o que faz um dist/__image-stamp faltando virar FALHA, não NOTA.",
+      );
+    }
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
 
   const frontendDir = path.join(repoRoot, "frontend");
 
@@ -95,22 +136,28 @@ export async function checkImageFreshnessPolicy(repoRoot: string): Promise<Image
   }
 
   const doRepo = computeStamp(frontendDir);
+  const resultado = await fetchStamp();
 
-  let daImagem: string | null = null;
-  try {
-    const res = await fetch(FRONTEND_STAMP_URL, { signal: AbortSignal.timeout(4000) });
-    if (res.ok) daImagem = (await res.text()).trim();
-  } catch {
-    // Frontend fora do ar. Tratado abaixo como nota, não falha.
-  }
-
-  if (daImagem === null) {
+  if (resultado.kind === "off") {
     notes.push(
       `frescor: NÃO VERIFICADO — o frontend não respondeu em ${FRONTEND_STAMP_URL}. ` +
         "A imagem pode estar velha sem que nada acuse; suba o serviço e rode de novo.",
     );
     return { failures, notes };
   }
+
+  if (resultado.kind === "http-error") {
+    failures.push(
+      `frescor: o frontend respondeu ${resultado.status} em ${FRONTEND_STAMP_URL} — o serviço está ` +
+        "no ar, mas o carimbo não está sendo servido. Num deploy de nginx isto tipicamente é " +
+        "dist/__image-stamp ausente (o passo que grava o carimbo caiu do build), que é exatamente o " +
+        "tipo de defeito que esta guarda existe para não deixar passar em silêncio. " +
+        "Conserto: confira o `RUN ... node image-stamp.mjs . > dist/__image-stamp` no Dockerfile.",
+    );
+    return { failures, notes };
+  }
+
+  const daImagem = resultado.text;
 
   if (daImagem === "sem-carimbo") {
     failures.push(
