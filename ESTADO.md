@@ -15,7 +15,7 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **14/08/2026** (fecho do BLOCO ENDPOINTS-2), HEAD `87121cd` + o
+Atualizado em **14/08/2026** (fecho do BLOCO ENDPOINTS-3), HEAD `62e67f9` + o
 commit desta linha.
 
 ---
@@ -70,7 +70,8 @@ commit, e mensagem de commit não se reescreve.)
 | BLOCO B5c · cenário/traje no fluxo de avatar EXISTENTE | fechado (`dfd5657`+`cf8d869`) |
 | **COMPOR-1 · a composição paga, ponta a ponta pela tela** | fechado (ver §1.6) — **a animação bateu em 404** |
 | **ENDPOINTS-2 · o candidato do id do Wan foi testado por fusível** | fechado (ver §1.7) — **também 404, id correto SEGUE não encontrado** |
-| **PRÓXIMO · achar o id correto do Wan por fonte que não seja `WebFetch` de página de doc** | bloqueado por NÃO VERIFICADO — ver §7. `sync-lipsync/v2` está CONFIRMADO por fusível, não precisa reabrir. |
+| **ENDPOINTS-3 · o id certo (sem prefixo `fal-ai/`), MEDIDO por fusível, aplicado e restart feito** | fechado (ver §1.8) — **`de2a366e` segue aprovável, nunca aprovada de verdade** |
+| **PRÓXIMO · aprovar `de2a366e` de verdade (primeiro clique pago no Wan) — exige autorização explícita de gasto** | bloqueado por decisão do operador, não por NÃO VERIFICADO |
 | 6 · custo por camada, régua `(provider, model, resolution)` | não começado |
 
 ### 1.1 · BLOCO 4, o que falta
@@ -483,6 +484,121 @@ Wan. Não há janela de tempo em que este código pudesse ter produzido aquela
 medição. Ela veio de fora — do ambiente do operador, com um id que este
 repositório nunca usou (correto ou não) — e segue como dívida externa, não
 como algo a reconciliar contra este código.
+
+### 1.8 · BLOCO ENDPOINTS-3 — o id CERTO, MEDIDO por fusível: falta o prefixo `fal-ai/`, não o sub-path
+
+**Causa raiz do 404 dos dois blocos anteriores: o Wan 2.6 é modelo Partner e
+mora direto no namespace `wan/`, SEM `fal-ai/` na frente.** `fal-ai/wan`
+EXISTE como app (é onde vive a família Wan 2.2) — por isso o fornecedor
+sempre aceitava a submissão (200/IN_QUEUE) e só 404ava no sub-path, nunca no
+app. `fal-ai/nano-banana-2/edit`, usado como gabarito por já estar MEDIDO
+funcionando, tinha prefixo `fal-ai/` — e foi exatamente essa semelhança que
+escondeu o defeito real nas duas rodadas anteriores.
+
+**Fusível, corpo `{}`, 4 candidatos, custo US$ 0,00 (nenhum chegou perto de
+gerar):**
+
+| candidato | resultado | veredito |
+|---|---|---|
+| `wan/v2.6/image-to-video/flash` | **422** `prompt`+`image_url` faltando | rota EXISTE — é o id certo |
+| `wan/v2.6/image-to-video` (sem `/flash`) | **422**, mesmos campos | também existe (variante sem tier, não usada) |
+| `wan/v2.6/reference-to-video` (controle de namespace) | **422** `prompt`+`video_urls` faltando | existe — confirma o namespace `wan/` sem prefixo |
+| `fal-ai/nano-banana-2/edit` (controle já conhecido) | **422** `prompt` faltando | inalterado |
+
+**Item 2 — nenhuma suposição de prefixo achada no código.**
+`assertFalEndpointNoCatalogo` ([falClient.ts:156](backend/src/services/providers/falClient.ts:156))
+só compara string exata contra `VENDOR_ENDPOINTS`; o catálogo já tinha um
+endpoint SEM `fal-ai/` (`/storage/upload/initiate`, upload REST), então a
+convenção "todo id da fal começa com fal-ai/" nunca foi imposta em código —
+só no hábito de quem escreveu os outros dois. Nenhum `split`/`startsWith`
+estrutural sobre o id em `falClient.ts` ou `endpointCatalog.ts`.
+
+**Aplicado (`62e67f9`): os três pontos, juntos.** `ENDPOINT_ANIMAR`
+([falPipeline.ts:178](backend/src/services/video/falPipeline.ts:178)), a
+chave de `DEFAULTS_NUNCA_HERDADOS`
+([falPipeline.ts:157](backend/src/services/video/falPipeline.ts:157)) e o
+`path` do catálogo
+([endpointCatalog.ts:190](backend/src/services/providers/endpointCatalog.ts:190))
+— agora os três `wan/v2.6/image-to-video/flash` (catálogo com barra inicial:
+`/wan/v2.6/image-to-video/flash`).
+
+**Dois campos novos, MEDIDOS aceitos pelo schema no mesmo fusível (corpo com
+`duration`/`resolution`/`generate_audio` + os dois novos, ainda sem
+`prompt`/`image_url` — nenhum erro de tipo apareceu para nenhum dos cinco):**
+`enable_prompt_expansion: false` e `multi_shots: false`, agora explícitos no
+corpo e na lista de `DEFAULTS_NUNCA_HERDADOS` (5 campos para o Wan). Sem eles
+o default do fornecedor (`true` nos dois) deixaria um LLM reescrever
+`promptDeDirecao` e segmentar o clipe de 10 s em várias tomadas — risco de
+qualidade, não de dinheiro, mas do mesmo padrão dos outros defaults.
+
+⚠️ **Contra a suposição do pedido: `duration` como NÚMERO passa o schema sem
+erro** — testado `10` (número) e `"10"` (string) lado a lado, mesmo fusível,
+nenhum dos dois produziu erro de tipo no `detail`. O código continua mandando
+número (`PIPELINE_TARGET_SECONDS`, sem conversão) — não havia defeito aqui.
+
+**Dois mutantes novos, PROVADOS reprovando por passada filtrada DEPOIS do
+commit do fix** (`--name` nos dois, 2/2 `ok`, árvore revertida e conferida por
+HASH — não só `git status` — em cada um):
+- `pipeline: nenhum default do fornecedor é herdado` :: *a chave do Wan em
+  DEFAULTS_NUNCA_HERDADOS desalinha do endpoint em uso*
+- `pipeline: as três etapas pagas completam no caminho feliz` :: *o catálogo
+  desalinha do endpoint que falPipeline.ts realmente usa* (guarda nova,
+  não existia mutante nomeado para esta asserção antes desta rodada)
+
+Arnês: **245 mutantes declarados** (`--list`, medido nesta rodada).
+
+**Preço corrigido, `providerCost.ts:314-329`: US$ 0,10/s → US$ 0,025/s,
+marcado DOCUMENTADO com URL, não medido.** Citação verbatim de
+<https://fal.ai/models/wan/v2.6/image-to-video/flash/api>: *"Audio video
+(generate_audio=True, default) is billed at half the standard I2V rate;
+silent video (generate_audio=False) at 25%."* O "standard I2V rate" é
+US$ 0,10/s a 720p — o preço do tier NÃO-flash
+(<https://fal.ai/models/wan/v2.6/reference-to-video/api>), e as duas
+porcentagens (50%, 25%) são do MESMO número-base, não uma da outra:
+`0,10 × 0,25 = 0,025`. Como este pipeline sempre manda `generate_audio:
+false`, **US$ 0,025/s é a taxa que se aplica**, e o valor anterior
+(US$ 0,10/s) era o preço do tier ERRADO — não uma medição inválida do tier
+certo.
+
+**Custo previsto do pipeline inteiro, recalculado:** `compor` US$ 0,08 +
+`animar` (0,025 × 10 s) US$ 0,25 + `sincronizar` (0,05 ×
+até ~8,72 s de fala) ≈ US$ 0,44 → **≈ US$ 0,77 no pior caso**, contra
+≈ US$ 1,52 antes da correção. `PIPELINE_TETO_USD = 2,0` não muda — já tinha
+margem antes (0,48 acima do previsto antigo) e agora sobra quase o triplo
+(1,23 acima do novo previsto). Nenhum ajuste de teto foi necessário.
+
+**A medição externa de 11/08 (`request_id 019ff2dd-...`, ~25% de US$ 0,10/s)
+passa de "não verificada" a COERENTE com a doc.** A aritmética bate exatamente
+com o que a doc do fornecedor descreve: 25% do standard I2V rate. Isso não
+muda a conclusão de proveniência do §1.7 (ela continua sem poder ter saído
+deste código, por janela de tempo) — muda o que se pensa da medição em si:
+não era um número solto, era o `generate_audio: false` do tier `flash`
+batendo com a mesma conta que a doc descreve. **O que estava errado não era a
+medição de fora, era o preço DESTE repositório**, herdado do tier não-flash.
+
+**Restart feito às `2026-08-14T05:43:24Z`, dentro do prazo** (expiração de
+`de2a366e` em `2026-08-15T04:26:40Z`, ~22h45min de folga). **Id confirmado
+DENTRO do processo, não só no repositório** — `ENDPOINT_ANIMAR` lido de
+dentro do container após o restart devolveu `wan/v2.6/image-to-video/flash`.
+`de2a366e` **sobreviveu**: log de boot mostra
+`video_recovery_aguardando_aprovacao` com `idadeMs: 4606830` contra
+`maxAgeMs: 86400000` — a linha segue `awaiting_approval`, imagem intacta,
+aprovável.
+
+⚠️ **DÍVIDA REGISTRADA, NÃO IMPLEMENTADA — o `sync-lipsync` (a etapa mais
+cara, US$ 0,05/s) pode ser dispensável.** O schema do `wan/v2.6/image-to-video/flash`
+tem um campo `audio_url` opcional. Se o Wan já sincroniza a animação contra
+uma faixa de áudio fornecida (e não só gera uma trilha própria quando
+`generate_audio` está ligado), mandar o áudio do ElevenLabs DIRETO nessa
+etapa poderia produzir lipsync sem precisar da etapa 4 — cortando a etapa
+mais cara do pipeline. **A pergunta que mediria isso, sem gastar além do
+fusível:** o schema descreve `audio_url` como entrada de sincronização de
+verdade (lábios acompanham a fala) ou como trilha de fundo substituível (o
+texto encontrado numa leitura anterior, não confirmada por fusível, dizia
+"background music" — o que sugeriria que NÃO serve para lipsync, e a etapa 4
+continuaria necessária)? Só um teste pago comparando os dois caminhos
+responde com certeza; a doc sozinha já é ambígua o bastante para não decidir
+nada aqui.
 
 ## 2 · Decisões fechadas — não reabrir
 
