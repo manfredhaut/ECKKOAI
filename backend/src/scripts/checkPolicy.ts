@@ -68,6 +68,7 @@ import { checkFalPipelinePolicy } from "./checkFalPipelinePolicy.js";
 import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js";
 import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
+import { checkExistingAvatarAssetsPolicy } from "./checkExistingAvatarAssetsPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -684,6 +685,13 @@ async function main(): Promise<void> {
   const falSceneWiring = await checkFalSceneWiringPolicy();
   falSceneWiring.failures.forEach((f) => failures.push(f));
   falSceneWiring.notes.forEach((n) => note(n));
+
+  // --- 24o-quinquies. cenário e traje no avatar EXISTENTE (BLOCO B5c) ----
+  //
+  // Só leitura de arquivo — nenhuma rede, nenhum banco, nenhum React montado.
+  const existingAvatarAssets = await checkExistingAvatarAssetsPolicy();
+  existingAvatarAssets.failures.forEach((f) => failures.push(f));
+  existingAvatarAssets.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //

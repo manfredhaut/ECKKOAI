@@ -1,11 +1,17 @@
 /**
  * TRAJE: criar um look por TEXTO, dentro do freio, e cobrar o que foi medido.
  *
- * O defeito de origem: o passo 1 tinha um upload de imagem e um prompt de traje
- * que não alimentavam nada — os campos iam para `defaults.outfit` e paravam ali,
- * porque `corpoDaGeracao()` nunca os incluiu. Um formulário que aceita arquivo
- * do cliente e não alimenta geração nenhuma é pior que um campo ausente.
+ * O defeito de origem, HISTÓRICO: o passo 1 tinha um upload de imagem e um
+ * prompt de traje que não alimentavam nada — os campos iam para
+ * `defaults.outfit` e paravam ali, porque `corpoDaGeracao()` nunca os incluiu.
+ * Um formulário que aceita arquivo do cliente e não alimenta geração nenhuma é
+ * pior que um campo ausente. **Isso mudou no BLOCO B5c**: `outfit`/
+ * `outfit_prompt` passaram a ser lidos de verdade pela fal (B2/B5), e o campo
+ * voltou à tela — no ramo de avatar EXISTENTE, não neste "Adicionar traje".
+ * O item 7 abaixo, que media "nunca existir", passou a medir "se existir, tem
+ * de estar ligado" — ver o comentário ali.
  *
+
  * O caminho live ficou fechado até 06/08 por não se conhecer o endpoint. Agora
  * é MEDIDO: `POST /v3/avatars` com `type: "prompt"`, `name` obrigatório e o id
  * do LOOK em `avatar_id`. Custo medido no mesmo dia: **60 unidades, US$ 1,00**,
@@ -491,16 +497,38 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
   }
 
   // ---------------------------------------------------------------------------
-  // 7. O formulário órfão não voltou ao passo 1, e o novo está lá.
+  // 7. Se o passo 1 coleta `outfit`, o corpo enviado tem de USÁ-LO — e o
+  //    "Adicionar traje" (LOOK) continua existindo do lado dele.
+  //
+  // ⚠️ ESTA INVARIANTE MUDOU no BLOCO B5c, e o histórico importa para não
+  // reabrir a dúvida: até então, `handleAssetUpload("outfit", …)` NÃO PODIA
+  // existir em lugar nenhum do passo 1, porque ele gravava em `defaults.outfit`
+  // e `corpoDaGeracao()` não incluía o campo no corpo de `POST /videos` — era
+  // literalmente um formulário órfão, e a regra era "nunca existir de novo".
+  // O B2/B5 ligaram `outfit`/`outfit_prompt` à fal de verdade, e o B5c devolveu
+  // o campo à tela (no ramo de avatar EXISTENTE, não no antigo). A regra
+  // "nunca existir" ficaria mais forte que o produto real, e bloquearia
+  // exatamente o conserto que fecha o gap que este próprio comentário
+  // descrevia. O que continua protegido — e é o que importava desde o
+  // início — é que upload sem fio até o corpo NÃO VOLTE: se `outfit` aparece
+  // no passo 1, `corpoDaGeracao()` (GenerateStep.tsx) tem de mandá-lo.
   // ---------------------------------------------------------------------------
   const passo1 = path.join(repoRoot, "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx");
   try {
     const fonte = await readFile(passo1, "utf-8");
     if (/handleAssetUpload\(\s*["']outfit["']/.test(fonte)) {
-      failures.push(
-        "traje: o upload de traje voltou ao passo 1 (`handleAssetUpload(\"outfit\", …)`). Aquele campo " +
-          "gravava em `defaults.outfit`, que `corpoDaGeracao()` não inclui no corpo de POST /videos.",
+      const generateStepPath = path.join(
+        repoRoot,
+        "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
       );
+      const generateStepSrc = await readFile(generateStepPath, "utf-8").catch(() => "");
+      if (!/outfit:\s*defaults\?\.outfit/.test(generateStepSrc)) {
+        failures.push(
+          "traje: o passo 1 volta a colher `outfit` (`handleAssetUpload(\"outfit\", …)`) sem que " +
+            "`corpoDaGeracao()` (GenerateStep.tsx) o inclua no corpo de `POST /videos` — é o formulário " +
+            "órfão de volta: upload que o cliente preenche e que não alimenta geração nenhuma.",
+        );
+      }
     }
     if (!/handleCreateLook/.test(fonte)) {
       failures.push("traje: o passo 1 não tem mais como criar traje — `handleCreateLook` sumiu.");

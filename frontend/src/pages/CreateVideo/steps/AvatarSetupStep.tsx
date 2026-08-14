@@ -680,6 +680,92 @@ export function AvatarSetupStep({
           </div>
         )}
 
+        {/* CENÁRIO E TRAJE deste vídeo — BLOCO B5c.
+            Antes desta rodada, `defaults.scenario`/`scenarioPrompt` só eram
+            preenchíveis dentro de "criar avatar novo" — e `defaults.outfit`/
+            `outfitPrompt` não eram preenchíveis em lugar NENHUM: o campo
+            antigo tinha sido removido (ver o comentário perto de
+            `scenarioTitle`, mais abaixo) e nunca recolocado quando B2/B5
+            passaram a ligar os dois à fal de verdade. Um avatar existente,
+            que é o caminho normal de gerar um vídeo, não tinha onde preencher
+            nenhum dos dois.
+            Reaproveita EXATAMENTE o layout de baixo (upload + campo de texto,
+            `Field`, `handleAssetUpload`): nenhum componente novo, e os dois
+            escrevem nos MESMOS campos de `defaults` que `corpoDaGeracao()`
+            (GenerateStep.tsx) já lê — nada mudou do lado do corpo enviado.
+            `handleAssetUpload("outfit", …)` já aceitava esse `kind`; só
+            nunca tinha sido chamado com ele. */}
+        {selectedAvatar && (
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="grid grid-cols-2">
+              <div>
+                <div className="card-title">{t("createVideo.avatarSetup.scenarioTitle")}</div>
+                <Field
+                  label={t("createVideo.avatarSetup.uploadImageLabel")}
+                  help={t("createVideo.avatarSetup.scenarioHelp")}
+                >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => e.target.files?.[0] && handleAssetUpload("scenario", e.target.files[0])}
+                  />
+                </Field>
+                {defaults.scenario && (
+                  <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
+                    {defaults.scenarioName
+                      ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
+                      : t("createVideo.avatarSetup.imageSaved")}
+                  </p>
+                )}
+                <Field
+                  label={t("createVideo.avatarSetup.generateViaAiLabel")}
+                  help={t("createVideo.avatarSetup.scenarioPromptHelp")}
+                  helpPrompt={t("createVideo.avatarSetup.scenarioHelpPrompt")}
+                >
+                  <input
+                    placeholder={t("createVideo.avatarSetup.scenarioPlaceholder")}
+                    value={defaults.scenarioPrompt}
+                    onChange={(e) => onDefaultsChange({ ...defaults, scenarioPrompt: e.target.value })}
+                  />
+                </Field>
+              </div>
+              <div>
+                <div className="card-title">{t("createVideo.avatarSetup.outfitTitle")}</div>
+                <Field
+                  label={t("createVideo.avatarSetup.uploadImageLabel")}
+                  help={t("createVideo.avatarSetup.outfitHelp")}
+                >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => e.target.files?.[0] && handleAssetUpload("outfit", e.target.files[0])}
+                  />
+                </Field>
+                {/* Sem `outfitName`: `AssetDefaults` não tem esse campo (só
+                    `scenarioName`), e adicioná-lo por simetria cosmética sem
+                    consumidor no backend não foi autorizado nesta rodada.
+                    "Imagem salva." genérico é o estado honesto. */}
+                {defaults.outfit && (
+                  <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
+                    {t("createVideo.avatarSetup.imageSaved")}
+                  </p>
+                )}
+                <Field
+                  label={t("createVideo.avatarSetup.generateViaAiLabel")}
+                  help={t("createVideo.avatarSetup.outfitPromptHelp")}
+                  helpPrompt={t("createVideo.avatarSetup.outfitHelpPrompt")}
+                >
+                  <input
+                    placeholder={t("createVideo.avatarSetup.outfitPlaceholder")}
+                    value={defaults.outfitPrompt}
+                    onChange={(e) => onDefaultsChange({ ...defaults, outfitPrompt: e.target.value })}
+                  />
+                </Field>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ORDEM DO PASSO 1, e ela é o ponto deste bloco.
             O `Avançar` ficava LOGO ABAIXO de "Novo avatar", antes da grade —
             então o caminho natural (ler, avançar) nunca passava pelos
@@ -1089,17 +1175,22 @@ export function AvatarSetupStep({
                 />
               </Field>
             </div>
-            {/* O traje SAIU daqui, e não foi movido: foi substituído.
-                Este bloco era um upload de imagem mais um prompt que ninguém
-                lia — os campos iam para `defaults.outfit`/`outfitPrompt`, o
-                estado existia, e `corpoDaGeracao()` nunca os incluiu no corpo
-                de POST /videos. Coletava arquivo do cliente e não alimentava
-                geração nenhuma.
-                O substituto é "Adicionar traje", na área do avatar já
-                selecionado, que cria um LOOK de verdade — que é o que o
-                contrato do fornecedor entende por traje — e aparece no seletor
-                do passo Cena. Ele precisa de um avatar treinado, e por isso não
-                cabia aqui, onde o rascunho ainda não tem `provider_avatar_id`. */}
+            {/* O traje CONTINUA sem campo aqui — mas não pela razão que este
+                comentário afirmava antes do BLOCO B5c, e vale desfazer o
+                engano: o campo antigo (upload + prompt gravando em
+                `defaults.outfit`/`outfitPrompt`) foi removido porque
+                `corpoDaGeracao()` NUNCA os incluía no corpo — eram estado
+                morto, não porque dependessem de `provider_avatar_id`. Essa
+                dependência é do OUTRO traje, o LOOK do fornecedor
+                ("Adicionar traje", na área do avatar já selecionado) — coisas
+                diferentes que o nome "traje" confundia.
+                Hoje `outfit`/`outfitPrompt` voltaram a ser preenchíveis, e
+                funcionam exatamente como `scenario` funciona NESTE MESMO
+                bloco — upload + texto, sem avatar treinado nenhum. Só não
+                estão AQUI porque o B5c restringiu o escopo ao avatar
+                EXISTENTE de propósito, para não mexer no fluxo (caro: US$
+                1,00 + 1 crédito) de criar avatar novo. O par vive no ramo
+                `!creating`, logo depois de "Adicionar traje". */}
           </div>
 
           <button
