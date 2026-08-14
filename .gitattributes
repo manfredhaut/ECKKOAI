@@ -1,2 +1,10 @@
 * text=auto eol=lf
 *.sh text eol=lf
+
+# Config de PRODUÇÃO copiada byte-a-byte da VPS (SYNC-VPS-1/SYNC-VPS-2) — os
+# bytes exatos foram conferidos por sha256sum contra o arquivo real em
+# produção. Nunca normalizar EOL aqui: normalizar quebraria essa paridade
+# sem qualquer benefício (não são scripts, CRLF não afeta o parser YAML do
+# Traefik).
+traefik/dynamic.prod.yml -text
+traefik/traefik.prod.yml -text
