@@ -1,0 +1,78 @@
+# Roteamento de PRODUÇÃO — cópia de traefik/dynamic.yml (dev, intocado
+# por esta rodada), com três diferenças:
+#   1. Router "dashboard" REMOVIDO (fecha o risco 4.1 do DEPLOY-1, junto
+#      com api.insecure=false em traefik.prod.yml).
+#   2. Routers backend/uploads/frontend em entryPoints [websecure], cada
+#      um com tls.certResolver: letsencrypt.
+#   3. tls.domains (main + sans) declarado no router "backend" — o mesmo
+#      certificado cobre os demais routers por SNI, sem repetir a lista.
+#
+# admin.eckkoai.smartinovat.com NÃO entra na lista, por achado do item
+# 1.4 desta rodada: o painel admin é servido por rota de PATH (/admin/*)
+# no MESMO frontend, alcançável pelo APEX — não é subdomínio de tenant.
+# Confirmado por leitura em frontend/src/App.tsx:42-43 (rota "/admin/*"
+# registrada sem gate de isRootDomain(), ao contrário da landing) e em
+# backend/src/routes/login.ts:36 (login de admin só roda quando
+# req.hostTenantId é null — ou seja, fora de qualquer subdomínio de
+# tenant, o que inclui o apex). Os slugs de tenant "admin"/"admin-2" no
+# banco são tenants comuns, sem relação com o painel de administração.
+#
+# HostRegexp e middlewares mantidos como em dynamic.yml — a regra de
+# ROTEAMENTO continua aceitando qualquer subdomínio de BASE_DOMAIN; só o
+# CERTIFICADO é que fica restrito aos 2 hostnames abaixo. Um tenant fora
+# da lista (ex.: acme.eckkoai.smartinovat.com) resolve e roteia, mas o
+# navegador recebe um certificado sem aquele SAN — consequência aceita,
+# não corrigida aqui (nenhum dos 15 tenants restantes tem subdomínio
+# publicado, por decisão já registrada no bloco DEPLOY-3).
+
+http:
+  routers:
+    backend:
+      rule: "(Host(`{{env \"BASE_DOMAIN\"}}`) || HostRegexp(`^[a-z0-9-]+\\.{{env \"BASE_DOMAIN\"}}$`)) && PathPrefix(`/api`)"
+      entryPoints:
+        - websecure
+      service: backend
+      middlewares:
+        - backend-stripprefix
+      priority: 10
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: eckkoai.smartinovat.com
+            sans:
+              - dev-c77a5b.eckkoai.smartinovat.com
+
+    uploads:
+      rule: "(Host(`{{env \"BASE_DOMAIN\"}}`) || HostRegexp(`^[a-z0-9-]+\\.{{env \"BASE_DOMAIN\"}}$`)) && PathPrefix(`/uploads`)"
+      entryPoints:
+        - websecure
+      service: backend
+      priority: 10
+      tls:
+        certResolver: letsencrypt
+
+    frontend:
+      rule: "(Host(`{{env \"BASE_DOMAIN\"}}`) || HostRegexp(`^[a-z0-9-]+\\.{{env \"BASE_DOMAIN\"}}$`)) && PathPrefix(`/`)"
+      entryPoints:
+        - websecure
+      service: frontend
+      priority: 1
+      tls:
+        certResolver: letsencrypt
+
+  middlewares:
+    backend-stripprefix:
+      stripPrefix:
+        prefixes:
+          - /api
+
+  services:
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:4000"
+
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:5173"

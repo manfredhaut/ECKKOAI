@@ -1,0 +1,63 @@
+# Override de PRODUÇÃO. Uso (sempre em cima do base, nunca sozinho):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# docker-compose.yml continua sendo o de desenvolvimento, intocado por
+# esta rodada — `docker compose up` sem o -f extra lê só ele, como hoje.
+
+services:
+  traefik:
+    # Aponta para um configFile próprio em vez de disputar o mesmo alvo
+    # (/etc/traefik/traefik.yml) que o docker-compose.yml base já monta:
+    # Compose CONCATENA listas de `volumes` entre arquivos -f, não
+    # substitui — dois binds mirando o mesmo destino dentro do container
+    # é comportamento não determinístico que eu não ia arriscar aqui.
+    # Com alvos DIFERENTES (traefik.prod.yml, dynamic.prod.yml, e a pasta
+    # nova /etc/traefik/acme), a concatenação é só ADIÇÃO — sem colisão
+    # com os mounts do arquivo base.
+    command:
+      - "--configFile=/etc/traefik/traefik.prod.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik/traefik.prod.yml:/etc/traefik/traefik.prod.yml:ro
+      - ./traefik/dynamic.prod.yml:/etc/traefik/dynamic.prod.yml:ro
+      - traefik-acme:/etc/traefik/acme
+
+  backend:
+    environment:
+      NODE_ENV: production
+    # NEUTRALIZA ./backend/src:/app/src (e os mounts /repo/*, que só
+    # servem o gate de mutantes — ferramenta de dev, sem uso em prod):
+    # `!override` é a sintaxe do Compose Spec que SUBSTITUI a lista
+    # inteira do arquivo base em vez de concatenar a ela — ao contrário
+    # do traefik acima, aqui eu QUERO que o destino colida e vença, não
+    # que se some.
+    #
+    # ⚠️ NÃO VERIFICADO NESTA RODADA: `!override`/`!reset` exigem Docker
+    # Compose >= 2.24 (set/2023). Não rodei `docker compose config` para
+    # confirmar a versão que vai estar na VPS — a guarda desta rodada
+    # proíbe qualquer invocação de compose, e o item 7.2 já escolhe o
+    # repositório oficial da Docker (não o docker.io do apt, mais velho),
+    # o que torna uma versão recente provável, não garantida. Se
+    # `docker compose config` (comando só de leitura, não sobe nada)
+    # não aceitar `!override` na VPS, é o primeiro sintoma a checar antes
+    # de um `up` de verdade — sem isso, o bind mount do código-fonte
+    # continua ativo em produção (não quebra o backend, que roda via tsx
+    # de qualquer forma; só significa que a imagem não fica "selada").
+    #
+    # ./docs:/app/docs:ro foi MANTIDO aqui, mesmo sem ter sido pedido
+    # explicitamente: o Dockerfile do backend não copia docs/ para dentro
+    # da imagem (só package.json, tsconfig.json, src, scripts, fixtures),
+    # então removê-lo junto quebraria silenciosamente qualquer leitura de
+    # documentação (RAG do copiloto) em produção.
+    volumes: !override
+      - ./uploads:/app/uploads
+      - ./docs:/app/docs:ro
+
+  frontend:
+    environment:
+      NODE_ENV: production
+
+volumes:
+  traefik-acme:

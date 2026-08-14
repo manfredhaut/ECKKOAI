@@ -1,0 +1,48 @@
+# Config de PRODUÇÃO do Traefik — arquivo SEPARADO de traefik/traefik.yml
+# (que continua sendo o de desenvolvimento, intocado por esta rodada).
+# Só entra em uso quando docker-compose.prod.yml for explicitamente
+# incluído com -f (ver docker-compose.prod.yml, serviço traefik).
+#
+# Dashboard FECHADO: api.insecure=false não expõe api@internal sem
+# autenticação, e dynamic.prod.yml (irmão deste arquivo) não declara
+# router nenhum apontando para api@internal — os dois juntos fecham o
+# risco 4.1 registrado no bloco DEPLOY-1 (dashboard acessível sem senha).
+
+api:
+  dashboard: true
+  insecure: false
+
+ping: {}
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.prod.yml
+
+# HTTP-01: Traefik intercepta /.well-known/acme-challenge/ no entryPoint
+# "web" internamente, ANTES do redirect para HTTPS acima — não precisa de
+# exceção manual de path nas regras dos routers em dynamic.prod.yml.
+#
+# SEM wildcard, de propósito (decisão registrada no bloco DEPLOY-3): os
+# hostnames cobertos são a lista estática declarada em
+# dynamic.prod.yml (router "backend", bloco tls.domains).
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: <PREENCHER-EMAIL>
+      storage: /etc/traefik/acme/acme.json
+      httpChallenge:
+        entryPoint: web
+
+log:
+  level: INFO
