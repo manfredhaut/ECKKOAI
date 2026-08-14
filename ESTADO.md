@@ -15,8 +15,8 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **14/08/2026** (fecho do BLOCO ENDPOINTS-3), HEAD `62e67f9` + o
-commit desta linha.
+Atualizado em **14/08/2026** (DEPLOY-4 — verificação pré-VPS), HEAD `30d54fe`
++ o commit desta linha.
 
 ---
 
@@ -599,6 +599,30 @@ texto encontrado numa leitura anterior, não confirmada por fusível, dizia
 continuaria necessária)? Só um teste pago comparando os dois caminhos
 responde com certeza; a doc sozinha já é ambígua o bastante para não decidir
 nada aqui.
+
+### 1.9 · VPS pré-produção (DEPLOY-4) — SSH, swap e RAM: REGISTRO do operador, NÃO medição desta sessão
+
+**Bloco PARALELO ao plano v6 acima** (deploy em VPS, não pipeline da fal).
+As decisões DEPLOY-1/DEPLOY-2/DEPLOY-3 citadas nos comentários de
+`docker-compose.prod.yml` e `traefik/*.prod.yml` nunca tinham sido gravadas
+aqui — viviam só nesses arquivos e no chat. Esta entrada não reconstrói esse
+histórico inteiro; grava só o que o DEPLOY-4 pediu para corrigir.
+
+- **SSH por senha está DESATIVADO de propósito, desde 02/08/2026.** Acesso
+  por chave `ed25519` (`~/.ssh/eckko-prod`, máquina Windows).
+  `Permission denied (publickey)` ao tentar senha é o comportamento
+  ESPERADO — **não reverter, não reativar `PasswordAuthentication`.**
+  CORRIGE a leitura da rodada anterior (RETOMADA-DEPLOY), que tratou a
+  recusa como pendência a destravar; não era. Afirmado pelo operador nesta
+  rodada — **NÃO VERIFICADO por mim**: sem SSH funcional nesta sessão não há
+  como ler `sshd_config` na VPS e confirmar o estado atual por medição.
+- **Swap de 4 GB — registrado pelo operador como já existente e persistente
+  desde 02/08/2026.** NÃO VERIFICADO nesta sessão, mesma razão (sem SSH).
+  Antes de criar qualquer swap novo, confirmar com `free -h` e
+  `swapon --show` — criar um segundo sem checar duplica memória reservada
+  numa VPS pequena.
+- **RAM da VPS = 4 GB, segundo o registro de compra (Kamatera).** NÃO
+  VERIFICADO por medição direta nesta sessão, mesma razão.
 
 ## 2 · Decisões fechadas — não reabrir
 

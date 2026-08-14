@@ -1,0 +1,124 @@
+# ============================================================================
+# eckko.ai — exemplo de variáveis de PRODUÇÃO.
+#
+# ⚠️ NA VPS ESTE ARQUIVO SE CHAMA `.env`, NÃO `.env.prod`.
+# O Docker Compose só carrega automaticamente um arquivo chamado `.env` no
+# diretório do projeto (nenhum dos dois docker-compose*.yml declara
+# `env_file:` — confirmado por leitura nesta rodada, DEPLOY-4 item 5). Um
+# `.env.prod` na mesma pasta é só um arquivo de texto para o Compose: as
+# variáveis dele NUNCA seriam lidas. Copie este conteúdo para `/opt/twinai/.env`
+# na VPS (mesmo diretório de onde `docker compose ... up -d` for rodado).
+#
+# REGRA DESTE ARQUIVO: variável comentada (#VAR=) = "não vai receber valor
+# nesta rodada, o container usa o próprio default". Variável presente mas
+# vazia (VAR=) é OUTRA COISA — para duas delas (DOCS_DIR, UPLOADS_DIR) o
+# código lê com `??`, que NÃO cai para o default do container quando a
+# variável existe e está vazia (só quando ela está AUSENTE). Uma linha
+# `VAR=` esquecida em branco pode apagar um caminho que devia ficar com o
+# default embutido. Por isso: nunca vazio, ou comentado, ou preenchido.
+# ============================================================================
+
+# --- Domínio e portas ---
+BASE_DOMAIN=eckkoai.smartinovat.com
+BACKEND_PORT=4000
+FRONTEND_PORT=5173
+
+# A porta de DEV (8090) sobrevive no override de produção porque
+# docker-compose.prod.yml substitui o `command`/`volumes` do traefik mas não
+# o `ports:` do arquivo base — e o Compose CONCATENA listas de `ports` entre
+# arquivos -f, não substitui (mesma regra de merge documentada no comentário
+# de `volumes: !override` do próprio docker-compose.prod.yml). Resultado
+# MEDIDO nesta rodada (`docker compose ... config`): o traefik publica TRÊS
+# portas, não duas — ${TRAEFIK_HTTP_PORT:-8090}:80, 80:80 e 443:443. As duas
+# últimas são literais no arquivo (não vêm de variável, não há como ajustá-las
+# por aqui). Prender a de dev em loopback fecha o único ponto ajustável por
+# .env sem editar o compose:
+TRAEFIK_HTTP_PORT=127.0.0.1:8090
+
+# --- Postgres (sem default no compose — variável ausente vira string vazia
+# na interpolação, com aviso do Compose, e a aplicação sobe quebrada) ---
+POSTGRES_USER=twinai
+POSTGRES_PASSWORD=<PREENCHER>
+POSTGRES_DB=twinai
+
+# --- Segredos da aplicação (sem default) ---
+# COPIAR EXATO DO .env LOCAL — NÃO GERAR. Gerar uma chave nova torna
+# ilegível tudo que já foi cifrado com a antiga (credenciais de plataforma
+# salvas via painel admin, tabela platform_credentials, etc).
+ENCRYPTION_KEY=<PREENCHER — COPIAR EXATO DO .env LOCAL, NÃO GERAR>
+SESSION_SECRET=<PREENCHER>
+
+# --- Modo dos provedores tarifados e travas de gasto real ---
+# Sobe SEMPRE em fixture primeiro. Rearmar para live é ato deliberado e
+# separado (ver ESTADO.md / CLAUDE.md, procedimento de desarme) — nunca
+# nesta primeira subida.
+PROVIDER_MODE=fixture
+# PROVIDER_LIVE_CONFIRM= — vazio de propósito na primeira subida: em live o
+# servidor recusa iniciar sem a frase exata de confirmação. Preencher aqui
+# só no dia de autorizar gasto real, nunca antes.
+#PROVIDER_LIVE_CONFIRM=
+#PROVIDER_LIVE_MAX_GENERATIONS=1
+#PROVIDER_LIVE_MAX_ATTEMPTS=
+#DAILY_PAID_GENERATION_LIMIT=5
+
+# --- Timeouts e limites de infraestrutura — comentados: default do código
+# já é o valor de produção pretendido, e não há decisão nova a registrar ---
+#VENDOR_HTTP_TIMEOUT_MS=
+#VENDOR_DOWNLOAD_TIMEOUT_MS=
+#VIDEO_RECOVERY_MAX_AGE_MS=
+#IMAGE_UPLOAD_MAX_BYTES=
+#REFERENCE_VIDEO_MAX_BYTES=
+#MAX_RECORDING_SECONDS=
+
+# --- Chaves de plataforma — comentadas de propósito. A origem preferida
+# desde o bloco CHAVES-2 é o painel admin (tabela platform_credentials);
+# estas variáveis são só retaguarda (ver docker-compose.yml, comentário do
+# serviço backend). Preencher aqui só se o painel não puder ser usado ainda. ---
+#PLATFORM_COPILOT_API_KEY=<PREENCHER>
+#PLATFORM_GOOGLE_API_KEY=<PREENCHER>
+#PLATFORM_EMBEDDING_API_KEY=<PREENCHER>
+#PLATFORM_HEYGEN_API_KEY=<PREENCHER>
+#PLATFORM_ELEVENLABS_API_KEY=<PREENCHER>
+#PLATFORM_KEYS_FORCE_ENV=
+
+# --- Modelos de LLM — comentados: default do código decide ---
+#ANTHROPIC_MODEL=
+#GEMINI_MODEL=
+#OPENAI_MODEL=
+#OPENAI_BASE_URL=
+
+# --- Stripe — comentadas até a integração de cobrança entrar em uso ---
+#STRIPE_SECRET_KEY=<PREENCHER>
+#STRIPE_PUBLISHABLE_KEY=<PREENCHER>
+#STRIPE_WEBHOOK_SECRET=<PREENCHER>
+
+# --- Rate limit de login — NÃO afrouxar em produção (npm run check reprova
+# valor folgado com NODE_ENV=production); comentado = usa o default seguro ---
+#LOGIN_RATE_LIMIT_MAX=
+#LOGIN_RATE_LIMIT_WINDOW_MS=
+
+# --- Diversos lidos pelo código — comentados: default do código já serve ---
+#DNS_PROVIDER=pending
+#DOCS_DIR=
+#UPLOADS_DIR=
+#ELEVENLABS_TTS_MODEL=
+#SCRIPT_TARGET_SECONDS=
+#SCRIPT_WORDS_PER_MINUTE=
+#SCRIPT_DURATION_TOLERANCE=
+#WHATSAPP_NUMBER=<PREENCHER>
+
+# --- Contas de dev/seed — NUNCA preencher em produção. Comentadas, e mesmo
+# se alguma delas fosse setada com valor vazio, o frontend já falha fechado
+# (vite.config.ts: autofill e /dev/steps exigem NODE_ENV !== production,
+# que o docker-compose.prod.yml fixa como literal) ---
+#DEV_ADMIN_EMAIL=
+#DEV_ADMIN_PASSWORD=
+#DEV_TENANT_EMAIL=
+#DEV_TENANT_PASSWORD=
+#DEV_TENANT_SLUG=
+#DEV_AUTOFILL=
+#DEV_GALLERY=
+
+# NODE_ENV não precisa entrar aqui: docker-compose.prod.yml fixa
+# `NODE_ENV: production` como literal para backend e frontend, e isso vence
+# qualquer valor (ou ausência) deste arquivo.
