@@ -1,5 +1,38 @@
 Always respond in Brazilian Portuguese.
 
+> **⚠️ NOTA — VITE-PROD-3, 14/08/2026.** HEAD antes desta nota: `7f46725`.
+> Quatro commits nesta rodada, em sequência: `10166df` (Dockerfile 3 estágios
+> base/build/serve + nginx.conf novo + docker-compose.prod.yml), `7ca81b1`
+> (BASE_DOMAIN obrigatória em build de produção — vite.config.ts +
+> checkFrontendBuildEnvPolicy.ts novo), `fd525c3` (fiação em checkPolicy.ts +
+> mutantRegistry.ts), `7f46725` (404 do carimbo do frontend vira FALHA, não
+> NOTA — checkImageFreshnessPolicy.ts + frontendStampFetch.ts novo, extraído
+> para evitar auto-colisão no registro de mutantes).
+>
+> **Gate simples** (`npm run check`): 1 violação —
+> `frescor: a imagem do frontend NÃO corresponde ao repositório` —
+> ESPERADA: `frontend/Dockerfile` e `frontend/vite.config.ts` foram editados
+> sem rebuildar a imagem (proibido nesta rodada). Some sozinha quando a
+> imagem for reconstruída.
+>
+> **Arnês** (`node tools/run-mutants.mjs --affected --base 498486e --guard
+> "frescor:" --guard "frontend: BASE_DOMAIN"`): **5/5 mutantes reprovaram de
+> verdade**, árvore limpa em cada aplicação — os dois de `frescor` já
+> existentes, o novo do 404→NOTA, e os dois de `BASE_DOMAIN` (default sem
+> guarda; typo em NODE_ENV). Um terceiro mutante de BASE_DOMAIN (execução
+> real de `vite build`) NÃO foi registrado — o gate roda inteiro dentro do
+> container do backend, sem o projeto do frontend instalado. Lacuna
+> registrada, não fingida como coberta.
+>
+> Nenhuma imagem foi buildada, nenhum container subiu, nada tocou a VPS
+> nesta rodada.
+>
+> **PRÓXIMO PASSO: levar os 5 arquivos de runtime (Dockerfile, nginx.conf,
+> docker-compose.prod.yml, vite.config.ts, checkFrontendBuildEnvPolicy.ts)
+> para a VPS por SSH — sequência em VITE-PROD-2 item 6, com o passo 1
+> corrigido: não é git pull, é colar os arquivos direto (deploy real é
+> tar.gz, não git).**
+
 # eckko.ai (antigo TWINAI)
 
 > ## ⚠️ LEIA [ESTADO.md](ESTADO.md) PRIMEIRO — é o ponto de entrada de toda sessão.
