@@ -56,8 +56,26 @@ services:
       - ./docs:/app/docs:ro
 
   frontend:
+    build:
+      context: ./frontend
+      target: serve
+      args:
+        BASE_DOMAIN: ${BASE_DOMAIN}
+        WHATSAPP_NUMBER: ${WHATSAPP_NUMBER:-}
+        REFERENCE_VIDEO_MAX_BYTES: ${REFERENCE_VIDEO_MAX_BYTES:-}
+        MAX_RECORDING_SECONDS: ${MAX_RECORDING_SECONDS:-}
+        IMAGE_UPLOAD_MAX_BYTES: ${IMAGE_UPLOAD_MAX_BYTES:-}
     environment:
       NODE_ENV: production
+    # Os binds de dev (./frontend/src, index.html, public — todos para
+    # /app/*) não existem no estágio "serve": o nginx serve
+    # /usr/share/nginx/html, não /app. Por construção eles não quebrariam
+    # nada se ficassem (caminho morto, sem efeito) — removidos aqui mesmo
+    # assim, porque um bind apontando para um diretório que ninguém lê é
+    # justamente o tipo de configuração que confunde a próxima leitura.
+    # `!override` substitui a lista do compose base em vez de somar a ela
+    # (mesmo padrão já usado para o backend, acima neste arquivo).
+    volumes: !override []
 
 volumes:
   traefik-acme:
