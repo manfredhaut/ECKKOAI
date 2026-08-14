@@ -84,7 +84,7 @@ export const MUTANTS: Mutant[] = [
       }
       throw err;`,
     replace: `      throw err;`,
-    expect: "duas tentativas de signup concorrentes com o mesmo e-mail não devolvem 409 fechado",
+    expect: "não trata a violação de UNIQUE (23505) no catch da transação de signup",
   },
   {
     guard: "domínio único: resposta de signup não promete subdomínio",
@@ -95,7 +95,7 @@ export const MUTANTS: Mutant[] = [
     });`,
     replace: `      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, host: \`\${tenant.slug}.eckkoai.com\` },
     });`,
-    expect: "a resposta de /auth/signup promete um host de subdomínio",
+    expect: 'volta a devolver um campo "host" de subdomínio na resposta de signup',
   },
   {
     guard: "domínio único: '/' decide pela sessão, não pelo hostname",
@@ -108,7 +108,7 @@ export const MUTANTS: Mutant[] = [
     file: APP_TSX,
     find: `  const showLanding = !user;`,
     replace: `  const showLanding = true;`,
-    expect: "'/' não depende da sessão (showLanding sempre verdadeiro)",
+    expect: "a decisão de mostrar a landing em vez do painel",
   },
   {
     guard: "domínio único: subscription.ts respeita o protocolo real",
@@ -124,7 +124,7 @@ export const MUTANTS: Mutant[] = [
   void req;
   return "";
 }`,
-    expect: "requestOrigin não lê x-forwarded-proto",
+    expect: "não lê x-forwarded-proto para montar a origem",
   },
   {
     guard: "domínio único: migration 053 aborta diante de e-mail duplicado",
@@ -136,7 +136,7 @@ export const MUTANTS: Mutant[] = [
   END IF;
 `,
     replace: "",
-    expect: "a migration 053 não aborta diante de e-mail duplicado",
+    expect: "não aborta diante de e-mail duplicado",
   },
 ];
 
