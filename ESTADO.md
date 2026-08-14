@@ -15,7 +15,7 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **14/08/2026** (fecho do BLOCO COMPOR-1), HEAD `cfe7401` + o
+Atualizado em **14/08/2026** (fecho do BLOCO ENDPOINTS-2), HEAD `87121cd` + o
 commit desta linha.
 
 ---
@@ -69,7 +69,8 @@ commit, e mensagem de commit não se reescreve.)
 | BLOCO B5 · vídeo de 10 s pelo Wan — direção ligada, `sync_mode: cut_off`, `model` do lipsync | fechado (`1f4b0d4`…`5ccd090`) |
 | BLOCO B5c · cenário/traje no fluxo de avatar EXISTENTE | fechado (`dfd5657`+`cf8d869`) |
 | **COMPOR-1 · a composição paga, ponta a ponta pela tela** | fechado (ver §1.6) — **a animação bateu em 404** |
-| **PRÓXIMO · achar o id correto do Wan (e conferir o do lipsync antes de gastar)** | bloqueado por NÃO VERIFICADO — ver §7 |
+| **ENDPOINTS-2 · o candidato do id do Wan foi testado por fusível** | fechado (ver §1.7) — **também 404, id correto SEGUE não encontrado** |
+| **PRÓXIMO · achar o id correto do Wan por fonte que não seja `WebFetch` de página de doc** | bloqueado por NÃO VERIFICADO — ver §7. `sync-lipsync/v2` está CONFIRMADO por fusível, não precisa reabrir. |
 | 6 · custo por camada, régua `(provider, model, resolution)` | não começado |
 
 ### 1.1 · BLOCO 4, o que falta
