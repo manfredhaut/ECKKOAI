@@ -27,22 +27,32 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 --oneline` fecha a diferença.)*
 
 ```
-54bb282  BLOCO 3.5: o teto de gasto, a sonda de contrato, e a chave que ainda não chegou
-2cd2987  Arnês: mutante podre passa a aparecer no commit, não 80 min depois
-c0e57f7  ESTADO.md: o desfecho dos 231 foi lido — 229/231, zero INERTE, 2 podres
-9cd1bc5  ESTADO.md: o desfecho dos 231 e o bloqueio do 3.5 viram o começo da próxima
-faf7229  Arnês: o gate podia estourar o buffer e virar AMBÍGUO com a guarda saudável
-94af14f  CORREÇÃO: duas das três guardas do pipeline nasceram INERTE e AMBÍGUA
-5a6cbbc  BLOCO 4 parte 1: o orquestrador em série, sem rota e sem ramo
-d49463e  Memória: o número do arnês passa a ser MEDIDO, e some a duplicação
-c88b187  ESTADO.md: o desfecho da passada dos 227 vira o primeiro comando da próxima
-4ea9fd7  Arnês: filtro explícito, retry de spawn, e um ponto de entrada por sessão
-cbe0e10  BLOCO 3: o cliente da fal nasce preso à fila, ao catálogo e ao tenant
+bfd5364  ESTADO.md: dívida de baixo risco — VENDOR_FORMAT_SUPPORT.fal está desatualizado desde o B2
+a8020af  ESTADO.md: fecho do B5c — 243/243 na completa, dois gotchas novos, o gap de UI declarado
+cf8d869  Guarda B5c: a passada --affected pegou uma INERTE — presença virou CONTAGEM
+dfd5657  BLOCO B5c: cenário e traje ganham campo no fluxo de avatar EXISTENTE
+5ccd090  lipsync: a variante passa a ser NOSSA escolha — `model` era o único default que trocava de preço
+fc784fb  Expect da G-1: TRANSCRITO da mensagem nova, e o rótulo é `cenario` sem acento
+16a164c  G-1 nasceu INERTE: o "ou" da invariante era satisfeito pelo texto quando a imagem sumia
+97c30e8  Mutante da G-1: o corpo precisa ir junto — `if (false as boolean)` matava o narrowing
+c8dd236  BLOCO B5 · P2: duas guardas para a cena, com os mutantes AINDA NÃO provados
+1f4b0d4  BLOCO B5 · P1: a direção deixa de morrer na ponte, e o sync_mode sai do desconhecido
+ff9628e  BLOCO B3 · P2: três guardas para a aprovação, com os mutantes AINDA NÃO provados
 ```
+
+⚠️ **TERCEIRA vez que esta lista divergiu do HEAD** — corrigida em 14/08 no
+EXPOSICAO-1, quando estava **nove commits atrasada** (topo em `54bb282`, HEAD
+em `bfd5364`). O registro das três ocorrências e o padrão que as une está em
+[docs-internal/08-ocorrencias.md](docs-internal/08-ocorrencias.md). Quem lê
+esta seção confiando nela e não confere `git log` recebe um mapa de outro
+repositório: **conferir a âncora é o primeiro comando da sessão**, não o
+último.
 
 ⚠️ **A mensagem de `5a6cbbc` AFIRMA que os 4 mutantes foram provados; não
 foram** — a prova veio depois e devolveu 1/4. `94af14f` corrige e declara.
-Ao ler aquele commit, leia os dois.
+Ao ler aquele commit, leia os dois. (Os dois estão FORA da janela acima desde
+esta correção; a nota fica porque o defeito que ela descreve é da mensagem do
+commit, e mensagem de commit não se reescreve.)
 
 **ORDEM DE EXECUÇÃO do plano v6:**
 
@@ -175,10 +185,39 @@ uma. A prova é por fixture, por `fetch` substituído e por `pararApos`.
 
 **A DECISÃO DO RECOVERY, registrada como decisão e não como acidente:** nesta
 rodada a composição **NÃO cria linha em `videos`**. Ela grava só em
-`fal_pipeline_runs`/`fal_pipeline_steps`. Motivo MEDIDO por leitura:
-`recovery.ts:211` encerra como `recovery_orphan` qualquer vídeo sem
+`fal_pipeline_runs`/`fal_pipeline_steps`. Motivo MEDIDO por leitura **no B2**:
+`recovery.ts` encerrava como `recovery_orphan` qualquer vídeo sem
 `provider_job_id`, **em qualquer idade** — e uma corrida que para em `compor`
 não tem job id de VÍDEO nenhum para dar. Sem linha em `videos`, não há colisão.
+
+> ⚠️ **ESTE PARÁGRAFO DESCREVE O B2 E FOI SUPERADO PELO B3 — corrigido em
+> 14/08 (EXPOSICAO-1), depois de a referência falsa sobreviver a quatro
+> rodadas.** A afirmação era exata quando escrita; hoje ela é o oposto do
+> código, e sustentava uma decisão de DINHEIRO — daí a correção valer commit
+> próprio. O que vale HOJE, MEDIDO por leitura em 14/08:
+>
+> - **A composição CRIA linha em `videos`**, em estado próprio
+>   `awaiting_approval` ([videos.ts:1337](backend/src/routes/videos.ts:1337)),
+>   com `provider_job_id` já gravado ([:1298](backend/src/routes/videos.ts:1298)
+>   — o `request_id` do `compor`).
+> - **`awaiting_approval` é varrido de propósito para ser IGNORADO**
+>   ([recovery.ts:77](backend/src/services/video/recovery.ts:77)), e o ramo que
+>   o trata vem **ANTES** do ramo do órfão
+>   ([:297](backend/src/services/video/recovery.ts:297) contra
+>   [:319](backend/src/services/video/recovery.ts:319)). Dentro de 24 h a linha
+>   é deixada em paz com log.
+> - **Nem ao expirar há estorno:** acima de 24 h vira `approval_expired`, e
+>   `classificarGasto` trata esse motivo **antes** do teste de `temJobId`,
+>   devolvendo `"saiu"`
+>   ([videoFailure.ts:121](backend/src/services/video/videoFailure.ts:121)) —
+>   `decidirEstorno` retorna `estorna: false`. A composição paga não gera
+>   crédito de volta, por construção.
+>
+> **A referência `recovery.ts:211` não deve ser reusada em lugar nenhum:** a
+> linha 211 hoje é `requestedUnitCount: linha.duration_seconds`, que não tem
+> relação com órfão. É o caso exemplar da regra do §3 — âncora por NÚMERO DE
+> LINHA apodrece em silêncio; âncora por NOME (`recovery_orphan`,
+> `STATUS_AGUARDANDO_APROVACAO`) sobrevive ao arquivo ser reescrito.
 
 **Consequência aceita: o débito único no `compor` SAI desta rodada e vira
 decisão do B3.** Não foi esquecimento — é o preço da decisão acima: o débito

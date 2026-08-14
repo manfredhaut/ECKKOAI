@@ -27,29 +27,44 @@ O porteiro de `routes/videos.ts` recusa `fal` com 403
 
 ---
 
-## Passo 1 — a DECISÃO que abre o B3: onde o débito mora
+## Passo 1 — ~~a DECISÃO que abre o B3: onde o débito mora~~ **RESOLVIDO**
+
+> ✅ **FECHADO NO B3** (`c849b50`+`ff9628e`), e o texto abaixo ficou como
+> registro de COMO se decidiu — não como pergunta em aberto. **A saída 1 foi a
+> escolhida.** Corrigido em 14/08 (EXPOSICAO-1) junto com a referência falsa
+> logo abaixo; ver ESTADO §1.4.
 
 Não é código, é escolha, e ela é a razão de a fal estar fora de
 `VENDORS_WITH_GENERATION_PATH`.
 
-O conflito, MEDIDO por leitura:
+O conflito, MEDIDO por leitura **no B2**:
 
 - `debitCredit` acontece em `routes/videos.ts`, **antes** de `generateVideo`;
 - a rota **INSERE a linha em `videos`** antes disso;
-- `recovery.ts:211` encerra como `recovery_orphan` **qualquer** vídeo sem
-  `provider_job_id`, em qualquer idade;
-- uma corrida que para em `compor` **não tem job id de vídeo** para dar.
+- ~~`recovery.ts:211` encerra como `recovery_orphan` **qualquer** vídeo sem
+  `provider_job_id`, em qualquer idade;~~ ⚠️ **FALSO DESDE O B3.** Era exato
+  quando escrito. Hoje `awaiting_approval` tem ramo PRÓPRIO, avaliado **antes**
+  do ramo do órfão ([recovery.ts:297](backend/src/services/video/recovery.ts:297)
+  contra [:319](backend/src/services/video/recovery.ts:319)), e a linha tem
+  `provider_job_id` de qualquer forma. **A linha 211 de hoje não fala de
+  órfão** — não reuse esse ponteiro;
+- uma corrida que para em `compor` **não tem job id de vídeo** para dar —
+  também superado: o `request_id` do `compor` É gravado ali
+  ([videos.ts:1298](backend/src/routes/videos.ts:1298)).
 
-As três saídas, e nenhuma é obviamente melhor:
+As três saídas, e nenhuma era obviamente melhor:
 
-1. **Estado novo em `videos`** (`awaiting_approval`), com `recovery.ts`
-   ensinado a não reclamar dele. Migration + guarda de recuperação.
+1. ✅ **ESCOLHIDA — estado novo em `videos`** (`awaiting_approval`), com
+   `recovery.ts` ensinado a não reclamar dele. Migration 052 + as três guardas
+   de aprovação.
 2. **A corrida só em `fal_pipeline_runs`**, e a linha em `videos` nasce apenas
-   quando a animação for aprovada. É o que o B2 faz hoje; falta o débito.
+   quando a animação for aprovada. Era o que o B2 fazia; descartada.
 3. **Débito no orquestrador**, com estorno próprio. Cria um SEGUNDO lugar que
    cobra — e este projeto já pagou caro por ter duas cópias de uma régua.
+   Descartada.
 
-**Nada disso deve ser escolhido escrevendo código.** Escolher primeiro.
+**Nada disso deve ser escolhido escrevendo código.** Escolher primeiro — e foi
+o que aconteceu.
 
 ## Passo 2 — a passada COMPLETA, com log EM ARQUIVO
 
