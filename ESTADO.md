@@ -417,6 +417,18 @@ Além disso, **o custo REAL de nenhuma etapa é observável deste repositório**
 nenhuma resposta da fal traz preço. Só o painel/fatura da fal responde — é a
 mesma dívida de reconciliação já aberta no §7.
 
+⚠️ **NÃO VERIFICADO, TRANSFERIDO DO REGISTRO EXTERNO DO OPERADOR em 14/08
+(ENDPOINTS-1) — vivia só fora deste repositório.** Uma medição de 11/08 aponta
+o Wan a **~25% de US$ 0,10/s** (≈ US$ 0,025/s), pelo `request_id`
+`019ff2dd-9096-75e2-b443-21870e952cc7`. **Nada disto foi conferido a partir
+daqui:** não há consulta a esse `request_id` neste repositório, não se sabe se
+o endpoint que o produziu é `ENDPOINT_ANIMAR` de hoje (nem o de antes do
+ENDPOINTS-1, nem o corrigido nele) e não se sabe resolução nem duração. Fica
+registrada como DÍVIDA, não como preço confirmado — some da lista de "NÃO
+VERIFICADO" só quando alguém a conferir contra o painel da fal ou reproduzir
+com uma corrida real. Procedência: registro externo do operador, não deste
+projeto.
+
 **Estado das duas linhas ao fim da rodada:**
 
 | linha | estado | imagem |
