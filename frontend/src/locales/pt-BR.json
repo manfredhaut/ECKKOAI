@@ -174,10 +174,10 @@
       "signupTab": "Criar conta",
       "loginTab": "Entrar",
       "signupTitle": "Criar sua conta",
-      "signupBody": "Você escolhe o plano, recebe um subdomínio próprio e já entra na sua área. Leva menos de um minuto.",
+      "signupBody": "Você escolhe o plano e já entra na sua área. Leva menos de um minuto.",
       "signupAction": "Criar conta grátis",
       "loginTitle": "Entrar na sua conta",
-      "loginBody": "Sua conta vive no subdomínio da sua empresa — é lá que o login acontece. Vamos te levar até ele.",
+      "loginBody": "Digite o e-mail e a senha da sua conta para entrar.",
       "loginAction": "Ir para o login"
     }
   },
@@ -199,6 +199,7 @@
     "signUp": "Criar conta",
     "signingUp": "Criando conta…",
     "error": "Não foi possível criar a conta. Tente novamente.",
+    "emailInUse": "Este e-mail já está em uso. Tente entrar em vez de criar uma conta nova.",
     "hasAccount": "Já tem conta?",
     "signIn": "Entrar"
   },

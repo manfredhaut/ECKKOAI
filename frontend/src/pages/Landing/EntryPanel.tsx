@@ -12,26 +12,16 @@ export type EntryTab = "signup" | "login";
  * cliente clicava no verde grande e caía no cadastro. Juntando os dois no
  * mesmo painel, a escolha fica explícita e reversível sem sair da página.
  *
- * As duas ações continuam sendo exatamente as que já funcionavam, e nenhuma
- * delas é um formulário novo:
- *  - criar conta navega para /signup (mesmo fluxo de sempre);
- *  - entrar faz navegação REAL para o subdomínio do tenant, porque é lá que
- *    `resolveTenantFromHost` escopa o lookup do e-mail. Um <Link> aqui não
- *    serve: react-router não cruza subdomínio.
+ * As duas ações navegam para rotas do MESMO domínio (/signup, /login) —
+ * domínio único (14/08/2026), sem subdomínio de tenant para cruzar. Antes
+ * disto, "entrar" fazia navegação real para o subdomínio do tenant, um host
+ * que não tem DNS: NXDOMAIN garantido em produção.
  *
  * Esta é a porta do CLIENTE. O acesso administrativo tem formulário,
  * endpoint e tabela de identidade próprios (AdminLoginModal) e continua
  * discreto no rodapé, de propósito.
  */
-export function EntryPanel({
-  initialTab,
-  loginUrl,
-  onClose,
-}: {
-  initialTab: EntryTab;
-  loginUrl: string;
-  onClose: () => void;
-}) {
+export function EntryPanel({ initialTab, onClose }: { initialTab: EntryTab; onClose: () => void }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<EntryTab>(initialTab);
 
@@ -88,10 +78,9 @@ export function EntryPanel({
           <div className="entry-pane">
             <h2 id="entry-panel-title">{t("landing.entry.loginTitle")}</h2>
             <p className="text-muted">{t("landing.entry.loginBody")}</p>
-            {/* Navegação real, não <Link>: precisa cruzar para o subdomínio. */}
-            <a href={loginUrl} className="btn btn-primary entry-action">
+            <Link to="/login" className="btn btn-primary entry-action">
               {t("landing.entry.loginAction")}
-            </a>
+            </Link>
           </div>
         )}
       </div>

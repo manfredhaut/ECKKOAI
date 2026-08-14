@@ -19,7 +19,7 @@
 # ============================================================================
 
 # --- Domínio e portas ---
-BASE_DOMAIN=eckkoai.smartinovat.com
+BASE_DOMAIN=eckkoai.com
 BACKEND_PORT=4000
 FRONTEND_PORT=5173
 

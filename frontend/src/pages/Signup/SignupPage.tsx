@@ -1,13 +1,15 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../auth/AuthContext";
+import { ApiError } from "../../api/client";
 import { Field } from "../../components/ui/Field";
 import { PublicCopilotWidget } from "../Landing/PublicCopilotWidget";
 
 export function SignupPage() {
   const { t } = useTranslation();
   const { signup } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -18,11 +20,13 @@ export function SignupPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await signup(email, password);
-      const port = window.location.port ? `:${window.location.port}` : "";
-      window.location.href = `${window.location.protocol}//${result.tenant.host}${port}/subscription`;
-    } catch {
-      setError(t("signup.error"));
+      await signup(email, password);
+      // Domínio único (14/08/2026): sem subdomínio para cruzar — navegação
+      // client-side. O AuthContext já hidratou user/tenant a partir da
+      // resposta de signup() acima.
+      navigate("/subscription", { replace: true });
+    } catch (err) {
+      setError(err instanceof ApiError && err.status === 409 ? t("signup.emailInUse") : t("signup.error"));
       setSubmitting(false);
     }
   }

@@ -14,10 +14,10 @@ interface AuthTenant {
 
 interface SignupResult {
   user: AuthUser;
-  tenant: { id: string; name: string; slug: string; host: string };
+  tenant: { id: string; name: string; slug: string };
 }
 
-type LoginResult = { type: "admin" } | { type: "tenant"; tenantSlug: string };
+type LoginResult = { type: "admin" } | { type: "tenant" };
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -71,16 +71,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (result.type === "tenant") {
       setUser(result.user);
       setTenant(result.tenant);
-      return { type: "tenant", tenantSlug: result.tenant.slug };
+      return { type: "tenant" };
     }
     return { type: "admin" };
   }
 
-  // Doesn't call refreshMe(): the caller redirects the browser to the new
-  // tenant's subdomain right after this resolves, which triggers a fresh
-  // load (and its own refreshMe()) there.
+  // Hidrata user/tenant direto da resposta, mesmo padrão de login() acima —
+  // domínio único (14/08/2026) significa que o caller (SignupPage) navega
+  // client-side para /subscription na sequência, sem reload de página, então
+  // ninguém mais vai chamar refreshMe() para descobrir a sessão nova.
   async function signup(email: string, password: string): Promise<SignupResult> {
-    return api.post<SignupResult>("/auth/signup", { email, password });
+    const result = await api.post<SignupResult>("/auth/signup", { email, password });
+    setUser(result.user);
+    setTenant(result.tenant);
+    return result;
   }
 
   async function logout() {

@@ -7,7 +7,7 @@
 #   3. tls.domains (main + sans) declarado no router "backend" — o mesmo
 #      certificado cobre os demais routers por SNI, sem repetir a lista.
 #
-# admin.eckkoai.smartinovat.com NÃO entra na lista, por achado do item
+# admin.eckkoai.com NÃO entra na lista, por achado do item
 # 1.4 desta rodada: o painel admin é servido por rota de PATH (/admin/*)
 # no MESMO frontend, alcançável pelo APEX — não é subdomínio de tenant.
 # Confirmado por leitura em frontend/src/App.tsx:42-43 (rota "/admin/*"
@@ -20,7 +20,7 @@
 # HostRegexp e middlewares mantidos como em dynamic.yml — a regra de
 # ROTEAMENTO continua aceitando qualquer subdomínio de BASE_DOMAIN; só o
 # CERTIFICADO é que fica restrito aos 2 hostnames abaixo. Um tenant fora
-# da lista (ex.: acme.eckkoai.smartinovat.com) resolve e roteia, mas o
+# da lista (ex.: acme.eckkoai.com) resolve e roteia, mas o
 # navegador recebe um certificado sem aquele SAN — consequência aceita,
 # não corrigida aqui (nenhum dos 15 tenants restantes tem subdomínio
 # publicado, por decisão já registrada no bloco DEPLOY-3).
@@ -38,9 +38,9 @@ http:
       tls:
         certResolver: letsencrypt
         domains:
-          - main: eckkoai.smartinovat.com
+          - main: eckkoai.com
             sans:
-              - dev-c77a5b.eckkoai.smartinovat.com
+              - dev-c77a5b.eckkoai.com
 
     uploads:
       rule: '(Host(`{{env "BASE_DOMAIN"}}`) || HostRegexp(`^[a-z0-9-]+\.{{env "BASE_DOMAIN"}}$`)) && PathPrefix(`/uploads`)'

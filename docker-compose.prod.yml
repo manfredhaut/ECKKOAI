@@ -67,6 +67,20 @@ services:
         IMAGE_UPLOAD_MAX_BYTES: ${IMAGE_UPLOAD_MAX_BYTES:-}
     environment:
       NODE_ENV: production
+    # MEDIDO na VPS (14/08/2026): sem isto, o serviço herda o healthcheck do
+    # docker-compose.yml base (`node -e "fetch(...)"`), escrito para o
+    # estágio "dev" (Node de pé). A imagem de produção é o estágio "serve"
+    # (nginx:1.27-alpine, ver frontend/Dockerfile) — sem Node — e o
+    # healthcheck herdado falhava sempre, marcando o container unhealthy
+    # apesar de servir tráfego normalmente. Corrigido na VPS; replicado aqui.
+    # Porta 5173 confere com o EXPOSE do estágio "serve" e o `listen 5173`
+    # de frontend/nginx.conf.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5173/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     # Os binds de dev (./frontend/src, index.html, public — todos para
     # /app/*) não existem no estágio "serve": o nginx serve
     # /usr/share/nginx/html, não /app. Por construção eles não quebrariam

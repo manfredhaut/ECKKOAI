@@ -37,3 +37,7 @@ ultimas.txt
 # primeiro mutante e a causa não aparece no relatório dele.
 _arnes-logs/
 .claude/settings.local.json
+
+# Despejo do Postgres feito à mão na VPS (14/08/2026) — dados de produção,
+# nunca pertenceu ao git.
+twinai.dump

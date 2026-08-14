@@ -41,6 +41,7 @@ import { checkVideoFormatPolicy } from "./checkVideoFormatPolicy.js";
 import { checkVendorErrorPathPolicy } from "./checkVendorErrorPathPolicy.js";
 import { checkImageFreshnessPolicy } from "./checkImageFreshnessPolicy.js";
 import { checkFrontendBuildEnvPolicy } from "./checkFrontendBuildEnvPolicy.js";
+import { checkSingleDomainPolicy } from "./checkSingleDomainPolicy.js";
 import { checkCostPolicy } from "./checkCostPolicy.js";
 import { checkDerivationPolicy } from "./checkDerivationPolicy.js";
 import { checkNativeBatchPolicy } from "./checkNativeBatchPolicy.js";
@@ -517,6 +518,11 @@ async function main(): Promise<void> {
   const frontendBuildEnvResult = await checkFrontendBuildEnvPolicy(process.env.REPO_ROOT ?? "/repo");
   frontendBuildEnvResult.failures.forEach((f) => failures.push(f));
   frontendBuildEnvResult.notes.forEach((n) => note(n));
+
+  // --- 18c. domínio único: sem redirect de subdomínio, e-mail único global
+  const singleDomainResult = await checkSingleDomainPolicy(process.env.REPO_ROOT ?? "/repo");
+  singleDomainResult.failures.forEach((f) => failures.push(f));
+  singleDomainResult.notes.forEach((n) => note(n));
 
   // --- 19. custo tem um número só; log tem um sumidouro só; freio deriva ---
   const costResult = await checkCostPolicy(process.env.REPO_ROOT ?? "/repo");

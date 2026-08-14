@@ -2,8 +2,13 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
 import { hashPassword, verifyPassword } from "../services/passwords.js";
 import { generateUniqueSlug } from "../services/slug.js";
-import { BASE_DOMAIN } from "../domainConfig.js";
 import type { Tenant, User } from "../types.js";
+
+// Código de erro do Postgres para violação de UNIQUE (23505) — usado no catch
+// da transação de signup abaixo para reconhecer a corrida entre duas
+// tentativas simultâneas com o mesmo e-mail. Só a checagem otimista (mais
+// abaixo) não fecha essa corrida; a constraint da migration 053 fecha.
+const POSTGRES_UNIQUE_VIOLATION = "23505";
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { email: string; password: string } }>("/auth/login", async (req, reply) => {
@@ -31,11 +36,26 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Public self-signup: minimal email+password, auto-provisions a tenant
-  // (with a generated slug/subdomain) and its first (admin) user.
+  // (with a generated slug, used only as an internal identifier now — see
+  // domínio único, VITE-PROD-4) and its first (admin) user.
   app.post<{ Body: { email: string; password: string } }>("/auth/signup", async (req, reply) => {
     const { email, password } = req.body;
     if (!email || !password) {
       return reply.code(400).send({ error: "Email and password are required" });
+    }
+
+    // Domínio único (14/08/2026): login resolve por e-mail SEM escopo de
+    // tenant quando não há subdomínio (ver login.ts) — dois tenants com o
+    // mesmo e-mail tornariam esse lookup ambíguo. Esta é a checagem
+    // otimista, fora da transação, para devolver um erro claro no caso
+    // comum; UNIQUE (email) (migration 053) é quem fecha a corrida entre
+    // duas tentativas concorrentes, tratada no catch abaixo.
+    const { rows: existingRows } = await pool.query<{ id: string }>(
+      "SELECT id FROM users WHERE email = $1",
+      [email],
+    );
+    if (existingRows.length > 0) {
+      return reply.code(409).send({ error: "email_in_use", message: "Email already in use" });
     }
 
     // Password hashing is CPU-bound, not a DB call — do it before opening
@@ -106,6 +126,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");
+      // Corrida: duas requisições de signup com o mesmo e-mail passaram
+      // pela checagem otimista antes de qualquer uma commitar. A checagem
+      // dá a mensagem clara no caso comum; isto aqui é o que garante o
+      // mesmo resultado sob concorrência, em vez de vazar um 500 genérico
+      // de violação de constraint.
+      if (err && typeof err === "object" && "code" in err && err.code === POSTGRES_UNIQUE_VIOLATION) {
+        return reply.code(409).send({ error: "email_in_use", message: "Email already in use" });
+      }
       throw err;
     } finally {
       client.release();
@@ -114,9 +142,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     req.session.userId = user.id;
     req.session.tenantId = tenant.id;
 
+    // Sem `host`: domínio único (14/08/2026) — não existe mais subdomínio
+    // de tenant para montar. O chamador (SignupPage) permanece no mesmo
+    // host depois do cadastro, navegação client-side.
     return reply.code(201).send({
       user: { id: user.id, email: user.email },
-      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, host: `${tenant.slug}.${BASE_DOMAIN}` },
+      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
     });
   });
 

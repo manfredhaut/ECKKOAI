@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../auth/AuthContext";
 import { Field } from "../../components/ui/Field";
-import { BASE_DOMAIN } from "../../publicConfig";
 import { devTenantCredential } from "../../devCredentials";
 import { PublicCopilotWidget } from "../Landing/PublicCopilotWidget";
 
@@ -39,20 +38,11 @@ export function LoginPage() {
         return;
       }
 
-      // Logging in from the root domain (or any host other than the
-      // tenant's own subdomain) must land the user on their actual
-      // dashboard, not silently succeed while the URL stays on the
-      // anonymous-looking public landing page (root "/" renders
-      // LandingPage — see App.tsx / isRootDomain()). A client-side
-      // navigate() can't cross subdomains, so this needs a real browser
-      // navigation — same pattern SignupPage already uses after signup.
-      const expectedHost = `${result.tenantSlug}.${BASE_DOMAIN}`;
-      if (window.location.hostname === expectedHost) {
-        navigate("/", { replace: true });
-      } else {
-        const port = window.location.port ? `:${window.location.port}` : "";
-        window.location.href = `${window.location.protocol}//${expectedHost}${port}/`;
-      }
+      // Domínio único (14/08/2026): não existe mais subdomínio de tenant
+      // para cruzar — "/" já decide landing-vs-painel pela SESSÃO (ver
+      // App.tsx). Navegação client-side simples; o AuthContext já hidratou
+      // user/tenant a partir da resposta de login() acima.
+      navigate("/", { replace: true });
     } catch {
       setError(t("login.error"));
     } finally {

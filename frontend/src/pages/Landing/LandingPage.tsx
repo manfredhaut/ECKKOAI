@@ -3,22 +3,16 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { Plan } from "../../types";
-import { BASE_DOMAIN, WHATSAPP_NUMBER } from "../../publicConfig";
+import { WHATSAPP_NUMBER } from "../../publicConfig";
 import { PublicCopilotWidget } from "./PublicCopilotWidget";
 import { AdminLoginModal } from "./AdminLoginModal";
 import { EntryPanel, type EntryTab } from "./EntryPanel";
 
-// Slug do tenant de demonstração. O login de cliente na landing NÃO posta do
-// domínio raiz de propósito: lá o lookup por e-mail em POST /login é feito sem
-// escopo de tenant, então um mesmo e-mail em mais de um tenant resolveria de
-// forma ambígua. Mandar o visitante para o subdomínio faz o
-// resolveTenantFromHost escopar a busca — sem tocar em login.ts.
+// Slug do tenant de demonstração, só para exibição no badge do hero
+// ("Demo · dev-c77a5b"). Domínio único (14/08/2026): e-mail é único
+// globalmente (migration 053) e /login já resolve sem escopo de subdomínio,
+// então este slug não participa mais de navegação nenhuma — ver EntryPanel.
 const DEMO_TENANT_SLUG = "dev-c77a5b";
-
-function demoTenantLoginUrl(): string {
-  const { protocol, port } = window.location;
-  return `${protocol}//${DEMO_TENANT_SLUG}.${BASE_DOMAIN}${port ? `:${port}` : ""}/login`;
-}
 
 interface Step {
   title: string;
@@ -235,13 +229,7 @@ export function LandingPage() {
         </button>
       </footer>
 
-      {entryTab && (
-        <EntryPanel
-          initialTab={entryTab}
-          loginUrl={demoTenantLoginUrl()}
-          onClose={() => setEntryTab(null)}
-        />
-      )}
+      {entryTab && <EntryPanel initialTab={entryTab} onClose={() => setEntryTab(null)} />}
 
       {adminModalOpen && <AdminLoginModal onClose={() => setAdminModalOpen(false)} />}
 

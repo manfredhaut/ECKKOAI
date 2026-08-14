@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { pool } from "../db/pool.js";
 import { getAllPlans, getPlan, findPlan } from "../plans.js";
 import {
@@ -18,6 +18,18 @@ async function getTenant(tenantId: string): Promise<Tenant> {
 function maskCardNumber(cardNumber: string): string {
   const digits = cardNumber.replace(/\D/g, "");
   return `•••• ${digits.slice(-4)}`;
+}
+
+// MEDIDO na VPS (14/08/2026): as duas chamadas do Stripe Checkout abaixo
+// montavam `origin` com `http://` fixo. Produção é HTTPS (Traefik termina o
+// TLS e repassa ao backend em texto claro) — o success_url/cancel_url do
+// Stripe saía http:// mesmo servindo por trás de certificado real. Sem
+// `trustProxy` no Fastify (app.ts), `req.protocol` não lê X-Forwarded-Proto;
+// lemos o header diretamente, que é o que o Traefik sempre envia.
+function requestOrigin(req: FastifyRequest): string {
+  const forwarded = req.headers["x-forwarded-proto"];
+  const proto = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0]?.trim() || "http";
+  return `${proto}://${req.headers.host}`;
 }
 
 export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
@@ -91,7 +103,7 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const priceId = await getOrCreateStripePrice(plan);
-      const origin = `http://${req.headers.host}`;
+      const origin = requestOrigin(req);
 
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
@@ -152,7 +164,7 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const priceId = await getOrCreateCreditPackagePrice(pkg);
-      const origin = `http://${req.headers.host}`;
+      const origin = requestOrigin(req);
 
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
