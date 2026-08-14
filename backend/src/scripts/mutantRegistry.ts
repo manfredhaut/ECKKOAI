@@ -21,6 +21,7 @@ import { MUTANTS as vendorLogMutants } from "./checkVendorLogPolicy.js";
 import { MUTANTS as videoFormatMutants } from "./checkVideoFormatPolicy.js";
 import { MUTANTS as vendorErrorPathMutants } from "./checkVendorErrorPathPolicy.js";
 import { MUTANTS as imageFreshnessMutants } from "./checkImageFreshnessPolicy.js";
+import { MUTANTS as frontendBuildEnvMutants } from "./checkFrontendBuildEnvPolicy.js";
 import { MUTANTS as costMutants } from "./checkCostPolicy.js";
 import { MUTANTS as egressMutants } from "./checkNetworkEgressPolicy.js";
 import { MUTANTS as playbackMutants } from "./checkVideoPlaybackPolicy.js";
@@ -82,6 +83,7 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkVideoFormatPolicy.ts", videoFormatMutants),
   ...de("backend/src/scripts/checkVendorErrorPathPolicy.ts", vendorErrorPathMutants),
   ...de("backend/src/scripts/checkImageFreshnessPolicy.ts", imageFreshnessMutants),
+  ...de("backend/src/scripts/checkFrontendBuildEnvPolicy.ts", frontendBuildEnvMutants),
   ...de("backend/src/scripts/checkCostPolicy.ts", costMutants),
   ...de("backend/src/scripts/checkNetworkEgressPolicy.ts", egressMutants),
   ...de("backend/src/scripts/checkVideoPlaybackPolicy.ts", playbackMutants),
