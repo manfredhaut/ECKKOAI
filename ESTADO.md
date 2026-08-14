@@ -442,6 +442,47 @@ projeto.
 saído). A URL continua em `videos.fal_composed_image_url` e no diário da corrida
 `fb4577a3`. **Não estornou, e está correto:** a composição aconteceu.
 
+### 1.7 · BLOCO ENDPOINTS-2 — o candidato do relatório anterior TAMBÉM está errado, MEDIDO por fusível, custo US$ 0,00
+
+**O candidato `fal-ai/wan/v2.6/image-to-video/flash`, proposto no fecho do
+ENDPOINTS-1 com base em páginas de doc da fal lidas por `WebFetch`, foi
+disparado pelo fusível (corpo `{}`, submissão → status → resultado, sem nunca
+gerar) e devolveu o MESMO padrão de 404 do original:** `"Path
+/v2.6/image-to-video/flash not found"` — a fal resolve o app como `fal-ai/wan`
+e trata o resto como sub-path inexistente, idêntico ao 404 do COMPOR-1. Os
+outros dois ids testados na mesma passada confirmam que o método funciona:
+`fal-ai/nano-banana-2/edit` (controle, já MEDIDO funcionando) devolveu **422**
+`"prompt: Field required"`, e `fal-ai/sync-lipsync/v2` devolveu **422** com os
+dois campos obrigatórios — as duas rotas EXISTEM nesta conta. **A distinção
+422-vs-404 é real e o fusível a captura**; ela só não confirmou o candidato do
+Wan.
+
+⚠️ **Consequência para a credibilidade da leitura anterior:** como o id era a
+única afirmação FALSEÁVEL das três que o `WebFetch` trouxe (id, preço
+US$ 0,05/s, parâmetros batendo com o payload), e ela se provou errada, as
+outras duas perderam o direito de serem tratadas como "documentado" sem
+confirmação independente — inclusive o preço, que não deve ser aplicado a
+`providerCost.ts` enquanto o id não for confirmado.
+
+**O diff 3a/3b/3c do relatório do ENDPOINTS-1 NÃO foi aplicado.**
+`ENDPOINT_ANIMAR` continua `fal-ai/wan/v2.6/reference-to-video/flash` — o
+mesmo 404 de sempre. Parado por instrução explícita ao primeiro sinal do
+fusível (regra da rodada: trocar um 404 por outro é o que ela existia para
+impedir).
+
+**A medição externa de 11/08 (§1.6, `request_id
+019ff2dd-9096-75e2-b443-21870e952cc7`, ~25% de US$ 0,10/s) NÃO PODE TER VINDO
+DESTE REPOSITÓRIO — não é "não se sabe", é estrutural.** A primeira chamada
+real à fal feita por este código foi em **13/08** (BLOCO 3.5, contrato do
+`nano-banana` medido pela primeira vez); a primeira tentativa de alcançar o
+Wan foi em **14/08** (COMPOR-1), e ela devolveu 404 sem gerar nada. O
+`request_id` de 11/08 é de **dois dias antes** da primeira chamada real à fal
+que este repositório já fez, e de **três dias antes** de qualquer tentativa de
+Wan. Não há janela de tempo em que este código pudesse ter produzido aquela
+medição. Ela veio de fora — do ambiente do operador, com um id que este
+repositório nunca usou (correto ou não) — e segue como dívida externa, não
+como algo a reconciliar contra este código.
+
 ## 2 · Decisões fechadas — não reabrir
 
 Só as do caminho da fal. As de fornecedor (HeyGen: fundo, Avatar V, presets de
