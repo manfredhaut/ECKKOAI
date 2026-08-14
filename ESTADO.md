@@ -15,8 +15,8 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **13/08/2026** (fecho do BLOCO B2), HEAD `bcba0c3` + os dois
-commits que fecham a rodada (o do mutante da G-a e o desta linha).
+Atualizado em **13/08/2026** (fecho do BLOCO B5c), HEAD `cf8d869` + o commit
+desta linha.
 
 ---
 
@@ -54,8 +54,10 @@ Ao ler aquele commit, leia os dois.
 | 3.5 · prova de contrato | fechado (`e886c5d`) — o contrato está MEDIDO, ver §1.3 |
 | 4 · pipeline em série — parte 1 (orquestrador) | fechado (`5a6cbbc`+`94af14f`) |
 | 4 · parte 2 — o ramo por vendor | fechado no **B2** (ver §1.4) |
-| **B3 · onde o débito mora, e o caminho de produto — PRÓXIMO** | ver [PROXIMA-RODADA.md](PROXIMA-RODADA.md) |
-| 5 · a tela (aprovação da imagem composta) | não começado |
+| B3 · onde o débito mora, e o caminho de produto | fechado (`c849b50`+`ff9628e`) |
+| 5 · a tela (aprovação da imagem composta) | fechado no **B3** (`awaiting_approval`, rotas de aprovar/refazer) |
+| BLOCO B5 · vídeo de 10 s pelo Wan — direção ligada, `sync_mode: cut_off`, `model` do lipsync | fechado (`1f4b0d4`…`5ccd090`) |
+| **BLOCO B5c · cenário/traje no fluxo de avatar EXISTENTE — PRÓXIMO: retomar o vídeo de teste pago** | fechado (`dfd5657`+`cf8d869`) |
 | 6 · custo por camada, régua `(provider, model, resolution)` | não começado |
 
 ### 1.1 · BLOCO 4, o que falta
@@ -270,12 +272,58 @@ colateral desta rodada — o gate as pegou em segundos:**
   `withLiveBudget`: o orçamento de sessão conta GERAÇÕES de vídeo, e esta
   corrida para em `compor`. O freio dela é o teto em dólares, que soma antes de
   cada etapa paga.
-- **`awaiting_approval`, rota de aprovação e tela** — BLOCO 5.
+- ~~`awaiting_approval`, rota de aprovação e tela — BLOCO 5.~~ **FECHADO no
+  B3** (`c849b50`+`ff9628e`): migration 052, `recovery.ts` ensinado a não
+  reclamar do estado, rotas `/approve` e `/recompose`.
 - **`pollFalRun` e retomada após morte do processo** — não foi desta rodada.
 - **`mutants:dirty` não existe neste repositório.** O P2 o pedia; no lugar dele,
   as guardas foram provadas à mão durante o desenvolvimento e por **passada
   filtrada** depois do commit — e nenhuma mensagem de commit afirmou prova antes
-  de ela existir.
+  de ela existir. **Segue valendo em toda rodada posterior** (B5, B5c):
+  provar por `--guard`/`--name` depois do commit, nunca antes.
+
+### 1.5 · BLOCO B5c — cenário e traje ganham campo no fluxo de avatar EXISTENTE
+
+**Fechado em 13/08** (`dfd5657`+`cf8d869`). Continuação do B5 (vídeo de 10 s
+pelo Wan): antes de gastar o P3/P4 pago, o gap de UI encontrado ao tentar
+operar a tela precisou ser fechado primeiro.
+
+**O gap, MEDIDO por leitura antes de qualquer código:**
+`videos.scenario`/`scenario_prompt` e `outfit`/`outfit_prompt` já chegavam à
+fal desde o B2/B5 — o que faltava era a TELA. `defaults.scenario` só era
+preenchível dentro de "criar avatar novo" (US$ 1,00 + 1 crédito, 3 fotos +
+vídeo de referência); `defaults.outfit` não era preenchível em LUGAR NENHUM —
+o campo antigo tinha sido removido por decorativo (não alimentava
+`corpoDaGeracao()`) e nunca recolocado quando o backend passou a consumi-lo de
+verdade. Um avatar existente — o caminho normal de gerar vídeo — não tinha
+onde preencher nenhum dos dois.
+
+**O conserto (`dfd5657`):** novo bloco em `AvatarSetupStep.tsx`, no ramo de
+avatar EXISTENTE (`!creating`), reaproveitando o layout que já existia para
+cenário dentro de "criar avatar novo" — mesmo `Field`, mesmo
+`handleAssetUpload` (que já aceitava `"outfit"` como `kind`, só nunca tinha
+sido chamado com ele). Zero componente novo. `outfitName` deliberadamente NÃO
+adicionado — `AssetDefaults` não tem esse campo e criar um por simetria
+cosmética sem consumidor não foi autorizado; o traje mostra "Imagem salva."
+genérico. O "Adicionar traje" antigo (LOOK do fornecedor, US$ 1,00,
+`avatar_look_id`) não foi tocado — são sistemas diferentes que o nome "traje"
+confundia, e o comentário do fonte que descrevia isso errado foi reescrito.
+
+**Efeito colateral pego pela própria passada `--affected`, não por leitura:**
+`checkPreflightSummaryPolicy.ts` conferia `defaults.scenarioName ?
+imageSavedNamed : …` por PRESENÇA em qualquer lugar do arquivo, não por
+posição. O bloco novo criou uma segunda instância legítima do mesmo padrão, e
+um mutante que apaga a instância ANTIGA passava despercebido porque a nova
+continuava lá — 35/36 na primeira afetada, 1 INERTE. Corrigido em `cf8d869`
+por CONTAGEM de ocorrências (2 para `scenarioName` desde o B5c, 1 para
+`lookImageName`, que este bloco não tocou) em vez de presença.
+
+⚠️ **GAP DE UI QUE FICOU DE FORA, escolha declarada, não esquecimento:** o
+fluxo de "criar avatar novo" continua SEM campo de traje (só cenário) — por
+instrução explícita, esta rodada não tocou naquele fluxo (caro: US$ 1,00 + 1
+crédito). Preencher cenário/traje para um avatar recém-criado exige passar
+primeiro por ele já pronto (existente), ou esperar uma rodada que também mexa
+no fluxo de criação.
 
 ## 2 · Decisões fechadas — não reabrir
 
@@ -331,6 +379,26 @@ aqui.**
 10. **Log de passada NUNCA em `/tmp`** (= `%TEMP%` no Windows): já foi apagado
    por fora com o processo escrevendo nele, e o watcher ficou cego. Duas cópias,
    em `_arnes-logs/`, com nome datado.
+11. **NUNCA backgroundar o mesmo comando duas vezes.** MEDIDO em 13/08: lançar
+   `npm run check:mutants -- --affected ... &` DENTRO de uma chamada já
+   marcada para rodar em background mata o processo real assim que o shell
+   externo termina — ele só espera o `echo` seguinte, não o job em `&`. O
+   sintoma: o log parou em "1/40" e a árvore ficou com DOIS mutantes de
+   documentação aplicados e nunca revertidos (`docsManifest.ts`,
+   `docs/faq.md`) — identificáveis por diff como mutantes conhecidos, não
+   trabalho perdido do operador, mas ainda assim uma árvore suja que precisou
+   ser limpa à mão antes de relançar. Lançar como **um único comando de
+   shell** (`npm run check:mutants > logA 2>&1; cp logA logB`), passado
+   inteiro para rodar em background, sem `&` interno.
+12. **`git status` pode mentir por `mtime`, não por conteúdo, neste ambiente.**
+   MEDIDO em 13/08: depois de reverter um arquivo com `git checkout`, `git
+   status --porcelain` continuou acusando modificação — mas `git hash-object
+   <arquivo>` bateu EXATAMENTE com `git rev-parse HEAD:<arquivo>`. É o bind
+   mount do Docker Desktop no Windows mexendo em timestamp sem mexer em
+   bytes. `git update-index --refresh` sozinho não bastou; `git add
+   <arquivo>` (no-op de conteúdo, já que o hash bate) resolveu. **Antes de
+   tratar qualquer "dirty" como real, comparar hash contra HEAD** — evita
+   tanto pânico à toa quanto, pior, descartar trabalho de verdade por engano.
 
 ## 4 · Invocações exatas
 
@@ -393,34 +461,36 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
-**A rodada do B2 fechou com a passada AFETADA: 73/73, zero INERTE, zero
-AMBÍGUO, zero ERRO, zero FALHOU.** `--affected --base 22e644f` → 12 arquivos
-tocados → **73 de 237** mutantes selecionados (164 pulados). Log em
-`_arnes-logs/mutants-b2-afetada-final-{a,b}.log`, duas cópias, md5
-`8802b134cd32204f1cc72106264e3b85` nas duas. Árvore limpa em cada reversão.
+**A passada COMPLETA do fecho do B5c: 243/243, zero INERTE, zero AMBÍGUO,
+zero ERRO, zero FALHOU.** HEAD `cf8d869`. Log em
+`_arnes-logs/mutants-b5c-completa-2026-08-13-{a,b}.log`, md5
+`6c67ea4fa2e84b8c87d538f1717e2747` nas duas cópias — idênticas. Sem carimbo de
+PASSADA FILTRADA/PULADOS: é a completa de verdade. Árvore limpa em cada
+reversão, e conferida por **hash contra HEAD** (não só `git status`, por
+causa do gotcha 12) antes de escrever esta linha.
 
-Os **três mutantes das guardas novas** estão entre os 73 e reprovaram: log
-próprio em `_arnes-logs/mutants-b2-guardas-2026-08-13-b.log`.
-
-⚠️ **A PRIMEIRA tentativa desta mesma passada MORREU aos 37/73**, com
-`status: 3221225794` (`0xC0000142`, a falha de spawn do Windows) no log. A
-causa foi o **timeout de 10 minutos** em que ela estava envolvida: a passada
-leva ~25 min. A árvore voltou limpa e nada ficou aplicado, mas aquele log **não
-vale como desfecho**. **Passada do arnês roda em BACKGROUND, sem timeout em
-volta** — o gotcha 10 fala de onde gravar o log; este fala de como lançá-la.
-
-🔴 **DÍVIDA, que segue aberta e é PRÉ-CONDIÇÃO do B3: a passada COMPLETA.** A
-última completa e válida continua sendo **234/234 de 13/08 de manhã** (HEAD
-`23dce3a`), e o arnês está em **237**. A afetada cobre o que esta rodada tocou,
-não o resto — e o B3 é a rodada que gasta dinheiro.
+**Esta é a primeira completa desde a manhã de 13/08 (234/234, HEAD
+`23dce3a`).** O arnês foi de 234 para **243** nesta janela: +3 no B3
+(aprovação), +2 no B5 (cena/direção — G-1 e G-2 de `checkFalSceneWiringPolicy`)
+e +1 no B5c (`checkExistingAvatarAssetsPolicy`). Todo o código pago do B3, do
+B5 (`sync_mode: cut_off`, `model` do lipsync, `promptDeDirecao`) e do B5c
+passou por esta completa — nada disso tinha sido confirmado pela completa
+antes, só por afetadas.
 
 ```bash
 npm run check:mutants
 ```
 
-**A última COMPLETA (13/08 manhã, HEAD `23dce3a`) fechou 234/234, 100% verde**
-— zero INERTE, zero AMBÍGUO, zero ERRO. O diff desde então é o contrato da fal
-(`e886c5d`), a sonda (`5595280`), os commits de ESTADO e **o BLOCO B2 inteiro**.
+---
+
+**Passada anterior — B2, `73/73` pela AFETADA (`--base 22e644f`), 12 arquivos
+tocados, 164 pulados.** Log em `_arnes-logs/mutants-b2-afetada-final-{a,b}.log`,
+md5 `8802b134cd32204f1cc72106264e3b85`. A **primeira tentativa dela morreu aos
+37/73** com `0xC0000142` — causa: timeout de 10 min em volta de uma passada
+que leva ~25 min. Não vale como desfecho; é o exemplo que fundou o gotcha 4.
+
+**Antes dela, a última COMPLETA válida era a de 13/08 manhã (HEAD `23dce3a`):
+234/234, 100% verde.**
 
 ---
 
