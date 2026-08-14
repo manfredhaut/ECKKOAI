@@ -28,7 +28,7 @@
 http:
   routers:
     backend:
-      rule: "(Host(`{{env \"BASE_DOMAIN\"}}`) || HostRegexp(`^[a-z0-9-]+\\.{{env \"BASE_DOMAIN\"}}$`)) && PathPrefix(`/api`)"
+      rule: '(Host(`{{env "BASE_DOMAIN"}}`) || HostRegexp(`^[a-z0-9-]+\.{{env "BASE_DOMAIN"}}$`)) && PathPrefix(`/api`)'
       entryPoints:
         - websecure
       service: backend
@@ -43,7 +43,7 @@ http:
               - dev-c77a5b.eckkoai.smartinovat.com
 
     uploads:
-      rule: "(Host(`{{env \"BASE_DOMAIN\"}}`) || HostRegexp(`^[a-z0-9-]+\\.{{env \"BASE_DOMAIN\"}}$`)) && PathPrefix(`/uploads`)"
+      rule: '(Host(`{{env "BASE_DOMAIN"}}`) || HostRegexp(`^[a-z0-9-]+\.{{env "BASE_DOMAIN"}}$`)) && PathPrefix(`/uploads`)'
       entryPoints:
         - websecure
       service: backend
@@ -52,7 +52,7 @@ http:
         certResolver: letsencrypt
 
     frontend:
-      rule: "(Host(`{{env \"BASE_DOMAIN\"}}`) || HostRegexp(`^[a-z0-9-]+\\.{{env \"BASE_DOMAIN\"}}$`)) && PathPrefix(`/`)"
+      rule: '(Host(`{{env "BASE_DOMAIN"}}`) || HostRegexp(`^[a-z0-9-]+\.{{env "BASE_DOMAIN"}}$`)) && PathPrefix(`/`)'
       entryPoints:
         - websecure
       service: frontend

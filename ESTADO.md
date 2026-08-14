@@ -15,8 +15,8 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **14/08/2026** (DEPLOY-4 — verificação pré-VPS), HEAD `30d54fe`
-+ o commit desta linha.
+Atualizado em **14/08/2026** (SYNC-VPS-1 — 3 correções da VPS trazidas para o
+git), HEAD `22f9db8` + o commit desta linha.
 
 ---
 
@@ -988,3 +988,58 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
   visível não há como dar a cada worker sua própria árvore, e paralelizar na
   mesma árvore corrompe a passada em silêncio. Destravar exige tocar
   `docker-compose.yml`.
+
+## 8 · SYNC-VPS-1 — a VPS já está em produção; esta rodada só trouxe 3 correções do filesystem dela para o git
+
+**Custo: US$ 0,00. Guardas da rodada: zero chamada a fornecedor, zero
+docker/npm/build local — só leitura e edição de arquivo.** Esta seção registra
+o que o OPERADOR relatou sobre a VPS `eckko-prod-mia-01` mais o que foi
+MEDIDO localmente nesta sessão sobre os 3 arquivos corrigidos.
+
+**Estado da VPS — REGISTRO DO OPERADOR, NÃO VERIFICADO por esta sessão**
+(nenhum SSH/docker foi executado aqui, por guarda G2 da rodada):
+- Deploy em produção pela **primeira vez**, os 4 containers (`traefik`,
+  `postgres`, `backend`, `frontend`) relatados **healthy**.
+- TLS emitido pelo Let's Encrypt para `eckkoai.smartinovat.com` e
+  `dev-c77a5b.eckkoai.smartinovat.com` — coerente com a lista estática de
+  `tls.domains` já registrada em `traefik/dynamic.prod.yml` (ver §1.9 e o
+  comentário do próprio arquivo).
+  `https://eckkoai.smartinovat.com/` foi conferido carregando em produção
+  pelo navegador nesta sessão.
+- Banco restaurado com sucesso: **18 tenants / 29 videos / 54
+  api_credentials**.
+- **`PROVIDER_MODE=fixture` é o estado ATUAL de produção** — nenhum gasto
+  real acontece na VPS até decisão explícita de armar `live` (mesmos 5
+  critérios de desarme do CLAUDE.md, aplicados agora ao ambiente da VPS, não
+  só ao dev local).
+
+**Os 3 bugs — achados e corrigidos À MÃO direto no filesystem da VPS, fora do
+git; esta rodada os replicou nos arquivos locais para não se perderem no
+próximo `git archive` a partir do HEAD.**
+
+1. **CRLF em `backend/docker-entrypoint.sh` — MEDIDO: o arquivo local (HEAD
+   `22f9db8`) já está em LF, tanto no índice quanto na árvore de trabalho**
+   (`git show HEAD:… | grep -c $'\r'` → 0; `git ls-files --eol` → `i/lf
+   w/lf`). Não havia CRLF para normalizar localmente — o bug ocorreu na
+   cópia da VPS, não neste checkout. **O que faltava era prevenção**: o
+   arquivo não tinha atributo de EOL declarado (`git check-attr eol` →
+   `unspecified`), e `core.autocrlf` local está em **`true`** — a
+   combinação que deixa qualquer clone/checkout futuro nesta máquina
+   Windows sujeito a reintroduzir CRLF num `.sh`. Criado `.gitattributes`
+   na raiz com `*.sh text eol=lf` (e `* text=auto eol=lf` como default
+   geral) para fechar essa porta.
+2. **`traefik/dynamic.prod.yml` — as 3 regras `rule:` (backend/uploads/
+   frontend) trocaram aspas duplas externas por aspas simples**, preservando
+   as aspas duplas internas de `{{env "BASE_DOMAIN"}}` sem escapar e o `\.`
+   do regex intacto. Confirmado por leitura das 3 linhas e por
+   `grep -n '\\"'` no arquivo devolvendo **zero ocorrências**.
+3. **`traefik/traefik.prod.yml` — `email: <PREENCHER-EMAIL>` trocado por
+   `manfredhaut@gmail.com`**, o e-mail de contato ACME já em uso e
+   confirmado funcionando na VPS agora (não é segredo — é o contato do
+   certificado, publicamente visível em qualquer consulta ao certificado
+   emitido).
+
+**Commit único desta rodada leva só os arquivos do G3 que de fato mudaram:**
+`.gitattributes` (novo), `traefik/dynamic.prod.yml`, `traefik/traefik.prod.yml`,
+`ESTADO.md`. `backend/docker-entrypoint.sh` **não entra no commit** — nenhuma
+mudança de conteúdo foi necessária nele (já estava correto).
