@@ -56,3 +56,61 @@ freio. As saídas, em ordem de custo:
 Nenhuma das três foi executada nesta rodada — o EXPOSICAO-1 era de LEITURA E
 MEDIÇÃO, e a única escrita autorizada foi corrigir a lista e abrir este
 arquivo. **Escolher entre as três é do operador.**
+
+---
+
+## Ocorrência 2 · O autofill de dev injeta a credencial da ZONA ERRADA em `/admin/login`
+
+**Contagem: 1ª vez** (14/08/2026, bloco COMPOR-1). **REGISTRADO, NÃO CORRIGIDO**
+— por instrução explícita do operador.
+
+**O sintoma, relatado e reproduzido por leitura:** abrir
+`http://twinai.localhost:8090/admin/login` mostra o formulário já preenchido
+com `demo@eckko.ai` — que é o usuário do TENANT — e o login é recusado. Quem
+não conhece o código conclui "a senha do admin está errada"; o que está errado
+é o e-mail, e ele foi escrito pela própria aplicação.
+
+**A causa, MEDIDA por leitura de três arquivos:**
+
+1. `/admin/login` e `/login` renderizam **a mesma** `LoginPage`
+   ([App.tsx:53](frontend/src/App.tsx:53) — decisão deliberada, para que a URL
+   não revele que existe uma zona admin separada).
+2. `LoginPage` inicializa o estado com a credencial do tenant **sem olhar a
+   rota**: `useState(devTenantCredential?.email ?? "")`
+   ([LoginPage.tsx:17-18](frontend/src/pages/Login/LoginPage.tsx:17)).
+3. Só existe UMA credencial de dev exportada —
+   `devTenantCredential` ([devCredentials.ts:46](frontend/src/devCredentials.ts:46)).
+   **Não há `devAdminCredential`**, então não havia o que injetar na outra zona
+   nem código que soubesse distinguir as duas.
+
+**Por que isto é defeito e não inconveniente:** o `POST /admin/login` tem
+limiter próprio de **5 tentativas / 15 min por IP**
+([adminAuth.ts:17-29](backend/src/routes/adminAuth.ts:17),
+`LOGIN_RATE_LIMIT_DEFAULTS` em
+[loginRateLimitPolicy.ts:23-25](backend/src/services/loginRateLimitPolicy.ts:23)).
+Um autofill que garante a credencial errada gasta o orçamento de tentativas
+contra um valor que **nunca** poderia funcionar — e o 429 resultante parece
+bloqueio de segurança, não erro de preenchimento. O comentário de
+[LoginPage.tsx:34-36](frontend/src/pages/Login/LoginPage.tsx:34) já registra
+que este endpoint tem histórico de "o login parecia falhar" por causa de
+tentativas queimadas; esta é uma segunda porta para o mesmo sintoma.
+
+**O login em si NÃO está quebrado:** `login()` é unificado e o backend decide a
+zona — `result.type === "admin"` redireciona para `/admin`
+([LoginPage.tsx:28-39](frontend/src/pages/Login/LoginPage.tsx:28)). Apagar os
+campos e digitar a credencial de admin funciona hoje, sem nenhuma alteração.
+**Não há bug de autenticação — há um valor pré-digitado que não pertence
+àquela tela.**
+
+**Consertos possíveis, nenhum executado:**
+
+1. **Não autopreencher em `/admin/*`** — o menor: ler a rota e cair para
+   string vazia. Não expõe credencial nova em lugar nenhum.
+2. **Adicionar `devAdminCredential`** e escolher pela rota. Mais confortável,
+   e mais superfície: passa a existir uma segunda credencial embutida no
+   bundle do frontend, exatamente o que
+   `checkPolicy` já reprova quando um `DEV_*_PASSWORD` reaparece no fonte
+   (ver o cabeçalho de `scripts/seedDevAccess.ts`). **Precisa ser pensado
+   contra essa guarda, não contra o conforto.**
+3. **Deixar como está e documentar** — é o estado de hoje, e o custo dele é
+   esta entrada.
