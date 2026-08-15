@@ -23,6 +23,16 @@ import { useAdminCopilot } from "../../adminCopilot/AdminCopilotContext";
 const STORAGE_OPTIONS: StorageProviderId[] = ["drive", "platform_hosted"];
 const PROVIDERS: CredentialProviderId[] = ["avatar", "voice", "script"];
 
+// Usado na lista E no detalhe — os dois mostravam status como binário
+// (active ?  connected : error), que pintava "pending" com o vermelho de
+// suspenso. `status-awaiting_approval` é o selo que já existe para "espera
+// clique humano" (vídeos aguardando aprovação da fal) — mesma semântica.
+function tenantStatusPillClass(status: string): string {
+  if (status === "active") return "connected";
+  if (status === "pending") return "awaiting_approval";
+  return "error";
+}
+
 function AdminCredentialEditor({
   tenantId,
   provider,
@@ -269,9 +279,22 @@ function AdminTenantDetailPanel({
     );
   }
 
+  // Três estados, não dois. O toggle binário anterior ("suspended" ? active
+  // : suspended) tratava "pending" como "não suspenso" e mandava SUSPENDER
+  // um tenant aguardando aprovação — o botão de aprovar teria banido a
+  // conta que deveria liberar. `next` some do domínio quando não há ação
+  // válida (não existe hoje, mas documenta a intenção: só active/suspended
+  // são setáveis por aqui, pending só nasce no signup).
+  function nextTenantStatus(status: string): "active" | "suspended" | null {
+    if (status === "pending") return "active";
+    if (status === "suspended") return "active";
+    return "suspended";
+  }
+
   async function handleStatusToggle() {
     if (!detail || savingStatus) return;
-    const next = detail.status === "suspended" ? "active" : "suspended";
+    const next = nextTenantStatus(detail.status);
+    if (!next) return;
     setSavingStatus(true);
     try {
       await api.put(`/admin/tenants/${tenantId}/status`, { status: next });
@@ -310,11 +333,20 @@ function AdminTenantDetailPanel({
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className={`status-pill status-${detail.status === "active" ? "connected" : "error"}`}>
+          <span className={`status-pill status-${tenantStatusPillClass(detail.status)}`}>
             {t(`adminPanel.tenantStatus.${detail.status}`)}
           </span>
-          <button className="btn btn-outline" onClick={handleStatusToggle} disabled={savingStatus}>
-            {detail.status === "suspended" ? t("adminPanel.reactivate") : t("adminPanel.suspend")}
+          <button
+            className="btn btn-outline"
+            onClick={handleStatusToggle}
+            disabled={savingStatus}
+            title={detail.status === "pending" ? t("adminPanel.approveTooltip") : undefined}
+          >
+            {detail.status === "pending"
+              ? t("adminPanel.approve")
+              : detail.status === "suspended"
+                ? t("adminPanel.reactivate")
+                : t("adminPanel.suspend")}
           </button>
         </div>
       </div>
@@ -457,7 +489,7 @@ export function AdminPanelPage() {
                 </td>
                 <td>{t(`adminPanel.plan.${tenant.planId}`, tenant.planId)}</td>
                 <td>
-                  <span className={`status-pill status-${tenant.status === "active" ? "connected" : "error"}`}>
+                  <span className={`status-pill status-${tenantStatusPillClass(tenant.status)}`}>
                     {t(`adminPanel.tenantStatus.${tenant.status}`)}
                   </span>
                 </td>

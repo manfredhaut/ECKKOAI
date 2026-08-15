@@ -1,0 +1,414 @@
+===== frontend/Dockerfile =====
+# Três estágios. "dev" é o ÚLTIMO de propósito: docker-compose.yml (dev,
+# fora de escopo desta rodada) builda este arquivo sem `target`, e o Compose
+# usa o último estágio como default — então o comportamento de hoje (npm run
+# dev, bind mount por cima) continua intacto sem tocar naquele compose.
+# docker-compose.prod.yml aponta explicitamente build.target: serve.
+
+FROM node:20-alpine AS base
+WORKDIR /app
+COPY package.json ./
+RUN npm install
+# Dockerfile e image-stamp.mjs entram na imagem por causa do carimbo de
+# frescor: o hash cobre os arquivos COPIADOS e não montados, e o próprio
+# Dockerfile é um deles — mudá-lo altera a imagem sem alterar nada que o bind
+# mount mostre.
+COPY tsconfig.json vite.config.ts index.html Dockerfile image-stamp.mjs ./
+COPY src ./src
+COPY public ./public
+
+# ---------------------------------------------------------------------------
+# estágio "build" — só é alcançado quando alguém pede target: build ou
+# target: serve (que depende dele). Nada dele entra na imagem final.
+# ---------------------------------------------------------------------------
+FROM base AS build
+# Cada ARG só existe DURANTE este estágio de build — nunca vira ENV, nunca
+# aparece em `docker image inspect` da imagem final (Config.Env). Os DEV_* de
+# credencial (DEV_ADMIN_PASSWORD, DEV_TENANT_PASSWORD, DEV_ADMIN_EMAIL,
+# DEV_TENANT_EMAIL, DEV_AUTOFILL, DEV_GALLERY) de propósito NÃO entram aqui:
+# com NODE_ENV=production o vite.config.ts já zera devCred() e as duas flags
+# independente do valor recebido, então passá-los só criaria superfície de
+# segredo sem mudar uma linha do bundle gerado.
+ARG BASE_DOMAIN
+ARG WHATSAPP_NUMBER
+ARG REFERENCE_VIDEO_MAX_BYTES
+ARG MAX_RECORDING_SECONDS
+ARG IMAGE_UPLOAD_MAX_BYTES
+ARG NODE_ENV=production
+RUN npm run build && node image-stamp.mjs . > dist/__image-stamp
+
+# ---------------------------------------------------------------------------
+# estágio "serve" — o que sobe em PRODUÇÃO (docker-compose.prod.yml pede
+# build.target: serve). Escuta na 5173 para não exigir mudança em
+# traefik/dynamic.prod.yml nem no healthcheck do compose base.
+# ---------------------------------------------------------------------------
+FROM nginx:1.27-alpine AS serve
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 5173
+
+# ---------------------------------------------------------------------------
+# estágio "dev" — idêntico em efeito ao Dockerfile original de um estágio só.
+# É o único que docker-compose.yml (dev) constrói, por ser o último do
+# arquivo.
+# ---------------------------------------------------------------------------
+FROM base AS dev
+# Carimbo gravado FORA do bind mount, no momento do build. Em `/app` puro:
+# gravá-lo em `src/` ou `public/` faria o host sobrescrevê-lo em runtime, e o
+# carimbo passaria a comparar o repositório com ele mesmo — sempre igual,
+# detectando nada. Ver frontend/image-stamp.mjs.
+RUN node image-stamp.mjs . > .image-stamp
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev"]
+
+===== frontend/nginx.conf =====
+server {
+    listen 5173;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Carimbo de frescor da imagem (frontend/image-stamp.mjs). Nunca em
+    # cache: o gate precisa ler o valor ATUAL a cada chamada, senão uma
+    # imagem nova por trás de um cache antigo mentiria o hash velho.
+    location = /__image-stamp {
+        default_type "text/plain; charset=utf-8";
+        add_header Cache-Control "no-store";
+    }
+
+    # index.html nunca em cache: é o único arquivo cujo NOME não muda entre
+    # deploys, e ele referencia os assets com hash no nome. Cacheá-lo faria
+    # o browser continuar pedindo JS/CSS de um deploy anterior que pode já
+    # ter sido substituído.
+    location = /index.html {
+        add_header Cache-Control "no-store, must-revalidate";
+    }
+
+    # Assets com hash de conteúdo no nome (padrão do Vite: assets/x-<hash>.js).
+    # O nome MUDA se o conteúdo mudar, então "immutable" é seguro: nunca
+    # serve um arquivo velho com o nome de um novo.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # Fallback de SPA: qualquer rota sem arquivo correspondente cai no
+    # index.html, e o react-router-dom assume dali. Sem isto, um reload em
+    # /dashboard (ou qualquer rota interna) devolve 404 do nginx puro.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+===== frontend/vite.config.ts =====
+import { readFileSync } from "node:fs";
+import { defineConfig, type Plugin } from "vite";
+import react from "@vitejs/plugin-react";
+
+/**
+ * Publica o carimbo de frescor da imagem em `GET /__image-stamp`.
+ *
+ * É o único jeito de o gate — que roda dentro do container do backend —
+ * descobrir o que há DENTRO da imagem do frontend. Ele compara essa resposta
+ * com o hash calculado a partir do repositório; divergiu, a imagem está velha.
+ *
+ * Responde em texto puro e nunca falha: se o carimbo não existir (imagem
+ * construída antes desta invariante), devolve um valor que se identifica como
+ * tal, para o gate distinguir "imagem antiga demais" de "imagem divergente" —
+ * são causas diferentes com a mesma cara.
+ */
+function imageStampPlugin(): Plugin {
+  return {
+    name: "eckko-image-stamp",
+    configureServer(server) {
+      server.middlewares.use("/__image-stamp", (_req, res) => {
+        let stamp: string;
+        try {
+          stamp = readFileSync("/app/.image-stamp", "utf8").trim();
+        } catch {
+          stamp = "sem-carimbo";
+        }
+        res.setHeader("content-type", "text/plain; charset=utf-8");
+        res.end(stamp);
+      });
+    },
+  };
+}
+
+const traefikHttpPort = Number(process.env.TRAEFIK_HTTP_PORT) || 8090;
+
+// Mesmo padrão de backend/src/config.ts, adaptado: lá `required()` sempre
+// lança, porque o backend não tem modo dev tolerante. Aqui só lança com
+// NODE_ENV=production (fixado literal em docker-compose.prod.yml) — fora de
+// produção a ausência ainda cai no default de desenvolvimento, como sempre.
+//
+// Existe porque a leitura de BASE_DOMAIN deixou de acontecer a cada boot do
+// dev server (VITE-PROD-1/2/3: o frontend passou a ser build+nginx) e passou
+// a acontecer UMA VEZ, no build da imagem. Sem isto, um build de produção
+// sem BASE_DOMAIN no ambiente assaria "twinai.localhost" no bundle, sem erro
+// nenhum — links e QR codes de tenant errados, com aparência normal, na
+// frente de quem estiver vendo.
+function required(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value && process.env.NODE_ENV === "production") {
+    throw new Error(
+      `vite.config.ts: ${name} é obrigatória com NODE_ENV=production e está ausente. ` +
+        "Build de produção não pode cair no default de desenvolvimento em silêncio.",
+    );
+  }
+  return value ?? "";
+}
+
+// Single source of truth is backend/src/domainConfig.ts — this is just the
+// same BASE_DOMAIN env var, read here because Vite's config can't import
+// backend TS code across containers.
+const baseDomain = required("BASE_DOMAIN") || "twinai.localhost";
+// Same idea: read once from the environment here, exposed to React via
+// `define` below — see src/publicConfig.ts.
+const whatsappNumber = process.env.WHATSAPP_NUMBER ?? "";
+// Mesmos valores que backend/src/services/uploadLimits.ts lê, da mesma
+// variável de ambiente: o docker-compose repassa aos DOIS serviços, para que
+// cliente e servidor concordem por construção. O servidor continua sendo a
+// autoridade; o cliente só evita subir 90 MB para receber 413 no fim.
+const maxReferenceVideoBytes = Number(process.env.REFERENCE_VIDEO_MAX_BYTES) || 100 * 1024 * 1024;
+const maxRecordingSeconds = Number(process.env.MAX_RECORDING_SECONDS) || 120;
+const maxImageBytes = Number(process.env.IMAGE_UPLOAD_MAX_BYTES) || 25 * 1024 * 1024;
+
+// Preenchimento automático das telas de login em desenvolvimento.
+//
+// Regra: os valores NUNCA aparecem no fonte — entram no bundle só por este
+// `define`, lidos do ambiente (que vem do .env, fora do git). E só entram
+// se a flag estiver explicitamente em "1": qualquer outro valor, incluindo
+// ausência, produz credenciais vazias e o autofill some da tela.
+//
+// A segunda condição é a que importa: mesmo com a flag ligada por engano,
+// um build de produção não pode carregar senha nenhuma. Aqui isso falha
+// fechado; `npm run check` ainda reprova o build antes, para o erro
+// aparecer como erro em vez de virar um silêncio conveniente.
+const isProduction = process.env.NODE_ENV === "production";
+const devAutofill = process.env.DEV_AUTOFILL === "1" && !isProduction;
+// Galeria de passos (/dev/steps). Mesmo padrão do autofill: opt-in
+// explícito e impossível em produção — lá a rota não deve existir, e "não
+// existir" significa 404, não uma tela vazia.
+const devGallery = process.env.DEV_GALLERY === "1" && !isProduction;
+const devCred = (name: string) => (devAutofill ? (process.env[name] ?? "") : "");
+
+export default defineConfig({
+  plugins: [react(), imageStampPlugin()],
+  define: {
+    __BASE_DOMAIN__: JSON.stringify(baseDomain),
+    __WHATSAPP_NUMBER__: JSON.stringify(whatsappNumber),
+    __MAX_REFERENCE_VIDEO_BYTES__: JSON.stringify(maxReferenceVideoBytes),
+    __MAX_RECORDING_SECONDS__: JSON.stringify(maxRecordingSeconds),
+    __MAX_IMAGE_BYTES__: JSON.stringify(maxImageBytes),
+    __DEV_AUTOFILL__: JSON.stringify(devAutofill),
+    __DEV_GALLERY__: JSON.stringify(devGallery),
+    __DEV_ADMIN_EMAIL__: JSON.stringify(devCred("DEV_ADMIN_EMAIL")),
+    __DEV_ADMIN_PASSWORD__: JSON.stringify(devCred("DEV_ADMIN_PASSWORD")),
+    __DEV_TENANT_EMAIL__: JSON.stringify(devCred("DEV_TENANT_EMAIL")),
+    __DEV_TENANT_PASSWORD__: JSON.stringify(devCred("DEV_TENANT_PASSWORD")),
+  },
+  server: {
+    host: true,
+    port: 5173,
+    strictPort: true,
+    // Vite blocks requests with an unrecognized Host header by default (DNS
+    // rebinding protection) — allow the app's own domain and every tenant
+    // subdomain (leading dot = wildcard).
+    allowedHosts: [baseDomain, `.${baseDomain}`],
+    // The app is only ever reached through Traefik on its host port,
+    // so the HMR websocket client must reconnect there, not to the internal
+    // container port.
+    hmr: {
+      clientPort: traefikHttpPort,
+    },
+  },
+});
+
+===== backend/src/scripts/checkFrontendBuildEnvPolicy.ts =====
+/**
+ * BASE_DOMAIN não pode cair em silêncio no default de desenvolvimento num
+ * build de PRODUÇÃO do frontend.
+ *
+ * O defeito que isto fecha: `vite.config.ts` sempre teve
+ * `process.env.BASE_DOMAIN ?? "twinai.localhost"`, coerente enquanto a
+ * variável era lida a cada boot do dev server (VITE-PROD-1). Migrado o
+ * frontend para build+nginx (VITE-PROD-3), a mesma leitura passa a
+ * acontecer UMA VEZ, no build da imagem — e um build de produção sem
+ * BASE_DOMAIN no ambiente assaria "twinai.localhost" no bundle publicado,
+ * sem erro nenhum: links e QR codes de tenant errados, com aparência
+ * normal, na frente de quem estiver vendo. É o "default silencioso", risco
+ * nº1 identificado em VITE-PROD-2.
+ *
+ * O QUE ESTA GUARDA NÃO FAZ, de propósito: não roda `vite build`. O gate
+ * inteiro roda dentro do container do backend, que não tem o projeto do
+ * frontend instalado — só TEXTO. Ela prova que o INTERRUPTOR (`required()`
+ * em vite.config.ts) existe e está com a condição certa; não prova que
+ * `vite build` de fato lança e sai não-zero quando a condição dispara. Essa
+ * prova de execução é uma LACUNA conhecida, registrada em VITE-PROD-3, não
+ * fingida como coberta.
+ */
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import type { Mutant } from "./mutants.js";
+
+export interface FrontendBuildEnvCheckResult {
+  failures: string[];
+  notes: string[];
+}
+
+export const MUTANTS: Mutant[] = [
+  {
+    guard: "frontend: BASE_DOMAIN obrigatória em build de produção",
+    name: "BASE_DOMAIN volta ao default sem guarda",
+    kind: "obvio",
+    file: "frontend/vite.config.ts",
+    find: `const baseDomain = required("BASE_DOMAIN") || "twinai.localhost";`,
+    replace: `const baseDomain = process.env.BASE_DOMAIN ?? "twinai.localhost";`,
+    expect: "BASE_DOMAIN não usa required() em vite.config.ts",
+  },
+  {
+    guard: "frontend: BASE_DOMAIN obrigatória em build de produção",
+    name: "required() nunca reconhece produção (typo em NODE_ENV)",
+    kind: "esperto",
+    // A chamada `required("BASE_DOMAIN")` continua lá — passaria numa
+    // guarda que só conferisse "a chamada existe". O typo faz o
+    // interruptor nunca disparar em produção de VERDADE (NODE_ENV é
+    // fixado literal "production" em docker-compose.prod.yml), e o build
+    // volta a cair no default calado — com a aparência de proteção
+    // presente.
+    file: "frontend/vite.config.ts",
+    find: `if (!value && process.env.NODE_ENV === "production") {`,
+    replace: `if (!value && process.env.NODE_ENV === "producao") {`,
+    expect: "required() não reconhece NODE_ENV=production",
+  },
+];
+
+const VITE_CONFIG_REL = "frontend/vite.config.ts";
+
+export async function checkFrontendBuildEnvPolicy(repoRoot: string): Promise<FrontendBuildEnvCheckResult> {
+  const failures: string[] = [];
+  const notes: string[] = [];
+
+  const full = path.join(repoRoot, VITE_CONFIG_REL);
+  let source: string;
+  try {
+    source = await readFile(full, "utf-8");
+  } catch {
+    failures.push(
+      `frontend: não consegui ler ${VITE_CONFIG_REL} para conferir a guarda de build de BASE_DOMAIN.`,
+    );
+    return { failures, notes };
+  }
+
+  if (!/const baseDomain = required\("BASE_DOMAIN"\)/.test(source)) {
+    failures.push(
+      "frontend: BASE_DOMAIN não usa required() em vite.config.ts — um build de produção sem a " +
+        'variável no ambiente cairia calado em "twinai.localhost", sem erro nenhum. O build de ' +
+        "produção precisa FALHAR quando BASE_DOMAIN está ausente, não gerar bundle com o valor errado.",
+    );
+  }
+
+  if (!/if \(!value && process\.env\.NODE_ENV === "production"\) \{/.test(source)) {
+    failures.push(
+      'frontend: required() não reconhece NODE_ENV=production em vite.config.ts — o literal exato ' +
+        '"production" precisa aparecer na condição, senão o interruptor nunca dispara em produção de ' +
+        "verdade (docker-compose.prod.yml fixa NODE_ENV como esse literal) e a guarda vira aparência " +
+        "sem efeito.",
+    );
+  }
+
+  if (failures.length === 0) {
+    notes.push(
+      "frontend: BASE_DOMAIN obrigatória em build de produção via required(), interruptor confere " +
+        "com o literal do compose",
+    );
+  }
+
+  return { failures, notes };
+}
+
+===== docker-compose.prod.yml =====
+# Override de PRODUÇÃO. Uso (sempre em cima do base, nunca sozinho):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# docker-compose.yml continua sendo o de desenvolvimento, intocado por
+# esta rodada — `docker compose up` sem o -f extra lê só ele, como hoje.
+
+services:
+  traefik:
+    # Aponta para um configFile próprio em vez de disputar o mesmo alvo
+    # (/etc/traefik/traefik.yml) que o docker-compose.yml base já monta:
+    # Compose CONCATENA listas de `volumes` entre arquivos -f, não
+    # substitui — dois binds mirando o mesmo destino dentro do container
+    # é comportamento não determinístico que eu não ia arriscar aqui.
+    # Com alvos DIFERENTES (traefik.prod.yml, dynamic.prod.yml, e a pasta
+    # nova /etc/traefik/acme), a concatenação é só ADIÇÃO — sem colisão
+    # com os mounts do arquivo base.
+    command:
+      - "--configFile=/etc/traefik/traefik.prod.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik/traefik.prod.yml:/etc/traefik/traefik.prod.yml:ro
+      - ./traefik/dynamic.prod.yml:/etc/traefik/dynamic.prod.yml:ro
+      - traefik-acme:/etc/traefik/acme
+
+  backend:
+    environment:
+      NODE_ENV: production
+    # NEUTRALIZA ./backend/src:/app/src (e os mounts /repo/*, que só
+    # servem o gate de mutantes — ferramenta de dev, sem uso em prod):
+    # `!override` é a sintaxe do Compose Spec que SUBSTITUI a lista
+    # inteira do arquivo base em vez de concatenar a ela — ao contrário
+    # do traefik acima, aqui eu QUERO que o destino colida e vença, não
+    # que se some.
+    #
+    # ⚠️ NÃO VERIFICADO NESTA RODADA: `!override`/`!reset` exigem Docker
+    # Compose >= 2.24 (set/2023). Não rodei `docker compose config` para
+    # confirmar a versão que vai estar na VPS — a guarda desta rodada
+    # proíbe qualquer invocação de compose, e o item 7.2 já escolhe o
+    # repositório oficial da Docker (não o docker.io do apt, mais velho),
+    # o que torna uma versão recente provável, não garantida. Se
+    # `docker compose config` (comando só de leitura, não sobe nada)
+    # não aceitar `!override` na VPS, é o primeiro sintoma a checar antes
+    # de um `up` de verdade — sem isso, o bind mount do código-fonte
+    # continua ativo em produção (não quebra o backend, que roda via tsx
+    # de qualquer forma; só significa que a imagem não fica "selada").
+    #
+    # ./docs:/app/docs:ro foi MANTIDO aqui, mesmo sem ter sido pedido
+    # explicitamente: o Dockerfile do backend não copia docs/ para dentro
+    # da imagem (só package.json, tsconfig.json, src, scripts, fixtures),
+    # então removê-lo junto quebraria silenciosamente qualquer leitura de
+    # documentação (RAG do copiloto) em produção.
+    volumes: !override
+      - ./uploads:/app/uploads
+      - ./docs:/app/docs:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      target: serve
+      args:
+        BASE_DOMAIN: ${BASE_DOMAIN}
+        WHATSAPP_NUMBER: ${WHATSAPP_NUMBER:-}
+        REFERENCE_VIDEO_MAX_BYTES: ${REFERENCE_VIDEO_MAX_BYTES:-}
+        MAX_RECORDING_SECONDS: ${MAX_RECORDING_SECONDS:-}
+        IMAGE_UPLOAD_MAX_BYTES: ${IMAGE_UPLOAD_MAX_BYTES:-}
+    environment:
+      NODE_ENV: production
+    # Os binds de dev (./frontend/src, index.html, public — todos para
+    # /app/*) não existem no estágio "serve": o nginx serve
+    # /usr/share/nginx/html, não /app. Por construção eles não quebrariam
+    # nada se ficassem (caminho morto, sem efeito) — removidos aqui mesmo
+    # assim, porque um bind apontando para um diretório que ninguém lê é
+    # justamente o tipo de configuração que confunde a próxima leitura.
+    # `!override` substitui a lista do compose base em vez de somar a ela
+    # (mesmo padrão já usado para o backend, acima neste arquivo).
+    volumes: !override []
+
+volumes:
+  traefik-acme:

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../auth/AuthContext";
+import { ApiError } from "../../api/client";
 import { Field } from "../../components/ui/Field";
 import { devTenantCredential } from "../../devCredentials";
 import { PublicCopilotWidget } from "../Landing/PublicCopilotWidget";
@@ -38,13 +39,17 @@ export function LoginPage() {
         return;
       }
 
-      // Domínio único (14/08/2026): não existe mais subdomínio de tenant
-      // para cruzar — "/" já decide landing-vs-painel pela SESSÃO (ver
-      // App.tsx). Navegação client-side simples; o AuthContext já hidratou
-      // user/tenant a partir da resposta de login() acima.
-      navigate("/", { replace: true });
-    } catch {
-      setError(t("login.error"));
+      // Prioridade 3 (14/08/2026): o painel vive em /:slug — navegação
+      // client-side simples, sem subdomínio para cruzar. O AuthContext já
+      // hidratou user/tenant a partir da resposta de login() acima.
+      navigate(`/${result.tenantSlug}`, { replace: true });
+    } catch (err) {
+      // Tenant pendente de aprovação (migration 055): a senha estava
+      // certa, então "e-mail ou senha inválidos" seria uma mentira — a
+      // pessoa precisa saber que a conta existe e está esperando o painel
+      // admin, não tentar de novo achando que errou a senha.
+      const body = err instanceof ApiError ? (err.body as { error?: string } | undefined) : undefined;
+      setError(body?.error === "tenant_pending" ? t("login.pendingApproval") : t("login.error"));
     } finally {
       setSubmitting(false);
     }

@@ -8,6 +8,8 @@ import {
   StripeNotConfiguredError,
 } from "../services/billing/stripeClient.js";
 import { findActiveCreditPackage } from "../services/billing/creditPackages.js";
+import { generateUniqueSlugFromName } from "../services/slug.js";
+import { BASE_DOMAIN } from "../domainConfig.js";
 import type { Tenant } from "../types.js";
 
 async function getTenant(tenantId: string): Promise<Tenant> {
@@ -47,8 +49,17 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
 
     return {
       companyName: tenant.name,
+      whatsapp: tenant.whatsapp,
+      address: tenant.address,
+      city: tenant.city,
+      state: tenant.state,
       slug: tenant.slug,
-      profileComplete: tenant.name !== tenant.slug,
+      // slug_locked é o sinal AUTORITATIVO de "primeiro save já aconteceu"
+      // (migration 054) — não mais `name !== slug`. Aquela comparação
+      // dependia de o slugify do nome nunca coincidir com o slug atual, o
+      // que quebraria (silenciosamente, marcando perfil como incompleto de
+      // novo) para um nome que já slugifica igual ao próprio slug.
+      profileComplete: tenant.slug_locked,
       plan,
       availablePlans,
       usage: {
@@ -190,12 +201,52 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.put<{ Body: { companyName: string } }>("/subscription/profile", async (req, reply) => {
+  app.put<{
+    Body: { companyName: string; whatsapp: string; address?: string; city?: string; state?: string };
+  }>("/subscription/profile", async (req, reply) => {
     const companyName = req.body.companyName?.trim();
     if (!companyName) return reply.code(400).send({ error: "Company name is required" });
 
-    await pool.query("UPDATE tenants SET name = $1 WHERE id = $2", [companyName, req.tenantId]);
-    return { companyName };
+    // WhatsApp obrigatório NESTA rota (decisão de produto, 14/08/2026) — o
+    // signup continua email+senha apenas; é aqui, em "Minha Assinatura",
+    // que o contato de verdade é coletado. address/city/state ficam de fora
+    // do 400: são opcionais, aceitos se vierem.
+    const whatsapp = req.body.whatsapp?.trim();
+    if (!whatsapp) return reply.code(400).send({ error: "WhatsApp is required" });
+    const address = req.body.address?.trim() || null;
+    const city = req.body.city?.trim() || null;
+    const state = req.body.state?.trim() || null;
+
+    const tenant = await getTenant(req.tenantId);
+
+    // O slug só é recalculado UMA VEZ, no primeiro save — depois disso
+    // `slug_locked` trava o valor para sempre, mesmo que o nome mude de
+    // novo em edições seguintes (migration 054). Mesma função de geração
+    // que o signup usa (services/slug.ts), reaproveitada, não duplicada:
+    // mesma checagem de colisão, mesmos slugs reservados, mesmo sufixo
+    // numérico.
+    if (!tenant.slug_locked) {
+      const slug = await generateUniqueSlugFromName(companyName, tenant.id);
+      await pool.query(
+        "UPDATE tenants SET name = $1, whatsapp = $2, address = $3, city = $4, state = $5, slug = $6, slug_locked = true WHERE id = $7",
+        [companyName, whatsapp, address, city, state, slug, tenant.id],
+      );
+      return { companyName, whatsapp, address, city, state, slug, host: `${BASE_DOMAIN}/${slug}` };
+    }
+
+    // Já travado: nome e os demais campos atualizam normalmente; o slug
+    // (e qualquer tentativa de mudá-lo) é ignorado — não existe campo de
+    // slug no corpo desta rota para começo de conversa, então "ignorar" é
+    // simplesmente não tocar a coluna.
+    await pool.query("UPDATE tenants SET name = $1, whatsapp = $2, address = $3, city = $4, state = $5 WHERE id = $6", [
+      companyName,
+      whatsapp,
+      address,
+      city,
+      state,
+      tenant.id,
+    ]);
+    return { companyName, whatsapp, address, city, state, slug: tenant.slug, host: `${BASE_DOMAIN}/${tenant.slug}` };
   });
 
   // Stub only — no real payment processing (Phase 6). Stores a masked

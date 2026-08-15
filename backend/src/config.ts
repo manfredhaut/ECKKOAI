@@ -33,6 +33,15 @@ export const config = {
   uploadsDir: process.env.UPLOADS_DIR ?? "/app/uploads",
   docsDir: process.env.DOCS_DIR ?? "/app/docs",
   sessionSecret: required("SESSION_SECRET"),
+  // Confirmação de e-mail por link (15/08/2026) — sem ela o produto não tem
+  // como levar um tenant novo de 'pending' a 'active' pelo caminho principal
+  // (a aprovação manual no admin vira só a válvula de exceção). Mesmo padrão
+  // dos outros segredos incondicionais acima (DATABASE_URL, ENCRYPTION_KEY,
+  // SESSION_SECRET): ausente, o processo nem chega a escutar — sem ela em
+  // NENHUM ambiente, inclusive dev/fixture, porque o e-mail de verificação
+  // não tem custo variável para simular (ver services/providers/
+  // emailProvider.ts) e é necessário para o produto funcionar.
+  resendApiKey: required("RESEND_API_KEY"),
   // Platform-owned key for the public pre-signup copilot demo — not a
   // tenant's BYOK credential (no tenant exists yet at that point). Optional:
   // the public copilot endpoint degrades to a "not configured" error when unset.

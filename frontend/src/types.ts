@@ -177,7 +177,7 @@ export interface AdminTenantSummary {
   name: string;
   slug: string;
   planId: string;
-  status: "active" | "suspended";
+  status: "active" | "suspended" | "pending";
   createdAt: string;
   connectedProviders: CredentialProviderId[];
 }
@@ -187,7 +187,7 @@ export interface AdminTenantDetail {
   name: string;
   slug: string;
   planId: string;
-  status: "active" | "suspended";
+  status: "active" | "suspended" | "pending";
   storageProvider: StorageProviderId;
   createdAt: string;
   credentials: Credential[];
@@ -222,6 +222,10 @@ export interface TenantUsage {
 
 export interface Subscription {
   companyName: string;
+  whatsapp: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
   slug: string;
   profileComplete: boolean;
   plan: Plan;

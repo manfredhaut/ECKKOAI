@@ -13,6 +13,10 @@ const isLoginRateLimited = createRateLimiter(
 );
 
 const INVALID_CREDENTIALS = { error: "invalid_credentials", message: "Invalid email or password" };
+const TENANT_PENDING = {
+  error: "tenant_pending",
+  message: "Sua conta ainda está aguardando aprovação.",
+};
 
 // Single login form for everyone (admin and tenant alike) — no visual or
 // URL indication of which kind of account is signing in. See CLAUDE.md /
@@ -54,11 +58,20 @@ export async function loginRoutes(app: FastifyInstance): Promise<void> {
       : await pool.query<User>("SELECT * FROM users WHERE email = $1", [email]);
     const user = userRows[0];
     if (user && (await verifyPassword(password, user.password_hash))) {
-      req.session.userId = user.id;
-      req.session.tenantId = user.tenant_id;
       const { rows: tenantRows } = await pool.query<Tenant>("SELECT * FROM tenants WHERE id = $1", [
         user.tenant_id,
       ]);
+
+      // Tenant pendente de aprovação (migration 055): senha confere, mas
+      // sessão nenhuma abre até o painel admin aprovar. Verificado ANTES de
+      // tocar req.session — o inverso deixaria uma sessão de pé por um
+      // instante mesmo devolvendo erro.
+      if (tenantRows[0]?.status === "pending") {
+        return reply.code(403).send(TENANT_PENDING);
+      }
+
+      req.session.userId = user.id;
+      req.session.tenantId = user.tenant_id;
       return {
         type: "tenant" as const,
         user: { id: user.id, email: user.email },

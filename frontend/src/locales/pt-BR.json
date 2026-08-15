@@ -189,6 +189,7 @@
     "signIn": "Entrar",
     "signingIn": "Entrando…",
     "error": "Email ou senha inválidos.",
+    "pendingApproval": "Sua conta ainda está aguardando aprovação. Avisaremos quando estiver liberada.",
     "noAccount": "Ainda não tem conta?",
     "signUp": "Cadastre-se"
   },
@@ -200,8 +201,25 @@
     "signingUp": "Criando conta…",
     "error": "Não foi possível criar a conta. Tente novamente.",
     "emailInUse": "Este e-mail já está em uso. Tente entrar em vez de criar uma conta nova.",
+    "pendingTitle": "Confirme seu e-mail",
+    "pendingBody": "Enviamos um link de confirmação para o seu e-mail. Clique nele para ativar sua conta.",
+    "pendingBackToLogin": "Voltar para o login",
     "hasAccount": "Já tem conta?",
     "signIn": "Entrar"
+  },
+  "verifyEmail": {
+    "loading": "Confirmando seu e-mail…",
+    "successTitle": "E-mail confirmado",
+    "successBody": "Sua conta está ativa. Já pode entrar.",
+    "goToLogin": "Ir para o login",
+    "invalidTitle": "Link inválido",
+    "invalidBody": "Este link de confirmação não é válido. Peça um novo abaixo.",
+    "expiredTitle": "Link expirado",
+    "expiredBody": "Este link de confirmação venceu. Peça um novo abaixo.",
+    "resendEmailLabel": "Seu e-mail",
+    "resendAction": "Reenviar link",
+    "resending": "Enviando…",
+    "resendSent": "Se esse e-mail tiver um cadastro pendente, enviamos um novo link."
   },
   "adminPanel": {
     "title": "Painel admin",
@@ -217,9 +235,12 @@
     "noneConnected": "Nenhum",
     "suspend": "Suspender",
     "reactivate": "Reativar",
+    "approve": "Aprovar",
+    "approveTooltip": "Liberação manual de exceção — o caminho principal é o cliente clicar no link de confirmação por e-mail.",
     "tenantStatus": {
       "active": "Ativo",
-      "suspended": "Suspenso"
+      "suspended": "Suspenso",
+      "pending": "Aguardando confirmação de e-mail"
     },
     "provider": {
       "avatar": "Avatar",
@@ -756,6 +777,12 @@
     "completeProfileTitle": "Complete seu perfil",
     "completeProfileDesc": "Falta só o nome da sua empresa para terminar a configuração da conta.",
     "companyNameLabel": "Nome da empresa",
+    "whatsappLabel": "WhatsApp",
+    "addressLabel": "Endereço (opcional)",
+    "cityLabel": "Cidade (opcional)",
+    "stateLabel": "Estado (opcional)",
+    "urlWillBeShown": "O endereço final da sua conta é definido a partir do nome, no primeiro salvamento.",
+    "yourUrlTitle": "Endereço da sua conta",
     "saving": "Salvando…",
     "currentPlanTitle": "Plano atual",
     "usageLabel": "{{used}}/{{limit}} vídeos este mês",

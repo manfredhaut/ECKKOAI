@@ -95,11 +95,18 @@ export interface Tenant {
   id: string;
   name: string;
   slug: string;
+  slug_locked: boolean;
+  whatsapp: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
   plan_id: string;
   payment_method_masked: string | null;
   storage_provider: "drive" | "platform_hosted";
-  status: "active" | "suspended";
+  status: "active" | "suspended" | "pending";
   stripe_customer_id: string | null;
+  email_verification_token: string | null;
+  email_verification_expires_at: string | null;
   created_at: string;
 }
 

@@ -33,7 +33,7 @@ export interface VendorEndpoint {
    * da Anthropic e o `generateContent` do Gemini eram, para toda trava deste
    * projeto, endpoints que não existiam.
    */
-  vendor: "heygen" | "did" | "elevenlabs" | "anthropic" | "gemini" | "openai" | "fal";
+  vendor: "heygen" | "did" | "elevenlabs" | "anthropic" | "gemini" | "openai" | "fal" | "resend";
   /** Caminho, com a versão. É o que o freio compara. */
   path: string;
   method: "GET" | "POST";
@@ -243,6 +243,21 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
     method: "POST",
     billable: true,
     note: "geração de texto; cobrada por token. Nenhuma chave OpenAI foi usada neste projeto até hoje.",
+  },
+  // -------------------------------------------------------------- Resend
+  // Confirmação de e-mail por link (15/08/2026). Único fornecedor deste
+  // catálogo que roda FORA do freio de PROVIDER_MODE — ver a EXCEÇÃO com
+  // motivo em checkNetworkEgressPolicy.ts e o comentário em
+  // services/providers/emailProvider.ts. `billable: false` porque o envio
+  // de e-mail de verificação não tem custo variável (decisão do produto,
+  // 15/08/2026) — não é "leitura pura", mas também não é o tipo de
+  // trabalho tarifado que este campo existe para sinalizar ao probe.
+  {
+    vendor: "resend",
+    path: "/emails",
+    method: "POST",
+    billable: false,
+    note: "envio do e-mail de verificação de cadastro. Sem custo variável declarado; roda independente de PROVIDER_MODE.",
   },
 ];
 

@@ -138,6 +138,14 @@ const EXCECOES: { file: string; motivo: string }[] = [
       "PROVIDER_MODE criaria um segundo interruptor para a mesma coisa, e o de baixo — a chave — é o " +
       "que decide se o dinheiro é real.",
   },
+  {
+    file: "services/providers/emailProvider.ts",
+    motivo:
+      "DELIBERADO (confirmação de e-mail, 15/08/2026): PROVIDER_MODE existe para não gastar dinheiro " +
+      "com geração de vídeo/avatar/voz — e-mail de confirmação não tem custo variável e é necessário " +
+      "para o produto funcionar mesmo em fixture (sem ele, nenhum tenant sairia de 'pending' pelo " +
+      "caminho principal em ambiente de desenvolvimento). Roda em qualquer PROVIDER_MODE, sempre.",
+  },
 ];
 
 /** Guardas e utilitários de linha de comando não servem tráfego de produto. */
@@ -242,6 +250,7 @@ export async function checkNetworkEgressPolicy(repoRoot: string): Promise<Egress
     // atrás de `checkFalClientPolicy`, que mede a URL realmente usada.
     "https://rest.fal.ai": "fal",
     "https://queue.fal.run": "fal",
+    "https://api.resend.com": "resend",
   };
   const vendorsNoCatalogo = new Set(VENDOR_ENDPOINTS.map((e) => e.vendor));
   for (const host of [...hostsAlcancados].sort()) {

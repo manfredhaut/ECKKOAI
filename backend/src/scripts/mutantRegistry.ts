@@ -23,6 +23,8 @@ import { MUTANTS as vendorErrorPathMutants } from "./checkVendorErrorPathPolicy.
 import { MUTANTS as imageFreshnessMutants } from "./checkImageFreshnessPolicy.js";
 import { MUTANTS as frontendBuildEnvMutants } from "./checkFrontendBuildEnvPolicy.js";
 import { MUTANTS as singleDomainMutants } from "./checkSingleDomainPolicy.js";
+import { MUTANTS as tenantOnboardingMutants } from "./checkTenantOnboardingPolicy.js";
+import { MUTANTS as emailVerificationMutants } from "./checkEmailVerificationPolicy.js";
 import { MUTANTS as costMutants } from "./checkCostPolicy.js";
 import { MUTANTS as egressMutants } from "./checkNetworkEgressPolicy.js";
 import { MUTANTS as playbackMutants } from "./checkVideoPlaybackPolicy.js";
@@ -86,6 +88,8 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkImageFreshnessPolicy.ts", imageFreshnessMutants),
   ...de("backend/src/scripts/checkFrontendBuildEnvPolicy.ts", frontendBuildEnvMutants),
   ...de("backend/src/scripts/checkSingleDomainPolicy.ts", singleDomainMutants),
+  ...de("backend/src/scripts/checkTenantOnboardingPolicy.ts", tenantOnboardingMutants),
+  ...de("backend/src/scripts/checkEmailVerificationPolicy.ts", emailVerificationMutants),
   ...de("backend/src/scripts/checkCostPolicy.ts", costMutants),
   ...de("backend/src/scripts/checkNetworkEgressPolicy.ts", egressMutants),
   ...de("backend/src/scripts/checkVideoPlaybackPolicy.ts", playbackMutants),

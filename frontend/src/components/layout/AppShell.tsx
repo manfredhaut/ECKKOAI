@@ -9,12 +9,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { tenant, user, logout } = useAuth();
   const navigate = useNavigate();
 
+  // Relativos (sem "/" na frente), de propósito: esta árvore inteira está
+  // montada sob "/:slug/*" (App.tsx, prioridade 3) — um "to" absoluto como
+  // "/create" navegaria para a RAIZ do site, perdendo o slug do tenant. "."
+  // é o índice deste nível (o dashboard), não a raiz absoluta.
   const navItems = [
-    { to: "/subscription", label: t("nav.mySubscription") },
-    { to: "/create", label: t("nav.createVideo") },
-    { to: "/content", label: t("nav.content") },
-    { to: "/rag", label: t("nav.rag") },
-    { to: "/", label: t("nav.dashboard"), end: true },
+    { to: "subscription", label: t("nav.mySubscription") },
+    { to: "create", label: t("nav.createVideo") },
+    { to: "content", label: t("nav.content") },
+    { to: "rag", label: t("nav.rag") },
+    { to: ".", label: t("nav.dashboard"), end: true },
   ];
 
   async function handleLogout() {

@@ -2,13 +2,20 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { Subscription } from "../../types";
+import { BASE_DOMAIN } from "../../publicConfig";
+import { useAuth } from "../../auth/AuthContext";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Field } from "../../components/ui/Field";
 
 export function SubscriptionPage() {
   const { t } = useTranslation();
+  const { refreshSession } = useAuth();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [companyName, setCompanyName] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [changingPlan, setChangingPlan] = useState<string | null>(null);
   const [cardNumber, setCardNumber] = useState("");
@@ -19,6 +26,10 @@ export function SubscriptionPage() {
     api.get<Subscription>("/subscription").then((s) => {
       setSubscription(s);
       setCompanyName(s.companyName);
+      setWhatsapp(s.whatsapp ?? "");
+      setAddress(s.address ?? "");
+      setCity(s.city ?? "");
+      setState(s.state ?? "");
     });
   }
 
@@ -27,11 +38,22 @@ export function SubscriptionPage() {
   }, []);
 
   async function handleSaveProfile() {
-    if (!companyName.trim()) return;
+    if (!companyName.trim() || !whatsapp.trim()) return;
     setSavingProfile(true);
     try {
-      await api.put("/subscription/profile", { companyName });
+      await api.put("/subscription/profile", {
+        companyName,
+        whatsapp,
+        address: address.trim() || undefined,
+        city: city.trim() || undefined,
+        state: state.trim() || undefined,
+      });
       refresh();
+      // O primeiro save pode ter recalculado o slug (travado agora). Sem
+      // isto, o AuthContext continuaria com o slug VELHO — TenantSlugGate
+      // não veria motivo para corrigir a URL, e a barra do navegador
+      // ficaria mostrando um endereço que o backend já abandonou.
+      await refreshSession();
     } finally {
       setSavingProfile(false);
     }
@@ -98,14 +120,46 @@ export function SubscriptionPage() {
             <Field label={t("subscription.companyNameLabel")}>
               <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
             </Field>
+            <Field label={t("subscription.whatsappLabel")}>
+              <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
+            </Field>
+            <Field label={t("subscription.addressLabel")}>
+              <input value={address} onChange={(e) => setAddress(e.target.value)} />
+            </Field>
+            <Field label={t("subscription.cityLabel")}>
+              <input value={city} onChange={(e) => setCity(e.target.value)} />
+            </Field>
+            <Field label={t("subscription.stateLabel")}>
+              <input value={state} onChange={(e) => setState(e.target.value)} />
+            </Field>
+            {/* O slug ainda não existe até o primeiro save — mostrar a URL
+                antes disso seria inventar um endereço que pode não ser o
+                final (recalculado a partir do nome só no clique). */}
+            <p className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+              {t("subscription.urlWillBeShown")}
+            </p>
             <button
               className="btn btn-primary"
               onClick={handleSaveProfile}
-              disabled={savingProfile || !companyName.trim()}
+              disabled={savingProfile || !companyName.trim() || !whatsapp.trim()}
             >
               {savingProfile ? t("subscription.saving") : t("common.save")}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Confirmação do endereço recebido — visível sempre que o perfil já
+          está completo (não só no instante do save), porque é útil toda
+          vez que a pessoa reabre esta tela para conferir o link. */}
+      {subscription.profileComplete && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-title">{t("subscription.yourUrlTitle")}</div>
+          <p style={{ fontSize: 14, marginTop: 4 }}>
+            <strong>
+              {BASE_DOMAIN}/{subscription.slug}
+            </strong>
+          </p>
         </div>
       )}
 

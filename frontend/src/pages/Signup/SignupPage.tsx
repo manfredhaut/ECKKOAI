@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
@@ -9,11 +9,15 @@ import { PublicCopilotWidget } from "../Landing/PublicCopilotWidget";
 export function SignupPage() {
   const { t } = useTranslation();
   const { signup } = useAuth();
-  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Todo tenant novo nasce pendente de aprovação (migration 055) — o
+  // backend não abre sessão nenhuma no signup, então não há para onde
+  // navegar. `true` significa "mostre a tela de espera em vez do
+  // formulário"; não é o mesmo que `error`, que continua editável.
+  const [pending, setPending] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -21,14 +25,39 @@ export function SignupPage() {
     setSubmitting(true);
     try {
       await signup(email, password);
-      // Domínio único (14/08/2026): sem subdomínio para cruzar — navegação
-      // client-side. O AuthContext já hidratou user/tenant a partir da
-      // resposta de signup() acima.
-      navigate("/subscription", { replace: true });
+      setPending(true);
     } catch (err) {
       setError(err instanceof ApiError && err.status === 409 ? t("signup.emailInUse") : t("signup.error"));
       setSubmitting(false);
     }
+  }
+
+  if (pending) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div className="card" style={{ width: 360, textAlign: "center" }}>
+          <div className="brand" style={{ marginBottom: 20, justifyContent: "center" }}>
+            <span className="brand-logo-chip brand-logo-chip--form">
+              <img src="/brand/logo-eckko-transparent.png" alt={t("common.appName")} />
+            </span>
+          </div>
+          <div className="card-title">{t("signup.pendingTitle")}</div>
+          <p className="text-muted" style={{ fontSize: 13, marginTop: 8 }}>
+            {t("signup.pendingBody")}
+          </p>
+          <p className="text-muted" style={{ fontSize: 13, marginTop: 16 }}>
+            <Link to="/login">{t("signup.pendingBackToLogin")}</Link>
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

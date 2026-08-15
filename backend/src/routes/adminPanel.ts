@@ -297,6 +297,14 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
   // Suspend/reactivate — blocks only generation/consumption routes (see
   // middleware/requireActiveTenant.ts), not login or read access. See
   // CLAUDE.md / billing plan, Fase 3.
+  //
+  // Ativar por aqui (status=active) é a válvula de EXCEÇÃO desde a
+  // confirmação por e-mail (15/08/2026): o caminho principal para sair de
+  // 'pending' é o link (GET /verify-email); este botão cobre o e-mail que
+  // falhou ou não chegou. Por isso também limpa o token de verificação —
+  // sem isso, um tenant aprovado na mão continuaria com um link de e-mail
+  // válido perdido por aí, que reativaria (sem dano, mas sem propósito) a
+  // mesma conta que o admin já liberou.
   app.put<{ Params: { tenantId: string }; Body: { status: string } }>(
     "/admin/tenants/:tenantId/status",
     async (req, reply) => {
@@ -310,7 +318,14 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
       if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
 
       const before = { status: tenant.status };
-      await pool.query("UPDATE tenants SET status = $1 WHERE id = $2", [status, tenantId]);
+      if (status === "active") {
+        await pool.query(
+          "UPDATE tenants SET status = $1, email_verification_token = NULL, email_verification_expires_at = NULL WHERE id = $2",
+          [status, tenantId],
+        );
+      } else {
+        await pool.query("UPDATE tenants SET status = $1 WHERE id = $2", [status, tenantId]);
+      }
       const after = { status };
 
       await recordAuditLog({

@@ -480,7 +480,7 @@ export function GenerateStep({
                   inalcançável. Sem este caminho, quem fecha o wizard não tem
                   como descobrir que o vídeo continua no produto. */}
               <p style={{ fontSize: 13, marginTop: 16, marginBottom: 0 }}>
-                <Link to="/content">{t("createVideo.generate.openLibrary")}</Link>
+                <Link to="content">{t("createVideo.generate.openLibrary")}</Link>
               </p>
             </>
           )}

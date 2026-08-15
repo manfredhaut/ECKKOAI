@@ -189,6 +189,7 @@
     "signIn": "Sign in",
     "signingIn": "Signing in…",
     "error": "Invalid email or password.",
+    "pendingApproval": "Your account is still awaiting approval. We'll let you know once it's cleared.",
     "noAccount": "Don't have an account?",
     "signUp": "Sign up"
   },
@@ -200,8 +201,25 @@
     "signingUp": "Creating account…",
     "error": "Couldn't create your account. Please try again.",
     "emailInUse": "This email is already in use. Try signing in instead of creating a new account.",
+    "pendingTitle": "Confirm your email",
+    "pendingBody": "We sent a confirmation link to your email. Click it to activate your account.",
+    "pendingBackToLogin": "Back to sign in",
     "hasAccount": "Already have an account?",
     "signIn": "Sign in"
+  },
+  "verifyEmail": {
+    "loading": "Confirming your email…",
+    "successTitle": "Email confirmed",
+    "successBody": "Your account is active. You can sign in now.",
+    "goToLogin": "Go to sign in",
+    "invalidTitle": "Invalid link",
+    "invalidBody": "This confirmation link isn't valid. Request a new one below.",
+    "expiredTitle": "Link expired",
+    "expiredBody": "This confirmation link has expired. Request a new one below.",
+    "resendEmailLabel": "Your email",
+    "resendAction": "Resend link",
+    "resending": "Sending…",
+    "resendSent": "If that email has a pending signup, we sent a new link."
   },
   "adminPanel": {
     "title": "Admin panel",
@@ -217,8 +235,11 @@
     "noneConnected": "None",
     "suspend": "Suspend",
     "reactivate": "Reactivate",
+    "approve": "Approve",
+    "approveTooltip": "Manual exception override — the main path is the customer clicking the email confirmation link.",
     "tenantStatus": {
       "active": "Active",
+      "pending": "Awaiting email confirmation",
       "suspended": "Suspended"
     },
     "provider": {
@@ -756,6 +777,12 @@
     "completeProfileTitle": "Complete your profile",
     "completeProfileDesc": "Just add your company name to finish setting up your account.",
     "companyNameLabel": "Company name",
+    "whatsappLabel": "WhatsApp",
+    "addressLabel": "Address (optional)",
+    "cityLabel": "City (optional)",
+    "stateLabel": "State (optional)",
+    "urlWillBeShown": "Your account's final address is set from the name, on first save.",
+    "yourUrlTitle": "Your account address",
     "saving": "Saving…",
     "currentPlanTitle": "Current plan",
     "usageLabel": "{{used}}/{{limit}} videos this month",

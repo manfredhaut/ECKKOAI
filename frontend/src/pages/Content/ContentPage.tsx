@@ -47,7 +47,7 @@ export function ContentPage() {
         <div className="card">
           {avatars.length === 0 ? (
             <div className="empty-state">
-              {t("content.avatarsEmptyPrefix")} <Link to="/create">{t("content.avatarsEmptyLink")}</Link>
+              {t("content.avatarsEmptyPrefix")} <Link to="create">{t("content.avatarsEmptyLink")}</Link>
             </div>
           ) : (
             <table>
@@ -93,7 +93,7 @@ export function ContentPage() {
         <div className="card">
           {videos.length === 0 ? (
             <div className="empty-state">
-              {t("content.videosEmptyPrefix")} <Link to="/create">{t("content.videosEmptyLink")}</Link>
+              {t("content.videosEmptyPrefix")} <Link to="create">{t("content.videosEmptyLink")}</Link>
             </div>
           ) : (
             <table>

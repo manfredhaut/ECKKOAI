@@ -42,6 +42,8 @@ import { checkVendorErrorPathPolicy } from "./checkVendorErrorPathPolicy.js";
 import { checkImageFreshnessPolicy } from "./checkImageFreshnessPolicy.js";
 import { checkFrontendBuildEnvPolicy } from "./checkFrontendBuildEnvPolicy.js";
 import { checkSingleDomainPolicy } from "./checkSingleDomainPolicy.js";
+import { checkTenantOnboardingPolicy } from "./checkTenantOnboardingPolicy.js";
+import { checkEmailVerificationPolicy } from "./checkEmailVerificationPolicy.js";
 import { checkCostPolicy } from "./checkCostPolicy.js";
 import { checkDerivationPolicy } from "./checkDerivationPolicy.js";
 import { checkNativeBatchPolicy } from "./checkNativeBatchPolicy.js";
@@ -523,6 +525,16 @@ async function main(): Promise<void> {
   const singleDomainResult = await checkSingleDomainPolicy(process.env.REPO_ROOT ?? "/repo");
   singleDomainResult.failures.forEach((f) => failures.push(f));
   singleDomainResult.notes.forEach((n) => note(n));
+
+  // --- 18d. onboarding: slug reservado, tenant pendente, perfil obrigatório
+  const onboardingResult = await checkTenantOnboardingPolicy(process.env.REPO_ROOT ?? "/repo");
+  onboardingResult.failures.forEach((f) => failures.push(f));
+  onboardingResult.notes.forEach((n) => note(n));
+
+  // --- 18e. confirmação por e-mail: token, expiração, taxa, egresso fora do modo
+  const emailVerificationResult = await checkEmailVerificationPolicy(process.env.REPO_ROOT ?? "/repo");
+  emailVerificationResult.failures.forEach((f) => failures.push(f));
+  emailVerificationResult.notes.forEach((n) => note(n));
 
   // --- 19. custo tem um número só; log tem um sumidouro só; freio deriva ---
   const costResult = await checkCostPolicy(process.env.REPO_ROOT ?? "/repo");

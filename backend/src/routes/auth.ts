@@ -2,6 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
 import { hashPassword, verifyPassword } from "../services/passwords.js";
 import { generateUniqueSlug } from "../services/slug.js";
+import {
+  generateVerificationToken,
+  sendVerificationEmail,
+  verificationTokenExpiry,
+} from "../services/providers/emailProvider.js";
 import type { Tenant, User } from "../types.js";
 
 // Código de erro do Postgres para violação de UNIQUE (23505) — usado no catch
@@ -27,6 +32,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const user = rows[0];
     if (!user || !(await verifyPassword(password, user.password_hash))) {
       return reply.code(401).send({ error: "Invalid email or password" });
+    }
+
+    // Tenant pendente de aprovação (migration 055): a senha confere, mas
+    // sessão nenhuma é aberta até o painel admin aprovar. Mesma regra do
+    // /login unificado — ver esse arquivo para a mensagem e o código de erro.
+    const { rows: tenantRows } = await pool.query<{ status: string }>(
+      "SELECT status FROM tenants WHERE id = $1",
+      [user.tenant_id],
+    );
+    if (tenantRows[0]?.status === "pending") {
+      return reply.code(403).send({
+        error: "tenant_pending",
+        message: "Sua conta ainda está aguardando aprovação.",
+      });
     }
 
     req.session.userId = user.id;
@@ -65,6 +84,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     // guarantee is the UNIQUE constraint on tenants.slug, enforced inside
     // the transaction below at INSERT time.
     const slug = await generateUniqueSlug(email);
+    // Gerado ANTES da transação, mesma razão do hash de senha: crypto.
+    // randomBytes é síncrono e não precisa segurar a conexão aberta.
+    const verificationToken = generateVerificationToken();
+    const verificationExpiresAt = verificationTokenExpiry();
 
     // Tenant + its 3 api_credentials placeholder rows + its 3 tenant_credits
     // rows (see migration 028 — new signups didn't get this seed until now)
@@ -77,9 +100,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     try {
       await client.query("BEGIN");
 
+      // status='pending': o e-mail de confirmação (link) é o caminho
+      // PRINCIPAL para 'active' agora (migration 056); a aprovação manual
+      // no admin (migration 055) vira válvula de exceção — e-mail que
+      // falhou, cliente que não recebeu. Explícito aqui em vez de confiar
+      // no DEFAULT da coluna ('active') — DEFAULT existe para tenant
+      // criado por outro caminho (nenhum hoje), não para deixar o estado
+      // de aprovação implícito no ponto mais visitado do produto.
       const { rows: tenantRows } = await client.query<Tenant>(
-        "INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING *",
-        [slug, slug],
+        `INSERT INTO tenants (name, slug, status, email_verification_token, email_verification_expires_at)
+         VALUES ($1, $2, 'pending', $3, $4) RETURNING *`,
+        [slug, slug, verificationToken, verificationExpiresAt],
       );
       tenant = tenantRows[0];
 
@@ -139,13 +170,26 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       client.release();
     }
 
-    req.session.userId = user.id;
-    req.session.tenantId = tenant.id;
+    // Best-effort, FORA da transação: a conta já existe de qualquer jeito
+    // (commitada acima) — uma Resend fora do ar não pode fazer o signup
+    // inteiro falhar, ou ninguém conseguiria se cadastrar durante uma
+    // instabilidade do fornecedor de e-mail. Quem cobre o caso de falha é
+    // "reenviar" (POST /resend-verification) ou o admin aprovando na mão.
+    try {
+      await sendVerificationEmail(email, verificationToken);
+    } catch (err) {
+      req.log.error({ err, tenantId: tenant.id }, "falha ao enviar e-mail de verificação no signup");
+    }
 
-    // Sem `host`: domínio único (14/08/2026) — não existe mais subdomínio
-    // de tenant para montar. O chamador (SignupPage) permanece no mesmo
-    // host depois do cadastro, navegação client-side.
+    // NENHUMA sessão é aberta aqui — tenant nasceu 'pending' (migration
+    // 055). req.session.userId/tenantId ficam intocados de propósito:
+    // ProtectedRoute (frontend) e requireAuth (backend) já tratam ausência
+    // de sessão como "não autenticado", que é exatamente o estado certo até
+    // o painel admin aprovar. `pendingApproval: true` é o sinal que
+    // SignupPage usa para mostrar a tela de espera em vez de navegar para
+    // dentro do produto.
     return reply.code(201).send({
+      pendingApproval: true,
       user: { id: user.id, email: user.email },
       tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
     });

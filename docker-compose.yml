@@ -50,6 +50,10 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       SESSION_SECRET: ${SESSION_SECRET}
       BASE_DOMAIN: ${BASE_DOMAIN}
+      # Confirmação de e-mail (15/08/2026) — obrigatória em TODO ambiente,
+      # config.ts usa required() sem condição de NODE_ENV. Sem isto no .env
+      # o backend não sobe, nem em fixture (ver config.ts para o motivo).
+      RESEND_API_KEY: ${RESEND_API_KEY}
       # Modo dos provedores tarifados e as duas travas de gasto real.
       # Defaults seguros: sem nada no .env, o container sobe em simulação, sem
       # autorização para gastar e com teto de uma geração. Ver

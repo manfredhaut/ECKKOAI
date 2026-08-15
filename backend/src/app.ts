@@ -13,6 +13,7 @@ import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminAuthRoutes } from "./routes/adminAuth.js";
 import { loginRoutes } from "./routes/login.js";
+import { emailVerificationRoutes } from "./routes/emailVerification.js";
 import { adminPanelRoutes } from "./routes/adminPanel.js";
 import { adminCopilotRoutes } from "./routes/adminCopilot.js";
 import { adminPlatformCredentialRoutes } from "./routes/adminPlatformCredentials.js";
@@ -68,6 +69,7 @@ export async function buildApp() {
   await app.register(authRoutes);
   await app.register(adminAuthRoutes);
   await app.register(loginRoutes);
+  await app.register(emailVerificationRoutes);
   await app.register(publicRoutes);
   // Own encapsulation context — its addContentTypeParser override (raw
   // buffer, needed for Stripe signature verification) doesn't leak into any

@@ -47,7 +47,7 @@ export function DashboardPage() {
         title={t("dashboard.title")}
         subtitle={t("dashboard.subtitle")}
         action={
-          <Link to="/create" className="btn btn-primary">
+          <Link to="create" className="btn btn-primary">
             {t("dashboard.createVideo")}
           </Link>
         }
@@ -129,7 +129,7 @@ export function DashboardPage() {
           <div className="card-title">{t("dashboard.recentVideos")}</div>
           {videos.length === 0 ? (
             <div className="empty-state">
-              {t("dashboard.videosEmptyPrefix")} <Link to="/create">{t("dashboard.videosEmptyLink")}</Link>
+              {t("dashboard.videosEmptyPrefix")} <Link to="create">{t("dashboard.videosEmptyLink")}</Link>
             </div>
           ) : (
             <table>
@@ -153,7 +153,7 @@ export function DashboardPage() {
         <div className="card-title">{t("dashboard.savedAvatars")}</div>
         {avatars.length === 0 ? (
           <div className="empty-state">
-            {t("dashboard.avatarsEmptyPrefix")} <Link to="/create">{t("dashboard.avatarsEmptyLink")}</Link>
+            {t("dashboard.avatarsEmptyPrefix")} <Link to="create">{t("dashboard.avatarsEmptyLink")}</Link>
           </div>
         ) : (
           <div className="grid grid-cols-4">
