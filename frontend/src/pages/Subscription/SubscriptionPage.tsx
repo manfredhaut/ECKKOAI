@@ -38,7 +38,7 @@ export function SubscriptionPage() {
   }, []);
 
   async function handleSaveProfile() {
-    if (!companyName.trim() || !whatsapp.trim()) return;
+    if (!companyName.trim()) return;
     setSavingProfile(true);
     try {
       await api.put("/subscription/profile", {
@@ -89,6 +89,7 @@ export function SubscriptionPage() {
   if (!subscription) return null;
 
   const checkoutStatus = new URLSearchParams(window.location.search).get("checkout");
+  const profileComplete = subscription.profileCompletedAt != null;
 
   const usagePercent = Math.min(
     100,
@@ -110,7 +111,7 @@ export function SubscriptionPage() {
         </div>
       )}
 
-      {!subscription.profileComplete && (
+      {!profileComplete && (
         <div className="card" style={{ marginBottom: 16, borderColor: "var(--color-primary)" }}>
           <div className="card-title">{t("subscription.completeProfileTitle")}</div>
           <p className="text-muted" style={{ fontSize: 13, marginBottom: 16 }}>
@@ -141,7 +142,7 @@ export function SubscriptionPage() {
             <button
               className="btn btn-primary"
               onClick={handleSaveProfile}
-              disabled={savingProfile || !companyName.trim() || !whatsapp.trim()}
+              disabled={savingProfile || !companyName.trim()}
             >
               {savingProfile ? t("subscription.saving") : t("common.save")}
             </button>
@@ -152,7 +153,7 @@ export function SubscriptionPage() {
       {/* Confirmação do endereço recebido — visível sempre que o perfil já
           está completo (não só no instante do save), porque é útil toda
           vez que a pessoa reabre esta tela para conferir o link. */}
-      {subscription.profileComplete && (
+      {profileComplete && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-title">{t("subscription.yourUrlTitle")}</div>
           <p style={{ fontSize: 14, marginTop: 4 }}>

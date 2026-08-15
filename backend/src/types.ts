@@ -107,6 +107,7 @@ export interface Tenant {
   stripe_customer_id: string | null;
   email_verification_token: string | null;
   email_verification_expires_at: string | null;
+  profile_completed_at: string | null;
   created_at: string;
 }
 

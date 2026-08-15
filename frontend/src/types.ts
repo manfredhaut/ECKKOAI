@@ -227,7 +227,8 @@ export interface Subscription {
   city: string | null;
   state: string | null;
   slug: string;
-  profileComplete: boolean;
+  /** Quando o formulário de perfil foi salvo pela primeira vez. `null` = card ainda aparece. */
+  profileCompletedAt: string | null;
   plan: Plan;
   availablePlans: Plan[];
   usage: { videosThisMonth: number; limit: number };

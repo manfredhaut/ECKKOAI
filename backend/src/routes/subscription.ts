@@ -54,12 +54,12 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
       city: tenant.city,
       state: tenant.state,
       slug: tenant.slug,
-      // slug_locked é o sinal AUTORITATIVO de "primeiro save já aconteceu"
-      // (migration 054) — não mais `name !== slug`. Aquela comparação
-      // dependia de o slugify do nome nunca coincidir com o slug atual, o
-      // que quebraria (silenciosamente, marcando perfil como incompleto de
-      // novo) para um nome que já slugifica igual ao próprio slug.
-      profileComplete: tenant.slug_locked,
+      // profile_completed_at (migration 057) é o sinal de "já preencheu o
+      // formulário de perfil (WhatsApp/endereço)" — separado de slug_locked,
+      // que só responde "o slug já foi calculado uma vez?" e nasceu true
+      // para todo tenant anterior à migration 054. Reusar slug_locked aqui
+      // escondia o card de quem nunca tinha visto o formulário.
+      profileCompletedAt: tenant.profile_completed_at,
       plan,
       availablePlans,
       usage: {
@@ -202,23 +202,28 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.put<{
-    Body: { companyName: string; whatsapp: string; address?: string; city?: string; state?: string };
+    Body: { companyName: string; whatsapp?: string; address?: string; city?: string; state?: string };
   }>("/subscription/profile", async (req, reply) => {
     const companyName = req.body.companyName?.trim();
     if (!companyName) return reply.code(400).send({ error: "Company name is required" });
 
-    // WhatsApp obrigatório NESTA rota (decisão de produto, 14/08/2026) — o
-    // signup continua email+senha apenas; é aqui, em "Minha Assinatura",
-    // que o contato de verdade é coletado. address/city/state ficam de fora
-    // do 400: são opcionais, aceitos se vierem.
-    const whatsapp = req.body.whatsapp?.trim();
-    if (!whatsapp) return reply.code(400).send({ error: "WhatsApp is required" });
+    // WhatsApp deixou de ser obrigatório (15/08/2026) — address/city/state já
+    // eram opcionais, e whatsapp passa a seguir o mesmo padrão: aceito se vier,
+    // sem 400 na ausência. Mesmo padrão `?.trim() || null` dos três campos
+    // abaixo — string vazia depois do trim também vira null, não fica salva
+    // como "".
+    const whatsapp = req.body.whatsapp?.trim() || null;
     const address = req.body.address?.trim() || null;
     const city = req.body.city?.trim() || null;
     const state = req.body.state?.trim() || null;
 
     const tenant = await getTenant(req.tenantId);
 
+    // profile_completed_at (migration 057) é INDEPENDENTE de slug_locked —
+    // uma trava o slug, a outra marca "já viu o formulário". COALESCE no
+    // UPDATE: o primeiro save define o valor, saves seguintes não o tocam
+    // (a coluna já tem NOW() de antes, então COALESCE mantém o valor velho).
+    //
     // O slug só é recalculado UMA VEZ, no primeiro save — depois disso
     // `slug_locked` trava o valor para sempre, mesmo que o nome mude de
     // novo em edições seguintes (migration 054). Mesma função de geração
@@ -228,7 +233,9 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
     if (!tenant.slug_locked) {
       const slug = await generateUniqueSlugFromName(companyName, tenant.id);
       await pool.query(
-        "UPDATE tenants SET name = $1, whatsapp = $2, address = $3, city = $4, state = $5, slug = $6, slug_locked = true WHERE id = $7",
+        `UPDATE tenants SET name = $1, whatsapp = $2, address = $3, city = $4, state = $5, slug = $6,
+           slug_locked = true, profile_completed_at = COALESCE(profile_completed_at, NOW())
+         WHERE id = $7`,
         [companyName, whatsapp, address, city, state, slug, tenant.id],
       );
       return { companyName, whatsapp, address, city, state, slug, host: `${BASE_DOMAIN}/${slug}` };
@@ -238,14 +245,12 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
     // (e qualquer tentativa de mudá-lo) é ignorado — não existe campo de
     // slug no corpo desta rota para começo de conversa, então "ignorar" é
     // simplesmente não tocar a coluna.
-    await pool.query("UPDATE tenants SET name = $1, whatsapp = $2, address = $3, city = $4, state = $5 WHERE id = $6", [
-      companyName,
-      whatsapp,
-      address,
-      city,
-      state,
-      tenant.id,
-    ]);
+    await pool.query(
+      `UPDATE tenants SET name = $1, whatsapp = $2, address = $3, city = $4, state = $5,
+         profile_completed_at = COALESCE(profile_completed_at, NOW())
+       WHERE id = $6`,
+      [companyName, whatsapp, address, city, state, tenant.id],
+    );
     return { companyName, whatsapp, address, city, state, slug: tenant.slug, host: `${BASE_DOMAIN}/${tenant.slug}` };
   });
 
