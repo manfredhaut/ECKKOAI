@@ -117,7 +117,7 @@ export function SubscriptionPage() {
           <p className="text-muted" style={{ fontSize: 13, marginBottom: 16 }}>
             {t("subscription.completeProfileDesc")}
           </p>
-          <div style={{ maxWidth: 360 }}>
+          <div className="grid grid-cols-2" style={{ marginBottom: 16 }}>
             <Field label={t("subscription.companyNameLabel")}>
               <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
             </Field>
@@ -127,26 +127,30 @@ export function SubscriptionPage() {
             <Field label={t("subscription.addressLabel")}>
               <input value={address} onChange={(e) => setAddress(e.target.value)} />
             </Field>
+            {/* Vaga de propósito: fecha a linha do Endereço sozinho, para
+                Cidade/Estado começarem a linha seguinte em vez de a grade
+                de 2 colunas empurrar Cidade para o lado do Endereço. */}
+            <div />
             <Field label={t("subscription.cityLabel")}>
               <input value={city} onChange={(e) => setCity(e.target.value)} />
             </Field>
             <Field label={t("subscription.stateLabel")}>
               <input value={state} onChange={(e) => setState(e.target.value)} />
             </Field>
-            {/* O slug ainda não existe até o primeiro save — mostrar a URL
-                antes disso seria inventar um endereço que pode não ser o
-                final (recalculado a partir do nome só no clique). */}
-            <p className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
-              {t("subscription.urlWillBeShown")}
-            </p>
-            <button
-              className="btn btn-primary"
-              onClick={handleSaveProfile}
-              disabled={savingProfile || !companyName.trim()}
-            >
-              {savingProfile ? t("subscription.saving") : t("common.save")}
-            </button>
           </div>
+          {/* O slug ainda não existe até o primeiro save — mostrar a URL
+              antes disso seria inventar um endereço que pode não ser o
+              final (recalculado a partir do nome só no clique). */}
+          <p className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+            {t("subscription.urlWillBeShown")}
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={handleSaveProfile}
+            disabled={savingProfile || !companyName.trim()}
+          >
+            {savingProfile ? t("subscription.saving") : t("common.save")}
+          </button>
         </div>
       )}
 
