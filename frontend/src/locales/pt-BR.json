@@ -208,6 +208,9 @@
     "signIn": "Entrar"
   },
   "verifyEmail": {
+    "awaitingTitle": "Confirme seu e-mail",
+    "awaitingBody": "Clique no botão abaixo para confirmar seu e-mail e ativar a conta.",
+    "confirmAction": "Confirmar e-mail",
     "loading": "Confirmando seu e-mail…",
     "successTitle": "E-mail confirmado",
     "successBody": "Sua conta está ativa. Já pode entrar.",

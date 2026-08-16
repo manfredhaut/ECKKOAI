@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../api/client";
 import { Field } from "../../components/ui/Field";
 
-type VerifyState = "loading" | "success" | "invalid" | "expired";
+type VerifyState = "awaiting" | "verifying" | "success" | "invalid" | "expired";
 
 export function VerifyEmailPage() {
   const { t } = useTranslation();
@@ -12,33 +12,34 @@ export function VerifyEmailPage() {
   // query string sem depender de useSearchParams — consistência, não
   // preferência nova.
   const token = new URLSearchParams(window.location.search).get("token");
-  const [state, setState] = useState<VerifyState>("loading");
+  // Sem token não há o que confirmar por clique nenhum — vai direto para
+  // "inválido", igual ao comportamento de sempre. Calculado no initializer
+  // (não em efeito): não depende de rede, só da própria URL.
+  const [state, setState] = useState<VerifyState>(token ? "awaiting" : "invalid");
   const [resendEmail, setResendEmail] = useState("");
   const [resendSent, setResendSent] = useState(false);
   const [resending, setResending] = useState(false);
-  // MEDIDO no navegador (15/08/2026): sem este guard, o StrictMode do React
-  // (dev) roda este efeito DUAS vezes — a primeira chamada consome o token
-  // (single-use, por desenho) e ativa a conta; a segunda, com o MESMO
-  // token já limpo, volta 400 e sobrescreve o estado de sucesso com
-  // "inválido". A conta ficava ativa no banco enquanto a tela dizia o
-  // contrário. `verifiedRef` sobrevive ao ciclo fake unmount→remount do
-  // StrictMode (ao contrário de estado), então só a PRIMEIRA chamada sai.
+  // A verificação NÃO dispara mais sozinha ao montar a página — dispara só
+  // no clique de "Confirmar e-mail" (handleConfirm). Motivo: o token é de
+  // uso único, e um scanner de segurança de e-mail corporativo (Microsoft
+  // Defender, Proofpoint) que pré-visita o link antes da pessoa clicar
+  // consumia o token sozinho — a pessoa chegava à página e via "link
+  // inválido" para uma conta que, na prática, nunca tinha sido confirmada
+  // por ela. Exigir um clique humano fecha essa classe de acionamento
+  // automático (o scanner normalmente não interage com botões).
   //
-  // ⚠️ RISCO CONHECIDO, NÃO RESOLVIDO: o mesmo efeito (token de uso único
-  // consumido antes do clique real) acontece se um scanner de segurança de
-  // e-mail corporativo (Microsoft Defender, Proofpoint) pré-visitar o link
-  // antes da pessoa clicar. Esta correção resolve a duplicação DENTRO desta
-  // aba; não resolve uma segunda visita genuína e externa ao mesmo link.
+  // `verifiedRef` continua a mesma proteção de antes, só que agora contra
+  // clique duplo em vez de contra a dupla execução do useEffect em
+  // StrictMode: sem ela, dois cliques rápidos disparariam duas chamadas
+  // com o mesmo token, e a segunda voltaria 400 sobre um token já
+  // consumido pela primeira.
   const verifiedRef = useRef(false);
 
-  useEffect(() => {
-    if (verifiedRef.current) return;
+  function handleConfirm() {
+    if (verifiedRef.current || !token) return;
     verifiedRef.current = true;
+    setState("verifying");
 
-    if (!token) {
-      setState("invalid");
-      return;
-    }
     api
       .get<{ success: true }>(`/verify-email?token=${encodeURIComponent(token)}`)
       .then(() => setState("success"))
@@ -47,7 +48,7 @@ export function VerifyEmailPage() {
           err instanceof ApiError ? (err.body as { reason?: string } | undefined)?.reason : undefined;
         setState(reason === "expired" ? "expired" : "invalid");
       });
-  }, [token]);
+  }
 
   async function handleResend(e: FormEvent) {
     e.preventDefault();
@@ -77,7 +78,19 @@ export function VerifyEmailPage() {
           </span>
         </div>
 
-        {state === "loading" && <p className="text-muted">{t("verifyEmail.loading")}</p>}
+        {state === "awaiting" && (
+          <>
+            <div className="card-title">{t("verifyEmail.awaitingTitle")}</div>
+            <p className="text-muted" style={{ fontSize: 13, marginTop: 8, marginBottom: 16 }}>
+              {t("verifyEmail.awaitingBody")}
+            </p>
+            <button type="button" className="btn btn-primary" style={{ width: "100%" }} onClick={handleConfirm}>
+              {t("verifyEmail.confirmAction")}
+            </button>
+          </>
+        )}
+
+        {state === "verifying" && <p className="text-muted">{t("verifyEmail.loading")}</p>}
 
         {state === "success" && (
           <>

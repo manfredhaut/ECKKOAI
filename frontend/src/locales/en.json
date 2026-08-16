@@ -208,6 +208,9 @@
     "signIn": "Sign in"
   },
   "verifyEmail": {
+    "awaitingTitle": "Confirm your email",
+    "awaitingBody": "Click the button below to confirm your email and activate your account.",
+    "confirmAction": "Confirm email",
     "loading": "Confirming your email…",
     "successTitle": "Email confirmed",
     "successBody": "Your account is active. You can sign in now.",
