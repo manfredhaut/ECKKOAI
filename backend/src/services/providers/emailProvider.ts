@@ -3,10 +3,15 @@ import { config } from "../../config.js";
 import { BASE_DOMAIN } from "../../domainConfig.js";
 import { vendorSignal } from "./vendorTimeout.js";
 
-// Remetente por enquanto (decisão de produto, 15/08/2026): domínio próprio de
-// envio exige DNS novo (SPF/DKIM), fora de escopo desta rodada. `resend.dev`
-// é o domínio de teste que a Resend já verifica por conta própria.
-const FROM_ADDRESS = "eckko.ai <onboarding@resend.dev>";
+// mail.eckkoai.com verificado na Resend em 16/08/2026 (DKIM + SPF
+// confirmados) — domínio próprio de envio, substituindo o `resend.dev` de
+// teste usado até então. `verificacao@`, não um `noreply@` genérico: hoje
+// este é o único tipo de e-mail transacional do produto, e o nome já
+// acompanha o resto do arquivo (sendVerificationEmail,
+// VERIFICATION_TOKEN_TTL_MS). Se um segundo tipo de e-mail aparecer
+// (recuperação de senha, notificação), vale reconsiderar para um endereço
+// mais genérico — não duplicar este raciocínio por remetente.
+const FROM_ADDRESS = "eckko.ai <verificacao@mail.eckkoai.com>";
 
 const RESEND_API_URL = "https://api.resend.com/emails";
 
