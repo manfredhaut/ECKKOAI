@@ -46,6 +46,34 @@ export async function fecharCorrida(
   );
 }
 
+/**
+ * O `request_id` que ESTA etapa, NESTA corrida, chegou a receber da fal — ou
+ * `null` se ela nunca chegou a receber um.
+ *
+ * Existe para responder, depois que uma etapa falhou, a pergunta que decide o
+ * estorno: "o fornecedor chegou a aceitar este trabalho?" `gravarRequestId`
+ * (acima) só é chamado pelo `onRequestId` de `falSubmit` DEPOIS que a fal
+ * aceita a submissão — uma recusa (422 de schema, por exemplo) nunca chega lá,
+ * e a linha desta etapa fica com `request_id NULL`. Ler essa coluna depois do
+ * catch é como `classificarGasto` (videoFailure.ts) sabe se o gasto desta
+ * etapa específica é `nao_saiu` ou `indeterminado`.
+ *
+ * Por `run_id` + `etapa`, não pelo `provider_job_id` gravado em `videos`: essa
+ * coluna pode segurar o `request_id` de uma etapa ANTERIOR e já cobrada (a
+ * composição, no caso de `animar`) — usá-la aqui classificaria uma recusa da
+ * etapa nova como gasto que já saiu, por causa de um gasto de outra etapa.
+ */
+export async function requestIdDaEtapa(runId: string, etapa: EtapaDoPipeline): Promise<string | null> {
+  const { rows } = await pool.query<{ request_id: string | null }>(
+    `SELECT request_id FROM fal_pipeline_steps
+      WHERE run_id = $1 AND etapa = $2
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [runId, etapa],
+  );
+  return rows[0]?.request_id ?? null;
+}
+
 export function criarDiarioNoBanco(runId: string): DiarioDoPipeline {
   return {
     async abrirEtapa(

@@ -41,3 +41,6 @@ _arnes-logs/
 # Despejo do Postgres feito à mão na VPS (14/08/2026) — dados de produção,
 # nunca pertenceu ao git.
 twinai.dump
+
+# pacotes de deploy
+*.tar.gz

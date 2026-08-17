@@ -60,7 +60,7 @@ import {
   runFalPipelineDaImagem,
   type EntradaDeComposicao,
 } from "../services/video/falPipeline.js";
-import { abrirCorrida, criarDiarioNoBanco, fecharCorrida } from "../services/video/falPipelineJournal.js";
+import { abrirCorrida, criarDiarioNoBanco, fecharCorrida, requestIdDaEtapa } from "../services/video/falPipelineJournal.js";
 import { aprovarEAnimar, recompor } from "../services/video/falApproval.js";
 
 const POLL_INTERVAL_MS = 5000;
@@ -1643,6 +1643,31 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      // RESTRIÇÃO DO VENDOR FAL, não regra geral do produto: o schema do Wan
+      // (`wan/v2.6/image-to-video/flash`) exige `prompt` como string não-vazia
+      // — HeyGen e D-ID não têm essa exigência, e a mensagem abaixo deixa isso
+      // explícito para não parecer uma regra nova do campo Interpretação.
+      //
+      // Aqui, e não em `carregarCorridaAprovavel`: aquela função é
+      // compartilhada com `/recompose`, que PARA em `compor` e nunca chega ao
+      // Wan (ver o comentário em `promptDaDirecaoDaLinha` mais abaixo) —
+      // validar lá bloquearia recomposições que nunca tocariam este campo.
+      //
+      // ANTES de `abrirCorrida`/`marcarAprovado`, de propósito: nenhuma
+      // corrida é aberta, nenhum lock é tomado, nenhum centavo é autorizado
+      // por uma submissão que o próprio fornecedor rejeitaria de qualquer
+      // forma. A alternativa — deixar a fal devolver 422 — ainda seria
+      // estornada pelo fix de `decidirEEstornar` acima, mas gastaria uma
+      // chamada de rede real para chegar à mesma recusa que já se sabe aqui.
+      if (!promptDaDirecaoDaLinha(video)) {
+        return reply.code(422).send({
+          error: "empty_motion_prompt",
+          message:
+            "Interpretação não pode ficar vazia para este vendor (fal exige texto de direção). " +
+            "Preencha o campo Interpretação e tente aprovar de novo. Nada foi cobrado.",
+        });
+      }
+
       const runId = await abrirCorrida({
         tenantId: req.tenantId,
         script: video.script,
@@ -1759,11 +1784,32 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       } catch (err) {
         await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
         const { failure, message } = toClientVendorError("avatar", "videos.approve", err);
-        // NÃO ESTORNA, e o motivo é o mesmo dos outros pontos pós-aceite: a
-        // composição ACONTECEU e foi cobrada. `providerJobId` é o request_id
-        // dela, e é ele que faz `classificarGasto` responder "indeterminado"
-        // em vez de "nao_saiu" — devolver crédito aqui criaria crédito do nada.
+
+        // O estorno da ANIMAÇÃO desta corrida, não da composição.
         //
+        // `video.provider_job_id` guarda o request_id da COMPOSIÇÃO — gravado
+        // quando a linha entrou em `awaiting_approval`, numa corrida ANTERIOR
+        // a esta. Usá-lo aqui faria toda falha de `animar` ser classificada
+        // como "a composição já saiu, não estorna" — o que é verdade sobre a
+        // composição (ela já foi cobrada e não é o que está em jogo agora) e
+        // irrelevante sobre a ANIMAÇÃO, que é a etapa que acabou de falhar e
+        // pode ou não ter chegado a ser aceita pela fal.
+        //
+        // `requestIdDaEtapa(runId, "animar")` responde a pergunta certa: ESTA
+        // submissão, a que acabou de falhar, chegou a receber um request_id?
+        // Se não (ex.: 422 de schema, recusada antes do aceite), o gasto é
+        // `nao_saiu` e `decidirEEstornar` devolve o crédito — o MESMO caminho
+        // que já protege a etapa `compor`. Se sim (job aceito, algo deu
+        // errado depois), o gasto vira `indeterminado` e não estorna, que
+        // continua sendo a postura conservadora certa.
+        const animarRequestId = await requestIdDaEtapa(runId, "animar");
+        const estornado = await decidirEEstornar({
+          videoId: video.id,
+          tenantId: req.tenantId,
+          reason: "vendor_rejected",
+          providerJobId: animarRequestId,
+        });
+
         // O vídeo NÃO volta para `awaiting_approval`: a etapa paga pode ter
         // saído. Quem decide relançar é uma pessoa, com a linha em `error` e o
         // motivo na frente.
@@ -1782,6 +1828,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           aspectRatio: video.aspect_ratio,
           resolution: video.resolution,
           providerJobId: video.provider_job_id,
+        });
+        logEvent(estornado ? "info" : "error", "video_approve_falhou", {
+          context: "videos.approve",
+          videoId: video.id,
+          animarRequestId: animarRequestId ? animarRequestId.slice(0, 8) + "…" : null,
+          estornado,
         });
         return reply.code(vendorErrorStatus(failure)).send(errado[0]);
       }
