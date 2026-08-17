@@ -1213,6 +1213,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     const falRunId = ehFal
       ? await abrirCorrida({
           tenantId: req.tenantId,
+          videoId: video.id,
           script,
           targetSeconds: PIPELINE_TARGET_SECONDS,
           charsPerSecond: PIPELINE_CHARS_PER_SECOND,

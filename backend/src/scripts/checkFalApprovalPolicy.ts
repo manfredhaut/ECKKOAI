@@ -5,7 +5,8 @@
  *  G-B  nenhuma etapa paga posterior à composição sai sem aprovação registrada
  *  G-C  refazer recompõe sem disparar o Wan
  *  G-D  motion prompt vazio é recusado ANTES de abrir a corrida, em `/approve`
- *  G-E  os call sites de /approve e /recompose passam video.id a abrirCorrida
+ *  G-E  os TRÊS call sites de abrirCorrida (criação, /approve, /recompose)
+ *       passam video.id — BLOCO N+2
  *  G-F  abrirCorrida grava video_id no INSERT de fal_pipeline_runs (BLOCO N+1)
  *
  * ┌─ As três primeiras medem por EXECUÇÃO, e cada uma tem um desfecho ───────┐
@@ -46,14 +47,17 @@
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  * ┌─ G-E mede FORMA, pelo mesmo motivo de G-D ────────────────────────────────┐
- * │ Os dois call sites (`/approve` e `/recompose`) são objetos literais       │
- * │ inline no handler — não há função importável para chamar por execução    │
- * │ isolada sem subir o Fastify (mesma limitação registrada em G-D). A        │
- * │ guarda recorta cada handler entre a chamada `abrirCorrida({` e o          │
+ * │ Os TRÊS call sites (criação, `/approve`, `/recompose`) são objetos        │
+ * │ literais inline no handler — não há função importável para chamar por    │
+ * │ execução isolada sem subir o Fastify (mesma limitação registrada em      │
+ * │ G-D). A guarda recorta cada handler entre a chamada `abrirCorrida({` e o  │
  * │ statement seguinte que só existe naquele handler (`aprovarEAnimar` para   │
- * │ /approve, `recompor` para /recompose — a distinção é o que torna cada     │
- * │ recorte único no arquivo) e verifica que o token `videoId: video.id,`     │
- * │ está dentro dele.                                                        │
+ * │ /approve, `recompor` para /recompose, `if (falRunId) {` para a criação —  │
+ * │ a distinção é o que torna cada recorte único no arquivo) e verifica que   │
+ * │ o token `videoId: video.id,` está dentro dele. O de criação usa uma       │
+ * │ âncora extra à esquerda (`}>("/videos", { preHandler: …`), porque a       │
+ * │ chamada ali é `? await abrirCorrida({` — ramo de um TERNÁRIO, não         │
+ * │ `const runId = await abrirCorrida({` como nos outros dois.                │
  * └─────────────────────────────────────────────────────────────────────────┘
  *
  * ┌─ G-F mede por EXECUÇÃO real, com `pool.query` substituído ────────────────┐
@@ -188,7 +192,7 @@ export const MUTANTS: Mutant[] = [
     expect: "a recusa `empty_motion_prompt` aparece 0x",
   },
   {
-    guard: "os call sites de /approve e /recompose passam video.id a abrirCorrida",
+    guard: "os três call sites de abrirCorrida (criação, /approve, /recompose) passam video.id",
     name: "o call site de /approve deixa de passar videoId",
     kind: "obvio",
     file: ROTA_DE_VIDEOS,
@@ -216,7 +220,7 @@ export const MUTANTS: Mutant[] = [
     expect: "aprovação: o call site de /approve não passa videoId a abrirCorrida",
   },
   {
-    guard: "os call sites de /approve e /recompose passam video.id a abrirCorrida",
+    guard: "os três call sites de abrirCorrida (criação, /approve, /recompose) passam video.id",
     name: "o call site de /recompose deixa de passar videoId",
     kind: "obvio",
     file: ROTA_DE_VIDEOS,
@@ -242,6 +246,36 @@ export const MUTANTS: Mutant[] = [
       "      try {\n" +
       "        const corrida = await recompor({",
     expect: "aprovação: o call site de /recompose não passa videoId a abrirCorrida",
+  },
+  {
+    guard: "os três call sites de abrirCorrida (criação, /approve, /recompose) passam video.id",
+    name: "o call site de criação (POST /videos, ramo ehFal) deixa de passar videoId",
+    kind: "obvio",
+    // BLOCO N+2: terceiro call site, fora de escopo no N+1. `video.id` já
+    // está em escopo neste ponto — a linha em `videos` é inserida e debitada
+    // ANTES deste trecho (ver o comentário "GRAVAÇÃO ANTECIPADA" logo acima,
+    // no fonte) — então omitir `videoId` aqui é regressão, não limitação.
+    file: ROTA_DE_VIDEOS,
+    find:
+      "      ? await abrirCorrida({\n" +
+      "          tenantId: req.tenantId,\n" +
+      "          videoId: video.id,\n" +
+      "          script,\n" +
+      "          targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "          charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
+      "        })\n" +
+      "      : null;\n" +
+      "    if (falRunId) {",
+    replace:
+      "      ? await abrirCorrida({\n" +
+      "          tenantId: req.tenantId,\n" +
+      "          script,\n" +
+      "          targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "          charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
+      "        })\n" +
+      "      : null;\n" +
+      "    if (falRunId) {",
+    expect: "aprovação: o call site de criação (`POST /videos`, ramo `ehFal`) não passa videoId a abrirCorrida",
   },
   {
     guard: "abrirCorrida grava video_id no INSERT de fal_pipeline_runs",
@@ -699,9 +733,16 @@ export async function checkFalApprovalPolicy(): Promise<FalApprovalCheckResult> 
   }
 
   // -------------------------------------------------------------------------
-  // G-E — os dois call sites de abrirCorrida (videos.ts) passam videoId
+  // G-E — os TRÊS call sites de abrirCorrida (videos.ts) passam videoId
+  // (BLOCO N+2: o handler de criação, POST /videos ramo `ehFal`, entrou
+  // nesta rodada — era o terceiro chamador real, fora de escopo no BLOCO
+  // N+1, que só cobria /approve e /recompose)
   // -------------------------------------------------------------------------
   {
+    let okApprove = false;
+    let okRecompose = false;
+    let okCreate = false;
+
     // Reaproveita `inicioApprove`, já calculado acima para G-D.
     const chamadaApprove = rota.indexOf("const runId = await abrirCorrida({", inicioApprove);
     const fimChamadaApprove = rota.indexOf("const r = await aprovarEAnimar({", chamadaApprove);
@@ -719,6 +760,8 @@ export async function checkFalApprovalPolicy(): Promise<FalApprovalCheckResult> 
             "com o vídeo que a originou, e `fal_pipeline_runs.video_id` fica NULL para toda aprovação a " +
             "partir de agora.",
         );
+      } else {
+        okApprove = true;
       }
     }
 
@@ -739,16 +782,50 @@ export async function checkFalApprovalPolicy(): Promise<FalApprovalCheckResult> 
             "com o vídeo que a originou, e `fal_pipeline_runs.video_id` fica NULL para toda recomposição a " +
             "partir de agora.",
         );
-      } else if (
-        chamadaApprove >= 0 &&
-        fimChamadaApprove >= 0 &&
-        rota.slice(chamadaApprove, fimChamadaApprove).includes("videoId: video.id,")
-      ) {
-        notes.push(
-          "    aprovação: os dois call sites de abrirCorrida em videos.ts (/approve e /recompose) passam " +
-            "video.id",
-        );
+      } else {
+        okRecompose = true;
       }
+    }
+
+    // O TERCEIRO call site: dentro do handler de CRIAÇÃO (`POST /videos`),
+    // ramo `ehFal`. Âncora de início é a mesma que `checkFalGenerationPathPolicy`
+    // já usa para este handler (`}>("/videos", { preHandler: …`, única no
+    // arquivo); a chamada é `? await abrirCorrida({` (com `?`, não `const
+    // runId =`, porque é o braço de um ternário) — texto que NÃO ocorre nos
+    // outros dois call sites, então serve de âncora por si só sem precisar
+    // do recorte do handler inteiro. `if (falRunId) {` fecha o recorte: é a
+    // primeira linha depois do `: null;` do ternário, e aparece de novo mais
+    // abaixo (no `catch`) — mas o SEGUNDO `if (falRunId) {` fica fora do
+    // recorte porque `indexOf` para no primeiro encontrado a partir da
+    // chamada.
+    const inicioCreate = rota.indexOf('}>("/videos", { preHandler: requireActiveTenant }');
+    const chamadaCreate = rota.indexOf("? await abrirCorrida({", inicioCreate);
+    const fimChamadaCreate = rota.indexOf("if (falRunId) {", chamadaCreate);
+    if (inicioCreate < 0 || chamadaCreate < 0 || fimChamadaCreate < 0) {
+      failures.push(
+        "aprovação: não foi possível recortar a chamada `abrirCorrida` no handler de criação (`POST /videos`) " +
+          'pelas âncoras `}>("/videos", { preHandler: requireActiveTenant }`, `? await abrirCorrida({` e ' +
+          "`if (falRunId) {`. A guarda não pode opinar sobre um trecho que não encontrou, e passar verde " +
+          "aqui seria o pior desfecho.",
+      );
+    } else {
+      const trechoChamadaCreate = rota.slice(chamadaCreate, fimChamadaCreate);
+      if (!trechoChamadaCreate.includes("videoId: video.id,")) {
+        failures.push(
+          "aprovação: o call site de criação (`POST /videos`, ramo `ehFal`) não passa videoId a " +
+            "abrirCorrida — a corrida some do vínculo com o vídeo que a originou, e " +
+            "`fal_pipeline_runs.video_id` fica NULL para toda geração direta pela fal a partir de agora.",
+        );
+      } else {
+        okCreate = true;
+      }
+    }
+
+    if (okApprove && okRecompose && okCreate) {
+      notes.push(
+        "    aprovação: os três call sites de abrirCorrida em videos.ts (criação, /approve e /recompose) " +
+          "passam video.id",
+      );
     }
   }
 
