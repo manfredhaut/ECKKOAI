@@ -15,8 +15,103 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **14/08/2026** (SYNC-VPS-1 — 3 correções da VPS trazidas para o
-git), HEAD `22f9db8` + o commit desta linha.
+Atualizado em **17/08/2026** (BLOCO N+1 — videoId em abrirCorrida, video_id em
+fal_pipeline_runs, Backlog 8 corrigido), HEAD `2e34ef3` + o commit desta
+linha.
+
+⚠️ **GAP CONHECIDO, NÃO RECONSTRUÍDO NESTA RODADA:** entre o HEAD anterior
+registrado aqui (`22f9db8`, 14/08) e o início desta sessão (`b314c5d`) o
+repositório recebeu uma dúzia de commits de blocos NÃO cobertos por este
+arquivo — VITE-PROD-3 (Dockerfile de 3 estágios do frontend, BASE_DOMAIN
+obrigatória em build), domínio único (sem redirect de subdomínio), perfil
+ampliado com endereço/WhatsApp (migration 057), verificação de e-mail por
+clique manual + domínio `mail.eckkoai.com`, e a guarda G-D (motion prompt
+vazio recusado antes de `abrirCorrida` em `/approve`, com estorno de crédito
+quando a fal rejeita antes de aceitar o job). Nenhum desses blocos foi lido a
+fundo nesta sessão — o escopo pedido era só o BLOCO N+1 abaixo. `git log
+--oneline` entre os dois HEADs é a fonte de verdade até alguém escrever essa
+história aqui.
+
+---
+
+## 9 · BLOCO N+1 (17/08/2026) — videoId opcional em abrirCorrida, video_id
+gravado, Backlog 8 (fixture da fal simulava como HeyGen) corrigido
+
+**Custo: US$ 0,00.** Nenhuma chamada a fornecedor, nenhum crédito REAL
+tocado — só o saldo de ENSAIO (`video_rehearsal`) do tenant `dev-c77a5b8a`, e
+só num script descartável, apagado ao final, nunca commitado.
+
+**Três commits, em sequência a partir de `b314c5d`:**
+
+- `eeb3ef4` — `AbrirCorridaInput` ganha `videoId?: string`; os dois call
+  sites reais em `routes/videos.ts` (`/approve` e `/recompose`) passam
+  `videoId: video.id`; `abrirCorrida()` grava `video_id` no INSERT de
+  `fal_pipeline_runs` (coluna já existente desde a migration 051 — SEM
+  migration nova). Duas guardas novas em `checkFalApprovalPolicy.ts`: G-E
+  (forma, os dois call sites) e G-F (EXECUÇÃO real — `abrirCorrida()`
+  chamada de verdade com `pool.query` substituído, inspecionando SQL e
+  valores capturados, não grep). 4 mutantes novos, **provados reprovando
+  4/4** por passada filtrada depois do commit.
+  ⚠️ **Existe um TERCEIRO call site real de `abrirCorrida` em
+  `routes/videos.ts`** — dentro do handler de criação (`POST /videos`, ramo
+  `ehFal`, ~linha 1214), com `video.id` já disponível no mesmo ponto que os
+  outros dois. **NÃO foi tocado**: o pedido desta rodada enumerava
+  explicitamente só os dois de aprovação/recomposição. Consequência: vídeos
+  criados pelo caminho direto (vendor fal) seguem abrindo corrida com
+  `fal_pipeline_runs.video_id` NULL — só aprovação e recomposição gravam o
+  vínculo. Decisão de tocar ou não este terceiro site é do operador.
+
+- `2e34ef3` — **Backlog 8, causa raiz eram DOIS defeitos empilhados, achados
+  rodando o rehearsal Criar→Aprovar de verdade** (não só lendo código):
+  1. `generateVideo()` (`avatarProvider.ts`) tinha `if (isFixtureMode())
+     return generateVideoFixture(input);` ANTES do despacho por vendor.
+     `generateVideoFixture` monta payload de FORMATO HEYGEN e nunca soube da
+     fal — o retorno não tem `imagemCompostaUrl`, e `routes/videos.ts`
+     recusa vendor fal sem esse campo com "a corrida terminou sem devolver a
+     imagem composta". Em fixture, `generateVideoFal` nunca era alcançado
+     para vendor fal. **Fix:** o ramo `if (input.vendor === "fal") return
+     generateVideoFal(input);` subiu para ANTES do atalho de fixture —
+     `generateVideoFal` não precisa dele, porque `runFalPipeline` chama
+     `falSubmit`/`falPoll`/`falResult` e `synthesizeSpeech`, e cada uma já
+     consulta `isFixtureMode()` sozinha.
+  2. Uma vez alcançado, `falResult()` em fixture devolvia SEMPRE `{fixture:
+     true, response_url}` — a mesma forma vazia para compor, animar e
+     sincronizar. `falPipeline.ts` lê `saida.images[0].url` na composição e
+     `saida.video.url` na animação/sincronia; nenhum existia, e a corrida
+     quebrava no primeiro passo com "a composição concluiu sem devolver
+     imagem" (mensagem parecida com a citada no pedido, mas de OUTRO
+     arquivo — só alcançável depois de corrigir o defeito 1). **Fix:**
+     `falSubmit` codifica o `endpointId` sem perdas (`encodeURIComponent`)
+     na query da URL de fixture; `falResult` decodifica e devolve a forma
+     certa por etapa (imagem para `nano-banana-2/edit`, vídeo para os
+     outros dois). Literais duplicados de propósito em vez de importar
+     `ENDPOINT_*` de `falPipeline.ts` — isso criaria ciclo (`falPipeline.ts`
+     já importa de `falClient.ts`).
+  Efeito colateral pego pelo próprio gate: o mutante `o if vira um terceiro
+  braço do ternário` (`checkFalGenerationPathPolicy.ts`) tinha `find`
+  ancorado em `RAMO_FAL` + retorno CONTÍGUOS — deixaram de ser contíguos com
+  o bloco de comentário novo no meio. Reancorado só no retorno. **Provado
+  reprovando** junto com o mutante da guarda "provedor: vendor respeita
+  modo" (3/3, passada filtrada pós-commit).
+  ⚠️ **SEM guarda nova de regressão para o Backlog 8 em si** — não foi
+  pedida nesta etapa. Fica como dívida, no mesmo padrão dos "4 mutantes
+  DEVIDOS" já registrados no §7.
+
+**Rehearsal Criar→Aprovar, 100% fixture, MEDIDO ponta a ponta** (script
+descartável, chamando `generateVideo`/`aprovarEAnimar`/
+`runFalPipelineDaImagem` — os MESMOS exports que a rota chama — não HTTP: a
+camada de sessão/auth não foi exercitada, só o serviço): saldo de ENSAIO
+(`video_rehearsal`) do tenant `dev-c77a5b8a` foi de 492 para 491 (1 débito na
+criação, nenhum na aprovação); saldo REAL (`video`) ficou intocado em 19;
+compor US$0,08 + animar US$0,25 + sincronizar US$0,3673 previstos =
+US$0,6173; `videoUrl` de fixture devolvido, sem erro.
+
+**Gate final: 272 de 280 mutantes declarados casam 1x no alvo, exit 0.**
+**NÃO rodada a passada completa (280 mutantes)** — por instrução explícita
+desta rodada, fica para sessão isolada fora do horário de trabalho, árvore
+já limpa.
+
+HEAD final `2e34ef3`, árvore limpa.
 
 ---
 
