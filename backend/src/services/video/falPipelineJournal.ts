@@ -19,6 +19,13 @@ import type { DiarioDoPipeline, EtapaDoPipeline } from "./falPipeline.js";
 
 export interface AbrirCorridaInput {
   tenantId: string;
+  /**
+   * A linha de `videos` que esta corrida serve. Opcional só porque
+   * `probeFalPipeline.ts` não tem vídeo nenhum para apontar — os dois call
+   * sites de produto (`/approve` e `/recompose` em `routes/videos.ts`) sempre
+   * têm `video.id` disponível e devem passá-lo.
+   */
+  videoId?: string;
   script: string;
   targetSeconds: number;
   charsPerSecond: number;
@@ -27,10 +34,10 @@ export interface AbrirCorridaInput {
 /** Abre a corrida e devolve o id. As etapas penduram nele. */
 export async function abrirCorrida(input: AbrirCorridaInput): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
-    `INSERT INTO fal_pipeline_runs (tenant_id, script, target_seconds, script_chars, chars_per_second)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id`,
-    [input.tenantId, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],
+    [input.tenantId, input.videoId ?? null, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],
   );
   return rows[0].id;
 }

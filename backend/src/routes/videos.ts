@@ -1670,6 +1670,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
 
       const runId = await abrirCorrida({
         tenantId: req.tenantId,
+        videoId: video.id,
         script: video.script,
         targetSeconds: PIPELINE_TARGET_SECONDS,
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
@@ -1861,6 +1862,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // já saiu.
       const runId = await abrirCorrida({
         tenantId: req.tenantId,
+        videoId: video.id,
         script: video.script,
         targetSeconds: PIPELINE_TARGET_SECONDS,
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,

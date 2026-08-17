@@ -5,6 +5,8 @@
  *  G-B  nenhuma etapa paga posterior à composição sai sem aprovação registrada
  *  G-C  refazer recompõe sem disparar o Wan
  *  G-D  motion prompt vazio é recusado ANTES de abrir a corrida, em `/approve`
+ *  G-E  os call sites de /approve e /recompose passam video.id a abrirCorrida
+ *  G-F  abrirCorrida grava video_id no INSERT de fal_pipeline_runs (BLOCO N+1)
  *
  * ┌─ As três primeiras medem por EXECUÇÃO, e cada uma tem um desfecho ───────┐
  * │ G-A  a varredura de boot roda com `pool.query` substituído. Sem a        │
@@ -43,10 +45,29 @@
  * │ essa ausência — não uma menção — que a guarda enxerga.                   │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
+ * ┌─ G-E mede FORMA, pelo mesmo motivo de G-D ────────────────────────────────┐
+ * │ Os dois call sites (`/approve` e `/recompose`) são objetos literais       │
+ * │ inline no handler — não há função importável para chamar por execução    │
+ * │ isolada sem subir o Fastify (mesma limitação registrada em G-D). A        │
+ * │ guarda recorta cada handler entre a chamada `abrirCorrida({` e o          │
+ * │ statement seguinte que só existe naquele handler (`aprovarEAnimar` para   │
+ * │ /approve, `recompor` para /recompose — a distinção é o que torna cada     │
+ * │ recorte único no arquivo) e verifica que o token `videoId: video.id,`     │
+ * │ está dentro dele.                                                        │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌─ G-F mede por EXECUÇÃO real, com `pool.query` substituído ────────────────┐
+ * │ Diferente de G-E, `abrirCorrida` É uma função exportada — chamá-la de     │
+ * │ verdade e inspecionar os parâmetros que ela manda ao INSERT é possível    │
+ * │ sem infraestrutura nenhuma. A guarda chama `abrirCorrida` duas vezes (com │
+ * │ e sem `videoId`) e lê o SQL e o array de valores capturados pelo `query`  │
+ * │ substituído — não faz grep no código-fonte.                              │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
  * ┌─ Custo: ZERO ───────────────────────────────────────────────────────────┐
  * │ Nenhuma rede (o `fetch` é substituído), nenhum banco (o `pool.query` é   │
- * │ substituído e o diário é um array), nenhuma espera real. G-D só lê       │
- * │ arquivo do disco.                                                        │
+ * │ substituído e o diário é um array), nenhuma espera real. G-D e G-E só    │
+ * │ leem arquivo do disco; G-F chama código real com o banco substituído.    │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 import { readFileSync } from "node:fs";
@@ -56,10 +77,12 @@ import { pool } from "../db/pool.js";
 import { ENDPOINT_ANIMAR, ENDPOINT_COMPOR } from "../services/video/falPipeline.js";
 import { aprovarEAnimar, recompor } from "../services/video/falApproval.js";
 import { recoverInFlightVideos, videoRecoveryMaxAgeMs, videoApprovalMaxAgeMs } from "../services/video/recovery.js";
+import { abrirCorrida } from "../services/video/falPipelineJournal.js";
 
 const RECUPERACAO = "backend/src/services/video/recovery.ts";
 const APROVACAO = "backend/src/services/video/falApproval.ts";
 const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
+const DIARIO_DO_PIPELINE = "backend/src/services/video/falPipelineJournal.ts";
 
 /** A condição, transcrita. É a forma que o mutante de G-D desfaz. */
 const CONDICAO_MOTION_PROMPT_VAZIO = "      if (!promptDaDirecaoDaLinha(video)) {";
@@ -163,6 +186,94 @@ export const MUTANTS: Mutant[] = [
       "        // corpo esvaziado pelo mutante: a condição continua casando, mas nada recusa mais.\n" +
       "      }",
     expect: "a recusa `empty_motion_prompt` aparece 0x",
+  },
+  {
+    guard: "os call sites de /approve e /recompose passam video.id a abrirCorrida",
+    name: "o call site de /approve deixa de passar videoId",
+    kind: "obvio",
+    file: ROTA_DE_VIDEOS,
+    find:
+      "      const runId = await abrirCorrida({\n" +
+      "        tenantId: req.tenantId,\n" +
+      "        videoId: video.id,\n" +
+      "        script: video.script,\n" +
+      "        targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
+      "      });\n" +
+      "\n" +
+      "      try {\n" +
+      "        const r = await aprovarEAnimar({",
+    replace:
+      "      const runId = await abrirCorrida({\n" +
+      "        tenantId: req.tenantId,\n" +
+      "        script: video.script,\n" +
+      "        targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
+      "      });\n" +
+      "\n" +
+      "      try {\n" +
+      "        const r = await aprovarEAnimar({",
+    expect: "aprovação: o call site de /approve não passa videoId a abrirCorrida",
+  },
+  {
+    guard: "os call sites de /approve e /recompose passam video.id a abrirCorrida",
+    name: "o call site de /recompose deixa de passar videoId",
+    kind: "obvio",
+    file: ROTA_DE_VIDEOS,
+    find:
+      "      const runId = await abrirCorrida({\n" +
+      "        tenantId: req.tenantId,\n" +
+      "        videoId: video.id,\n" +
+      "        script: video.script,\n" +
+      "        targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
+      "      });\n" +
+      "\n" +
+      "      try {\n" +
+      "        const corrida = await recompor({",
+    replace:
+      "      const runId = await abrirCorrida({\n" +
+      "        tenantId: req.tenantId,\n" +
+      "        script: video.script,\n" +
+      "        targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
+      "      });\n" +
+      "\n" +
+      "      try {\n" +
+      "        const corrida = await recompor({",
+    expect: "aprovação: o call site de /recompose não passa videoId a abrirCorrida",
+  },
+  {
+    guard: "abrirCorrida grava video_id no INSERT de fal_pipeline_runs",
+    name: "o INSERT deixa de listar a coluna video_id",
+    kind: "obvio",
+    file: DIARIO_DO_PIPELINE,
+    find:
+      "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second)\n" +
+      "     VALUES ($1, $2, $3, $4, $5, $6)\n" +
+      "     RETURNING id`,\n" +
+      "    [input.tenantId, input.videoId ?? null, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],",
+    replace:
+      "    `INSERT INTO fal_pipeline_runs (tenant_id, script, target_seconds, script_chars, chars_per_second)\n" +
+      "     VALUES ($1, $2, $3, $4, $5)\n" +
+      "     RETURNING id`,\n" +
+      "    [input.tenantId, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],",
+    expect: "aprovação: o INSERT de `fal_pipeline_runs` não menciona a coluna `video_id`",
+  },
+  {
+    guard: "abrirCorrida grava video_id no INSERT de fal_pipeline_runs",
+    name: "o video_id gravado é sempre null, mesmo com videoId presente",
+    kind: "esperto",
+    // ESPERTO: a coluna continua na lista do INSERT, o placeholder $2 continua
+    // lá, o `tsc` continua verde (`null` é atribuível a `string | null`) — só
+    // o VALOR enviado deixa de ser o `videoId` recebido. Uma guarda que só
+    // conferisse "a coluna existe no texto do SQL" passaria com a coluna
+    // presente e sempre vazia, que é o pior caso: parece resolvido e não está.
+    file: DIARIO_DO_PIPELINE,
+    find:
+      "    [input.tenantId, input.videoId ?? null, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],",
+    replace: "    [input.tenantId, null, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],",
+    expect: "aprovação: o INSERT de `fal_pipeline_runs` cita `video_id` no texto, mas o valor enviado não é o",
   },
 ];
 
@@ -584,6 +695,120 @@ export async function checkFalApprovalPolicy(): Promise<FalApprovalCheckResult> 
             "preenchida a condição não casa e a execução segue reto para `abrirCorrida`, no fim do mesmo recorte",
         );
       }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // G-E — os dois call sites de abrirCorrida (videos.ts) passam videoId
+  // -------------------------------------------------------------------------
+  {
+    // Reaproveita `inicioApprove`, já calculado acima para G-D.
+    const chamadaApprove = rota.indexOf("const runId = await abrirCorrida({", inicioApprove);
+    const fimChamadaApprove = rota.indexOf("const r = await aprovarEAnimar({", chamadaApprove);
+    if (inicioApprove < 0 || chamadaApprove < 0 || fimChamadaApprove < 0) {
+      failures.push(
+        "aprovação: não foi possível recortar a chamada `abrirCorrida` no handler `/approve` pelas âncoras " +
+          "`const runId = await abrirCorrida({` e `const r = await aprovarEAnimar({`. A guarda não pode opinar " +
+          "sobre um trecho que não encontrou, e passar verde aqui seria o pior desfecho.",
+      );
+    } else {
+      const trechoChamadaApprove = rota.slice(chamadaApprove, fimChamadaApprove);
+      if (!trechoChamadaApprove.includes("videoId: video.id,")) {
+        failures.push(
+          "aprovação: o call site de /approve não passa videoId a abrirCorrida — a corrida some do vínculo " +
+            "com o vídeo que a originou, e `fal_pipeline_runs.video_id` fica NULL para toda aprovação a " +
+            "partir de agora.",
+        );
+      }
+    }
+
+    const inicioRecompose = rota.indexOf('"/videos/:id/recompose",');
+    const chamadaRecompose = rota.indexOf("const runId = await abrirCorrida({", inicioRecompose);
+    const fimChamadaRecompose = rota.indexOf("const corrida = await recompor({", chamadaRecompose);
+    if (inicioRecompose < 0 || chamadaRecompose < 0 || fimChamadaRecompose < 0) {
+      failures.push(
+        "aprovação: não foi possível recortar a chamada `abrirCorrida` no handler `/recompose` pelas âncoras " +
+          "`const runId = await abrirCorrida({` e `const corrida = await recompor({`. A guarda não pode opinar " +
+          "sobre um trecho que não encontrou, e passar verde aqui seria o pior desfecho.",
+      );
+    } else {
+      const trechoChamadaRecompose = rota.slice(chamadaRecompose, fimChamadaRecompose);
+      if (!trechoChamadaRecompose.includes("videoId: video.id,")) {
+        failures.push(
+          "aprovação: o call site de /recompose não passa videoId a abrirCorrida — a corrida some do vínculo " +
+            "com o vídeo que a originou, e `fal_pipeline_runs.video_id` fica NULL para toda recomposição a " +
+            "partir de agora.",
+        );
+      } else if (
+        chamadaApprove >= 0 &&
+        fimChamadaApprove >= 0 &&
+        rota.slice(chamadaApprove, fimChamadaApprove).includes("videoId: video.id,")
+      ) {
+        notes.push(
+          "    aprovação: os dois call sites de abrirCorrida em videos.ts (/approve e /recompose) passam " +
+            "video.id",
+        );
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // G-F — abrirCorrida grava video_id no INSERT, por EXECUÇÃO real
+  // -------------------------------------------------------------------------
+  {
+    const queryOriginal = pool.query.bind(pool);
+    async function abrirCorridaCapturada(videoId: string | undefined): Promise<{ sql: string; valores: unknown[] }> {
+      let capturado: { sql: string; valores: unknown[] } | null = null;
+      (pool as { query: unknown }).query = (async (texto: unknown, valores?: unknown[]) => {
+        capturado = { sql: String(texto), valores: (valores ?? []) as unknown[] };
+        return { rows: [{ id: "run-da-prova-g-f" }], rowCount: 1 };
+      }) as typeof pool.query;
+      try {
+        await abrirCorrida({
+          tenantId: "t-da-prova",
+          videoId,
+          script: ROTEIRO_DA_PROVA,
+          targetSeconds: 10,
+          charsPerSecond: 12.8151,
+        });
+      } finally {
+        (pool as { query: unknown }).query = queryOriginal;
+      }
+      if (!capturado) {
+        throw new Error("abrirCorrida não chamou pool.query — nada foi capturado pela guarda G-F");
+      }
+      return capturado;
+    }
+
+    const comVideoId = await abrirCorridaCapturada("video-da-prova-123");
+    if (!/video_id/.test(comVideoId.sql)) {
+      failures.push(
+        `aprovação: o INSERT de \`fal_pipeline_runs\` não menciona a coluna \`video_id\` — SQL capturado: ` +
+          `${JSON.stringify(comVideoId.sql.replace(/\s+/g, " "))}. Sem a coluna, a corrida nunca aponta para ` +
+          "o vídeo que a originou, e reconciliar gasto por vídeo volta a exigir dedução.",
+      );
+    } else if (!comVideoId.valores.includes("video-da-prova-123")) {
+      failures.push(
+        "aprovação: o INSERT de `fal_pipeline_runs` cita `video_id` no texto, mas o valor enviado não é o " +
+          `\`videoId\` recebido — valores capturados: ${JSON.stringify(comVideoId.valores)}. A coluna existe ` +
+          "e está vazia (ou fixa) na prática, que é pior que não existir: parece resolvido e não está.",
+      );
+    } else {
+      notes.push(
+        "    aprovação: abrirCorrida grava `video_id` no INSERT de `fal_pipeline_runs` com o valor recebido " +
+          "— medido por execução real, pool.query substituído",
+      );
+    }
+
+    // CONTRAPONTO: sem videoId (o caso de `probeFalPipeline.ts`), a coluna tem
+    // de ir NULL, não travar nem receber lixo.
+    const semVideoId = await abrirCorridaCapturada(undefined);
+    if (!semVideoId.valores.includes(null)) {
+      failures.push(
+        "aprovação: abrirCorrida sem `videoId` (o caso de `probeFalPipeline.ts`) não gravou `null` no lugar " +
+          `de \`video_id\` — valores capturados: ${JSON.stringify(semVideoId.valores)}. \`videoId\` é opcional ` +
+          "no tipo; se o valor enviado não for `null` quando ausente, a sonda quebra ou grava lixo.",
+      );
     }
   }
 
