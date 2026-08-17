@@ -134,6 +134,36 @@ export const MUTANTS: Mutant[] = [
     replace: '      if (promptDaDirecaoDaLinha(video) === "impossivel-motion-prompt-vazio") {',
     expect: "motion prompt vazio não é recusado antes de abrir a corrida",
   },
+  {
+    guard: "motion prompt vazio é recusado ANTES de abrir a corrida, em /approve",
+    name: "a condição sobrevive e o corpo dela é esvaziado",
+    kind: "esperto",
+    // ESPERTO NO PIOR SENTIDO PARA ESTA GUARDA: a condição — o texto que
+    // `posCondicao` procura — continua BYTE A BYTE no arquivo. O que
+    // desaparece é o `return` de dentro do bloco: a recusa 422 vira um
+    // comentário inócuo, e a execução, em vez de parar ali, ATRAVESSA o `if`
+    // e continua até `abrirCorrida` do mesmo jeito que atravessaria com o
+    // roteiro preenchido. Este é exatamente o mutante que a verificação de
+    // `posCondicao` sozinha NÃO pegaria — ela só olha se a LINHA da condição
+    // existe, não se o corpo dela ainda recusa alguma coisa. Quem pega (ou
+    // não) é a segunda verificação, a contagem de ocorrências de
+    // `error: "empty_motion_prompt"` no recorte.
+    file: ROTA_DE_VIDEOS,
+    find:
+      "      if (!promptDaDirecaoDaLinha(video)) {\n" +
+      "        return reply.code(422).send({\n" +
+      '          error: "empty_motion_prompt",\n' +
+      "          message:\n" +
+      '            "Interpretação não pode ficar vazia para este vendor (fal exige texto de direção). " +\n' +
+      '            "Preencha o campo Interpretação e tente aprovar de novo. Nada foi cobrado.",\n' +
+      "        });\n" +
+      "      }",
+    replace:
+      "      if (!promptDaDirecaoDaLinha(video)) {\n" +
+      "        // corpo esvaziado pelo mutante: a condição continua casando, mas nada recusa mais.\n" +
+      "      }",
+    expect: "a recusa `empty_motion_prompt` aparece 0x",
+  },
 ];
 
 export interface FalApprovalCheckResult {
