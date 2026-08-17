@@ -1,11 +1,12 @@
 /**
- * A APROVAÇÃO da imagem composta — as três invariantes do BLOCO B3.
+ * A APROVAÇÃO da imagem composta — as quatro invariantes do BLOCO B3.
  *
  *  G-A  vídeo em `awaiting_approval` não é tratado como órfão pelo recovery
  *  G-B  nenhuma etapa paga posterior à composição sai sem aprovação registrada
  *  G-C  refazer recompõe sem disparar o Wan
+ *  G-D  motion prompt vazio é recusado ANTES de abrir a corrida, em `/approve`
  *
- * ┌─ As três medem por EXECUÇÃO, e cada uma tem um desfecho ─────────────────┐
+ * ┌─ As três primeiras medem por EXECUÇÃO, e cada uma tem um desfecho ───────┐
  * │ G-A  a varredura de boot roda com `pool.query` substituído. Sem a        │
  * │      exceção, a linha `awaiting_approval` é REACOMPANHADA — e            │
  * │      reacompanhar chama `pollVideoJob`, que despacha por                 │
@@ -24,11 +25,32 @@
  * │      em tela nenhuma — só na fatura, 12× maior.                          │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
+ * ┌─ G-D mede FORMA, e isto está declarado ───────────────────────────────────┐
+ * │ A recusa vive INLINE no handler `POST /videos/:id/approve`               │
+ * │ (`backend/src/routes/videos.ts`), como closure — não é uma função        │
+ * │ exportada de um módulo de serviço, e esta rodada está proibida de tocar  │
+ * │ na rota para extraí-la. Sem uma função importável não há o que chamar    │
+ * │ por execução isolada; o que se pode medir por execução aqui é o handler  │
+ * │ HTTP inteiro, o que esta guarda não faz (nenhuma das outras três do      │
+ * │ arquivo sobe o Fastify). A alternativa MEDIDA por este arquivo (G-a de   │
+ * │ `checkFalGenerationPathPolicy.ts`, que mede a ordem porteiro×débito no   │
+ * │ mesmo handler de vídeos) é a leitura do arquivo REAL e a verificação de  │
+ * │ que a condição — os TOKENS que a decisão usa, não um comentário, nome    │
+ * │ de variável ou texto de mensagem — está presente e vem ANTES de          │
+ * │ `abrirCorrida`. Um mutante que troque a condição por uma que nunca casa  │
+ * │ (`promptDaDirecaoDaLinha(video) === "impossivel-motion-prompt-vazio"`)   │
+ * │ remove o `if (!promptDaDirecaoDaLinha(video))` do texto do arquivo, e é  │
+ * │ essa ausência — não uma menção — que a guarda enxerga.                   │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
  * ┌─ Custo: ZERO ───────────────────────────────────────────────────────────┐
  * │ Nenhuma rede (o `fetch` é substituído), nenhum banco (o `pool.query` é   │
- * │ substituído e o diário é um array), nenhuma espera real.                 │
+ * │ substituído e o diário é um array), nenhuma espera real. G-D só lê       │
+ * │ arquivo do disco.                                                        │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { Mutant } from "./mutants.js";
 import { pool } from "../db/pool.js";
 import { ENDPOINT_ANIMAR, ENDPOINT_COMPOR } from "../services/video/falPipeline.js";
@@ -37,6 +59,10 @@ import { recoverInFlightVideos, videoRecoveryMaxAgeMs, videoApprovalMaxAgeMs } f
 
 const RECUPERACAO = "backend/src/services/video/recovery.ts";
 const APROVACAO = "backend/src/services/video/falApproval.ts";
+const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
+
+/** A condição, transcrita. É a forma que o mutante de G-D desfaz. */
+const CONDICAO_MOTION_PROMPT_VAZIO = "      if (!promptDaDirecaoDaLinha(video)) {";
 
 export const MUTANTS: Mutant[] = [
   {
@@ -90,6 +116,23 @@ export const MUTANTS: Mutant[] = [
     find: 'export const PARAR_APOS_RECOMPOR: EtapaDoPipeline = "compor";',
     replace: 'export const PARAR_APOS_RECOMPOR: EtapaDoPipeline = "sincronizar";',
     expect: "o refazer disparou a animação",
+  },
+  {
+    guard: "motion prompt vazio é recusado ANTES de abrir a corrida, em /approve",
+    name: "a condição de motion prompt vazio deixa de casar com linha nenhuma",
+    kind: "esperto",
+    // ESPERTO: o `if` continua no arquivo, byte a byte visível como bloco, o
+    // `tsc` continua verde (é uma comparação de string válida, não um
+    // `if (false && …)` que o gotcha do G-A desta guarda já proíbe), e a
+    // resposta 422 `empty_motion_prompt` continua existindo no código-fonte
+    // — só que morta, porque nenhum roteiro real é literalmente a string
+    // "impossivel-motion-prompt-vazio". A recusa para de acontecer sem que
+    // uma leitura por texto de mensagem ou nome de variável perceba: a
+    // mensagem, o código de erro e o nome da função seguem intactos.
+    file: ROTA_DE_VIDEOS,
+    find: CONDICAO_MOTION_PROMPT_VAZIO,
+    replace: '      if (promptDaDirecaoDaLinha(video) === "impossivel-motion-prompt-vazio") {',
+    expect: "motion prompt vazio não é recusado antes de abrir a corrida",
   },
 ];
 
@@ -290,6 +333,21 @@ async function refazer(): Promise<{ submetidos: string[]; erro: string }> {
   return { submetidos, erro };
 }
 
+// ---------------------------------------------------------------------------
+// G-D: a recusa de motion prompt vazio, por FORMA — ver o cabeçalho
+// ---------------------------------------------------------------------------
+
+function lerDaRaiz(relativo: string): string {
+  // O repositório inteiro é montado em `/repo` no container — o mesmo caminho
+  // que `checkFalGenerationPathPolicy` usa. `/app` tem só `backend/src`, e ler
+  // por ele deixaria de fora a tela.
+  const repoRoot = process.env.REPO_ROOT ?? "/repo";
+  // CRLF → LF, sempre: o working copy vem em CRLF (autocrlf no Windows) e a
+  // âncora transcrita aqui é escrita com `\n` — sem normalizar, o `includes`
+  // casa zero vezes e a guarda acusa ausência do que está lá.
+  return readFileSync(path.join(repoRoot, relativo), "utf-8").replace(/\r\n/g, "\n");
+}
+
 export async function checkFalApprovalPolicy(): Promise<FalApprovalCheckResult> {
   const failures: string[] = [];
   const notes: string[] = [];
@@ -430,6 +488,73 @@ export async function checkFalApprovalPolicy(): Promise<FalApprovalCheckResult> 
       `    aprovação: o refazer submete só \`${ENDPOINT_COMPOR}\` e para — a animação não é alcançada ` +
         "nem com teto folgado",
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // G-D — motion prompt vazio recusa ANTES de abrirCorrida, no handler /approve
+  // -------------------------------------------------------------------------
+  const rota = lerDaRaiz(ROTA_DE_VIDEOS);
+  // ÂNCORAS INTRÍNSECAS ao que se mede: a string de rota do handler de
+  // aprovação (única no arquivo) e a primeira `abrirCorrida` depois dela —
+  // que é a do PRÓPRIO handler, porque `/recompose` vem depois no arquivo.
+  // Nunca um wrapper de layout — recorte ancorado em fronteira genérica vaza
+  // para o handler vizinho e a guarda acusa o errado.
+  const inicioApprove = rota.indexOf('"/videos/:id/approve",');
+  const fimApprove = rota.indexOf("const runId = await abrirCorrida({", inicioApprove);
+
+  if (inicioApprove < 0 || fimApprove < 0) {
+    failures.push(
+      "aprovação: não foi possível recortar o handler `/approve` em " +
+        `${ROTA_DE_VIDEOS} pelas âncoras \`"/videos/:id/approve",\` e \`const runId = await abrirCorrida({\`. ` +
+        "A guarda não pode opinar sobre um trecho que não encontrou, e passar verde aqui seria o pior desfecho.",
+    );
+  } else {
+    const trechoApprove = rota.slice(inicioApprove, fimApprove);
+
+    // Rede anti-vazamento: o recorte não pode ter engolido a rota vizinha.
+    for (const vizinha of ['"/videos/:id/recompose"', '"/videos/:id/reject"']) {
+      if (trechoApprove.includes(vizinha)) {
+        failures.push(
+          `aprovação: o recorte do handler /approve engoliu \`${vizinha}\` — a âncora vazou para a rota ` +
+            "vizinha, e a verificação abaixo seria sobre o handler errado.",
+        );
+      }
+    }
+
+    const posCondicao = trechoApprove.indexOf(CONDICAO_MOTION_PROMPT_VAZIO);
+    if (posCondicao < 0) {
+      failures.push(
+        "aprovação: motion prompt vazio não é recusado antes de abrir a corrida — a condição " +
+          `\`${CONDICAO_MOTION_PROMPT_VAZIO.trim()}\` não está mais no handler \`/approve\`. Sem ela, um ` +
+          "roteiro cuja Interpretação ficou vazia chega ao Wan (`wan/v2.6/image-to-video/flash`), que exige " +
+          "`prompt` como string não-vazia — e o 422 do fornecedor, embora ainda estornável, gastaria uma " +
+          "chamada de rede real para chegar à mesma recusa que já se sabia sem sair daqui.",
+      );
+    } else {
+      // CONTRAPONTO: a posição da condição é a mesma posição em que, com o
+      // roteiro preenchido (o `if` não casa), a execução ATRAVESSA o bloco e
+      // segue para `abrirCorrida` — que é exatamente o limite direito do
+      // recorte. Não há OUTRO retorno antecipado entre os dois no trecho
+      // medido: se houvesse, aparecer aqui seria a mesma âncora por acaso, e
+      // o texto abaixo pega isso contando quantas vezes a mensagem de erro
+      // deste passo aparece no recorte (tem de ser exatamente uma).
+      const ocorrenciasDaRecusa = trechoApprove.split('error: "empty_motion_prompt"').length - 1;
+      if (ocorrenciasDaRecusa !== 1) {
+        failures.push(
+          "aprovação: a recusa `empty_motion_prompt` aparece " +
+            `${ocorrenciasDaRecusa}x no handler \`/approve\` (esperado 1). Duas ocorrências indicam um ` +
+            "segundo ponto de recusa que pode ter ficado fora de ordem; zero indica que a condição existe " +
+            "mas não devolve mais o 422 correspondente — os dois casos tornam a guarda incapaz de afirmar " +
+            "que o caminho feliz (Interpretação preenchida) segue para `abrirCorrida` sem passar por aqui.",
+        );
+      } else {
+        notes.push(
+          "    aprovação: motion prompt vazio recusa (422 `empty_motion_prompt`) ANTES de `abrirCorrida` no " +
+            `handler \`/approve\` (condição na posição ${posCondicao} do recorte); com a Interpretação ` +
+            "preenchida a condição não casa e a execução segue reto para `abrirCorrida`, no fim do mesmo recorte",
+        );
+      }
+    }
   }
 
   return { failures, notes };
