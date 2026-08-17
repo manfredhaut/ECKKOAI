@@ -120,8 +120,17 @@ export const MUTANTS: Mutant[] = [
     // ternário para o fim de DOIS, e a ordem heygen-primeiro — que decide o
     // destino de todo tenant que nunca escolheu vendor — passa a depender de
     // ler dois níveis de aninhamento em vez de um.
+    // ANCORADO SÓ no retorno, não em RAMO_FAL + retorno: desde o BACKLOG 8 os
+    // dois deixaram de ser contíguos (o atalho de fixture — `if
+    // (isFixtureMode()) return generateVideoFixture(input);` — e um bloco de
+    // comentário ficaram no meio). Um `find` que exigisse os dois juntos
+    // apodreceria a cada edição daquele comentário — a mesma lição já
+    // registrada acima, no mutante do porteiro. RAMO_FAL não precisa ser
+    // TOCADO por este mutante: deixá-lo intacto (agora código morto atrás de
+    // um `if` que já devolveu) não invalida o teste — quem falha é a
+    // contagem de ocorrências de TERNARIO_CANONICO, que passa a ser ZERO.
     file: PROVIDER,
-    find: RAMO_FAL + "\n\n  return withLiveBudget(\"geração de vídeo\", \"gerar vídeo\", async () =>\n" + TERNARIO_CANONICO,
+    find: "  return withLiveBudget(\"geração de vídeo\", \"gerar vídeo\", async () =>\n" + TERNARIO_CANONICO,
     replace:
       "  return withLiveBudget(\"geração de vídeo\", \"gerar vídeo\", async () =>\n" +
       '    input.vendor === "fal"\n' +

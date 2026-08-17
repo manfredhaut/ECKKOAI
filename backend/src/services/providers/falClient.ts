@@ -289,10 +289,17 @@ export async function falSubmit(
   if (isFixtureMode()) {
     const requestId = `fixture-fal-${endpointId.replace(/[^a-z0-9]+/gi, "-")}`;
     await onRequestId(requestId);
+    // O ENDPOINT vai codificado na query, sem perdas (`requestId` acima é
+    // lossy de propósito — legível no diário). É dali que `falResult` deriva
+    // o FORMATO da resposta simulada (BACKLOG 8): sem isto, toda etapa
+    // devolvia a mesma forma vazia, e a leitura do resultado da composição
+    // quebrava com "a composição concluiu sem devolver imagem" — a corrida
+    // nunca saía do primeiro passo em nenhum ensaio.
+    const endpointCodificado = encodeURIComponent(endpointId);
     return {
       requestId,
-      statusUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}/status`,
-      responseUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}`,
+      statusUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}/status?endpoint=${endpointCodificado}`,
+      responseUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}?endpoint=${endpointCodificado}`,
     };
   }
 
@@ -395,12 +402,51 @@ function normalizeFalStatus(bruto: unknown): FalQueueStatus {
   }
 }
 
+/**
+ * A imagem/vídeo de fixture que `fixtureResultFor` devolve. Hosts de
+ * mentira, mesma marca "exemplo" do resto do arquivo — ver `FIXTURE_BASE`.
+ */
+const FIXTURE_IMAGEM_URL = `${FIXTURE_BASE}/fixture-composicao.png`;
+const FIXTURE_VIDEO_URL = `${FIXTURE_BASE}/fixture-video.mp4`;
+
+/**
+ * A FORMA da resposta simulada, por etapa — BACKLOG 8.
+ *
+ * `falResult` só recebe a URL; o endpoint que a produziu chega nela por
+ * `?endpoint=` (ver `falSubmit`). Sem decidir por etapa, toda resposta de
+ * fixture tinha a MESMA forma vazia (`{fixture:true, response_url}`), e
+ * `falPipeline.ts` — que lê `saida.images[0].url` na composição e
+ * `saida.video.url` na animação/sincronia — nunca achava o campo. A corrida
+ * terminava sempre no primeiro passo, com "a composição concluiu sem
+ * devolver imagem", mesmo sem defeito nenhum no que a pessoa pediu.
+ *
+ * Literais, e não os `ENDPOINT_*` de `falPipeline.ts`: importar de lá criaria
+ * um ciclo (`falPipeline.ts` já importa deste arquivo). Os três endpoints são
+ * ESTÁVEIS — cada um só muda pela mesma rodada que corrige o catálogo — e um
+ * desalinhamento aqui é pego pela guarda de execução em
+ * `checkFalPipelinePolicy.ts`, que roda os três em fixture de verdade e
+ * inspeciona o resultado, não o texto.
+ */
+function fixtureResultFor(responseUrl: string): unknown {
+  const endpointId = new URL(responseUrl).searchParams.get("endpoint") ?? "";
+  if (endpointId === "fal-ai/nano-banana-2/edit") {
+    return { images: [{ url: FIXTURE_IMAGEM_URL }] };
+  }
+  if (endpointId === "wan/v2.6/image-to-video/flash" || endpointId === "fal-ai/sync-lipsync/v2") {
+    return { video: { url: FIXTURE_VIDEO_URL } };
+  }
+  // Endpoint desconhecido (fora dos três de hoje): mantém a forma antiga.
+  // Qualquer parsing novo vai acusar "sem o campo esperado" — falha visível,
+  // e não uma forma inventada para um contrato que este arquivo não conhece.
+  return { fixture: true, response_url: responseUrl };
+}
+
 /** A saída do trabalho concluído. */
 export async function falResult(apiKey: string, responseUrl: string): Promise<unknown> {
   assertUrlDaFila(responseUrl, "falResult");
 
   if (isFixtureMode()) {
-    return { fixture: true, response_url: responseUrl };
+    return fixtureResultFor(responseUrl);
   }
 
   let res: Response;

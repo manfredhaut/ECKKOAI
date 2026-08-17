@@ -1299,15 +1299,20 @@ export async function generateVideo(input: GenerateVideoInput): Promise<Generate
         consequence: "o vendor decide a geometria; a proporção pedida fica gravada mas não é enviada",
       });
   }
-  if (isFixtureMode()) return generateVideoFixture(input);
-
-  // Teto por sessão: protege contra o laço que dispara N vezes, que nenhuma
-  // declaração de intenção no boot impediria. `withLiveBudget` devolve o
-  // GASTO se a chamada lançar — o fornecedor não chegou a aceitar o trabalho,
-  // mesma fronteira do estorno de crédito. A TENTATIVA não volta, e é ela que
-  // continua barrando o laço.
-  // O RAMO DA FAL, e por que ele é um `if` acima do ternário e não um terceiro
-  // braço dele.
+  // O RAMO DA FAL, ANTES do atalho de fixture — BACKLOG 8, corrigido nesta
+  // rodada. `generateVideoFixture` monta um payload de FORMATO HEYGEN
+  // (`buildHeygenVideoPayload`) e nunca soube da fal: seu retorno não tem
+  // `imagemCompostaUrl`, e a rota (que EXIGE esse campo para vendor `fal`,
+  // `routes/videos.ts`) recusava com "a corrida terminou sem devolver a
+  // imagem composta" mesmo sem defeito nenhum na composição — o vendor fal
+  // nunca chegava a `generateVideoFal` em fixture, porque o `if
+  // (isFixtureMode())` abaixo respondia primeiro para TODO vendor.
+  //
+  // `generateVideoFal` não precisa do atalho: `runFalPipeline` chama
+  // `falSubmit`/`falPoll`/`falResult` (falClient.ts) e `synthesizeSpeech`
+  // (voiceProvider.ts), e cada uma dessas já consulta `isFixtureMode()`
+  // sozinha antes de tocar rede — a simulação certa para a fal já existia,
+  // só nunca era alcançada por este despacho.
   //
   // O ternário abaixo é `did ? … : heygen` — não tem caso "nenhum dos dois", e
   // é essa ausência que faz todo vendor novo cair na HeyGen. Transformá-lo em
@@ -1327,6 +1332,13 @@ export async function generateVideo(input: GenerateVideoInput): Promise<Generate
   // crédito acontece.
   if (input.vendor === "fal") return generateVideoFal(input);
 
+  if (isFixtureMode()) return generateVideoFixture(input);
+
+  // Teto por sessão: protege contra o laço que dispara N vezes, que nenhuma
+  // declaração de intenção no boot impediria. `withLiveBudget` devolve o
+  // GASTO se a chamada lançar — o fornecedor não chegou a aceitar o trabalho,
+  // mesma fronteira do estorno de crédito. A TENTATIVA não volta, e é ela que
+  // continua barrando o laço.
   return withLiveBudget("geração de vídeo", "gerar vídeo", async () =>
     input.vendor === "did" ? generateVideoDid(input) : generateVideoHeygen(input),
   );
