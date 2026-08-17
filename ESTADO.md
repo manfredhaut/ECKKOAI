@@ -15,9 +15,9 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **17/08/2026** (BLOCO N+1 — videoId em abrirCorrida, video_id em
-fal_pipeline_runs, Backlog 8 corrigido), HEAD `2e34ef3` + o commit desta
-linha.
+Atualizado em **17/08/2026** (BLOCO N+2 — terceiro call site de abrirCorrida,
+POST /videos ramo `ehFal`, ganha videoId; G-E estendida para os três), HEAD
+`5dad2a9` + o commit desta linha.
 
 ⚠️ **GAP CONHECIDO, NÃO RECONSTRUÍDO NESTA RODADA:** entre o HEAD anterior
 registrado aqui (`22f9db8`, 14/08) e o início desta sessão (`b314c5d`) o
@@ -52,14 +52,12 @@ só num script descartável, apagado ao final, nunca commitado.
   chamada de verdade com `pool.query` substituído, inspecionando SQL e
   valores capturados, não grep). 4 mutantes novos, **provados reprovando
   4/4** por passada filtrada depois do commit.
-  ⚠️ **Existe um TERCEIRO call site real de `abrirCorrida` em
+  ⚠️ **Existia um TERCEIRO call site real de `abrirCorrida` em
   `routes/videos.ts`** — dentro do handler de criação (`POST /videos`, ramo
   `ehFal`, ~linha 1214), com `video.id` já disponível no mesmo ponto que os
-  outros dois. **NÃO foi tocado**: o pedido desta rodada enumerava
-  explicitamente só os dois de aprovação/recomposição. Consequência: vídeos
-  criados pelo caminho direto (vendor fal) seguem abrindo corrida com
-  `fal_pipeline_runs.video_id` NULL — só aprovação e recomposição gravam o
-  vínculo. Decisão de tocar ou não este terceiro site é do operador.
+  outros dois. **NÃO foi tocado nesta rodada** (o pedido enumerava
+  explicitamente só os dois de aprovação/recomposição) — **fechado no BLOCO
+  N+2, §10.**
 
 - `2e34ef3` — **Backlog 8, causa raiz eram DOIS defeitos empilhados, achados
   rodando o rehearsal Criar→Aprovar de verdade** (não só lendo código):
@@ -112,6 +110,43 @@ desta rodada, fica para sessão isolada fora do horário de trabalho, árvore
 já limpa.
 
 HEAD final `2e34ef3`, árvore limpa.
+
+---
+
+## 10 · BLOCO N+2 (17/08/2026) — o terceiro call site (POST /videos, ramo
+ehFal) fechado
+
+**Custo: US$ 0,00.** Só leitura e edição de arquivo — nenhum arnês completo,
+nenhum deploy, como pedido.
+
+**Commit `5dad2a9`.** `video.id` confirmado em escopo no ponto da chamada
+(linha 1122, bem antes da chamada em ~1214 — o INSERT do vídeo e o débito de
+crédito já aconteceram, exatamente o que o comentário "GRAVAÇÃO ANTECIPADA"
+já existente no fonte descrevia). Passar `videoId: video.id` aqui é o MESMO
+padrão dos outros dois, não uma mudança de ordem de execução — não havia
+razão para não forçar.
+
+`abrirCorrida()` no ramo `ehFal` do handler de criação (`POST /videos`)
+passou a levar `videoId: video.id`. G-E (`checkFalApprovalPolicy.ts`)
+estendida dos dois call sites para os TRÊS: o terceiro recorte usa uma âncora
+extra à esquerda (`}>("/videos", { preHandler: requireActiveTenant }`, a
+mesma que `checkFalGenerationPathPolicy.ts` já usa para este handler) porque
+a chamada ali é `? await abrirCorrida({` — braço de TERNÁRIO, não `const
+runId = await abrirCorrida({` como nos outros dois; esse texto é
+distinguível por si só. Mutante novo (`obvio`), **provado reprovando** junto
+com os outros dois de G-E (3/3, passada filtrada pós-commit, árvore
+conferida por hash contra HEAD em cada reversão).
+
+**Gate final: 273 de 281 mutantes declarados casam 1x no alvo, exit 0.**
+**NÃO rodada a passada completa** — por instrução explícita, mesma regra do
+N+1.
+
+**Consequência do fix:** `fal_pipeline_runs.video_id` deixa de ficar NULL
+para gerações diretas pela fal (`POST /videos`) — antes só aprovação e
+recomposição gravavam o vínculo, e é exatamente essa lacuna que o BLOCO N+1
+tinha deixado registrada como dívida.
+
+HEAD final `5dad2a9`, árvore limpa.
 
 ---
 
