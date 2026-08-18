@@ -1238,9 +1238,6 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
 // arquivo deixar de consultá-lo — ver scripts/checkProviderMode.ts.
 
 export async function trainAvatar(input: TrainAvatarInput): Promise<TrainAvatarResult> {
-  if (input.photoUrls.length === 0) {
-    throw new AvatarProviderError("At least one face photo is required to train an avatar.");
-  }
   if (isFixtureMode()) return trainAvatarFixture();
   const photoBuffer = await readUpload(input.photoUrls[0]);
   return input.vendor === "did" ? trainAvatarDid(input.apiKey, photoBuffer) : trainAvatarHeygen(input.apiKey, photoBuffer);

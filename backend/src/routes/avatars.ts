@@ -13,7 +13,6 @@ import {
   imageUploadMaxBytes,
   referenceVideoMaxBytes,
   checkReferenceVideoDuration,
-  checkReferenceVideoPhotos,
   takeUpload,
 } from "../services/uploadLimits.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
@@ -331,20 +330,6 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       [req.params.id, req.tenantId],
     );
     if (!existing[0]) return reply.code(404).send({ error: "Avatar not found" });
-
-    // FOTO — antes da credencial e antes do débito, pelo mesmo motivo da
-    // duração acima: sem isso, `trainAvatar()` lançava `AvatarProviderError`
-    // que `classifyVendorFailure` não reconhece e vira 502 "unknown" — um
-    // erro NOSSO (precondição não atendida) mascarado de falha do fornecedor.
-    const fotoVerdict = checkReferenceVideoPhotos(existing[0].photo_urls);
-    if (!fotoVerdict.ok) {
-      logEvent("info", "reference_video_rejected", {
-        reason: fotoVerdict.code,
-        photoCount: existing[0].photo_urls.length,
-        route: "avatars.referenceVideo",
-      });
-      return reply.code(422).send({ error: fotoVerdict.code, message: fotoVerdict.message });
-    }
 
     const avatarCredential = await getCredential(req.tenantId, "avatar");
     if (!avatarCredential) {

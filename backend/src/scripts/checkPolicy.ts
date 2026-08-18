@@ -73,6 +73,7 @@ import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js"
 import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkExistingAvatarAssetsPolicy } from "./checkExistingAvatarAssetsPolicy.js";
+import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -716,6 +717,16 @@ async function main(): Promise<void> {
   const existingAvatarAssets = await checkExistingAvatarAssetsPolicy();
   existingAvatarAssets.failures.forEach((f) => failures.push(f));
   existingAvatarAssets.notes.forEach((n) => note(n));
+
+  // --- 24o-sexies. 0 fotos não recusa nem a rota, nem trainAvatar() -------
+  //
+  // Foto do rosto e vídeo de referência são independentes (decisão desta
+  // rodada). Duas checagens: a rota não condiciona o handler a
+  // `photo_urls.length`, e `trainAvatar()` não exige foto antes do desvio de
+  // fixture — o ponto em que a exigência antiga vetava até a simulação.
+  const referenceVideoPhotoOptional = await checkReferenceVideoPhotoOptionalPolicy();
+  referenceVideoPhotoOptional.failures.forEach((f) => failures.push(f));
+  referenceVideoPhotoOptional.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //
