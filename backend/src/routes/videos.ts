@@ -947,6 +947,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!readiness.ready) {
       const [primeiro] = readiness.blockers;
+      logEvent("error", "video_create_readiness_blocked", {
+        context: "videos.create",
+        tenantId: req.tenantId,
+        code: primeiro.code,
+        status: primeiro.status,
+      });
       return reply
         .code(primeiro.status)
         .send({ error: primeiro.code, message: primeiro.message, blockers: readiness.blockers });
@@ -963,6 +969,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         await assertDailyGenerationBudget();
       } catch (err) {
         if (err instanceof DailyGenerationLimitError) {
+          logEvent("error", "daily_generation_limit", {
+            context: "videos.create",
+            tenantId: req.tenantId,
+            used: err.used,
+            max: err.max,
+          });
           return reply.code(429).send({
             error: "daily_generation_limit",
             message: err.message,
@@ -1041,6 +1053,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // diferença.
       const scriptCredential = await getCredential(req.tenantId, "script");
       if (!scriptCredential) {
+        logEvent("error", "direction_translation_unavailable", {
+          context: "videos.create",
+          tenantId: req.tenantId,
+        });
         return reply.code(400).send({
           error: "direction_translation_unavailable",
           message:
@@ -1065,6 +1081,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           // geração segue, o vídeo sai com o fundo errado, é cobrado por
           // inteiro e a tela não diz nada. Aqui a pessoa fica sabendo, e o
           // dinheiro fica na carteira.
+          logEvent("error", "direction_translation_response_502", {
+            tenantId: req.tenantId,
+            reason: err.reason,
+            message: err.message,
+          });
           return reply.code(502).send({ error: "direction_translation_failed", message: err.message });
         }
         throw err;
