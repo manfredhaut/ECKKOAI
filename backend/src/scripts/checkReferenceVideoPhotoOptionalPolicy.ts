@@ -91,7 +91,7 @@ export const MUTANTS: Mutant[] = [
     file: STEP,
     find: "disabled={!draftAvatar.reference_video_url && draftAvatar.photo_urls.length === 0}",
     replace: "disabled={draftAvatar.photo_urls.length < 3 || !draftAvatar.reference_video_url}",
-    expect: "o botão Concluir configuração volta a exigir 3 fotos",
+    expect: "volta a exigir 3 fotos",
   },
 ];
 
