@@ -143,6 +143,76 @@ const HOW_TO_FIT: Record<UploadKind, string> = {
  */
 export const RECOMMENDED_RECORDING_SECONDS = 120;
 
+const DEFAULT_MAX_SECONDS = 120;
+
+/**
+ * Teto REAL de duração do vídeo/áudio de referência — diferente de
+ * `RECOMMENDED_RECORDING_SECONDS` acima, que nunca travou nada. Este número
+ * RECUSA com 422 quando excedido, porque este envio treina o avatar E clona a
+ * voz ao mesmo tempo (`POST /avatars/:id/reference-video`).
+ *
+ * Lê `MAX_RECORDING_SECONDS` — a MESMA variável que já controla o corte
+ * automático da gravação por câmera no cliente (`frontend/vite.config.ts`,
+ * `frontend/src/uploadLimits.ts`). Não é coincidência de nome: é para as duas
+ * pontas concordarem por construção, o mesmo raciocínio já registrado no
+ * comentário de `referenceVideoMaxBytes()`. Uma variável nova e paralela aqui
+ * abriria exatamente a divergência que já aconteceu neste projeto entre
+ * `checkSampleDuration` e `checkNormalizedSampleSize` (voiceSample.ts) antes
+ * de as duas passarem a derivar do mesmo cálculo.
+ */
+export function referenceVideoMaxSeconds(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.MAX_RECORDING_SECONDS;
+  if (!raw) return DEFAULT_MAX_SECONDS;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_MAX_SECONDS;
+}
+
+/** "1:15" — para ler numa tela, não para calcular. */
+export function formatRecordingSeconds(seconds: number): string {
+  const total = Math.floor(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export interface DurationVerdict {
+  ok: boolean;
+  code?: "reference_video_not_readable" | "reference_video_too_long";
+  message?: string;
+}
+
+/**
+ * GUARDA de duração do vídeo/áudio de referência — mesmo desenho da GUARDA A
+ * de `services/voice/voiceSample.ts` (`checkSampleDuration`): `null`/`NaN`
+ * nunca passa (arquivo corrompido não é "sem opinião"), e o teto recusa antes
+ * de qualquer chamada a fornecedor.
+ */
+export function checkReferenceVideoDuration(
+  durationSeconds: number | null,
+  maxSeconds: number = referenceVideoMaxSeconds(),
+): DurationVerdict {
+  if (durationSeconds === null || !Number.isFinite(durationSeconds)) {
+    return {
+      ok: false,
+      code: "reference_video_not_readable",
+      message:
+        "Não foi possível medir a duração do vídeo — o arquivo pode estar corrompido ou incompleto. " +
+        "Grave novamente e envie.",
+    };
+  }
+  if (durationSeconds > maxSeconds) {
+    return {
+      ok: false,
+      code: "reference_video_too_long",
+      message:
+        `O vídeo tem ${formatRecordingSeconds(durationSeconds)} e o máximo é ` +
+        `${formatRecordingSeconds(maxSeconds)}. Esta gravação treina o avatar e clona a voz ao mesmo ` +
+        "tempo — grave um trecho mais curto, com fala contínua, e envie de novo.",
+    };
+  }
+  return { ok: true };
+}
+
 /**
  * Lê o arquivo de um multipart com teto próprio da rota, e responde 413 legível
  * quando estoura.

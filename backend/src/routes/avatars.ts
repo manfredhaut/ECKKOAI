@@ -9,7 +9,12 @@ import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import type { AvatarProviderStatus } from "../services/providers/avatarProvider.js";
 import { cloneVoice, VoiceProviderError } from "../services/providers/voiceProvider.js";
 import { getCredential } from "../services/credentialLookup.js";
-import { imageUploadMaxBytes, referenceVideoMaxBytes, takeUpload } from "../services/uploadLimits.js";
+import {
+  imageUploadMaxBytes,
+  referenceVideoMaxBytes,
+  checkReferenceVideoDuration,
+  takeUpload,
+} from "../services/uploadLimits.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import { saveUpload, readUpload } from "../services/storage.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
@@ -19,6 +24,7 @@ import { toClientVendorError, vendorErrorStatus } from "../services/providers/ve
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 import { logEvent } from "../services/log/safeLog.js";
 import { checkVoiceReplacement } from "../services/voice/voiceSample.js";
+import { probeSampleDurationSeconds } from "../services/voice/voiceSampleAudio.js";
 import { criarLook, listarLooks } from "../services/avatar/looks.js";
 import { HEYGEN_LOOK_COST } from "../services/billing/providerCost.js";
 
@@ -302,6 +308,22 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!up) return reply;
     const { file, buffer } = up;
+
+    // TETO DE DURAÇÃO — o quanto antes, igual à checagem de tamanho acima:
+    // antes de buscar o avatar, antes da credencial. Esta gravação treina o
+    // avatar E clona a voz no mesmo envio (ver comentário da rota), então o
+    // teto vale para os dois de uma vez, e testar a recusa não depende de
+    // nenhuma credencial de fornecedor estar configurada.
+    const durationSeconds = await probeSampleDurationSeconds(buffer);
+    const duracaoVerdict = checkReferenceVideoDuration(durationSeconds);
+    if (!duracaoVerdict.ok) {
+      logEvent("info", "reference_video_rejected", {
+        reason: duracaoVerdict.code,
+        durationSeconds,
+        route: "avatars.referenceVideo",
+      });
+      return reply.code(422).send({ error: duracaoVerdict.code, message: duracaoVerdict.message });
+    }
 
     const { rows: existing } = await pool.query<Avatar>(
       "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",

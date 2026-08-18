@@ -10,7 +10,13 @@ import { BACKGROUND_OPTIONS, DEFAULT_BACKGROUND_ID } from "../virtualBackground/
 import { DEFAULT_QUALITY } from "../imageQuality/applyQualityTreatment";
 import type { QualityOptions } from "../imageQuality/applyQualityTreatment";
 import { useFeature } from "../../../features/FeatureFlagContext";
-import { MAX_IMAGE_BYTES, MAX_REFERENCE_VIDEO_BYTES, formatBytes } from "../../../uploadLimits";
+import {
+  MAX_IMAGE_BYTES,
+  MAX_RECORDING_SECONDS,
+  MAX_REFERENCE_VIDEO_BYTES,
+  formatBytes,
+  formatDuration,
+} from "../../../uploadLimits";
 import { RecordingProgress } from "../RecordingProgress";
 import { VoiceSampleRecorder } from "../VoiceSampleRecorder";
 import { AvatarReadinessNotice } from "../AvatarReadinessNotice";
@@ -289,9 +295,34 @@ export function AvatarSetupStep({
     return true;
   }
 
+  /**
+   * Recusa antes de enviar, pela DURAÇÃO — mesma cortesia de
+   * `rejectIfTooLarge`, e não substitui a checagem do servidor (que mede o
+   * arquivo de verdade com `ffprobe`; ver `POST /avatars/:id/reference-video`).
+   *
+   * Só se aplica à gravação pela CÂMERA: `recorder.elapsedSeconds` já é
+   * medido pelo próprio gravador (que também para sozinho em
+   * `MAX_RECORDING_SECONDS`), então isto é defesa em profundidade, não a
+   * primeira linha. Um arquivo ENVIADO não tem duração conhecida no cliente
+   * sem ler metadados de vídeo — o mesmo raciocínio já registrado em
+   * `VoiceSampleRecorder.tsx` — então esse caminho segue sem checagem local,
+   * e quem decide de verdade é sempre o servidor.
+   */
+  function rejectRecordingIfTooLong(seconds: number): boolean {
+    if (seconds <= MAX_RECORDING_SECONDS) return false;
+    setActionError(
+      t("createVideo.avatarSetup.recordingTooLong", {
+        duration: formatDuration(seconds),
+        max: formatDuration(MAX_RECORDING_SECONDS),
+      }),
+    );
+    return true;
+  }
+
   async function handleUploadRecording() {
     if (!draftAvatar || !recorder.recordedBlob) return;
     if (rejectIfTooLarge(recorder.recordedBlob.size)) return;
+    if (rejectRecordingIfTooLong(recorder.elapsedSeconds)) return;
     // Este é o passo que dispara treino de avatar e clonagem de voz — os
     // dois fornecedores externos ao mesmo tempo, e o ponto mais provável de
     // falha do fluxo inteiro.

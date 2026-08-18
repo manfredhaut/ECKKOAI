@@ -15,9 +15,12 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **17/08/2026** (BLOCO N+2 — terceiro call site de abrirCorrida,
-POST /videos ramo `ehFal`, ganha videoId; G-E estendida para os três), HEAD
-`5dad2a9` + o commit desta linha.
+Atualizado em **18/08/2026** (BLOCO N+3 — 4 pontos de `logEvent` sem log em
+`POST /videos`, arnês completo 281/281, e três investigações de produção sem
+código alterado: ENOENT de foto do Mário, prompt vazio na composição fal,
+`invalid_uid` da ElevenLabs), HEAD `fd1ba07`. **Esta linha NÃO está
+commitada** — ver nota no fim do BLOCO N+3, §11, sobre o que falta decidir
+antes de fechar a sessão.
 
 ⚠️ **GAP CONHECIDO, NÃO RECONSTRUÍDO NESTA RODADA:** entre o HEAD anterior
 registrado aqui (`22f9db8`, 14/08) e o início desta sessão (`b314c5d`) o
@@ -147,6 +150,101 @@ recomposição gravavam o vínculo, e é exatamente essa lacuna que o BLOCO N+1
 tinha deixado registrada como dívida.
 
 HEAD final `5dad2a9`, árvore limpa.
+
+---
+
+## 11 · BLOCO N+3 (18/08/2026) — logs de erro em POST /videos, arnês completo,
+e três investigações de produção sem tocar código
+
+**Custo: US$ 0,00 em toda a sessão.** Nenhum deploy, nenhuma chamada a
+fornecedor, nenhum acesso à VPS de produção (SSH/SCP foram pedidos e
+RECUSADOS — ver o item de memória `feedback_no_ssh_prod`, criado nesta
+sessão: SSH e leitura de `.env` de produção são exclusivos do operador).
+
+**1) Commit `fd1ba07`, MEDIDO por `git show`.** `POST /videos`
+(`routes/videos.ts`) tinha 9 respostas 4xx/5xx no handler inteiro
+(linhas 887-1524); 5 já logavam antes do `reply.send` (direto, ou via
+`decidirEEstornar`/`encerrarComMotivo`, que sempre logam `video_falhou`
+primeiro). As 4 sem log ganharam `logEvent("error", ...)`: readiness
+bloqueada (`video_create_readiness_blocked`), teto diário
+(`daily_generation_limit`), tradução da Interpretação sem credencial
+(`direction_translation_unavailable`), e o catch de `DirectionTranslationError`
+que motivou o pedido (`direction_translation_response_502`). Nenhum status
+code, mensagem ao cliente ou fluxo mudou — só as 4 linhas de log. 21 inserções,
+0 remoções, 1 arquivo.
+
+**2) Arnês de mutação COMPLETO, MEDIDO: 281/281, exit 0, zero
+INERTE/ERRO/AMBÍGUO/FALHOU.** Rodado em background (~35 min de parede) depois
+do commit acima, com `git status` limpo antes e depois. Log em
+`_arnes-logs/mutants-videos-logging-2026-08-17-2241.log`. Cobre também os
+guardas que já exercitavam os três caminhos onde os `logEvent` novos entraram
+— nenhum `expect` de guarda colidiu com o texto novo.
+
+**3) Pacote de deploy gerado e ENTREGUE ao usuário (`SendUserFile`), não
+publicado nem enviado à VPS.** `git archive --format=tar --prefix=twinai-deploy/
+HEAD`, HEAD `fd1ba07` (confere), 41.256.960 bytes, sha256
+`67c996aaacbfc3c27024f84357bb18b2be3d6327586aa4a6c24e0c3ace89839b` — MEDIDO
+duas vezes por ferramentas independentes (`sha256sum` e `Get-FileHash` do
+PowerShell), os dois batem. **Nota de processo:** uma resposta anterior desta
+sessão colou o hash CORTADO em 1 caractere (63 em vez de 64) por erro de
+transcrição — o valor acima é o verificado, não o da primeira colagem.
+
+**4) Investigação — ENOENT no fornecedor fal, avatar "Mário" (`983c7de4…`).**
+`readUpload()` ([storage.ts:24-27](backend/src/services/storage.ts:24)) lê
+`avatars.photo_urls` do disco local (`config.uploadsDir`) só no caminho `fal`
+([avatarProvider.ts:1163-1173](backend/src/services/providers/avatarProvider.ts:1163));
+o caminho HeyGen nunca precisa disso. **MEDIDO no banco local:** o Mário tem
+`provider: heygen` (foi treinado lá, não na fal) — a geração que falhou usava
+`vendor: fal` porque a credencial ATUAL do tenant aponta para fal, não porque
+o avatar foi feito para esse caminho. Os 3 arquivos de foto EXISTEM neste
+ambiente local (`uploads/c77a5b8a…/*.jpg`, datados 16/07). **NÃO VERIFICADO:**
+se esses arquivos existem no `uploads/` da VPS — `uploads/*` é gitignored, e
+`git archive` (como o pacote do item 3) nunca inclui esse diretório; se o
+`uploads/` de produção não foi populado por um caminho separado (rsync/scp),
+o ENOENT lá seria esperado por construção, não regressão. Fica pergunta para
+o operador, não investigada além disso (sem acesso à VPS).
+
+**5) Investigação — prompt vazio na composição fal.**
+`promptDaComposicao()` ([avatarProvider.ts:1103-1105](backend/src/services/providers/avatarProvider.ts:1103))
+é `[scenarioPrompt, outfitPrompt].filter(Boolean).join(". ")`. Quando os dois
+presets sem-customização são escolhidos juntos (frontend manda os dois `null`,
+[GenerateStep.tsx:53,55](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:53))
+E não há imagem de referência, o resultado é `""`, que a fal recusa (mínimo 3
+caracteres). Causa raiz IDENTIFICADA por leitura; nenhuma correção aplicada
+(pedido era só investigação).
+
+**6) Investigação — `invalid_uid` da ElevenLabs, avatar "test um"
+(`ecc3f232…`).** `voiceId` vem cru de `avatars.voice_id`
+([videos.ts:1263](backend/src/routes/videos.ts:1263)) sem NENHUMA validação
+de formato antes de `synthesizeSpeech()`. **MEDIDO por SELECT no banco
+local:** o `voice_id` deste avatar é
+`fixture-voice-2e8a3561-c2c1-440c-b2fe-dc00ad56bb8a` (50 caracteres) — o
+formato exato que `fixtureProvider.ts:407` gera em modo fixture, bem
+diferente de um id real da ElevenLabs (20 caracteres alfanuméricos, como o do
+Mário ou do "TESTE REAL"). Hipótese mais provável: avatar clonado em fixture,
+depois usado numa tentativa live sem reclonar de verdade. **NÃO VERIFICADO:**
+se este é o mesmo avatar usado no vídeo `9704eb5f…` citado pelo operador — a
+linha desse vídeo NÃO existe neste banco local (só existe em produção), então
+a ligação avatar↔vídeo é plausível mas não confirmada por consulta direta.
+
+**7) Escrito, NÃO EXECUTADO, NÃO COMMITADO:**
+[backend/src/scripts/reconciliarVideo9704eb5f.ts](backend/src/scripts/reconciliarVideo9704eb5f.ts)
+— reconciliação pontual do vídeo `9704eb5f-cf9e-419a-b261-cfeeabe6db33`
+(tenant `c77a5b8a…` / `dev-c77a5b`), que ficou `error` sem estorno porque a fal
+já tinha aceito o job antes da falha de voz. Confere tenant/slug, exige
+`status='error'`, checa idempotência (sai sem duplicar se já houver
+`reason='refund'` para este vídeo), lê o `credit_type`/`simulated` do débito
+ORIGINAL antes de agir, e chama `refundCredit()` — nunca `UPDATE` cru. Arquivo
+é **untracked** no git (`?? backend/src/scripts/reconciliarVideo9704eb5f.ts`).
+**DECISÃO PENDENTE DO OPERADOR:** revisar o script, decidir se roda (na VPS,
+não localmente — o vídeo é de produção), e se apaga depois.
+
+⚠️ **PRÓXIMO PASSO DESTA LINHA DE TRABALHO:** decidir se este arquivo
+(`ESTADO.md`) e o script do item 7 entram num commit, ou ficam como estão
+(uncommitted) até a próxima sessão decidir. Nenhum dos dois foi commitado
+nesta escrita — só o item 1 (`fd1ba07`) está no histórico do git.
+
+HEAD no fim desta sessão: `fd1ba07` (sem novo commit desta seção).
 
 ---
 

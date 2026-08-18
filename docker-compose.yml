@@ -100,6 +100,13 @@ services:
       # Repassado aos DOIS serviços para que cliente e servidor concordem por
       # construção — o servidor continua sendo a autoridade.
       IMAGE_UPLOAD_MAX_BYTES: ${IMAGE_UPLOAD_MAX_BYTES:-}
+      # Teto de DURAÇÃO do vídeo/áudio de referência do avatar. Vazio = 120 s.
+      # MESMA variável do frontend (vite.config.ts) — lá ela para a gravação
+      # da câmera sozinha; aqui ela é a checagem REAL, por ffprobe, em
+      # services/uploadLimits.ts (referenceVideoMaxSeconds). Repassada aos
+      # DOIS serviços para que cliente e servidor concordem por construção —
+      # o servidor continua sendo a autoridade.
+      MAX_RECORDING_SECONDS: ${MAX_RECORDING_SECONDS:-}
       # As cinco chaves da plataforma. Só a primeira era repassada até aqui —
       # as outras estavam documentadas no .env.example e no CLAUDE.md, mas
       # nunca chegavam ao container: preenchê-las no .env não teria efeito
