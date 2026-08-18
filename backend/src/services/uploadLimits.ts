@@ -213,6 +213,34 @@ export function checkReferenceVideoDuration(
   return { ok: true };
 }
 
+export interface PhotoVerdict {
+  ok: boolean;
+  code?: "reference_video_no_face_photo";
+  message?: string;
+}
+
+/**
+ * GUARDA de foto do vídeo/áudio de referência — mesmo desenho das duas
+ * acima: recusa explícita antes de qualquer chamada a fornecedor, em vez de
+ * deixar `trainAvatar()` lançar `AvatarProviderError` (que não casa com
+ * nenhum padrão de `classifyVendorFailure` e vira 502 "unknown" — um erro
+ * NOSSO, de precondição, mascarado de falha de fornecedor).
+ *
+ * Só exige 1 foto, não 3: é o que `trainAvatar()` de fato consome
+ * (`photoUrls[0]`) — ver comentário lá. As 3 fotos (frente/direita/esquerda)
+ * são recomendação de qualidade, não requisito de treino.
+ */
+export function checkReferenceVideoPhotos(photoUrls: readonly string[]): PhotoVerdict {
+  if (photoUrls.length === 0) {
+    return {
+      ok: false,
+      code: "reference_video_no_face_photo",
+      message: "Envie ao menos 1 foto do rosto antes de enviar o vídeo de referência.",
+    };
+  }
+  return { ok: true };
+}
+
 /**
  * Lê o arquivo de um multipart com teto próprio da rota, e responde 413 legível
  * quando estoura.
