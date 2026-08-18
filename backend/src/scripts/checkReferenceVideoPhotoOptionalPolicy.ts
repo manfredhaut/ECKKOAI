@@ -7,13 +7,17 @@
  * depender só do VÍDEO de referência.
  *
  * ┌─ O QUE ESTA GUARDA IMPEDE DE VOLTAR ──────────────────────────────────────┐
- * │ Duas exigências de foto, em dois arquivos, cada uma capaz de reintroduzir │
+ * │ Três exigências de foto, em três lugares, cada uma capaz de reintroduzir  │
  * │ o defeito por conta própria:                                             │
  * │   1. `routes/avatars.ts` — um 422 antes do treino, condicionado a        │
  * │      `photo_urls.length`, dentro do handler de `/reference-video`.       │
  * │   2. `avatarProvider.ts` — o `throw` que existia no topo de              │
  * │      `trainAvatar()`, ANTES do desvio de fixture, então também vetava a  │
  * │      simulação (custo zero) sem foto nenhuma.                            │
+ * │   3. `AvatarSetupStep.tsx` — o botão "Concluir configuração" exigia 3    │
+ * │      fotos (`photo_urls.length < 3`) além do vídeo, travando a tela      │
+ * │      mesmo com o backend já aceitando 0 fotos. Achado na rodada em que   │
+ * │      os itens 1 e 2 foram fechados; corrigido nesta.                     │
  * └────────────────────────────────────────────────────────────────────────────┘
  *
  * ┌─ ANCORADA NO USO, não na menção ──────────────────────────────────────────┐
@@ -32,6 +36,7 @@ import type { Mutant } from "./mutants.js";
 
 const ROUTE = "backend/src/routes/avatars.ts";
 const PROVIDER = "backend/src/services/providers/avatarProvider.ts";
+const STEP = "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx";
 
 export const MUTANTS: Mutant[] = [
   {
@@ -76,6 +81,17 @@ export const MUTANTS: Mutant[] = [
       "  }\n" +
       "  if (isFixtureMode()) return trainAvatarFixture();",
     expect: "volta a exigir foto ANTES do desvio de fixture em trainAvatar()",
+  },
+  {
+    guard: "o botão Concluir configuração não exige 3 fotos",
+    name: "a exigência de 3 fotos volta para o botão de concluir",
+    kind: "esperto",
+    // Reintroduz EXATAMENTE a condição antiga (photo_urls.length < 3),
+    // travando o botão mesmo com vídeo salvo e mesmo com 1 ou 2 fotos.
+    file: STEP,
+    find: "disabled={!draftAvatar.reference_video_url && draftAvatar.photo_urls.length === 0}",
+    replace: "disabled={draftAvatar.photo_urls.length < 3 || !draftAvatar.reference_video_url}",
+    expect: "o botão Concluir configuração volta a exigir 3 fotos",
   },
 ];
 
@@ -147,10 +163,39 @@ export async function checkReferenceVideoPhotoOptionalPolicy(): Promise<Referenc
     }
   }
 
+  // 3. O botão "Concluir configuração": ancorado em `onClick={handleFinishSetup}`
+  //    (único no arquivo) até o fechamento do próprio botão — nunca no
+  //    arquivo inteiro, que também tem outros `disabled={...draftAvatar...}`
+  //    nos controles de câmera/gravação sem relação com este porteiro.
+  const step = lerDaRaiz(STEP);
+  const inicioBotao = step.indexOf("onClick={handleFinishSetup}");
+  const fimBotao = step.indexOf("</button>", inicioBotao);
+  if (inicioBotao < 0 || fimBotao < 0) {
+    failures.push(
+      `reference-video-photo: não encontrei o botão "Concluir configuração" (onClick={handleFinishSetup}) ` +
+        `em ${STEP}. A guarda não pode conferir um botão que não localizou.`,
+    );
+  } else {
+    const trechoBotao = semComentarios(step.slice(inicioBotao, fimBotao));
+    if (/photo_urls\.length\s*<\s*3/.test(trechoBotao)) {
+      failures.push(
+        `reference-video-photo: o botão "Concluir configuração" volta a exigir 3 fotos ` +
+          "(`photo_urls.length < 3`) — trava a tela mesmo com o backend já aceitando 0 fotos e mesmo com " +
+          "vídeo de referência salvo. A regra é vídeo OU pelo menos 1 foto.",
+      );
+    } else if (!/disabled=\{!draftAvatar\.reference_video_url && draftAvatar\.photo_urls\.length === 0\}/.test(trechoBotao)) {
+      failures.push(
+        `reference-video-photo: o botão "Concluir configuração" em ${STEP} não tem a condição esperada ` +
+          "(`!draftAvatar.reference_video_url && draftAvatar.photo_urls.length === 0`) — não reconheço a " +
+          "regra atual e não posso afirmar que ela ainda é vídeo-OU-foto.",
+      );
+    }
+  }
+
   if (failures.length === 0) {
     notes.push(
-      "    reference-video-photo: nem a rota nem trainAvatar() condicionam o treino (real ou simulado) " +
-        "à existência de foto",
+      "    reference-video-photo: nem a rota, nem trainAvatar(), nem o botão de concluir condicionam o " +
+        "treino/avanço à existência de foto além de vídeo-OU-1-foto",
     );
   }
 

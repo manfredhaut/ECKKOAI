@@ -1227,7 +1227,7 @@ export function AvatarSetupStep({
           <button
             className="btn btn-primary"
             onClick={handleFinishSetup}
-            disabled={draftAvatar.photo_urls.length < 3 || !draftAvatar.reference_video_url}
+            disabled={!draftAvatar.reference_video_url && draftAvatar.photo_urls.length === 0}
           >
             {t("createVideo.avatarSetup.finishSetup")}
           </button>

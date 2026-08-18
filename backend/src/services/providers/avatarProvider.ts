@@ -66,6 +66,21 @@ export class AvatarProviderError extends Error {
   }
 }
 
+/**
+ * Classe PRÓPRIA, e não `AvatarProviderError`, pelo mesmo motivo medido de
+ * `LiveBudgetExhaustedError` (liveGuard.ts): isto NÃO é o fornecedor
+ * recusando — é uma precondição NOSSA (este vendor treina a partir de uma
+ * foto, e o avatar não tem nenhuma) detectada ANTES de qualquer chamada de
+ * rede. `classifyVendorFailure` (vendorError.ts) só reconhece padrões de
+ * resposta HTTP do fornecedor (429/5xx/401/403) e cai em "unknown" para
+ * qualquer outra coisa — inclusive um `TypeError` de `readUpload(undefined)`,
+ * que é o que acontecia aqui antes: 0 fotos virava 502 "não foi possível
+ * concluir a operação... tente novamente", como se o fornecedor tivesse
+ * falhado, quando o conserto real é enviar uma foto. Tipo próprio + captura
+ * dedicada na rota (avatars.ts) é o que separa os dois casos.
+ */
+export class AvatarPhotoRequiredError extends Error {}
+
 export interface TrainAvatarInput {
   apiKey: string;
   vendor: AvatarVendor;
@@ -1239,6 +1254,17 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
 
 export async function trainAvatar(input: TrainAvatarInput): Promise<TrainAvatarResult> {
   if (isFixtureMode()) return trainAvatarFixture();
+  // LIVE apenas: heygen/did treinam a partir de uma foto do rosto, e sem
+  // isso `readUpload(undefined)` lançaria um TypeError cru — ver o
+  // comentário de `AvatarPhotoRequiredError` acima. Foto continua OPCIONAL
+  // (fixture não olha nada disto); aqui é só a mensagem que fica clara
+  // quando o caminho pago de fato precisa dela e ela falta.
+  if (input.photoUrls.length === 0) {
+    throw new AvatarPhotoRequiredError(
+      "Este provedor de avatar treina a partir de uma foto do rosto, e este avatar ainda não tem " +
+        "nenhuma. Envie ao menos 1 foto do rosto e tente novamente.",
+    );
+  }
   const photoBuffer = await readUpload(input.photoUrls[0]);
   return input.vendor === "did" ? trainAvatarDid(input.apiKey, photoBuffer) : trainAvatarHeygen(input.apiKey, photoBuffer);
 }

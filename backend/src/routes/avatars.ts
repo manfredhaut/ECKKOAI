@@ -4,7 +4,7 @@ import path from "node:path";
 import { pool } from "../db/pool.js";
 import { config } from "../config.js";
 import type { Avatar } from "../types.js";
-import { listAvatarLooks, trainAvatar, waitForAvatarReady } from "../services/providers/avatarProvider.js";
+import { listAvatarLooks, trainAvatar, waitForAvatarReady, AvatarPhotoRequiredError } from "../services/providers/avatarProvider.js";
 import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import type { AvatarProviderStatus } from "../services/providers/avatarProvider.js";
 import { cloneVoice, VoiceProviderError } from "../services/providers/voiceProvider.js";
@@ -385,6 +385,18 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         creditType: "avatar",
         relatedAvatarTrainingId: trainingRows[0].id,
       });
+      // Precondição NOSSA, não falha do fornecedor — ver o comentário de
+      // `AvatarPhotoRequiredError`. Captura DEDICADA, antes do genérico
+      // abaixo: por `classifyVendorFailure`, isto cairia em "unknown" e
+      // viraria 502 "tente novamente", escondendo que o conserto é enviar
+      // uma foto. Só alcançável no caminho LIVE — fixture nunca lança isto.
+      if (err instanceof AvatarPhotoRequiredError) {
+        logEvent("info", "avatar_photo_required_by_vendor", {
+          avatarId: req.params.id,
+          vendor: avatarCredential.vendor,
+        });
+        return reply.code(422).send({ error: "avatar_photo_required_by_vendor", message: err.message });
+      }
       const { failure, message } = toClientVendorError("avatar", "avatars.train", err);
       return reply.code(vendorErrorStatus(failure)).send({ error: "avatar_provider_error", message });
     }
