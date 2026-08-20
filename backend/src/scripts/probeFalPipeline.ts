@@ -41,8 +41,9 @@ import { getCredential } from "../services/credentialLookup.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import {
   PIPELINE_CHARS_PER_SECOND,
+  PIPELINE_DURACAO_MAXIMA,
   PIPELINE_MAX_CHARS,
-  PIPELINE_TARGET_SECONDS,
+  escolherDuracao,
   runFalPipeline,
   type EtapaDoPipeline,
 } from "../services/video/falPipeline.js";
@@ -112,7 +113,7 @@ async function main(): Promise<void> {
       roteiroChars: ROTEIRO.length,
       tetoDeChars: PIPELINE_MAX_CHARS,
       segundosEstimados: Number((ROTEIRO.length / PIPELINE_CHARS_PER_SECOND).toFixed(4)),
-      targetSeconds: PIPELINE_TARGET_SECONDS,
+      duracaoEscolhida: escolherDuracao(ROTEIRO.length) ?? PIPELINE_DURACAO_MAXIMA,
     }),
   );
 
@@ -131,7 +132,7 @@ async function main(): Promise<void> {
   const runId = await abrirCorrida({
     tenantId,
     script: ROTEIRO,
-    targetSeconds: PIPELINE_TARGET_SECONDS,
+    targetSeconds: escolherDuracao(ROTEIRO.length) ?? PIPELINE_DURACAO_MAXIMA,
     charsPerSecond: PIPELINE_CHARS_PER_SECOND,
   });
   console.log(JSON.stringify({ etapa: "corrida", runId }));

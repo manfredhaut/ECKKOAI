@@ -147,6 +147,32 @@ export const MUTANTS: Mutant[] = [
     replace: '    path: "/wan/v2.6/reference-to-video/flash",',
     expect: "pipeline: com teto folgado saíram",
   },
+  {
+    guard: "duração: escolhida a partir do roteiro, não mais um valor fixo",
+    name: "a duração enviada ao Wan volta a ser um valor fixo",
+    kind: "obvio",
+    // Um roteiro de 47 caracteres (teto exato de 5 s) e outro de 142 (teto
+    // exato de 15 s) só podem coincidir se o pipeline PARAR de olhar o
+    // roteiro — qualquer valor fixo único erra pelo menos um dos dois.
+    file: "backend/src/services/video/falPipeline.ts",
+    find: "    duration: String(duracaoEscolhida),",
+    replace: '    duration: "10",',
+    expect: 'pipeline: a duração não foi escolhida a partir do roteiro',
+  },
+  {
+    guard: "duração: um roteiro acima de 15 s é recusado, nunca animado truncado",
+    name: "a recusa acima de 15 s desaparece",
+    kind: "esperto",
+    // ESPERTO: `escolherDuracao` continua devolvendo `PipelineDuration` — o
+    // `tsc` não acusa nada — mas troca "nada comporta" por "usa o teto
+    // mesmo assim". O sintoma não é um erro de tipo: é um roteiro longo
+    // demais sendo animado (e a fala sendo TRUNCADA por `cut_off`) em vez de
+    // recusado antes de qualquer chamada paga.
+    file: "backend/src/services/video/falPipeline.ts",
+    find: "  return null;\n}",
+    replace: "  return PIPELINE_DURACAO_MAXIMA;\n}",
+    expect: "pipeline: um roteiro de",
+  },
 ];
 
 export interface FalPipelineCheckResult {
@@ -187,7 +213,13 @@ interface Corrida {
  *    ordem entre gravar e interpretar deixa de ser invisível.
  */
 async function correr(
-  opcoes: { statusEternamentePendente?: boolean; resultadoVazio?: boolean; tetoDeGastoUsd?: number } = {},
+  opcoes: {
+    statusEternamentePendente?: boolean;
+    resultadoVazio?: boolean;
+    tetoDeGastoUsd?: number;
+    /** Sobrescreve `ROTEIRO_DA_PROVA` — usado pelas checagens de duração. */
+    script?: string;
+  } = {},
 ): Promise<Corrida> {
   const { runFalPipeline } = await import("../services/video/falPipeline.js");
   const passos: string[] = [];
@@ -285,7 +317,7 @@ async function correr(
       apiKeyFal: "chave-irrelevante-fetch-substituido",
       apiKeyElevenLabs: "chave-irrelevante-fetch-substituido",
       voiceId: "0hQuq0q2JEk1SY4lZaM9",
-      script: ROTEIRO_DA_PROVA,
+      script: opcoes.script ?? ROTEIRO_DA_PROVA,
       fotoBase: Buffer.from("foto-da-prova"),
       fotoMimeType: "image/jpeg",
       promptDeComposicao: "traje e cenário da prova",
@@ -455,6 +487,58 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
     }
   }
 
+  // -------------------------------------------------------------------------
+  // 4. A DURAÇÃO É ESCOLHIDA A PARTIR DO ROTEIRO — {5, 10, 15} s, e um
+  //    roteiro acima do teto de 15 s é RECUSADO antes de qualquer submissão.
+  //    Ver `escolherDuracao`/`conferirRoteiro`, falPipeline.ts.
+  // -------------------------------------------------------------------------
+  const { PIPELINE_MAX_CHARS_POR_DURACAO, PIPELINE_DURACAO_MAXIMA } = await import(
+    "../services/video/falPipeline.js"
+  );
+
+  const roteiroPara5s = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[5]);
+  const curto = await correr({ script: roteiroPara5s });
+  const animarCurto = curto.corpos.find((c) => c.endpoint === "wan/v2.6/image-to-video/flash");
+  if (animarCurto?.corpo.duration !== "5") {
+    failures.push(
+      `pipeline: a duração não foi escolhida a partir do roteiro — ${roteiroPara5s.length} caracteres ` +
+        `(o teto exato de 5 s) deveriam pedir "duration": "5" ao Wan, e o corpo trouxe ` +
+        `${JSON.stringify(animarCurto?.corpo.duration ?? null)}. Passos: ${curto.passos.join(" → ") || "(nenhum)"}.`,
+    );
+  }
+
+  const roteiroPara15s = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[15]);
+  const longo = await correr({ script: roteiroPara15s });
+  const animarLongo = longo.corpos.find((c) => c.endpoint === "wan/v2.6/image-to-video/flash");
+  if (animarLongo?.corpo.duration !== "15") {
+    failures.push(
+      `pipeline: a duração não foi escolhida a partir do roteiro — ${roteiroPara15s.length} caracteres ` +
+        `(o teto exato de 15 s) deveriam pedir "duration": "15" ao Wan, e o corpo trouxe ` +
+        `${JSON.stringify(animarLongo?.corpo.duration ?? null)}. Passos: ${longo.passos.join(" → ") || "(nenhum)"}.`,
+    );
+  }
+
+  // 1 caractere acima do teto de 15 s: nenhuma duração comporta, então nenhuma
+  // submissão pode sair — o pipeline não emenda clipes.
+  const roteiroDemais = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[15] + 1);
+  const demais = await correr({ script: roteiroDemais });
+  if (demais.corpos.length > 0) {
+    failures.push(
+      `pipeline: um roteiro de ${roteiroDemais.length} caracteres — 1 acima do teto de 15 s — não foi ` +
+        `recusado antes da 1a chamada paga: ${demais.corpos.length} submissão(ões) saíram. Este pipeline ` +
+        "não emenda clipes: o que não cabe em 15 s tem de ser recusado, não animado truncado.",
+    );
+  }
+  if (
+    !(demais.erro instanceof FalPipelineError) ||
+    !String(demais.erro).includes(`${PIPELINE_DURACAO_MAXIMA} s`)
+  ) {
+    failures.push(
+      "pipeline: um roteiro acima do teto de 15 s não foi recusado com o erro certo — veio " +
+        `${demais.erro === null ? "sucesso" : JSON.stringify(String(demais.erro).slice(0, 160))}.`,
+    );
+  }
+
   if (failures.length === 0) {
     notes.push(
       `  pipeline: corpo cru gravado antes de qualquer leitura — ${feliz.crus.length} corpos no caminho ` +
@@ -471,6 +555,11 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
     notes.push(
       `  pipeline: os ${Object.values(DEFAULTS_NUNCA_HERDADOS).flat().length} campos que não se herda ` +
         "estão explícitos nos 3 corpos enviados",
+    );
+    notes.push(
+      `  duração: ${roteiroPara5s.length} e ${roteiroPara15s.length} caracteres escolheram "5" e "15" ` +
+        `junto ao Wan; ${roteiroDemais.length} caracteres (1 acima do teto de 15 s) recusados antes de ` +
+        "qualquer submissão",
     );
   }
 

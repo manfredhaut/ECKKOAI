@@ -201,7 +201,8 @@ export const MUTANTS: Mutant[] = [
       "        tenantId: req.tenantId,\n" +
       "        videoId: video.id,\n" +
       "        script: video.script,\n" +
-      "        targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "        // Descritivo — ver o comentário equivalente no call site de criação.\n" +
+      "        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n" +
       "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
       "      });\n" +
       "\n" +
@@ -211,7 +212,8 @@ export const MUTANTS: Mutant[] = [
       "      const runId = await abrirCorrida({\n" +
       "        tenantId: req.tenantId,\n" +
       "        script: video.script,\n" +
-      "        targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "        // Descritivo — ver o comentário equivalente no call site de criação.\n" +
+      "        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n" +
       "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
       "      });\n" +
       "\n" +
@@ -229,7 +231,8 @@ export const MUTANTS: Mutant[] = [
       "        tenantId: req.tenantId,\n" +
       "        videoId: video.id,\n" +
       "        script: video.script,\n" +
-      "        targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "        // Descritivo — ver o comentário equivalente no call site de criação.\n" +
+      "        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n" +
       "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
       "      });\n" +
       "\n" +
@@ -239,7 +242,8 @@ export const MUTANTS: Mutant[] = [
       "      const runId = await abrirCorrida({\n" +
       "        tenantId: req.tenantId,\n" +
       "        script: video.script,\n" +
-      "        targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
+      "        // Descritivo — ver o comentário equivalente no call site de criação.\n" +
+      "        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n" +
       "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
       "      });\n" +
       "\n" +
@@ -260,21 +264,11 @@ export const MUTANTS: Mutant[] = [
       "      ? await abrirCorrida({\n" +
       "          tenantId: req.tenantId,\n" +
       "          videoId: video.id,\n" +
-      "          script,\n" +
-      "          targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
-      "          charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
-      "        })\n" +
-      "      : null;\n" +
-      "    if (falRunId) {",
+      "          script,\n",
     replace:
       "      ? await abrirCorrida({\n" +
       "          tenantId: req.tenantId,\n" +
-      "          script,\n" +
-      "          targetSeconds: PIPELINE_TARGET_SECONDS,\n" +
-      "          charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
-      "        })\n" +
-      "      : null;\n" +
-      "    if (falRunId) {",
+      "          script,\n",
     expect: "aprovação: o call site de criação (`POST /videos`, ramo `ehFal`) não passa videoId a abrirCorrida",
   },
   {

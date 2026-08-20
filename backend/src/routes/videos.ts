@@ -56,7 +56,8 @@ import type { VideoEmVoo } from "../services/video/recovery.js";
 import { mimeDoUpload, readUpload } from "../services/storage.js";
 import {
   PIPELINE_CHARS_PER_SECOND,
-  PIPELINE_TARGET_SECONDS,
+  PIPELINE_DURACAO_MAXIMA,
+  escolherDuracao,
   runFalPipelineDaImagem,
   type EntradaDeComposicao,
 } from "../services/video/falPipeline.js";
@@ -1237,7 +1238,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           tenantId: req.tenantId,
           videoId: video.id,
           script,
-          targetSeconds: PIPELINE_TARGET_SECONDS,
+          // Descritivo, para o diário: a decisão de verdade (e a recusa acima
+          // de 15 s) acontece dentro do pipeline, em `conferirRoteiro`. Quando
+          // o roteiro não cabe em nenhuma opção, o teto vira o rótulo — a
+          // corrida abre e fecha `failed` logo em seguida.
+          targetSeconds: escolherDuracao(script.length) ?? PIPELINE_DURACAO_MAXIMA,
           charsPerSecond: PIPELINE_CHARS_PER_SECOND,
         })
       : null;
@@ -1699,7 +1704,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         tenantId: req.tenantId,
         videoId: video.id,
         script: video.script,
-        targetSeconds: PIPELINE_TARGET_SECONDS,
+        // Descritivo — ver o comentário equivalente no call site de criação.
+        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
       });
 
@@ -1796,8 +1802,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           vendor: "fal",
           unitType: "seconds",
           // A duração do ÁUDIO, que neste pipeline é a do entregável: a voz é
-          // ENTRADA e é preservada por construção. Não é a duração pedida.
-          unitCount: corrida.audioDurationSeconds ?? PIPELINE_TARGET_SECONDS,
+          // ENTRADA e é preservada por construção. Não é a duração pedida. Se
+          // a medição falhar, o fallback é a duração REAL desta corrida
+          // (`corrida.duracaoSegundos` — 5, 10 ou 15, decidida pelo roteiro),
+          // não mais um "10" fixo que erraria sempre que a corrida usasse 5
+          // ou 15.
+          unitCount: corrida.audioDurationSeconds ?? corrida.duracaoSegundos,
           requestedUnitCount: video.duration_seconds,
           unitSource: corrida.audioDurationSeconds != null ? "tts_timestamps" : "requested",
           aspectRatio: video.aspect_ratio,
@@ -1891,7 +1901,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         tenantId: req.tenantId,
         videoId: video.id,
         script: video.script,
-        targetSeconds: PIPELINE_TARGET_SECONDS,
+        // Descritivo — ver o comentário equivalente no call site de criação.
+        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
       });
 

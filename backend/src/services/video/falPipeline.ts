@@ -37,12 +37,21 @@ import { PIPELINE_TETO_USD, PRECOS_FAL } from "../billing/providerCost.js";
 // ---------------------------------------------------------------------------
 
 /**
- * Duração do vídeo, em segundos. FIXA nesta fase.
+ * As únicas durações que o `wan/v2.6/image-to-video/flash` aceita.
  *
- * O `wan/v2.6/image-to-video/flash` produz um clipe de duração declarada, e
- * 10 s é o que esta fase pede. Não é estimativa nem teto: é o parâmetro.
+ * MEDIDO por leitura do schema do fornecedor (BUSARELLOT-DURACAO-1, 20/08):
+ * `duration` é `DurationEnum`, tipo STRING, valores `"5"`, `"10"` ou `"15"`,
+ * default `"5"` — <https://fal.ai/models/wan/v2.6/image-to-video/flash/api>,
+ * citação verbatim: *"Duration of the generated video in seconds. Choose
+ * between 5, 10 or 15 seconds."* Não há emenda de clipes: um roteiro que
+ * exija mais de 15 s é RECUSADO, não esticado. Ver `escolherDuracao`.
  */
-export const PIPELINE_TARGET_SECONDS = 10;
+export const PIPELINE_DURATION_OPTIONS = [5, 10, 15] as const;
+export type PipelineDuration = (typeof PIPELINE_DURATION_OPTIONS)[number];
+
+/** A maior opção — o teto absoluto desta fase, sem emenda de clipes. */
+export const PIPELINE_DURACAO_MAXIMA: PipelineDuration =
+  PIPELINE_DURATION_OPTIONS[PIPELINE_DURATION_OPTIONS.length - 1];
 
 /**
  * 10,89 caracteres por segundo.
@@ -71,26 +80,45 @@ export const PIPELINE_CHARS_PER_SECOND = 10.89;
 export const PIPELINE_RITMO_DISPERSAO = 0.1436;
 
 /**
- * 95 caracteres. É TETO, e ele é DERIVADO — nunca digitado.
+ * O teto de caracteres, POR DURAÇÃO — DERIVADO, nunca digitado.
  *
- * `floor(10 s × 10,89 car/s ÷ 1,1436) = floor(95,2256) = 95`. O divisor é a
- * dispersão acima: o teto é o que cabe no clipe **no pior caso do ritmo**, não
- * no ritmo médio. Dividir (e não multiplicar por 0,8564) é o que descreve o
- * caso ruim: se a voz sair 14,36% mais LENTA, estes 95 caracteres ainda cabem
- * nos 10 s.
+ * `floor(duração × 10,89 car/s ÷ 1,1436)`. O divisor é a dispersão acima: o
+ * teto é o que cabe no clipe **no pior caso do ritmo**, não no ritmo médio.
+ * Dividir (e não multiplicar por 0,8564) é o que descreve o caso ruim: se a
+ * voz sair 14,36% mais LENTA, o texto ainda cabe na duração escolhida.
  *
  * A derivação é a razão de ser desta linha. Um literal continuaria parecendo
- * certo depois de `PIPELINE_TARGET_SECONDS` ou `PIPELINE_CHARS_PER_SECOND`
+ * certo depois de `PIPELINE_DURATION_OPTIONS` ou `PIPELINE_CHARS_PER_SECOND`
  * mudarem — e o defeito só apareceria na etapa 4, com a imagem e o vídeo já
  * pagos. É o mesmo motivo pelo qual `maxScriptChars()` do caminho HeyGen é uma
  * função e não o número 1960.
  *
- * A folga sobre a fala continua existindo: 95 ÷ 10,89 = **8,7236 s** de fala
- * num clipe de 10 s.
+ *   5 s → floor( 5 × 10,89 ÷ 1,1436) =  47 caracteres (fala até ~4,32 s)
+ *  10 s → floor(10 × 10,89 ÷ 1,1436) =  95 caracteres (fala até ~8,72 s)
+ *  15 s → floor(15 × 10,89 ÷ 1,1436) = 142 caracteres (fala até ~13,04 s)
  */
-export const PIPELINE_MAX_CHARS: number = Math.floor(
-  (PIPELINE_TARGET_SECONDS * PIPELINE_CHARS_PER_SECOND) / (1 + PIPELINE_RITMO_DISPERSAO),
-);
+export const PIPELINE_MAX_CHARS_POR_DURACAO: Record<PipelineDuration, number> = Object.fromEntries(
+  PIPELINE_DURATION_OPTIONS.map((duracao) => [
+    duracao,
+    Math.floor((duracao * PIPELINE_CHARS_PER_SECOND) / (1 + PIPELINE_RITMO_DISPERSAO)),
+  ]),
+) as Record<PipelineDuration, number>;
+
+/** O maior teto de caracteres desta fase — o da maior duração disponível. */
+export const PIPELINE_MAX_CHARS: number = PIPELINE_MAX_CHARS_POR_DURACAO[PIPELINE_DURACAO_MAXIMA];
+
+/**
+ * A MENOR duração de `PIPELINE_DURATION_OPTIONS` que comporta o roteiro —
+ * pela mesma régua pessimista de `PIPELINE_MAX_CHARS_POR_DURACAO`. `null`
+ * quando nem a maior (15 s) comporta: este pipeline não emenda clipes, então
+ * um roteiro longo demais é RECUSADO, não esticado. Ver `conferirRoteiro`.
+ */
+export function escolherDuracao(chars: number): PipelineDuration | null {
+  for (const duracao of PIPELINE_DURATION_OPTIONS) {
+    if (chars <= PIPELINE_MAX_CHARS_POR_DURACAO[duracao]) return duracao;
+  }
+  return null;
+}
 
 // Os preços e o teto vivem em `billing/providerCost.ts`: a guarda de custo
 // cobra que todo número de dinheiro more lá, e duas cópias de uma medição
@@ -132,12 +160,12 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  *  · `enable_prompt_expansion` (Wan) — MEDIDO em 14/08 (ENDPOINTS-3) que o
  *    fornecedor aceita o campo e o valor `false` sem erro de schema. O default
  *    é `true`: um LLM do fornecedor REESCREVE `promptDeDirecao` antes de
- *    animar. Para 10 s de avatar falando de frente para a câmera, uma reescrita
+ *    animar. Para um avatar falando de frente para a câmera, uma reescrita
  *    fora do nosso controle é risco de qualidade, não de dinheiro — mas é o
  *    mesmo padrão dos outros: aceitar o default é aceitar uma mudança do
  *    fornecedor em silêncio, aqui na DIREÇÃO da cena em vez do preço dela.
  *  · `multi_shots` (Wan) — MEDIDO junto com o de cima, mesmo aceite sem erro.
- *    O default é `true` e segmenta o clipe em várias tomadas; um clipe de 10 s
+ *    O default é `true` e segmenta o clipe em várias tomadas; um clipe curto
  *    de uma pessoa falando não tem cena para cortar, e a segmentação automática
  *    é o mesmo risco de qualidade do campo acima.
  *  · `sync_mode` (lipsync) — ele decide o que acontece quando vídeo e áudio têm
@@ -208,18 +236,20 @@ export const LIPSYNC_MODEL = "lipsync-2";
  * │ parâmetro que ninguém sabe ler. `cut_off` é o comportamento DOCUMENTADO. │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
- * ┌─ 2. Nesta fase o que sobra é VÍDEO, não fala ────────────────────────────┐
- * │ O clipe tem `PIPELINE_TARGET_SECONDS` (10 s) e a fala cabe em            │
- * │ `PIPELINE_MAX_CHARS ÷ PIPELINE_CHARS_PER_SECOND` = ~8,72 s. Cortar o     │
- * │ excedente corta os ~1,3 s de vídeo mudo do fim — a fala sai inteira,     │
- * │ porque ela é a mais CURTA das duas. A objeção original a `cut_off`       │
- * │ descrevia o caso oposto (áudio maior que vídeo), que o teto de           │
- * │ caracteres existe para não deixar acontecer.                             │
+ * ┌─ 2. Em CADA duração escolhida, o que sobra é VÍDEO, não fala ────────────┐
+ * │ A duração é escolhida (`escolherDuracao`) para que a fala caiba com a    │
+ * │ MESMA folga em qualquer das três opções — o roteiro de 95 caracteres     │
+ * │ que dispararia 10 s tem fala de `95 ÷ 10,89` = ~8,72 s num clipe de      │
+ * │ 10 s, e a mesma proporção vale para 5 s (47 → ~4,32 s) e 15 s            │
+ * │ (142 → ~13,04 s). Cortar o excedente corta o vídeo mudo do fim — a fala  │
+ * │ sai inteira, porque ela é a mais CURTA das duas. A objeção original a    │
+ * │ `cut_off` descrevia o caso oposto (áudio maior que vídeo), que o teto de │
+ * │ caracteres por duração existe para não deixar acontecer.                 │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  * ⚠️ **A segurança disto REPOUSA no teto, e o teto repousa num número NÃO
  * VERIFICADO.** Se a fala exceder o clipe, `cut_off` corta a FALA — e o que
- * impede a fala de exceder é `PIPELINE_MAX_CHARS`, derivado de
+ * impede a fala de exceder é `PIPELINE_MAX_CHARS_POR_DURACAO`, derivado de
  * `PIPELINE_RITMO_DISPERSAO` (14,36%), que não tem medição registrada neste
  * repositório. Um ritmo pior que a dispersão fixada devolve exatamente o
  * defeito que `loop` fora escolhido para evitar. A dependência mudou de lugar:
@@ -377,28 +407,45 @@ export interface FalPipelineResult {
    */
   imagemCompostaUrl: string | null;
   audioDurationSeconds: number | null;
+  /**
+   * A duração ESCOLHIDA para este vídeo (`escolherDuracao`, a partir do
+   * roteiro) — não a estimada, não a pedida. É a que foi mandada ao Wan em
+   * `duration`, e o fallback correto para cobrança quando a medição real do
+   * áudio (`audioDurationSeconds`) falhar. Decidida no início da corrida
+   * (`conferirRoteiro`), então está presente mesmo quando a corrida parou
+   * antes de a usar (`pararApos: "compor"`).
+   */
+  duracaoSegundos: PipelineDuration;
   requestIds: { compor: string; animar: string; sincronizar: string };
 }
 
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * O roteiro cabe no clipe?
+ * O roteiro cabe em alguma das três durações — e em qual delas?
  *
- * Recusa ANTES de qualquer chamada: um roteiro grande demais só se descobriria
- * na etapa 4, com as etapas 1 e 2 já pagas.
+ * Escolhe a MENOR de `PIPELINE_DURATION_OPTIONS` que comporta o texto
+ * (`escolherDuracao`) e recusa ANTES de qualquer chamada quando nem a maior
+ * (15 s) comporta: um roteiro grande demais só se descobriria na etapa 4, com
+ * a imagem e o vídeo já pagos. Este pipeline não emenda clipes — a recusa é a
+ * fronteira, não uma etapa a mais.
  */
-export function conferirRoteiro(script: string): { chars: number; segundosEstimados: number } {
+export function conferirRoteiro(
+  script: string,
+): { chars: number; segundosEstimados: number; duracaoEscolhida: PipelineDuration } {
   const chars = script.length;
-  if (chars > PIPELINE_MAX_CHARS) {
+  const duracaoEscolhida = escolherDuracao(chars);
+  if (duracaoEscolhida === null) {
+    const segundosNecessarios = (chars / PIPELINE_CHARS_PER_SECOND) * (1 + PIPELINE_RITMO_DISPERSAO);
     throw new FalPipelineError(
-      `O roteiro tem ${chars} caracteres, acima do teto de ${PIPELINE_MAX_CHARS} desta fase ` +
-        `(${PIPELINE_TARGET_SECONDS} s a ${PIPELINE_CHARS_PER_SECOND} car/s). Nada foi pedido a ` +
-        "fornecedor nenhum: a recusa acontece antes da primeira chamada paga, porque um roteiro que " +
-        "não cabe só apareceria na sincronia — com a imagem e o vídeo já pagos.",
+      `O roteiro exige ${segundosNecessarios.toFixed(1)} s no pior caso do ritmo (${chars} caracteres a ` +
+        `${PIPELINE_CHARS_PER_SECOND} car/s, margem de dispersão ${(PIPELINE_RITMO_DISPERSAO * 100).toFixed(2)}%), ` +
+        `acima do teto atual de ${PIPELINE_DURACAO_MAXIMA} s por vídeo desta fase. Nada foi pedido a ` +
+        "fornecedor nenhum: a recusa acontece antes da primeira chamada paga. Emendar clipes para roteiros " +
+        "maiores não existe aqui — é outro bloco, ainda não desenhado.",
     );
   }
-  return { chars, segundosEstimados: chars / PIPELINE_CHARS_PER_SECOND };
+  return { chars, segundosEstimados: chars / PIPELINE_CHARS_PER_SECOND, duracaoEscolhida };
 }
 
 /**
@@ -584,11 +631,11 @@ async function etapaNaFal(
 }
 
 export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipelineResult> {
-  const { chars, segundosEstimados } = conferirRoteiro(input.script);
+  const { chars, segundosEstimados, duracaoEscolhida } = conferirRoteiro(input.script);
   logEvent("info", "fal_pipeline_iniciado", {
     chars,
     segundosEstimados,
-    targetSeconds: PIPELINE_TARGET_SECONDS,
+    duracaoEscolhida,
     charsPerSecond: PIPELINE_CHARS_PER_SECOND,
   });
 
@@ -630,7 +677,7 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
     const guardado = await input.diario.abrirEtapa("biblioteca", 0, "eckko", null);
     await input.diario.gravarRespostaCrua(guardado, JSON.stringify({ imagemCompostaUrl: String(imagemUrl) }));
     await input.diario.fecharEtapa(guardado, "completed");
-    return pararAqui("compor", gastoPrevistoUsd, {
+    return pararAqui("compor", gastoPrevistoUsd, duracaoEscolhida, {
       imagemCompostaUrl: String(imagemUrl),
       requestIds: { compor: composicao.requestId, animar: "", sincronizar: "" },
     });
@@ -641,6 +688,7 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
     gastoAcumuladoUsd: gastoPrevistoUsd,
     teto,
     segundosEstimados,
+    duracaoEscolhida,
     composicaoRequestId: composicao.requestId,
   });
 }
@@ -669,10 +717,11 @@ export async function runFalPipelineDaImagem(
   /** O `request_id` da composição que produziu esta imagem, quando conhecido. */
   composicaoRequestId = "",
 ): Promise<FalPipelineResult> {
-  const { chars, segundosEstimados } = conferirRoteiro(input.script);
+  const { chars, segundosEstimados, duracaoEscolhida } = conferirRoteiro(input.script);
   logEvent("info", "fal_pipeline_retomado", {
     chars,
     segundosEstimados,
+    duracaoEscolhida,
     imagemCompostaUrl,
     composicaoRequestId: composicaoRequestId || null,
   });
@@ -682,6 +731,7 @@ export async function runFalPipelineDaImagem(
     gastoAcumuladoUsd: 0,
     teto: input.tetoDeGastoUsd ?? PIPELINE_TETO_USD,
     segundosEstimados,
+    duracaoEscolhida,
     composicaoRequestId,
   });
 }
@@ -691,6 +741,8 @@ interface ContextoDaAnimacao {
   gastoAcumuladoUsd: number;
   teto: number;
   segundosEstimados: number;
+  /** A duração escolhida por `conferirRoteiro` — vai ao Wan em `duration`. */
+  duracaoEscolhida: PipelineDuration;
   composicaoRequestId: string;
 }
 
@@ -708,12 +760,12 @@ async function animarNarrarSincronizar(
   input: FalPipelineInput,
   contexto: ContextoDaAnimacao,
 ): Promise<FalPipelineResult> {
-  const { imagemUrl, teto, segundosEstimados, composicaoRequestId } = contexto;
+  const { imagemUrl, teto, segundosEstimados, duracaoEscolhida, composicaoRequestId } = contexto;
   let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
 
   gastoPrevistoUsd = autorizarGasto(
     gastoPrevistoUsd,
-    PRECOS_FAL.animarUsdPorSegundo * PIPELINE_TARGET_SECONDS,
+    PRECOS_FAL.animarUsdPorSegundo * duracaoEscolhida,
     teto,
     "animar",
   );
@@ -729,9 +781,13 @@ async function animarNarrarSincronizar(
     // trilha paga que a etapa 4 descartaria.
     generate_audio: false,
     resolution: RESOLUCAO_VIDEO,
-    duration: PIPELINE_TARGET_SECONDS,
+    // STRING, não número — MEDIDO por leitura do schema (`DurationEnum`, ver
+    // `PIPELINE_DURATION_OPTIONS`): o fornecedor espera "5"/"10"/"15", não os
+    // números. `duracaoEscolhida` é a saída de `escolherDuracao`, sempre um
+    // dos três.
+    duration: String(duracaoEscolhida),
     // Ver DEFAULTS_NUNCA_HERDADOS: sem eles, o fornecedor reescreve a direção
-    // e pode segmentar os 10 s em tomadas — os dois aceitos sem erro de schema
+    // e pode segmentar o clipe em tomadas — os dois aceitos sem erro de schema
     // (MEDIDO em 14/08), então `false` explícito não corre risco de 422.
     enable_prompt_expansion: false,
     multi_shots: false,
@@ -758,7 +814,7 @@ async function animarNarrarSincronizar(
 
   // --- 4. SINCRONIZAR ------------------------------------------------------
   if (input.pararApos === "narrar") {
-    return pararAqui("narrar", gastoPrevistoUsd, { imagemCompostaUrl: imagemUrl });
+    return pararAqui("narrar", gastoPrevistoUsd, duracaoEscolhida, { imagemCompostaUrl: imagemUrl });
   }
 
   // O custo depende da duração REAL do áudio, que agora é conhecida. Quando a
@@ -774,9 +830,9 @@ async function animarNarrarSincronizar(
   const sincronia = await etapaNaFal(input, "sincronizar", 4, ENDPOINT_SINCRONIZAR, {
     video_url: String(videoMudoUrl),
     audio_url: audioUrl,
-    // O que se corta aqui é o VÍDEO mudo do fim, não a fala: o clipe tem 10 s e
-    // a fala cabe em ~8,72 s. Ver `SYNC_MODE` — inclusive o que isso passa a
-    // depender do teto de caracteres.
+    // O que se corta aqui é o VÍDEO mudo do fim, não a fala: a duração
+    // escolhida sempre tem folga sobre a fala. Ver `SYNC_MODE` — inclusive o
+    // que isso passa a depender do teto de caracteres POR DURAÇÃO.
     sync_mode: SYNC_MODE,
     // A VARIANTE, explícita. Sem ela o fornecedor escolhe, e a `pro` custa ~67%
     // mais. Ver `LIPSYNC_MODEL`.
@@ -800,6 +856,7 @@ async function animarNarrarSincronizar(
     videoUrl: String(videoFinalUrl),
     imagemCompostaUrl: imagemUrl,
     audioDurationSeconds: fala.durationSeconds,
+    duracaoSegundos: duracaoEscolhida,
     requestIds: {
       compor: composicaoRequestId,
       animar: animacao.requestId,
@@ -818,6 +875,10 @@ async function animarNarrarSincronizar(
 function pararAqui(
   etapa: EtapaDoPipeline,
   gastoPrevistoUsd: number,
+  // A duração já estava DECIDIDA (`conferirRoteiro`, no início da corrida)
+  // mesmo quando a corrida para antes de usá-la — por isso é sempre
+  // conhecida aqui, nunca opcional.
+  duracaoEscolhida: PipelineDuration,
   // O que a corrida CHEGOU a produzir antes de parar. Sem isto, parar em
   // `compor` devolveria o mesmo objeto vazio de não ter feito nada — e o
   // ponteiro para o trabalho já pago (`request_id`) morreria no retorno.
@@ -833,6 +894,7 @@ function pararAqui(
     videoUrl: "",
     imagemCompostaUrl: produzido.imagemCompostaUrl ?? null,
     audioDurationSeconds: null,
+    duracaoSegundos: duracaoEscolhida,
     requestIds: produzido.requestIds ?? { compor: "", animar: "", sincronizar: "" },
   };
 }
