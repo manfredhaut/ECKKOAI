@@ -405,8 +405,16 @@ function normalizeFalStatus(bruto: unknown): FalQueueStatus {
 /**
  * A imagem/vídeo de fixture que `fixtureResultFor` devolve. Hosts de
  * mentira, mesma marca "exemplo" do resto do arquivo — ver `FIXTURE_BASE`.
+ *
+ * `FIXTURE_IMAGEM_URL` é exportada porque a tela de aprovação RENDERIZA essa
+ * URL num `<img>` de verdade (`fal_composed_image_url`), e um host de
+ * propósito inexistente não carrega no navegador — a imagem some, sobra só o
+ * `alt`. `materializeFalFixtureImage` (fixtureProvider.ts) reconhece este
+ * valor exato para trocá-lo por uma URL servível antes de a linha ser
+ * persistida. Ver o mesmo problema já resolvido para o vídeo da HeyGen em
+ * `pollVideoJobFixture`.
  */
-const FIXTURE_IMAGEM_URL = `${FIXTURE_BASE}/fixture-composicao.png`;
+export const FIXTURE_IMAGEM_URL = `${FIXTURE_BASE}/fixture-composicao.png`;
 const FIXTURE_VIDEO_URL = `${FIXTURE_BASE}/fixture-video.mp4`;
 
 /**

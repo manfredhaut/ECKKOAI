@@ -62,6 +62,7 @@ import {
 } from "../services/video/falPipeline.js";
 import { abrirCorrida, criarDiarioNoBanco, fecharCorrida, requestIdDaEtapa } from "../services/video/falPipelineJournal.js";
 import { aprovarEAnimar, recompor } from "../services/video/falApproval.js";
+import { materializeFalFixtureImage } from "../services/providers/fixtureProvider.js";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 90; // ~7.5 minutes
@@ -1355,11 +1356,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           );
         }
         if (falRunId) await fecharCorrida(falRunId, "completed");
+        // Em fixture, a URL que a fal "devolve" aponta para um host de
+        // mentira (ver `materializeFalFixtureImage`) — sem isto, a tela de
+        // aprovação renderiza uma imagem quebrada em vez da composição.
+        const imagemAExibir = await materializeFalFixtureImage(req.tenantId, imagemCompostaUrl);
         const { rows: aguardando } = await pool.query<Video>(
           `UPDATE videos SET status = 'awaiting_approval', fal_composed_image_url = $2,
                              approval_requested_at = now()
              WHERE id = $1 RETURNING *`,
-          [video.id, imagemCompostaUrl],
+          [video.id, imagemAExibir],
         );
         logEvent("info", "fal_composicao_aguardando_aprovacao", {
           context: "videos.create",
@@ -1914,6 +1919,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           throw new Error("a recomposição terminou sem imagem — o corpo bruto está gravado na etapa");
         }
 
+        // Mesmo tratamento do ponto de criação: em fixture, a URL que a fal
+        // devolve não é servível pelo navegador (ver `materializeFalFixtureImage`).
+        const imagemAExibir = await materializeFalFixtureImage(req.tenantId, corrida.imagemCompostaUrl);
+
         // `approval_requested_at` REINICIA: a aprovação pendente passa a ser da
         // imagem NOVA, e a janela de 24 h conta a partir de agora. Sem isto, a
         // terceira recomposição herdaria o relógio da primeira e poderia
@@ -1922,7 +1931,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           `UPDATE videos SET fal_composed_image_url = $2, fal_run_id = $3, provider_job_id = $4,
                              approval_requested_at = now()
              WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval' RETURNING *`,
-          [video.id, corrida.imagemCompostaUrl, runId, corrida.requestIds.compor, req.tenantId],
+          [video.id, imagemAExibir, runId, corrida.requestIds.compor, req.tenantId],
         );
         if (!recomposto[0]) {
           // A imagem existe e foi paga; o que sumiu foi o estado que a receberia.

@@ -27,6 +27,7 @@ import type { CloneVoiceResult, SynthesizedSpeech, VoiceInventory } from "./voic
 import { HEYGEN_ASPECT_RATIOS, type AspectRatio } from "./videoFormat.js";
 import { selectEngine } from "./videoEngine.js";
 import { logEvent } from "../log/safeLog.js";
+import { FIXTURE_IMAGEM_URL as FAL_FIXTURE_COMPOSED_IMAGE_URL } from "./falClient.js";
 
 /**
  * TRÊS looks simulados — e três, não um, de propósito.
@@ -124,6 +125,29 @@ export const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url
 const fixturesDir = FIXTURES_DIR;
 
 export const FIXTURE_AUDIO_FILE = "simulated-speech.mp3";
+
+export const FIXTURE_COMPOSED_IMAGE_FILE = "fixture-composicao.png";
+
+/**
+ * A imagem composta que a etapa `compor` da fal devolve em fixture aponta
+ * para `exemplo.fal.invalido` (ver `FIXTURE_IMAGEM_URL`, falClient.ts) — um
+ * host de propósito inexistente, pensado para as guardas automatizadas
+ * inspecionarem a URL sem precisar que ela resolva de verdade. A tela de
+ * aprovação, porém, RENDERIZA essa URL num `<img>` real
+ * (`fal_composed_image_url`, GenerateStep.tsx): o navegador não consegue
+ * carregá-la, e mostra a caixa de imagem quebrada com o `alt` no lugar.
+ *
+ * Mesmo tratamento que o vídeo da HeyGen já recebe em `pollVideoJobFixture`
+ * (abaixo): materializar bytes REAIS no storage do tenant, e devolver essa
+ * URL local em vez da URL de mentira. Se a URL recebida não for exatamente a
+ * de fixture da fal (por exemplo, em `live`, onde a fal devolve um CDN real),
+ * ela passa intocada.
+ */
+export async function materializeFalFixtureImage(tenantId: string, url: string): Promise<string> {
+  if (url !== FAL_FIXTURE_COMPOSED_IMAGE_URL) return url;
+  const buffer = await readFixture(FIXTURE_COMPOSED_IMAGE_FILE);
+  return saveUpload(tenantId, buffer, "composicao-simulada.png");
+}
 
 /**
  * Uma fixture de vídeo POR PROPORÇÃO.
