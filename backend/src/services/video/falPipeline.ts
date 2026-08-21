@@ -16,6 +16,8 @@
  *
  *   1. COMPOR    `nano-banana-2/edit`  — rosto + traje + cenário → imagem-base.
  *   2. ANIMAR    `wan/v2.6/image-to-video/flash` — imagem → vídeo MUDO.
+ *      (motor do tier "Normal"; Seedance 2.5 pesquisado no BLOCO SEEDANCE-1,
+ *      21/08, e revertido — reservado pro tier "Premium", ver `ENDPOINT_ANIMAR`)
  *   3. NARRAR    ElevenLabs TTS — o roteiro → áudio, com duração REAL medida.
  *   4. SINCRONIZAR `sync-lipsync/v2` — vídeo + áudio → o entregável.
  *   5. BIBLIOTECA — persistir o resultado.
@@ -31,6 +33,7 @@ import { falPoll, falResult, falSubmit, falUpload } from "../providers/falClient
 import { synthesizeSpeech } from "../providers/voiceProvider.js";
 import { logEvent } from "../log/safeLog.js";
 import { PIPELINE_TETO_USD, PRECOS_FAL } from "../billing/providerCost.js";
+import type { AspectRatio } from "../providers/videoFormat.js";
 
 // ---------------------------------------------------------------------------
 // A RÉGUA DESTE PIPELINE — separada da do caminho HeyGen, DE PROPÓSITO
@@ -45,6 +48,11 @@ import { PIPELINE_TETO_USD, PRECOS_FAL } from "../billing/providerCost.js";
  * citação verbatim: *"Duration of the generated video in seconds. Choose
  * between 5, 10 or 15 seconds."* Não há emenda de clipes: um roteiro que
  * exija mais de 15 s é RECUSADO, não esticado. Ver `escolherDuracao`.
+ *
+ * ⚠️ O Seedance 2.5 (pesquisado no BLOCO SEEDANCE-1, 21/08, tier "Premium")
+ * documenta `duration` como FAIXA contínua `4-30`, não um enum fechado — se
+ * o motor do Premium um dia usar isso, `PIPELINE_DURATION_OPTIONS` deixa de
+ * ser o teto do fornecedor e passa a ser puramente nosso. Não é o caso hoje.
  */
 export const PIPELINE_DURATION_OPTIONS = [5, 10, 15] as const;
 export type PipelineDuration = (typeof PIPELINE_DURATION_OPTIONS)[number];
@@ -151,6 +159,13 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  *    todas são cobradas. Uma imagem é o que a etapa seguinte consome.
  *  · `resolution` (nano-banana) — a imagem-base define a resolução de tudo que
  *    vem depois; herdá-la é deixar o fornecedor escolher o custo das etapas 2 e 4.
+ *  · `aspect_ratio` (nano-banana) — o default é `auto`, que deixa o fornecedor
+ *    decidir a partir das imagens de entrada. É o único campo desta lista que
+ *    varia por vídeo (vem de `PUBLISH_PLATFORMS`, não é uma constante), e por
+ *    isso mesmo é o que mais precisa ir explícito: herdar `auto` aqui é
+ *    reproduzir exatamente o defeito que este campo existe para fechar — a
+ *    proporção escolhida na tela sendo ignorada. Ver `aspectRatio` em
+ *    `FalPipelineInput`.
  *  · `generate_audio` (Wan) — **o mais caro de todos.** Com o default ligado, o
  *    Wan sintetiza uma trilha PRÓPRIA, que é paga, e que a etapa 4 vai
  *    substituir pela nossa voz. Paga-se por áudio que nasce para ser descartado,
@@ -181,7 +196,7 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  *    numa etapa que já é a segunda mais cara da corrida.
  */
 export const DEFAULTS_NUNCA_HERDADOS = {
-  "fal-ai/nano-banana-2/edit": ["num_images", "resolution"],
+  "fal-ai/nano-banana-2/edit": ["num_images", "resolution", "aspect_ratio"],
   "wan/v2.6/image-to-video/flash": [
     "generate_audio",
     "resolution",
@@ -191,6 +206,56 @@ export const DEFAULTS_NUNCA_HERDADOS = {
   ],
   "fal-ai/sync-lipsync/v2": ["sync_mode", "model"],
 } as const;
+
+// ---------------------------------------------------------------------------
+// FASE 0 — regras de sistema, SEMPRE concatenadas, nunca editáveis pela pessoa
+// ---------------------------------------------------------------------------
+
+/**
+ * As três correções de vídeo medidas na POC de composição por frações
+ * (fora deste repositório, 21/08): câmera fixa, gesto contido, mão que nunca
+ * cruza o rosto. Em INGLÊS, porque `promptDeDirecao` chega aqui já traduzido
+ * (`directionTranslation.ts`, na rota) — concatenar em português produziria
+ * um prompt bilíngue que o Seedance nunca viu.
+ */
+export const DIRECAO_CAMERA_FIXA =
+  "camera locked and fixed, no zoom, no pan, no camera movement of any kind — only the character moves";
+export const DIRECAO_GESTOS_CONTIDOS = "short, contained gestures kept at chest height";
+export const DIRECAO_MAO_NAO_CRUZA_ROSTO =
+  "the hand never crosses in front of the face at any point in the clip";
+
+/**
+ * A quarta correção, de pele — mesma POC. Em PORTUGUÊS: `promptDeComposicao`
+ * nunca passa por `directionTranslation.ts` (só a direção é traduzida; ver o
+ * cabeçalho daquele arquivo), então concatenar em inglês misturaria os dois
+ * idiomas no mesmo campo, na ordem inversa do problema acima.
+ */
+export const COMPOSICAO_PELE_ATENUACAO_LEVE =
+  "pele com atenuação leve de textura, suavização sutil e realista, preservando a identidade — sem retoque agressivo";
+
+/**
+ * Aplicadas AQUI, no orquestrador, e não em quem monta `promptDeComposicao` /
+ * `promptDeDirecao` (`avatarProvider.ts`, `routes/videos.ts`) — porque este é
+ * o ÚNICO lugar por onde todo pedido converge antes de custar dinheiro:
+ * criação (`runFalPipeline`), retomada pós-aprovação (`runFalPipelineDaImagem`)
+ * e a sonda (`probeFalPipeline.ts`) chamam todas `etapaNaFal` por baixo. Uma
+ * regra concatenada no CALL SITE, em vez de aqui, teria de ser copiada em cada
+ * um dos três — e é copiar-em-cada-lugar que já produziu drift antes neste
+ * mesmo arquivo (ver `promptDaComposicaoDaLinha` em `routes/videos.ts`).
+ *
+ * SEMPRE concatenam, mesmo com o texto da pessoa vazio: a regra de câmera e a
+ * de pele não dependem de a pessoa ter escrito nada — são default do sistema,
+ * não complemento de uma instrução.
+ */
+export function comDefaultsDeComposicao(promptDaPessoa: string): string {
+  return [promptDaPessoa.trim(), COMPOSICAO_PELE_ATENUACAO_LEVE].filter(Boolean).join(". ");
+}
+
+export function comDefaultsDeDirecao(promptDaPessoa: string): string {
+  return [promptDaPessoa.trim(), DIRECAO_CAMERA_FIXA, DIRECAO_GESTOS_CONTIDOS, DIRECAO_MAO_NAO_CRUZA_ROSTO]
+    .filter(Boolean)
+    .join(". ");
+}
 
 export const ENDPOINT_COMPOR = "fal-ai/nano-banana-2/edit";
 /**
@@ -202,6 +267,11 @@ export const ENDPOINT_COMPOR = "fal-ai/nano-banana-2/edit";
  * erro só aparecia no resultado, o mesmo padrão enganoso medido duas vezes
  * antes. `fal-ai/nano-banana-2/edit` (owned, prefixo `fal-ai/`) serviu de
  * gabarito e por isso o prefixo errado não chamou atenção.
+ *
+ * Revertido pra Wan em 21/08 — motor do tier "Normal" do sistema de
+ * níveis de vídeo. A troca pro Seedance 2.5 (image_urls, end_user_id,
+ * aspect_ratio) fica reservada pro tier "Premium", com teto de gasto
+ * próprio (ainda não implementado) em vez do PIPELINE_TETO_USD global.
  */
 export const ENDPOINT_ANIMAR = "wan/v2.6/image-to-video/flash";
 export const ENDPOINT_SINCRONIZAR = "fal-ai/sync-lipsync/v2";
@@ -346,6 +416,32 @@ export interface FalPipelineInput {
   entradasExtras?: EntradaDeComposicao[];
   /** Texto livre: traje e cenário. */
   promptDeComposicao: string;
+  /**
+   * A proporção escolhida em "Onde este vídeo vai ser publicado"
+   * (`PUBLISH_PLATFORMS`, `videoFormat.ts`) — vai só a `compor()`.
+   *
+   * O Wan (`animar()`, motor do tier "Normal") não tem campo de proporção no
+   * schema: preserva o formato da imagem composta que já chega pronta —
+   * MEDIDO em 19/08 (`aspect_ratio: "9:16"` enviado só à composição produziu
+   * vídeo final 716×1284, ffprobe). Opcional no tipo porque a sonda de
+   * contrato (`compor` isolado, `pararApos: "compor"`) segue sem precisar
+   * dele.
+   *
+   * ⚠️ O Seedance 2.5 (pesquisado no BLOCO SEEDANCE-1, 21/08 — reservado pro
+   * tier "Premium") TEM `aspect_ratio` no schema de `animar()`, e precisaria
+   * dele explícito ali também. NÃO implementado agora que o motor voltou a
+   * ser o Wan.
+   */
+  aspectRatio?: AspectRatio;
+  /**
+   * Identifica o TENANT perante a fal — reservado para `end_user_id`, campo
+   * do Seedance 2.5 (BLOCO SEEDANCE-1, 21/08, tier "Premium"; obrigatório de
+   * conta B2B nesse motor). Mantido na interface porque todos os call sites
+   * já o passam; SEM USO dentro deste arquivo enquanto `animar()` for o Wan
+   * — `compor()`, `narrar()` e `sincronizar()` não pedem identificação de
+   * usuário final no schema deles.
+   */
+  tenantId: string;
   /**
    * A DIREÇÃO DE CENA, e ela vai SÓ ao Wan.
    *
@@ -650,13 +746,19 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
 
   gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, PRECOS_FAL.comporUsd, teto, "compor");
   const composicao = await etapaNaFal(input, "compor", 1, ENDPOINT_COMPOR, {
-    prompt: input.promptDeComposicao,
+    // FASE 0 — a atenuação de pele vai SEMPRE, mesmo sem traje/cenário por
+    // texto. Ver `comDefaultsDeComposicao`.
+    prompt: comDefaultsDeComposicao(input.promptDeComposicao),
     // `[rosto, traje?, cenário?]`, na ordem em que subiram. O que veio por
     // TEXTO não aparece aqui: está no `prompt` acima, que é o mesmo campo.
     image_urls: urlsDasEntradas,
     // Explícitos, sempre. Ver DEFAULTS_NUNCA_HERDADOS.
     num_images: 1,
     resolution: RESOLUCAO_IMAGEM,
+    // A proporção escolhida na tela de publicação. Só aqui: o Wan não tem
+    // onde receber isto — ver o comentário de `aspectRatio` em
+    // `FalPipelineInput`.
+    aspect_ratio: input.aspectRatio,
   });
   const imagemUrl = composicao.saida?.images?.[0]?.url;
   if (!imagemUrl) {
@@ -775,7 +877,9 @@ async function animarNarrarSincronizar(
     // ele que redesenhasse o que já está no quadro. O que falta ao Wan é a única
     // coisa que uma imagem parada não carrega: o que a pessoa FAZ. Ver
     // `promptDeDirecao`.
-    prompt: input.promptDeDirecao,
+    // FASE 0 — câmera fixa, gesto contido, mão longe do rosto: SEMPRE, mesmo
+    // sem Interpretação nenhuma escrita. Ver `comDefaultsDeDirecao`.
+    prompt: comDefaultsDeDirecao(input.promptDeDirecao),
     image_url: imagemUrl,
     // `generate_audio: false` é o mais caro de omitir: o default sintetiza uma
     // trilha paga que a etapa 4 descartaria.

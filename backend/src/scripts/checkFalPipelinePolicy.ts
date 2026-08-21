@@ -321,6 +321,8 @@ async function correr(
       fotoBase: Buffer.from("foto-da-prova"),
       fotoMimeType: "image/jpeg",
       promptDeComposicao: "traje e cenário da prova",
+      aspectRatio: "16:9",
+      tenantId: "tenant-da-prova",
       promptDeDirecao: "direção da prova em inglês",
       diario: diario as never,
       tetoDeGastoUsd: opcoes.tetoDeGastoUsd,
@@ -558,8 +560,8 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
     );
     notes.push(
       `  duração: ${roteiroPara5s.length} e ${roteiroPara15s.length} caracteres escolheram "5" e "15" ` +
-        `junto ao Wan; ${roteiroDemais.length} caracteres (1 acima do teto de 15 s) recusados antes de ` +
-        "qualquer submissão",
+        `junto ao motor de animação; ${roteiroDemais.length} caracteres (1 acima do teto de 15 s) ` +
+        "recusados antes de qualquer submissão",
     );
   }
 

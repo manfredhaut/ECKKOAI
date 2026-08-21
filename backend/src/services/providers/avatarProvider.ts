@@ -1214,7 +1214,14 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
     fotoBase,
     fotoMimeType: mimeDoUpload(fotoUrl),
     entradasExtras,
+    // Campo obrigatório do tipo; sem uso no Wan (`tenantId` só importaria
+    // como `end_user_id` do Seedance, tier "Premium" — não ligado, ver
+    // `ENDPOINT_ANIMAR` em falPipeline.ts).
+    tenantId: input.tenantId,
     promptDeComposicao: promptDaComposicao(input),
+    // A proporção da tela de publicação (`resolveVideoFormat`, nunca
+    // indefinida) — vai à composição. Ver `aspectRatio` em `FalPipelineInput`.
+    aspectRatio: input.format.aspectRatio,
     promptDeDirecao: promptDaDirecao(input),
     diario: input.falDiario,
     // O default é o FREIO, e não o pipeline inteiro: quem quiser ir além tem de

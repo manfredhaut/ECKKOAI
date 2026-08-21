@@ -325,6 +325,23 @@ export const PRECOS_FAL = {
    * <https://fal.ai/models/wan/v2.6/reference-to-video/api>) — as duas
    * porcentagens (50% e 25%) são do MESMO número-base, não uma da outra.
    * `0,10 × 0,25 = 0,025`.
+   *
+   * ⚠️ **Motor do tier "Premium" (pesquisado, NÃO ligado): Seedance 2.5.**
+   * O BLOCO SEEDANCE-1 (21/08) mediu, por leitura de doc pública, que
+   * `bytedance/seedance-2.5/reference-to-video` **NÃO cobra por segundo** —
+   * cobra por TOKEN. Fórmula verbatim: *"tokens = (output_height ×
+   * output_width × (input_video_duration + output_duration) × 24) / 1024"*,
+   * tarifa *"$0.0214 per 1000 tokens"* —
+   * <https://fal.ai/models/bytedance/seedance-2.5/reference-to-video>.
+   * Aplicando para 720p sem vídeo de entrada, 10 s de saída: tokens =
+   * (720 × 1280 × 10 × 24) ÷ 1024 = 216.000 → **US$ 4,6224 para 10 s** →
+   * **~US$ 0,462/s — ~18,5× este número.** NÃO VERIFICADO por chamada real
+   * nem por fusível. Revertido em 21/08 (decisão de produto: Wan é o motor
+   * do tier "Normal"); a conversão fica registrada aqui para quando o tier
+   * "Premium" for implementado, com teto de gasto PRÓPRIO em vez do
+   * `PIPELINE_TETO_USD` global abaixo — reusar o teto global recusaria a
+   * etapa `animar` do Premium antes de qualquer chamada, como aconteceu
+   * durante o BLOCO SEEDANCE-1.
    */
   animarUsdPorSegundo: 0.025,
   /** por segundo de ÁUDIO, `sync-lipsync/v2` — o áudio é que define a duração */
@@ -336,5 +353,16 @@ export const PRECOS_FAL = {
  *
  * Não é preço: é o freio. Vive junto dos preços porque só faz sentido lido ao
  * lado deles.
+ *
+ * Dimensionado para o Wan (tier "Normal"): o pior caso da corrida inteira é
+ * ~US$ 0,77 (compor US$ 0,08 + animar até 15s×US$0,025 + sincronizar), bem
+ * dentro dos US$ 2,00.
+ *
+ * ⚠️ O tier "Premium" (Seedance 2.5, pesquisado no BLOCO SEEDANCE-1, 21/08 —
+ * ver `animarUsdPorSegundo` — mas ainda NÃO implementado) vai precisar de um
+ * teto PRÓPRIO: o preço por segundo dele é ~18,5× maior, e reusar este mesmo
+ * teto global recusaria a etapa `animar` do Premium antes de qualquer
+ * chamada — foi exatamente isso que aconteceu enquanto o Seedance esteve
+ * ligado aqui hoje.
  */
 export const PIPELINE_TETO_USD = 2.0;

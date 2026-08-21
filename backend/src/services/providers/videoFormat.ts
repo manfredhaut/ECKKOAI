@@ -72,18 +72,29 @@ export const PUBLISH_PLATFORMS = [
   { id: "youtube", label: "YouTube (horizontal)", aspectRatio: "16:9", resolution: MEASURED_RESOLUTION },
   { id: "reels_tiktok", label: "Reels, TikTok, Shorts e Facebook Reels (vertical)", aspectRatio: "9:16", resolution: MEASURED_RESOLUTION },
   // ---------------------------------------------------------------------
-  // 4:5 RETIRADO no DEMO-2, e a razão é medida: o único 4:5 real que este
-  // produto entregou tem 40% do quadro em barra sólida (vídeo de 05/08, sonda
-  // `padded`, conteúdo 720×540 num quadro 720×900). O formato herda a barra do
-  // master, e derivá-lo localmente — a infraestrutura existe — só se prova com
-  // uma geração paga. Oferecer um destino que sai com 40% de branco é pior que
-  // não oferecê-lo.
+  // 4:5 REINTRODUZIDO em 19/08, só para o feed do Instagram (Facebook segue
+  // fora — não foi pedido, e reintroduzir os dois juntos por simetria seria
+  // reabrir mais risco do que o testado cobre).
   //
-  // Instagram e Facebook saíram junto porque eram exatamente as duas entradas
-  // 4:5 do catálogo. Vídeos antigos com essas plataformas continuam no banco e
-  // continuam legíveis: `resolveVideoFormat` cai no padrão declarado para
-  // plataforma desconhecida.
+  // O 40% de barra sólida medido no DEMO-2 (vídeo de 05/08, sonda `padded`,
+  // conteúdo 720×540 num quadro 720×900) era da HeyGen — o único vendor que
+  // gerava vídeo naquela época. Este catálogo é POR PLATAFORMA, não por
+  // vendor: a mesma lista aparece para qualquer provedor conectado, e nada
+  // aqui restringe uma proporção a um vendor específico (quem filtra
+  // tudo-ou-nada é `vendorFormatSupport`, em `PublishStep.tsx`).
+  //
+  // ⚠️ CONSEQUÊNCIA NÃO RESOLVIDA: reoferecer 4:5 também o reoferece para
+  // tenants na HeyGen, cujo defeito de 40% de barra NUNCA foi corrigido —
+  // só evitado removendo a opção. Nenhuma geração HeyGen com 4:5 rodou desde
+  // então; o defeito é DEDUZIDO como ainda presente, não medido de novo.
+  //
+  // Do lado da fal: MEDIDO em 19/08 que `aspect_ratio` enviado a `compor()`
+  // sobrevive até o vídeo final para 9:16 (vídeo real, 716×1284, ffprobe).
+  // Para 4:5 especificamente isto é NÃO VERIFICADO — o mecanismo (compor
+  // decide a proporção, animar herda) é o mesmo, mas nenhuma chamada real
+  // testou 4:5 ainda.
   // ---------------------------------------------------------------------
+  { id: "instagram_feed", label: "Feed do Instagram (retrato)", aspectRatio: "4:5", resolution: MEASURED_RESOLUTION },
   { id: "linkedin", label: "LinkedIn e feed quadrado", aspectRatio: "1:1", resolution: MEASURED_RESOLUTION },
 ] as const satisfies readonly PublishPlatform[];
 
@@ -169,14 +180,21 @@ export const VENDOR_FORMAT_SUPPORT = {
       "que o vendor não a honrou.",
   },
   fal: {
-    supported: false,
-    evidence: "none" as FormatEvidence,
+    supported: true,
+    evidence: "vendor_response" as FormatEvidence,
     reason:
-      "A fal.ai entrou no catálogo apenas para a chave poder ser GUARDADA por tenant: não há ramo de " +
-      "geração para ela (`generateVideo` despacha só heygen/did), nenhum endpoint escolhido e nenhuma " +
-      "chamada feita. Sem caminho de geração não há formato a declarar, e `supported: true` aqui seria " +
-      "uma promessa sobre código que não existe. Quando o pipeline for escrito, esta linha muda junto " +
-      "com ele — e a evidência tem de subir de `none` antes de a UI prometer entrega.",
+      "MEDIDO em 19/08/2026 por chamada real (compor request_id 01a01af0-74b7-7730-b636-79a460f84362, " +
+      "animar request_id 01a01af0-9e38-7050-8249-e8a0cd28032b): `aspect_ratio: \"9:16\"` enviado só à " +
+      "composição (`fal-ai/nano-banana-2/edit`) produziu vídeo final 716×1284 (ffprobe, medição " +
+      "independente do que o fornecedor autodeclarou) — a foto de entrada era 640×480 (4:3, paisagem), " +
+      "então a proporção do vídeo não veio dela, veio do `aspect_ratio` pedido. O Wan " +
+      "(`wan/v2.6/image-to-video/flash`, motor do tier \"Normal\") não recebe o campo e não precisa: " +
+      "preserva o formato da imagem composta que já chega pronta. UMA medição, uma proporção (9:16) — " +
+      "16:9, 1:1 e 4:5 seguem NÃO VERIFICADOS por chamada real, mas o mecanismo (compor decide, animar " +
+      "herda) já estava confirmado — PARA O WAN. O Seedance 2.5 (pesquisado no BLOCO SEEDANCE-1, 21/08, " +
+      "reservado pro tier \"Premium\" — não ligado) TEM `aspect_ratio` no schema de `animar()`, diferente " +
+      "do Wan; o tier Premium vai precisar mandar o campo explícito também nessa etapa quando for " +
+      "implementado.",
   },
 } as const;
 

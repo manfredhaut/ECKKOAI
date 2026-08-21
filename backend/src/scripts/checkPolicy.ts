@@ -72,6 +72,7 @@ import { checkFalPipelinePolicy } from "./checkFalPipelinePolicy.js";
 import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js";
 import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
+import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkExistingAvatarAssetsPolicy } from "./checkExistingAvatarAssetsPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
@@ -710,6 +711,14 @@ async function main(): Promise<void> {
   const falSceneWiring = await checkFalSceneWiringPolicy();
   falSceneWiring.failures.forEach((f) => failures.push(f));
   falSceneWiring.notes.forEach((n) => note(n));
+
+  // --- 24o-quater-b. as 4 regras fixas da Fase 0 chegam ao prompt ---------
+  //
+  // Mesma vizinhança e a mesma simulação de fornecedor de
+  // `checkFalSceneWiringPolicy` (reusada, não duplicada).
+  const falFase0Defaults = await checkFalFase0DefaultsPolicy();
+  falFase0Defaults.failures.forEach((f) => failures.push(f));
+  falFase0Defaults.notes.forEach((n) => note(n));
 
   // --- 24o-quinquies. cenário e traje no avatar EXISTENTE (BLOCO B5c) ----
   //

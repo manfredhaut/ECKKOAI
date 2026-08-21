@@ -146,6 +146,7 @@ async function main(): Promise<void> {
       fotoBase: foto,
       fotoMimeType: "image/jpeg",
       promptDeComposicao: PROMPT,
+      tenantId,
       promptDeDirecao: DIRECAO,
       diario: criarDiarioNoBanco(runId),
       tetoDeGastoUsd: teto,

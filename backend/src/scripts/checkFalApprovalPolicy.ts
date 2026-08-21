@@ -476,16 +476,17 @@ async function refazer(): Promise<{ submetidos: string[]; erro: string }> {
       fotoBase: Buffer.from("foto-da-prova"),
       fotoMimeType: "image/jpeg",
       promptDeComposicao: "traje e cenário da prova",
+      tenantId: "tenant-da-prova",
       // DISTINGUÍVEL do texto acima, e é essa diferença que a guarda mede: um
-      // valor igual faria "o Wan recebeu a direção" e "o Wan recebeu a
-      // composição" produzirem exatamente o mesmo corpo, e a guarda seguiria
-      // verde com os dois campos trocados.
+      // valor igual faria "a animação recebeu a direção" e "a animação
+      // recebeu a composição" produzirem exatamente o mesmo corpo, e a
+      // guarda seguiria verde com os dois campos trocados.
       promptDeDirecao: "direção da prova em inglês",
       diario: diario as never,
-      // Teto FOLGADO de propósito: com um teto apertado, quem barraria o Wan
-      // seria o dinheiro, e a guarda passaria a medir o teto em vez do
-      // `pararApos`. O que se afirma aqui é que o REFAZER não encadeia — e
-      // isso só é observável quando nada mais está barrando.
+      // Teto FOLGADO de propósito: com um teto apertado, quem barraria a
+      // animação seria o dinheiro, e a guarda passaria a medir o teto em vez
+      // do `pararApos`. O que se afirma aqui é que o REFAZER não encadeia —
+      // e isso só é observável quando nada mais está barrando.
       tetoDeGastoUsd: 99,
       pollTimeoutMs: 50,
       pollIntervalMs: 1,
@@ -695,7 +696,7 @@ export async function checkFalApprovalPolicy(): Promise<FalApprovalCheckResult> 
       failures.push(
         "aprovação: motion prompt vazio não é recusado antes de abrir a corrida — a condição " +
           `\`${CONDICAO_MOTION_PROMPT_VAZIO.trim()}\` não está mais no handler \`/approve\`. Sem ela, um ` +
-          "roteiro cuja Interpretação ficou vazia chega ao Wan (`wan/v2.6/image-to-video/flash`), que exige " +
+          `roteiro cuja Interpretação ficou vazia chega ao motor de animação (\`${ENDPOINT_ANIMAR}\`), que exige ` +
           "`prompt` como string não-vazia — e o 422 do fornecedor, embora ainda estornável, gastaria uma " +
           "chamada de rede real para chegar à mesma recusa que já se sabia sem sair daqui.",
       );

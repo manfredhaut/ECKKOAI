@@ -296,10 +296,17 @@ export async function falSubmit(
     // quebrava com "a composição concluiu sem devolver imagem" — a corrida
     // nunca saía do primeiro passo em nenhum ensaio.
     const endpointCodificado = encodeURIComponent(endpointId);
+    // `aspect_ratio`, pela MESMA técnica do endpoint acima: `falResult` não
+    // recebe `corpo`, só a URL — então o valor recebido viaja pela query para
+    // o simulador poder devolvê-lo OBSERVÁVEL (ver `fixtureResultFor`), pelo
+    // mesmo nome de campo que a chamada real usaria. Só existe quando o
+    // `corpo` traz o campo (hoje, só a chamada de `compor`).
+    const aspectRatioRecebido =
+      typeof input.aspect_ratio === "string" ? `&aspect_ratio=${encodeURIComponent(input.aspect_ratio)}` : "";
     return {
       requestId,
-      statusUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}/status?endpoint=${endpointCodificado}`,
-      responseUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}?endpoint=${endpointCodificado}`,
+      statusUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}/status?endpoint=${endpointCodificado}${aspectRatioRecebido}`,
+      responseUrl: `${FAL_QUEUE_BASE}/fixture/requests/${requestId}?endpoint=${endpointCodificado}${aspectRatioRecebido}`,
     };
   }
 
@@ -436,9 +443,17 @@ const FIXTURE_VIDEO_URL = `${FIXTURE_BASE}/fixture-video.mp4`;
  * inspeciona o resultado, não o texto.
  */
 function fixtureResultFor(responseUrl: string): unknown {
-  const endpointId = new URL(responseUrl).searchParams.get("endpoint") ?? "";
+  const params = new URL(responseUrl).searchParams;
+  const endpointId = params.get("endpoint") ?? "";
   if (endpointId === "fal-ai/nano-banana-2/edit") {
-    return { images: [{ url: FIXTURE_IMAGEM_URL }] };
+    return {
+      images: [{ url: FIXTURE_IMAGEM_URL }],
+      // NÃO é forma real do fornecedor — existe só para a verificação em
+      // fixture provar que `aspect_ratio` chegou até a chamada simulada, com
+      // o mesmo nome de campo que o corpo real usa. `null` se `compor()` não
+      // tiver recebido o campo (não deveria acontecer: ver DEFAULTS_NUNCA_HERDADOS).
+      aspect_ratio: params.get("aspect_ratio"),
+    };
   }
   if (endpointId === "wan/v2.6/image-to-video/flash" || endpointId === "fal-ai/sync-lipsync/v2") {
     return { video: { url: FIXTURE_VIDEO_URL } };

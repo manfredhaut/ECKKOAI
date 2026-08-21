@@ -23,7 +23,12 @@ import { ARTIFACT_INVALID_MESSAGE, InvalidArtifactError, validateVideoArtifact }
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
-import { resolveVideoFormat, vendorFormatSupport, type VideoFormat } from "../services/providers/videoFormat.js";
+import {
+  resolveVideoFormat,
+  vendorFormatSupport,
+  type AspectRatio,
+  type VideoFormat,
+} from "../services/providers/videoFormat.js";
 import { isFeatureEnabled } from "../services/featureFlagStore.js";
 import { logEvent } from "../services/log/safeLog.js";
 import { evaluateGenerationReadiness } from "../services/generationReadiness.js";
@@ -1671,7 +1676,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           error: "approval_without_image",
           message:
             "Esta geração está aguardando aprovação mas não tem imagem composta gravada. Animar sem ela " +
-            "seria pagar o Wan por uma entrada que não existe. Nada foi cobrado.",
+            "seria pagar o motor de animação por uma entrada que não existe. Nada foi cobrado.",
         });
       }
 
@@ -1681,8 +1686,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // explícito para não parecer uma regra nova do campo Interpretação.
       //
       // Aqui, e não em `carregarCorridaAprovavel`: aquela função é
-      // compartilhada com `/recompose`, que PARA em `compor` e nunca chega ao
-      // Wan (ver o comentário em `promptDaDirecaoDaLinha` mais abaixo) —
+      // compartilhada com `/recompose`, que PARA em `compor` e nunca chega à
+      // animação (ver o comentário em `promptDaDirecaoDaLinha` mais abaixo) —
       // validar lá bloquearia recomposições que nunca tocariam este campo.
       //
       // ANTES de `abrirCorrida`/`marcarAprovado`, de propósito: nenhuma
@@ -1742,10 +1747,19 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 fotoBase: Buffer.alloc(0),
                 fotoMimeType: "image/jpeg",
                 promptDeComposicao: promptDaComposicaoDaLinha(video),
+                // Campo obrigatório do tipo; sem uso no Wan (`tenantId` só
+                // importaria como `end_user_id` do Seedance, tier "Premium" —
+                // não ligado, ver `ENDPOINT_ANIMAR` em falPipeline.ts).
+                tenantId: req.tenantId,
+                // Sem efeito no Wan (`animar()` não tem campo de proporção; o
+                // vídeo herda o formato da imagem composta). Passado mesmo
+                // assim porque o tipo aceita e `compor()` já não roda de novo
+                // aqui — ver `runFalPipelineDaImagem`.
+                aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
                 // ESTE é o call site que importa para a direção: a aprovação é o
-                // único caminho que chega a submeter o Wan, e o `prompt` dele é
-                // o que a pessoa escreveu na Interpretação. Sem esta linha o
-                // vídeo pago sai sem direção nenhuma.
+                // único caminho que chega a submeter a animação, e o `prompt`
+                // dela é o que a pessoa escreveu na Interpretação. Sem esta
+                // linha o vídeo pago sai sem direção nenhuma.
                 promptDeDirecao: promptDaDirecaoDaLinha(video),
                 diario: criarDiarioNoBanco(runId),
               },
@@ -1916,11 +1930,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           fotoMimeType: mimeDoUpload(fotoUrl),
           entradasExtras: await entradasDaComposicao(video),
           promptDeComposicao: promptDaComposicaoDaLinha(video),
+          tenantId: req.tenantId,
+          aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
           // A recomposição para em `compor` (`PARAR_APOS_RECOMPOR`) e não chega
-          // ao Wan, então este campo não é lido nesta corrida. Vai mesmo assim:
-          // o dia em que `pararApos` mudar aqui, o Wan receberia direção VAZIA
-          // sem nada no código dizendo que ela foi perdida — e o sintoma seria
-          // um vídeo pago e sem direção, não um erro.
+          // à animação, então este campo não é lido nesta corrida. Vai mesmo
+          // assim: o dia em que `pararApos` mudar aqui, a animação receberia
+          // direção VAZIA sem nada no código dizendo que ela foi perdida — e o
+          // sintoma seria um vídeo pago e sem direção, não um erro.
           promptDeDirecao: promptDaDirecaoDaLinha(video),
           diario: criarDiarioNoBanco(runId),
         });

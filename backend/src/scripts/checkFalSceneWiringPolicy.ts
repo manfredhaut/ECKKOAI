@@ -4,13 +4,16 @@
  *  G-1  o cenário e o traje escolhidos na tela chegam à composição enviada à
  *       fal — a imagem em `image_urls`, o texto no `prompt`, cada um pelo canal
  *       que é seu
- *  G-2  a direção traduzida chega ao prompt do Wan
+ *  G-2  a direção traduzida chega ao prompt do motor de animação (Wan —
+ *       Seedance 2.5 foi pesquisado e revertido no BLOCO SEEDANCE-1, 21/08,
+ *       reservado pro tier "Premium")
  *
  * ┌─ Por que estas duas, e não uma só ───────────────────────────────────────┐
  * │ Os dois textos vão a MODELOS diferentes, e é essa separação que a rodada  │
  * │ construiu. `promptDeComposicao` descreve o que a imagem TEM (traje,       │
  * │ cenário) e alimenta o `nano-banana`, que produz um quadro parado. A       │
- * │ direção descreve o que a pessoa FAZ e só o Wan tem tempo para executá-la. │
+ * │ direção descreve o que a pessoa FAZ e só o motor de animação tem tempo   │
+ * │ para executá-la.                                                         │
  * │ Uma guarda única sobre "os textos saem" ficaria verde com os dois campos  │
  * │ TROCADOS — que é o defeito mais provável desta fiação, não o de eles      │
  * │ sumirem.                                                                  │
@@ -31,9 +34,10 @@
  * ┌─ Custo: ZERO ───────────────────────────────────────────────────────────┐
  * │ Nenhuma rede (o `fetch` é substituído), nenhum banco (o diário é um      │
  * │ array), nenhuma espera real (o `esperar` é injetado). O ElevenLabs NÃO   │
- * │ é simulado: a corrida do Wan é deixada MORRER na narração, depois de o   │
- * │ corpo do Wan já ter saído — que é tudo o que G-2 precisa ler. Simular o  │
- * │ TTS acrescentaria um segundo contrato falso para medir o primeiro.       │
+ * │ é simulado: a corrida de animação é deixada MORRER na narração, depois  │
+ * │ de o corpo da animação já ter saído — que é tudo o que G-2 precisa ler.  │
+ * │ Simular o TTS acrescentaria um segundo contrato falso para medir o       │
+ * │ primeiro.                                                                │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 import { readFileSync } from "node:fs";
@@ -46,7 +50,7 @@ const PIPELINE = "backend/src/services/video/falPipeline.ts";
 
 /** O texto que só a composição deve ver. */
 const TEXTO_DA_COMPOSICAO = "consultorio claro e desfocado. jaleco branco abotoado";
-/** O texto que só o Wan deve ver. Em inglês, como chega pelo caminho real. */
+/** O texto que só o motor de animação deve ver. Em inglês, como chega pelo caminho real. */
 const TEXTO_DA_DIRECAO = "speak calmly to camera with small natural head movements";
 
 export const MUTANTS: Mutant[] = [
@@ -89,21 +93,29 @@ export const MUTANTS: Mutant[] = [
     expect: "cenario: escolhido na tela como IMAGEM e ausente da composição enviada à fal",
   },
   {
-    guard: "a direção traduzida chega ao prompt do Wan",
-    name: "o Wan volta a receber o prompt da composição no lugar da direção",
+    guard: "a direção traduzida chega ao prompt do motor de animação",
+    name: "o motor de animação volta a receber o prompt da composição no lugar da direção",
     kind: "esperto",
-    // ESPERTO, e é a REGRESSÃO literal: era assim antes desta rodada. O Wan
-    // continua recebendo um `prompt` não vazio, plausível e em texto livre —
-    // nenhum 400, nenhum log, nenhuma diferença visível até alguém reparar que
-    // o avatar não faz o que foi pedido num vídeo que já custou ~US$ 1,44.
+    // ESPERTO, e é a REGRESSÃO literal: era assim antes desta rodada. O motor
+    // de animação continua recebendo um `prompt` não vazio, plausível e em
+    // texto livre — nenhum 400, nenhum log, nenhuma diferença visível até
+    // alguém reparar que o avatar não faz o que foi pedido num vídeo que já
+    // custou ~US$ 1,44.
     //
     // É também o motivo de as duas guardas serem duas: uma invariante única
     // sobre "os textos saem" ficaria VERDE aqui, porque os dois textos saem —
     // trocados.
+    //
+    // `find` reescrito na FASE 0 (21/08): o `prompt` passou a ir envolto em
+    // `comDefaultsDeDirecao(...)` (as 3 frases fixas de câmera/gesto/mão) —
+    // ver `checkFalFase0DefaultsPolicy.ts`. A âncora precisa da chamada nova
+    // para continuar única no arquivo. O BLOCO SEEDANCE-1 (21/08) chegou a
+    // trocar `image_url` por `image_urls`, mas foi revertido no mesmo dia —
+    // ver `ENDPOINT_ANIMAR` em falPipeline.ts.
     file: PIPELINE,
-    find: "    prompt: input.promptDeDirecao,\n    image_url: imagemUrl,",
-    replace: "    prompt: input.promptDeComposicao,\n    image_url: imagemUrl,",
-    expect: "direção: o prompt do Wan não é a direção",
+    find: "    prompt: comDefaultsDeDirecao(input.promptDeDirecao),\n    image_url: imagemUrl,",
+    replace: "    prompt: comDefaultsDeDirecao(input.promptDeComposicao),\n    image_url: imagemUrl,",
+    expect: "direção: o prompt do motor de animação não é a direção",
   },
 ];
 
@@ -119,8 +131,17 @@ function lerDaRaiz(relativo: string): string {
   return readFileSync(path.join(repoRoot, relativo), "utf-8").replace(/\r\n/g, "\n");
 }
 
+/**
+ * Exportados (`instalarFetch`, `criarDiario`, `corridaDeComposicao`,
+ * `corridaDeAnimacao`) para que `checkFalFase0DefaultsPolicy.ts` reuse a
+ * MESMA simulação de fornecedor, em vez de uma segunda cópia divergente do
+ * `fetch` substituído — as duas guardas leem corpos submetidos pelo mesmo
+ * par de corridas reais (`generateVideo` / `runFalPipelineDaImagem`), só que
+ * conferem invariantes diferentes sobre eles.
+ */
+
 /** Um corpo submetido à fila da fal, com o endpoint que o recebeu. */
-interface Submissao {
+export interface Submissao {
   endpoint: string;
   corpo: Record<string, unknown>;
 }
@@ -134,7 +155,7 @@ interface Submissao {
  * para todos, "o cenário entrou" e "o rosto entrou três vezes" produziriam
  * exatamente a mesma lista.
  */
-function instalarFetch(estado: {
+export function instalarFetch(estado: {
   submissoes: Submissao[];
   publicados: { rotulo: string; fileUrl: string }[];
 }): () => void {
@@ -159,8 +180,8 @@ function instalarFetch(estado: {
     }
     if (url.includes("fal.invalido")) return new Response("", { status: 200 });
 
-    // ElevenLabs: deixado FALHAR de propósito. Ver o cabeçalho — a corrida do
-    // Wan morre aqui, depois de o corpo do Wan já ter sido submetido.
+    // ElevenLabs: deixado FALHAR de propósito. Ver o cabeçalho — a corrida da
+    // animação morre aqui, depois de o corpo dela já ter sido submetido.
     if (url.includes("elevenlabs")) return new Response("sem TTS nesta prova", { status: 500 });
 
     // Fila: status e resultado vêm por URL devolvida, nunca montada.
@@ -209,7 +230,7 @@ function instalarFetch(estado: {
 }
 
 /** O diário que registra o par rótulo → `file_url` da publicação. */
-function criarDiario(publicados: { rotulo: string; fileUrl: string }[]) {
+export function criarDiario(publicados: { rotulo: string; fileUrl: string }[]) {
   return {
     async abrirEtapa() {
       return "step";
@@ -236,7 +257,7 @@ function criarDiario(publicados: { rotulo: string; fileUrl: string }[]) {
  * mede é a ponte `generateVideoFal` — que é onde os quatro campos da tela viram
  * `entradasExtras` e `promptDeComposicao`.
  */
-async function corridaDeComposicao(): Promise<{
+export async function corridaDeComposicao(): Promise<{
   submissoes: Submissao[];
   publicados: { rotulo: string; fileUrl: string }[];
   erro: string;
@@ -293,7 +314,7 @@ async function corridaDeComposicao(): Promise<{
  * chega a submeter o Wan. A corrida morre na narração (o TTS devolve 500) —
  * depois de o corpo do Wan já ter saído, que é o que esta guarda lê.
  */
-async function corridaDeAnimacao(): Promise<{ submissoes: Submissao[]; erro: string }> {
+export async function corridaDeAnimacao(): Promise<{ submissoes: Submissao[]; erro: string }> {
   const { runFalPipelineDaImagem } = await import("../services/video/falPipeline.js");
   const estado = { submissoes: [] as Submissao[], publicados: [] as { rotulo: string; fileUrl: string }[] };
   const restaurarFetch = instalarFetch(estado);
@@ -311,6 +332,7 @@ async function corridaDeAnimacao(): Promise<{ submissoes: Submissao[]; erro: str
         fotoBase: Buffer.alloc(0),
         fotoMimeType: "image/jpeg",
         promptDeComposicao: TEXTO_DA_COMPOSICAO,
+        tenantId: "tenant-da-prova",
         promptDeDirecao: TEXTO_DA_DIRECAO,
         diario: criarDiario(estado.publicados) as never,
         pollTimeoutMs: 50,
@@ -434,39 +456,44 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
   }
 
   // ---------------------------------------------------------------------------
-  // G-2 — a direção no WAN, por EXECUÇÃO
+  // G-2 — a direção no motor de animação, por EXECUÇÃO
+  //
+  // "wan" é o identificador estável do motor ATUAL (tier "Normal"). O BLOCO
+  // SEEDANCE-1 (21/08) trocou brevemente para "seedance" e foi revertido no
+  // mesmo dia — ver `ENDPOINT_ANIMAR` em falPipeline.ts.
   // ---------------------------------------------------------------------------
   const animacao = await corridaDeAnimacao();
-  const wan = animacao.submissoes.find((s) => s.endpoint.includes("wan"));
+  const animar = animacao.submissoes.find((s) => s.endpoint.includes("wan"));
 
-  if (!wan) {
+  if (!animar) {
     failures.push(
-      "direção: nenhuma submissão ao Wan saiu, então não há corpo em que conferir o prompt. Endpoints " +
-        `observados: ${animacao.submissoes.map((s) => s.endpoint).join(", ") || "(nenhum)"}; erro ` +
-        `${JSON.stringify(animacao.erro.slice(0, 140))}.`,
+      "direção: nenhuma submissão ao motor de animação saiu, então não há corpo em que conferir o " +
+        `prompt. Endpoints observados: ${animacao.submissoes.map((s) => s.endpoint).join(", ") || "(nenhum)"}; ` +
+        `erro ${JSON.stringify(animacao.erro.slice(0, 140))}.`,
     );
   } else {
-    const prompt = String(wan.corpo.prompt ?? "");
+    const prompt = String(animar.corpo.prompt ?? "");
     if (!prompt.includes(TEXTO_DA_DIRECAO)) {
       failures.push(
-        `direção: o prompt do Wan não é a direção — saiu ${JSON.stringify(prompt)}, e o esperado era o ` +
-          `texto da direção (${JSON.stringify(TEXTO_DA_DIRECAO)}). O Wan já recebe a imagem pronta em ` +
-          "`image_url`: o que só ele pode executar é o que a pessoa escreveu na Interpretação. Sem isto, " +
-          "o vídeo pago sai sem direção nenhuma e nada no caminho reclama.",
+        `direção: o prompt do motor de animação não é a direção — saiu ${JSON.stringify(prompt)}, e o ` +
+          `esperado era o texto da direção (${JSON.stringify(TEXTO_DA_DIRECAO)}). Ele já recebe a imagem ` +
+          "pronta em `image_url`: o que só ele pode executar é o que a pessoa escreveu na Interpretação. " +
+          "Sem isto, o vídeo pago sai sem direção nenhuma e nada no caminho reclama.",
       );
     }
     if (prompt.includes(TEXTO_DA_COMPOSICAO)) {
       failures.push(
-        "direção: o prompt do Wan carrega o texto da COMPOSIÇÃO — os dois campos foram trocados ou " +
-          `concatenados (saiu ${JSON.stringify(prompt)}). Descrever de novo o traje e o cenário para o ` +
-          "Wan é pedir que ele redesenhe o que já está no quadro que recebeu, e é a forma deste defeito " +
-          "que NÃO aparece como campo vazio.",
+        "direção: o prompt do motor de animação carrega o texto da COMPOSIÇÃO — os dois campos foram " +
+          `trocados ou concatenados (saiu ${JSON.stringify(prompt)}). Descrever de novo o traje e o ` +
+          "cenário para ele é pedir que redesenhe o que já está no quadro que recebeu, e é a forma deste " +
+          "defeito que NÃO aparece como campo vazio.",
       );
     }
   }
 
   // ---------------------------------------------------------------------------
-  // G-2 — a direção no WAN, por FORMA (a rota, que não é chamável daqui)
+  // G-2 — a direção no motor de animação, por FORMA (a rota, que não é
+  // chamável daqui)
   // ---------------------------------------------------------------------------
   const rota = lerDaRaiz(ROTA_DE_VIDEOS);
   // ÂNCORAS INTRÍNSECAS ao que se mede: as DUAS rotas que montam um input do
@@ -491,41 +518,43 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
     // Rede anti-vazamento, nos DOIS sentidos. Se o recorte não contém a chamada
     // de retomada, ele não é a rota de aprovação; se contém a recomposição, ele
     // passou do fim — e a montagem conferida seria a de uma rota que para em
-    // `compor` e nunca submete o Wan.
+    // `compor` e nunca submete a animação.
     if (!trecho.includes("runFalPipelineDaImagem(")) {
       failures.push(
         "direção: o recorte da rota de aprovação não contém `runFalPipelineDaImagem(` — a âncora " +
           "encontrou um trecho que não é o da aprovação, e o que for conferido nele não diz nada sobre " +
-          "o prompt que chega ao Wan.",
+          "o prompt que chega ao motor de animação.",
       );
     }
     if (trecho.includes("recompor({")) {
       failures.push(
         "direção: o recorte da rota de aprovação engoliu `recompor({` — a âncora vazou para a rota " +
           "vizinha, e a montagem conferida seria a da recomposição, que para em `compor` e nunca " +
-          "submete o Wan.",
+          "submete a animação.",
       );
     }
     if (!trecho.includes("promptDeDirecao:")) {
       failures.push(
         "direção: a rota de aprovação monta a retomada SEM `promptDeDirecao` — o campo é obrigatório no " +
           "orquestrador, então isto não compila hoje; se compilar, alguém o tornou opcional e a direção " +
-          "voltou a morrer entre a linha de `videos` e o Wan, que é exatamente o defeito do BLOCO B5.",
+          "voltou a morrer entre a linha de `videos` e o motor de animação, que é exatamente o defeito " +
+          "do BLOCO B5.",
       );
     } else if (!trecho.includes("promptDaDirecaoDaLinha(video)")) {
       failures.push(
         "direção: a rota de aprovação passa um `promptDeDirecao` que não vem de " +
           "`promptDaDirecaoDaLinha(video)` — a direção do fornecedor é a coluna VELADA " +
-          "`motion_prompt_en`, e montá-la de outro jeito aqui mandaria o texto em português ao Wan ou " +
-          "retraduziria no clique, fazendo uma etapa de ~US$ 1,44 depender de um segundo serviço.",
+          "`motion_prompt_en`, e montá-la de outro jeito aqui mandaria o texto em português ao motor de " +
+          "animação ou retraduziria no clique, fazendo uma etapa de ~US$ 1,44 depender de um segundo " +
+          "serviço.",
       );
     }
   }
 
   if (!failures.some((f) => f.startsWith("direção:"))) {
     notes.push(
-      "    cena: a direção chega ao prompt do Wan e o texto da composição não — os dois campos vão a " +
-        "modelos diferentes, e a rota de aprovação a lê de `motion_prompt_en`",
+      "    cena: a direção chega ao prompt do motor de animação e o texto da composição não — os dois " +
+        "campos vão a modelos diferentes, e a rota de aprovação a lê de `motion_prompt_en`",
     );
   }
 

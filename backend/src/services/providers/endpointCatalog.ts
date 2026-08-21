@@ -189,6 +189,11 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
     // 2.6 é Partner e mora direto em `wan/`; ver o comentário de
     // `ENDPOINT_ANIMAR` em falPipeline.ts para a causa raiz dos dois 404
     // anteriores.
+    //
+    // Motor do tier "Normal". Seedance 2.5 (`bytedance/seedance-2.5/
+    // reference-to-video`) foi pesquisado e ligado brevemente no BLOCO
+    // SEEDANCE-1 (21/08), revertido no mesmo dia — reservado pro tier
+    // "Premium", ver `ENDPOINT_ANIMAR` em falPipeline.ts.
     path: "/wan/v2.6/image-to-video/flash",
     method: "POST",
     billable: true,
