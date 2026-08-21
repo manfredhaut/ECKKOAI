@@ -17,13 +17,14 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
       status: string;
       created_at: string;
     }>(
-      // `awaiting_approval` ENTRA, e é o que mais precisa entrar: ele é o único
-      // estado que não sai sozinho. Um vídeo em `processing` termina com ou sem
-      // ninguém olhando; uma aprovação pendente expira em 24 h e joga fora a
-      // composição já paga. Deixá-lo de fora daqui seria esconder justamente o
-      // item que depende de alguém lembrar dele.
+      // Os dois `awaiting_approval*` ENTRAM, e são os que mais precisam
+      // entrar: são os únicos estados que não saem sozinhos. Um vídeo em
+      // `processing` termina com ou sem ninguém olhando; uma aprovação
+      // pendente (de imagem OU de vídeo mudo — migration 059) expira em 24 h
+      // e joga fora trabalho já pago. Deixá-los de fora daqui seria esconder
+      // justamente o item que depende de alguém lembrar dele.
       `SELECT id, script, status, created_at FROM videos
-       WHERE tenant_id = $1 AND status IN ('queued', 'processing', 'awaiting_approval')
+       WHERE tenant_id = $1 AND status IN ('queued', 'processing', 'awaiting_approval', 'awaiting_approval_video')
        ORDER BY created_at DESC`,
       [req.tenantId],
     );

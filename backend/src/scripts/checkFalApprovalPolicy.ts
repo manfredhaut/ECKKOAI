@@ -106,7 +106,14 @@ export const MUTANTS: Mutant[] = [
     // inalcançável e o gate sai 2 pelo `tsc` — o arnês devolveu AMBÍGUO com a
     // guarda saudável quando isso foi tentado no B2.
     file: RECUPERACAO,
-    find: "      if (linha.status === STATUS_AGUARDANDO_APROVACAO) {",
+    // Transcrito de novo em FASE 2 (21/08): a linha ganhou o segundo braço
+    // `|| linha.status === STATUS_AGUARDANDO_APROVACAO_VIDEO` (migration 059,
+    // Modo B) e o `find` antigo (só o primeiro braço) parou de casar — 0x,
+    // não 2x, então não é o caso do gotcha "linha nova ambígua": é o texto
+    // MEDIDO tendo mudado. O `replace` continua o mesmo sentinela morto —
+    // ele apaga a condição inteira, os dois braços juntos.
+    find:
+      "      if (linha.status === STATUS_AGUARDANDO_APROVACAO || linha.status === STATUS_AGUARDANDO_APROVACAO_VIDEO) {",
     replace: '      if (linha.status === "estado-que-nenhuma-linha-tem") {',
     expect: "vídeo aguardando aprovação foi tratado como registro preso",
   },

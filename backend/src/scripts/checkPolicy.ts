@@ -71,6 +71,7 @@ import { checkFalClientPolicy } from "./checkFalClientPolicy.js";
 import { checkFalPipelinePolicy } from "./checkFalPipelinePolicy.js";
 import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js";
 import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
+import { checkFalVideoApprovalPolicy } from "./checkFalVideoApprovalPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
@@ -704,6 +705,15 @@ async function main(): Promise<void> {
   const falApproval = await checkFalApprovalPolicy();
   falApproval.failures.forEach((f) => failures.push(f));
   falApproval.notes.forEach((n) => note(n));
+
+  // --- 24o-ter-bis. a segunda aprovação — o vídeo mudo (FASE 2, Modo B) ----
+  //
+  // Mesma vizinhança e o mesmo motivo de `checkFalApprovalPolicy`: troca
+  // `globalThis.fetch`, `pool.query` e `PROVIDER_MODE`, restaurando os três
+  // no `finally`.
+  const falVideoApproval = await checkFalVideoApprovalPolicy();
+  falVideoApproval.failures.forEach((f) => failures.push(f));
+  falVideoApproval.notes.forEach((n) => note(n));
 
   // --- 24o-quater. a cena chega ao fornecedor (BLOCO B5) -----------------
   //

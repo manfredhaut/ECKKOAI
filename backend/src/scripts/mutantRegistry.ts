@@ -56,6 +56,7 @@ import { MUTANTS as falClientMutants } from "./checkFalClientPolicy.js";
 import { MUTANTS as falPipelineMutants } from "./checkFalPipelinePolicy.js";
 import { MUTANTS as falGenerationPathMutants } from "./checkFalGenerationPathPolicy.js";
 import { MUTANTS as falApprovalMutants } from "./checkFalApprovalPolicy.js";
+import { MUTANTS as falVideoApprovalMutants } from "./checkFalVideoApprovalPolicy.js";
 import { MUTANTS as falSceneWiringMutants } from "./checkFalSceneWiringPolicy.js";
 import { MUTANTS as falFase0DefaultsMutants } from "./checkFalFase0DefaultsPolicy.js";
 import { MUTANTS as falTierMutants } from "./checkFalTierPolicy.js";
@@ -124,6 +125,7 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkFalPipelinePolicy.ts", falPipelineMutants),
   ...de("backend/src/scripts/checkFalGenerationPathPolicy.ts", falGenerationPathMutants),
   ...de("backend/src/scripts/checkFalApprovalPolicy.ts", falApprovalMutants),
+  ...de("backend/src/scripts/checkFalVideoApprovalPolicy.ts", falVideoApprovalMutants),
   ...de("backend/src/scripts/checkFalSceneWiringPolicy.ts", falSceneWiringMutants),
   ...de("backend/src/scripts/checkFalFase0DefaultsPolicy.ts", falFase0DefaultsMutants),
   ...de("backend/src/scripts/checkFalTierPolicy.ts", falTierMutants),

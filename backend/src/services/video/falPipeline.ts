@@ -599,6 +599,16 @@ export interface FalPipelineResult {
    * `pararAqui`.
    */
   imagemCompostaUrl: string | null;
+  /**
+   * O vídeo ANIMADO, MUDO — o produto de `animar()`, antes de narrar e
+   * sincronizar. Ver `pararApos: "animar"` — FASE 2 (Modo B), 21/08.
+   *
+   * `null` quando a corrida ainda não chegou a `animar` (parou em `compor`)
+   * ou já passou de lá sem parar (o vídeo final é que importa nesse caso).
+   * Presente sempre que a corrida ALCANÇA `animar`, pare ali ou não — mesma
+   * razão de `imagemCompostaUrl` valer mesmo com `pararApos: "narrar"`.
+   */
+  videoMudoUrl: string | null;
   audioDurationSeconds: number | null;
   /**
    * A duração ESCOLHIDA para este vídeo (`escolherDuracao`, a partir do
@@ -1080,6 +1090,64 @@ async function animarNarrarSincronizar(
     );
   }
 
+  // --- PARADA DO MODO B — FASE 2, 21/08 -------------------------------------
+  //
+  // `pararApos: "animar"` encerra a corrida logo aqui, com o vídeo MUDO
+  // gravado e nada de narrar/sincronizar disparado ainda. É o mesmo mecanismo
+  // que `pararApos: "compor"` já usa para a aprovação da imagem — ver o
+  // comentário equivalente mais acima nesta função — só que um passo adiante:
+  // agora é o vídeo animado, sem voz, que espera o clique humano antes das
+  // duas etapas mais caras da corrida (narrar + sincronizar).
+  if (input.pararApos === "animar") {
+    return pararAqui("animar", gastoPrevistoUsd, duracaoEscolhida, {
+      imagemCompostaUrl: imagemUrl,
+      videoMudoUrl: String(videoMudoUrl),
+      requestIds: { compor: composicaoRequestId, animar: animacao.requestId, sincronizar: "" },
+    });
+  }
+
+  return narrarSincronizar(input, {
+    videoMudoUrl: String(videoMudoUrl),
+    imagemCompostaUrl: imagemUrl,
+    gastoAcumuladoUsd: gastoPrevistoUsd,
+    teto,
+    segundosEstimados,
+    duracaoEscolhida,
+    composicaoRequestId,
+    animarRequestId: animacao.requestId,
+  });
+}
+
+interface ContextoDaNarracao {
+  /** O vídeo animado, mudo — o que `narrar`+`sincronizar` recebem de entrada. */
+  videoMudoUrl: string;
+  /** Só para o RESULTADO — nenhuma das duas etapas daqui lê a imagem. */
+  imagemCompostaUrl: string | null;
+  gastoAcumuladoUsd: number;
+  teto: number;
+  segundosEstimados: number;
+  duracaoEscolhida: PipelineDuration;
+  composicaoRequestId: string;
+  animarRequestId: string;
+}
+
+/**
+ * As etapas 3 a 5 — narrar, sincronizar, guardar. Extraída de
+ * `animarNarrarSincronizar` para ter DOIS chamadores, mesma razão pela qual
+ * aquela função já tinha sido extraída de `runFalPipeline`: a corrida
+ * inteira (que passa por `animar` na mesma chamada) e a retomada pós-
+ * aprovação do vídeo MUDO (`runFalPipelineDoVideoMudo`, FASE 2/Modo B), que
+ * nunca chama `animar` de novo — ele já rodou e já foi pago numa corrida
+ * anterior.
+ */
+async function narrarSincronizar(
+  input: FalPipelineInput,
+  contexto: ContextoDaNarracao,
+): Promise<FalPipelineResult> {
+  const { videoMudoUrl, imagemCompostaUrl, teto, segundosEstimados, duracaoEscolhida, composicaoRequestId, animarRequestId } =
+    contexto;
+  let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
+
   // --- 3. NARRAR -----------------------------------------------------------
   //
   // A voz é REUSADA (`input.voiceId`), nunca clonada: clonar consome um slot
@@ -1095,7 +1163,11 @@ async function animarNarrarSincronizar(
 
   // --- 4. SINCRONIZAR ------------------------------------------------------
   if (input.pararApos === "narrar") {
-    return pararAqui("narrar", gastoPrevistoUsd, duracaoEscolhida, { imagemCompostaUrl: imagemUrl });
+    return pararAqui("narrar", gastoPrevistoUsd, duracaoEscolhida, {
+      imagemCompostaUrl,
+      videoMudoUrl,
+      requestIds: { compor: composicaoRequestId, animar: animarRequestId, sincronizar: "" },
+    });
   }
 
   // O custo depende da duração REAL do áudio, que agora é conhecida. Quando a
@@ -1135,15 +1207,56 @@ async function animarNarrarSincronizar(
   return {
     gastoPrevistoUsd,
     videoUrl: String(videoFinalUrl),
-    imagemCompostaUrl: imagemUrl,
+    imagemCompostaUrl,
+    videoMudoUrl,
     audioDurationSeconds: fala.durationSeconds,
     duracaoSegundos: duracaoEscolhida,
     requestIds: {
       compor: composicaoRequestId,
-      animar: animacao.requestId,
+      animar: animarRequestId,
       sincronizar: sincronia.requestId,
     },
   };
+}
+
+/**
+ * RETOMA de um VÍDEO MUDO JÁ ANIMADO — as etapas 3 a 5, e nenhuma antes dela.
+ * FASE 2 (Modo B), 21/08 — o par de `runFalPipelineDaImagem` um passo adiante.
+ *
+ * `gastoAcumuladoUsd` começa em ZERO, pela MESMA razão documentada em
+ * `runFalPipelineDaImagem`: o teto desta corrida é o teto do que AINDA vai
+ * ser gasto (narrar + sincronizar), e `animar` já foi pago numa corrida
+ * anterior — carregar o gasto dela para cá recusaria a segunda metade por
+ * dinheiro que já saiu.
+ */
+export async function runFalPipelineDoVideoMudo(
+  input: FalPipelineInput,
+  videoMudoUrl: string,
+  imagemCompostaUrl: string | null,
+  /** O `request_id` da composição, quando conhecido. */
+  composicaoRequestId = "",
+  /** O `request_id` da animação que produziu este vídeo mudo. */
+  animarRequestId = "",
+): Promise<FalPipelineResult> {
+  const { segundosEstimados, duracaoEscolhida } = conferirRoteiro(input.script);
+  logEvent("info", "fal_pipeline_retomado_do_video_mudo", {
+    segundosEstimados,
+    duracaoEscolhida,
+    videoMudoUrl,
+    composicaoRequestId: composicaoRequestId || null,
+    animarRequestId: animarRequestId || null,
+  });
+
+  return narrarSincronizar(input, {
+    videoMudoUrl,
+    imagemCompostaUrl,
+    gastoAcumuladoUsd: 0,
+    teto: tetoParaTier(input),
+    segundosEstimados,
+    duracaoEscolhida,
+    composicaoRequestId,
+    animarRequestId,
+  });
 }
 
 /**
@@ -1163,17 +1276,24 @@ function pararAqui(
   // O que a corrida CHEGOU a produzir antes de parar. Sem isto, parar em
   // `compor` devolveria o mesmo objeto vazio de não ter feito nada — e o
   // ponteiro para o trabalho já pago (`request_id`) morreria no retorno.
-  produzido: { imagemCompostaUrl?: string; requestIds?: FalPipelineResult["requestIds"] } = {},
+  produzido: {
+    imagemCompostaUrl?: string | null;
+    /** O vídeo mudo, quando a parada é em `animar` ou depois dele. */
+    videoMudoUrl?: string | null;
+    requestIds?: FalPipelineResult["requestIds"];
+  } = {},
 ): FalPipelineResult {
   logEvent("info", "fal_pipeline_parou_a_pedido", {
     etapa,
     gastoPrevistoUsd,
     imagemCompostaUrl: produzido.imagemCompostaUrl ?? null,
+    videoMudoUrl: produzido.videoMudoUrl ?? null,
   });
   return {
     gastoPrevistoUsd,
     videoUrl: "",
     imagemCompostaUrl: produzido.imagemCompostaUrl ?? null,
+    videoMudoUrl: produzido.videoMudoUrl ?? null,
     audioDurationSeconds: null,
     duracaoSegundos: duracaoEscolhida,
     requestIds: produzido.requestIds ?? { compor: "", animar: "", sincronizar: "" },

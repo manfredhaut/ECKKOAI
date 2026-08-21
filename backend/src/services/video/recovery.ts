@@ -60,21 +60,34 @@ export function videoRecoveryMaxAgeMs(): number {
   return Math.floor(n);
 }
 
-/** O estado do caminho da fal em que a composição espera um clique humano. */
+/** O estado do caminho da fal em que a IMAGEM composta espera um clique humano. */
 export const STATUS_AGUARDANDO_APROVACAO = "awaiting_approval";
+
+/**
+ * O estado um passo adiante: o VÍDEO MUDO (já animado, já pago) espera um
+ * segundo clique antes de narrar + sincronizar. FASE 2 (Modo B), 21/08.
+ * Mesmo papel que `STATUS_AGUARDANDO_APROVACAO` tem para a imagem — ver os
+ * dois juntos no branch abaixo, dentro do laço da varredura.
+ */
+export const STATUS_AGUARDANDO_APROVACAO_VIDEO = "awaiting_approval_video";
 
 /**
  * Os estados que a varredura SELECIONA.
  *
- * `awaiting_approval` está aqui de propósito, e isso é o contrário do que
- * parece: ele entra para poder ser IGNORADO com conhecimento de causa, e para
- * poder EXPIRAR. Deixá-lo fora do `SELECT` daria o mesmo resultado no caso
- * recente — a linha nunca chegaria ao laço — e nenhum no caso velho: uma
- * aprovação abandonada ficaria na galeria para sempre, e `awaiting_approval`
- * viraria o novo `queued` preso que esta varredura existe para não deixar
- * existir.
+ * Os dois `awaiting_approval*` estão aqui de propósito, e isso é o contrário
+ * do que parece: eles entram para poder ser IGNORADOS com conhecimento de
+ * causa, e para poder EXPIRAR. Deixá-los fora do `SELECT` daria o mesmo
+ * resultado no caso recente — a linha nunca chegaria ao laço — e nenhum no
+ * caso velho: uma aprovação abandonada ficaria na galeria para sempre, e
+ * qualquer um dos dois viraria o novo `queued` preso que esta varredura
+ * existe para não deixar existir.
  */
-export const STATUS_VARRIDOS: readonly string[] = ["queued", "processing", STATUS_AGUARDANDO_APROVACAO];
+export const STATUS_VARRIDOS: readonly string[] = [
+  "queued",
+  "processing",
+  STATUS_AGUARDANDO_APROVACAO,
+  STATUS_AGUARDANDO_APROVACAO_VIDEO,
+];
 
 /** Idade acima da qual uma aprovação pendente é dada por abandonada. */
 export const VIDEO_APPROVAL_MAX_AGE_ENV = "VIDEO_APPROVAL_MAX_AGE_MS";
@@ -164,6 +177,15 @@ const MENSAGEM_APROVACAO_EXPIRADA =
   "A imagem composta ficou esperando aprovação por tempo demais e esta geração foi encerrada. " +
   "A composição já havia sido feita e cobrada, então o crédito não volta — mas nenhuma etapa " +
   "seguinte chegou a ser paga. Comece uma geração nova quando quiser.";
+
+/**
+ * A mesma ideia da mensagem acima, um passo adiante: quando é o VÍDEO MUDO
+ * que expira, `animar` já foi pago — não só `compor`. FASE 2 (Modo B), 21/08.
+ */
+const MENSAGEM_APROVACAO_VIDEO_EXPIRADA =
+  "O vídeo animado ficou esperando aprovação por tempo demais e esta geração foi encerrada. " +
+  "A composição e a animação já haviam sido feitas e cobradas, então o crédito não volta — mas " +
+  "narrar e sincronizar não chegaram a ser pagos. Comece uma geração nova quando quiser.";
 
 /**
  * Encerra um registro preso, gravando o MOTIVO junto do estado.
@@ -294,11 +316,13 @@ export async function recoverInFlightVideos(reacompanhar: Reacompanhar): Promise
       //
       // E não há o que acompanhar: a corrida terminou onde devia terminar. O
       // que falta é um humano clicar.
-      if (linha.status === STATUS_AGUARDANDO_APROVACAO) {
+      if (linha.status === STATUS_AGUARDANDO_APROVACAO || linha.status === STATUS_AGUARDANDO_APROVACAO_VIDEO) {
+        const mensagem =
+          linha.status === STATUS_AGUARDANDO_APROVACAO_VIDEO
+            ? MENSAGEM_APROVACAO_VIDEO_EXPIRADA
+            : MENSAGEM_APROVACAO_EXPIRADA;
         if (linha.idade_ms > idadeMaxAprovacao) {
-          const r = await encerrar(linha, "approval_expired", MENSAGEM_APROVACAO_EXPIRADA, [
-            STATUS_AGUARDANDO_APROVACAO,
-          ]);
+          const r = await encerrar(linha, "approval_expired", mensagem, [linha.status]);
           if (r.encerrado) resultado.aprovacoesExpiradas += 1;
           if (r.estornado) resultado.estornados += 1;
           continue;
@@ -307,6 +331,7 @@ export async function recoverInFlightVideos(reacompanhar: Reacompanhar): Promise
         logEvent("info", "video_recovery_aguardando_aprovacao", {
           context: "video.recovery",
           videoId: linha.id,
+          status: linha.status,
           idadeMs: linha.idade_ms,
           maxAgeMs: idadeMaxAprovacao,
         });

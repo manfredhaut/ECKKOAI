@@ -67,6 +67,7 @@ import {
   escolherDuracao,
   isVideoTier,
   runFalPipelineDaImagem,
+  runFalPipelineDoVideoMudo,
   videoTierParaPipeline,
   type EntradaDeComposicao,
   type VideoTier,
@@ -1595,9 +1596,18 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * O que as duas rotas precisam ler antes de gastar. Devolve `null` e já
    * respondeu quando alguma pré-condição falhou.
    */
+  /**
+   * `statusEsperado` distingue as DUAS paradas do caminho da fal — a da
+   * IMAGEM (`awaiting_approval`, migration 052) e a do VÍDEO MUDO
+   * (`awaiting_approval_video`, migration 059, FASE 2/Modo B). Parametrizada
+   * em vez de duplicada: o resto da checagem (avatar, credencial fal, chave
+   * de voz) é idêntico para as duas paradas — só o status que a rota espera
+   * encontrar muda.
+   */
   async function carregarCorridaAprovavel(
     tenantId: string,
     videoId: string,
+    statusEsperado: "awaiting_approval" | "awaiting_approval_video",
     reply: FastifyReply,
   ): Promise<{
     video: VideoRow;
@@ -1614,7 +1624,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       await reply.code(404).send({ error: "not_found", message: "Vídeo não encontrado." });
       return null;
     }
-    if (video.status !== "awaiting_approval") {
+    if (video.status !== statusEsperado) {
       // 409 e não 400: o pedido está certo, o ESTADO é que não permite. É o
       // segundo clique, e ele precisa ser distinguível de um id errado — é
       // dele que a tela deduz "alguém já aprovou".
@@ -1705,7 +1715,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     "/videos/:id/approve",
     { preHandler: requireActiveTenant },
     async (req, reply) => {
-      const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, reply);
+      const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, "awaiting_approval", reply);
       if (!carga) return reply;
       const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
 
@@ -1809,6 +1819,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // escolhido então é o que decide o motor agora. Ver o
                 // comentário equivalente em `promptDaDirecaoDaLinha`.
                 tier: videoTierParaPipeline(video.tier_video),
+                // FASE 2 (Modo B) — a corrida para logo depois do vídeo MUDO,
+                // e não segue sozinha até narrar/sincronizar. A continuação é
+                // um segundo clique humano, em `/approve-video`. Ver o
+                // comentário equivalente em `animarNarrarSincronizar`.
+                pararApos: "animar",
               },
               imagemAprovada,
               video.provider_job_id ?? "",
@@ -1828,58 +1843,58 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         const corrida = r.resultado;
         await fecharCorrida(runId, "completed");
 
-        // O artefato passa a ser NOSSO, pelo mesmo caminho do polling da HeyGen:
-        // a URL de `v3b.fal.media` expira, e a Biblioteca guardaria um ponteiro
-        // para um host de terceiro. Falhar aqui não invalida o vídeo — ele foi
-        // renderizado e cobrado — e cai na URL remota.
-        let servedUrl = corrida.videoUrl;
-        let providerUrl: string | null = null;
+        // `corrida.videoMudoUrl` é garantido não-vazio aqui: `animar()`, dentro
+        // de `animarNarrarSincronizar`, já lança `FalPipelineError` se a fal
+        // devolver a etapa sem vídeo, ANTES do ponto em que `pararApos: "animar"`
+        // é lido — mesma garantia que `corrida.videoUrl` já tinha no caminho
+        // completo (ver o defeito equivalente para `imagemCompostaUrl`/`compor`).
+
+        // O artefato passa a ser NOSSO, mesmo tratamento que a composição já
+        // recebe (`materializeFalFixtureImage`) e que o vídeo FINAL recebia
+        // aqui antes desta fase: a URL de `v3b.fal.media`/fixture expira ou
+        // nem resolve, e persistir localmente é o que faz a próxima etapa
+        // (ou uma futura tela) conseguir servir o vídeo mudo de verdade.
+        // Falhar aqui não invalida o vídeo — ele foi renderizado e cobrado —
+        // e cai na URL remota, mesmo padrão de `artifact_persist_failed`.
+        let videoMudoServido = String(corrida.videoMudoUrl);
         try {
-          const saved = await persistRemoteArtifact(req.tenantId, corrida.videoUrl, `${video.id}.mp4`);
-          if (saved) {
-            servedUrl = saved.localUrl;
-            providerUrl = corrida.videoUrl;
-          }
+          const salvo = await persistRemoteArtifact(req.tenantId, videoMudoServido, `${video.id}-mudo.mp4`);
+          if (salvo) videoMudoServido = salvo.localUrl;
         } catch (err) {
           logEvent("error", "artifact_persist_failed", {
             context: "videos.approve",
             videoId: video.id,
+            stage: "video_mudo",
             reason: err instanceof Error ? err.message : String(err),
           });
         }
 
-        const { rows: pronto } = await pool.query<Video>(
-          `UPDATE videos SET status = 'ready', output_url = $2, provider_output_url = $3,
-                             audio_duration_seconds = COALESCE($4, audio_duration_seconds),
-                             audio_duration_source = CASE WHEN $4 IS NULL THEN audio_duration_source ELSE 'tts_timestamps' END
-             WHERE id = $1 RETURNING *`,
-          [video.id, servedUrl, providerUrl, corrida.audioDurationSeconds],
+        // `approval_requested_at` REINICIA: a aprovação pendente passa a ser
+        // do VÍDEO MUDO, e a janela de 24 h conta a partir de agora — mesmo
+        // raciocínio do reinício em `/recompose`. `provider_job_id` passa a
+        // apontar para o `request_id` de `animar` (não mais o de `compor`):
+        // é ele que `/approve-video` e `/redo-video` precisam para dar
+        // continuidade, e `compor` já não tem mais nada em jogo daqui pra
+        // frente.
+        const { rows: aguardandoVideo } = await pool.query<Video>(
+          `UPDATE videos SET status = 'awaiting_approval_video', fal_muted_video_url = $2,
+                             provider_job_id = $3, approval_requested_at = now()
+             WHERE id = $1 AND tenant_id = $4 AND status = 'processing' RETURNING *`,
+          [video.id, videoMudoServido, corrida.requestIds.animar, req.tenantId],
         );
+        if (!aguardandoVideo[0]) {
+          // A animação existe e foi paga; o que sumiu foi o estado que a
+          // receberia. O `request_id` está no diário, então ela é recuperável.
+          return reply.code(409).send({
+            error: "approval_not_pending",
+            message:
+              "A animação terminou, mas o vídeo saiu do estado que a receberia enquanto ela rodava. O " +
+              "vídeo mudo está gravado no diário da corrida e não foi perdido.",
+          });
+        }
 
-        await recordProviderUsage({
-          tenantId: req.tenantId,
-          videoId: video.id,
-          provider: "avatar",
-          vendor: "fal",
-          unitType: "seconds",
-          // A duração do ÁUDIO, que neste pipeline é a do entregável: a voz é
-          // ENTRADA e é preservada por construção. Não é a duração pedida. Se
-          // a medição falhar, o fallback é a duração REAL desta corrida
-          // (`corrida.duracaoSegundos` — 5, 10 ou 15, decidida pelo roteiro),
-          // não mais um "10" fixo que erraria sempre que a corrida usasse 5
-          // ou 15.
-          unitCount: corrida.audioDurationSeconds ?? corrida.duracaoSegundos,
-          requestedUnitCount: video.duration_seconds,
-          unitSource: corrida.audioDurationSeconds != null ? "tts_timestamps" : "requested",
-          aspectRatio: video.aspect_ratio,
-          resolution: video.resolution,
-          providerEngine: null,
-          // O ponteiro para o trabalho PAGO mais caro da corrida.
-          providerJobId: corrida.requestIds.animar,
-        });
-
-        await createNotification(req.tenantId, "video_ready", "Your video is ready.");
-        return reply.send(withDeliveredSeconds(pronto[0] as VideoRow));
+        await createNotification(req.tenantId, "video_muted_awaiting_approval", "Your muted video is ready for approval.");
+        return reply.send(withDeliveredSeconds(aguardandoVideo[0] as VideoRow));
       } catch (err) {
         await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
         const { failure, message } = toClientVendorError("avatar", "videos.approve", err);
@@ -1943,7 +1958,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     "/videos/:id/recompose",
     { preHandler: requireActiveTenant },
     async (req, reply) => {
-      const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, reply);
+      const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, "awaiting_approval", reply);
       if (!carga) return reply;
       const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
 
@@ -2030,6 +2045,300 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           consequence: "a imagem anterior continua válida e a linha segue aguardando aprovação",
         });
         return reply.code(vendorErrorStatus(failure)).send({ error: "recompose_failed", message });
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // FASE 2 (Modo B), 21/08 — a SEGUNDA aprovação: o vídeo MUDO.
+  //
+  // Mesmo par que a imagem já tinha (`/approve` + `/recompose`), um passo
+  // adiante: `/approve-video` segue para narrar + sincronizar (as duas
+  // etapas mais caras), `/redo-video` refaz só `animar` (~US$ 0,25 no Wan;
+  // muito mais no Seedance). Ver `runFalPipelineDoVideoMudo` e o
+  // `pararApos: "animar"` em `/approve`, falPipeline.ts.
+  // ---------------------------------------------------------------------
+
+  app.post<{ Params: { id: string } }>(
+    "/videos/:id/approve-video",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, "awaiting_approval_video", reply);
+      if (!carga) return reply;
+      const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
+
+      const videoMudoAprovado = video.fal_muted_video_url;
+      if (!videoMudoAprovado) {
+        return reply.code(409).send({
+          error: "approval_without_video",
+          message:
+            "Esta geração está aguardando aprovação mas não tem vídeo mudo gravado. Narrar e sincronizar " +
+            "sem ele seria pagar as etapas seguintes por uma entrada que não existe. Nada foi cobrado.",
+        });
+      }
+
+      const runId = await abrirCorrida({
+        tenantId: req.tenantId,
+        videoId: video.id,
+        script: video.script,
+        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
+        charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+      });
+
+      try {
+        const r = await aprovarEAnimar({
+          videoId: video.id,
+          registro: {
+            async marcarAprovado() {
+              const { rowCount } = await pool.query(
+                `UPDATE videos SET status = 'processing', fal_run_id = $3
+                   WHERE id = $1 AND tenant_id = $2 AND status = 'awaiting_approval_video'`,
+                [video.id, req.tenantId, runId],
+              );
+              return rowCount === 1;
+            },
+          },
+          animar: () =>
+            runFalPipelineDoVideoMudo(
+              {
+                apiKeyFal,
+                apiKeyElevenLabs,
+                voiceId: avatar.voice_id ?? "",
+                script: video.script,
+                // Nem a composição nem a animação são refeitas aqui — os
+                // campos existem porque o input é o mesmo tipo. Ver
+                // `runFalPipelineDoVideoMudo`.
+                fotoBase: Buffer.alloc(0),
+                fotoMimeType: "image/jpeg",
+                promptDeComposicao: promptDaComposicaoDaLinha(video),
+                tenantId: req.tenantId,
+                aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
+                promptDeDirecao: promptDaDirecaoDaLinha(video),
+                diario: criarDiarioNoBanco(runId),
+                tier: videoTierParaPipeline(video.tier_video),
+              },
+              videoMudoAprovado,
+              video.fal_composed_image_url,
+              "",
+              // `video.provider_job_id` guarda o `request_id` de `animar` desde
+              // que a linha entrou em `awaiting_approval_video` — ver o UPDATE
+              // em `/approve`.
+              video.provider_job_id ?? "",
+            ),
+        });
+
+        if (!r.aprovado || !r.resultado) {
+          await fecharCorrida(runId, "failed", "aprovacao_ja_consumida");
+          return reply.code(409).send({
+            error: "approval_not_pending",
+            message:
+              "Esta aprovação já tinha acontecido. NENHUMA etapa paga foi disparada por este clique — a " +
+              "aprovação é registrada antes de qualquer coisa custar.",
+          });
+        }
+
+        const corrida = r.resultado;
+        await fecharCorrida(runId, "completed");
+
+        // O artefato passa a ser NOSSO, pelo mesmo caminho do polling da HeyGen:
+        // a URL de `v3b.fal.media` expira, e a Biblioteca guardaria um ponteiro
+        // para um host de terceiro. Falhar aqui não invalida o vídeo — ele foi
+        // renderizado e cobrado — e cai na URL remota.
+        let servedUrl = corrida.videoUrl;
+        let providerUrl: string | null = null;
+        try {
+          const saved = await persistRemoteArtifact(req.tenantId, corrida.videoUrl, `${video.id}.mp4`);
+          if (saved) {
+            servedUrl = saved.localUrl;
+            providerUrl = corrida.videoUrl;
+          }
+        } catch (err) {
+          logEvent("error", "artifact_persist_failed", {
+            context: "videos.approveVideo",
+            videoId: video.id,
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        const { rows: pronto } = await pool.query<Video>(
+          `UPDATE videos SET status = 'ready', output_url = $2, provider_output_url = $3,
+                             audio_duration_seconds = COALESCE($4, audio_duration_seconds),
+                             audio_duration_source = CASE WHEN $4 IS NULL THEN audio_duration_source ELSE 'tts_timestamps' END
+             WHERE id = $1 RETURNING *`,
+          [video.id, servedUrl, providerUrl, corrida.audioDurationSeconds],
+        );
+
+        await recordProviderUsage({
+          tenantId: req.tenantId,
+          videoId: video.id,
+          provider: "avatar",
+          vendor: "fal",
+          unitType: "seconds",
+          unitCount: corrida.audioDurationSeconds ?? corrida.duracaoSegundos,
+          requestedUnitCount: video.duration_seconds,
+          unitSource: corrida.audioDurationSeconds != null ? "tts_timestamps" : "requested",
+          aspectRatio: video.aspect_ratio,
+          resolution: video.resolution,
+          providerEngine: null,
+          // O ponteiro para o trabalho PAGO mais caro DESTA corrida — a
+          // sincronia, não a animação: `animar` foi pago numa corrida
+          // ANTERIOR e seu ponteiro já está em `video.provider_job_id`.
+          providerJobId: corrida.requestIds.sincronizar,
+        });
+
+        await createNotification(req.tenantId, "video_ready", "Your video is ready.");
+        return reply.send(withDeliveredSeconds(pronto[0] as VideoRow));
+      } catch (err) {
+        await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
+        const { failure, message } = toClientVendorError("avatar", "videos.approveVideo", err);
+
+        // NUNCA estorna. `animar` (a etapa mais cara já vista até aqui, e a
+        // única sempre paga: US$ 0,25 no Wan, ~US$ 4,60+ no Seedance) já foi
+        // aceita e cobrada numa corrida ANTERIOR — `video.provider_job_id`
+        // é a prova disso, capturado ANTES desta tentativa. Uma falha em
+        // narrar ou sincronizar não desfaz esse gasto, e `decidirEEstornar`
+        // com um `providerJobId` presente devolve `indeterminado`, nunca
+        // `nao_saiu` — a mesma postura conservadora que `/approve` já tem
+        // para falhas depois de `animar` ter sido aceito.
+        const estornado = await decidirEEstornar({
+          videoId: video.id,
+          tenantId: req.tenantId,
+          reason: "vendor_rejected",
+          providerJobId: video.provider_job_id,
+        });
+
+        // O vídeo NÃO volta para `awaiting_approval_video`: a etapa paga pode
+        // ter saído. Quem decide relançar é uma pessoa, com a linha em
+        // `error` e o motivo na frente — mesmo padrão de `/approve`.
+        const { rows: errado } = await pool.query<Video>(
+          "UPDATE videos SET status = 'error', error_message = $2, failure_reason = $3 WHERE id = $1 RETURNING *",
+          [video.id, message, "vendor_rejected"],
+        );
+        await recordFailedProviderUsage({
+          tenantId: req.tenantId,
+          videoId: video.id,
+          provider: "avatar",
+          vendor: "fal",
+          unitType: "seconds",
+          requestedUnitCount: video.duration_seconds,
+          failureReason: message,
+          aspectRatio: video.aspect_ratio,
+          resolution: video.resolution,
+          providerJobId: video.provider_job_id,
+        });
+        logEvent(estornado ? "info" : "error", "video_approve_video_falhou", {
+          context: "videos.approveVideo",
+          videoId: video.id,
+          estornado,
+        });
+        return reply.code(vendorErrorStatus(failure)).send(errado[0]);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/videos/:id/redo-video",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, "awaiting_approval_video", reply);
+      if (!carga) return reply;
+      const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
+
+      const imagemAprovada = video.fal_composed_image_url;
+      if (!imagemAprovada) {
+        return reply.code(409).send({
+          error: "approval_unavailable",
+          message:
+            "Esta geração não tem imagem composta gravada, e a animação parte dela. Nada foi cobrado.",
+        });
+      }
+
+      // Uma corrida NOVA, com teto próprio: `compor` já gastou o que gastou
+      // (e não é refeito), e somar as duas faria este "Refazer" ser recusado
+      // por dinheiro que já saiu — mesmo raciocínio de `/recompose`.
+      const runId = await abrirCorrida({
+        tenantId: req.tenantId,
+        videoId: video.id,
+        script: video.script,
+        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
+        charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+      });
+
+      try {
+        const corrida = await runFalPipelineDaImagem(
+          {
+            apiKeyFal,
+            apiKeyElevenLabs,
+            voiceId: avatar.voice_id ?? "",
+            script: video.script,
+            fotoBase: Buffer.alloc(0),
+            fotoMimeType: "image/jpeg",
+            promptDeComposicao: promptDaComposicaoDaLinha(video),
+            tenantId: req.tenantId,
+            aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
+            promptDeDirecao: promptDaDirecaoDaLinha(video),
+            diario: criarDiarioNoBanco(runId),
+            tier: videoTierParaPipeline(video.tier_video),
+            // O FREIO deste botão: para de novo em `animar`, e NÃO encadeia
+            // até narrar/sincronizar. Mesmo papel que `PARAR_APOS_RECOMPOR`
+            // tem para `/recompose`, um passo adiante.
+            pararApos: "animar",
+          },
+          imagemAprovada,
+          // `video.provider_job_id`, neste ponto, é o `request_id` de
+          // `animar` da tentativa ANTERIOR — descritivo para o diário desta
+          // corrida nova, não usado para decidir nada.
+          video.provider_job_id ?? "",
+        );
+        await fecharCorrida(runId, "completed");
+
+        // `corrida.videoMudoUrl` é garantido não-vazio pela mesma garantia
+        // documentada em `/approve`.
+        const videoMudoServido = String(corrida.videoMudoUrl);
+        let videoMudoFinal = videoMudoServido;
+        try {
+          const salvo = await persistRemoteArtifact(req.tenantId, videoMudoServido, `${video.id}-mudo.mp4`);
+          if (salvo) videoMudoFinal = salvo.localUrl;
+        } catch (err) {
+          logEvent("error", "artifact_persist_failed", {
+            context: "videos.redoVideo",
+            videoId: video.id,
+            stage: "video_mudo",
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        // `approval_requested_at` REINICIA — mesmo raciocínio de `/recompose`:
+        // a aprovação pendente passa a ser do vídeo mudo NOVO.
+        const { rows: refeito } = await pool.query<Video>(
+          `UPDATE videos SET fal_muted_video_url = $2, fal_run_id = $3, provider_job_id = $4,
+                             approval_requested_at = now()
+             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval_video' RETURNING *`,
+          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId],
+        );
+        if (!refeito[0]) {
+          // O vídeo mudo existe e foi pago; o que sumiu foi o estado que o
+          // receberia. O `request_id` está no diário, então ele é recuperável.
+          return reply.code(409).send({
+            error: "approval_not_pending",
+            message:
+              "O refazer terminou, mas o vídeo saiu de \"aguardando aprovação\" enquanto ele rodava. O " +
+              "vídeo mudo novo está gravado no diário da corrida e não foi perdido.",
+          });
+        }
+        return reply.send(withDeliveredSeconds(refeito[0] as VideoRow));
+      } catch (err) {
+        await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
+        const { failure, message } = toClientVendorError("avatar", "videos.redoVideo", err);
+        // A linha CONTINUA em `awaiting_approval_video`: o vídeo mudo anterior
+        // segue válido e aprovável. Um refazer que falha não pode destruir o
+        // vídeo mudo que já estava pago e na tela.
+        logEvent("error", "fal_refazer_video_falhou", {
+          context: "videos.redoVideo",
+          videoId: video.id,
+          consequence: "o vídeo mudo anterior continua válido e a linha segue aguardando aprovação",
+        });
+        return reply.code(vendorErrorStatus(failure)).send({ error: "redo_video_failed", message });
       }
     },
   );

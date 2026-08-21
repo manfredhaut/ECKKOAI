@@ -17,10 +17,11 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       [req.tenantId],
     );
     const { rows: videoRows } = await pool.query<{ count: string }>(
-      // Inclui `awaiting_approval` pelo mesmo motivo de `/jobs/processing`: é o
-      // único estado que exige uma AÇÃO da pessoa, e o que expira sozinho em
-      // 24 h descartando uma composição paga.
-      "SELECT count(*) FROM videos WHERE tenant_id = $1 AND status IN ('queued', 'processing', 'awaiting_approval')",
+      // Inclui os dois `awaiting_approval*` pelo mesmo motivo de
+      // `/jobs/processing`: são os únicos estados que exigem uma AÇÃO da
+      // pessoa, e os dois expiram sozinhos em 24 h descartando trabalho pago
+      // (imagem composta, ou imagem + vídeo mudo — ver migration 059).
+      "SELECT count(*) FROM videos WHERE tenant_id = $1 AND status IN ('queued', 'processing', 'awaiting_approval', 'awaiting_approval_video')",
       [req.tenantId],
     );
     const { rows: documentRows } = await pool.query<{ count: string }>(

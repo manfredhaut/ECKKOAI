@@ -1,9 +1,21 @@
 /**
- * `awaiting_approval` é EXCLUSIVO do caminho da fal, e é o único estado deste
- * enum que não sai sozinho: a composição já foi paga, a imagem existe, e a
- * etapa seguinte (~US$ 1,50) espera um clique humano. Ver migration 052.
+ * `awaiting_approval` e `awaiting_approval_video` são EXCLUSIVOS do caminho
+ * da fal, e são os dois estados deste enum que não saem sozinhos:
+ *
+ * - `awaiting_approval`: a composição já foi paga, a IMAGEM existe, e a
+ *   etapa seguinte (Wan/Seedance, o `animar`) espera um clique humano. Ver
+ *   migration 052.
+ * - `awaiting_approval_video`: `animar` também já foi pago, o VÍDEO MUDO
+ *   existe, e as duas etapas mais caras (narrar + sincronizar) esperam um
+ *   segundo clique. FASE 2 (Modo B), 21/08, migration 059.
  */
-export type VideoStatus = "queued" | "processing" | "awaiting_approval" | "ready" | "error";
+export type VideoStatus =
+  | "queued"
+  | "processing"
+  | "awaiting_approval"
+  | "awaiting_approval_video"
+  | "ready"
+  | "error";
 
 export interface Avatar {
   id: string;
@@ -58,7 +70,19 @@ export interface Video {
   fal_run_id: string | null;
   /** A imagem-base composta, aprovada ou à espera de aprovação. Migration 052. */
   fal_composed_image_url: string | null;
-  /** Quando a aprovação passou a ser esperada. Reiniciado a cada recomposição. */
+  /**
+   * O vídeo animado, MUDO — aprovado ou à espera de aprovação. FASE 2 (Modo
+   * B), migration 059. `null` até a corrida alcançar `animar` pela primeira
+   * vez; sobrevive ao "Refazer" (sobrescrito, nunca acumulado — mesmo padrão
+   * de `fal_composed_image_url` na recomposição).
+   */
+  fal_muted_video_url: string | null;
+  /**
+   * Quando a aprovação (de QUALQUER uma das duas etapas) passou a ser
+   * esperada. Reiniciado a cada recomposição/refazer — é este campo, e não
+   * `created_at`, que a expiração de 24 h mede, para os dois estados de
+   * espera.
+   */
   approval_requested_at: string | null;
   /** Legenda queimada foi PEDIDA nesta geração? Ver migration 049. */
   captions: boolean;
