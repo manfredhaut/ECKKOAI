@@ -73,6 +73,7 @@ import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js"
 import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
+import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
 import { checkExistingAvatarAssetsPolicy } from "./checkExistingAvatarAssetsPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
@@ -719,6 +720,14 @@ async function main(): Promise<void> {
   const falFase0Defaults = await checkFalFase0DefaultsPolicy();
   falFase0Defaults.failures.forEach((f) => failures.push(f));
   falFase0Defaults.notes.forEach((n) => note(n));
+
+  // --- 24o-quater-c. BLOCO A — o tier decide motor/teto, tela até corpo ---
+  //
+  // Mesma vizinhança e a mesma simulação de `checkFalSceneWiringPolicy`
+  // (`corridaDeAnimacao`, reusada com o parâmetro `tier`).
+  const falTier = await checkFalTierPolicy();
+  falTier.failures.forEach((f) => failures.push(f));
+  falTier.notes.forEach((n) => note(n));
 
   // --- 24o-quinquies. cenário e traje no avatar EXISTENTE (BLOCO B5c) ----
   //

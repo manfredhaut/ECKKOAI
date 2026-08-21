@@ -313,8 +313,14 @@ export async function corridaDeComposicao(): Promise<{
  * É a função que a rota de aprovação chama, e o único caminho do produto que
  * chega a submeter o Wan. A corrida morre na narração (o TTS devolve 500) —
  * depois de o corpo do Wan já ter saído, que é o que esta guarda lê.
+ *
+ * `tier` (BLOCO A, opcional, default `"normal"`) reusa esta MESMA corrida
+ * para `checkFalTierPolicy.ts` medir o motor Premium (Seedance), sem uma
+ * segunda cópia da simulação de fornecedor.
  */
-export async function corridaDeAnimacao(): Promise<{ submissoes: Submissao[]; erro: string }> {
+export async function corridaDeAnimacao(
+  tier?: "normal" | "premium",
+): Promise<{ submissoes: Submissao[]; erro: string }> {
   const { runFalPipelineDaImagem } = await import("../services/video/falPipeline.js");
   const estado = { submissoes: [] as Submissao[], publicados: [] as { rotulo: string; fileUrl: string }[] };
   const restaurarFetch = instalarFetch(estado);
@@ -338,6 +344,7 @@ export async function corridaDeAnimacao(): Promise<{ submissoes: Submissao[]; er
         pollTimeoutMs: 50,
         pollIntervalMs: 1,
         esperar: async () => {},
+        tier,
       },
       "https://v3b.fal.media/imagem-aprovada.png",
       "req-da-composicao",

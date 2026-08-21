@@ -63,9 +63,13 @@ import { mimeDoUpload, readUpload } from "../services/storage.js";
 import {
   PIPELINE_CHARS_PER_SECOND,
   PIPELINE_DURACAO_MAXIMA,
+  DEFAULT_VIDEO_TIER,
   escolherDuracao,
+  isVideoTier,
   runFalPipelineDaImagem,
+  videoTierParaPipeline,
   type EntradaDeComposicao,
+  type VideoTier,
 } from "../services/video/falPipeline.js";
 import { abrirCorrida, criarDiarioNoBanco, fecharCorrida, requestIdDaEtapa } from "../services/video/falPipelineJournal.js";
 import { aprovarEAnimar, recompor } from "../services/video/falApproval.js";
@@ -897,6 +901,17 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
        * lado seguro — ver `resolveInterfaceLocale`.
        */
       interface_locale?: string | null;
+      /**
+       * O NÍVEL escolhido no passo Gerar — BLOCO A. `"simples"` (HeyGen) |
+       * `"normal"` (fal/Wan) | `"premium"` (fal/Seedance 2.5, teto próprio).
+       *
+       * Ausente ou inválido cai em `DEFAULT_VIDEO_TIER` ("normal") — mesmo
+       * padrão de `interface_locale` logo acima: um cliente antigo que não
+       * manda o campo (toda geração até este bloco) não pode virar recusa
+       * por causa de um campo que não existia quando ele foi escrito, e
+       * "normal" é o comportamento que essas gerações sempre tiveram.
+       */
+      tier_video?: string | null;
     };
   }>("/videos", { preHandler: requireActiveTenant }, async (req, reply) => {
     const {
@@ -911,7 +926,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       expressiveness: expressividadeBruta,
       engine_choice: engineChoiceBruto,
       avatar_look_id: avatarLookId,
+      tier_video: tierVideoBruto,
     } = req.body;
+    const tierVideo: VideoTier = isVideoTier(tierVideoBruto) ? tierVideoBruto : DEFAULT_VIDEO_TIER;
 
     // A cena é NORMALIZADA aqui, uma vez, e o resultado é o que vai para o
     // banco E para o fornecedor. Normalizar em dois lugares deixaria o que foi
@@ -1117,8 +1134,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated,
                            publish_platform, aspect_ratio, resolution,
                            background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id,
-                           captions, motion_prompt_en)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING *`,
+                           captions, motion_prompt_en, tier_video)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) RETURNING *`,
       [
         req.tenantId,
         avatar_id,
@@ -1159,6 +1176,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // e é também o que faz "mudou o fonte, refaz a tradução" ser verdade
         // sem nenhum código de invalidação.
         motionPromptEn,
+        // BLOCO A — gravado junto do resto do pedido, antes de qualquer
+        // chamada: "gerar novamente" precisa repetir o MESMO tier, não o
+        // default.
+        tierVideo,
       ],
     );
     const video = rows[0];
@@ -1337,6 +1358,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             [video.id, seconds, source ?? null],
           );
         },
+        // BLOCO A — sem efeito nos caminhos heygen/did; só o ramo `ehFal`
+        // (dentro de `generateVideo`) o consome, escolhendo motor e teto
+        // dentro do pipeline. Ver `videoTierParaPipeline`.
+        tier: videoTierParaPipeline(tierVideo),
       });
       // A duração do áudio é gravada AGORA porque só agora ela é conhecida: o
       // registro de consumo acontece no laço de polling, noutra requisição. O
@@ -1779,6 +1804,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // linha o vídeo pago sai sem direção nenhuma.
                 promptDeDirecao: promptDaDirecaoDaLinha(video),
                 diario: criarDiarioNoBanco(runId),
+                // BLOCO A — relido da LINHA, não do formulário: a aprovação
+                // acontece numa requisição SEPARADA da criação, e o tier
+                // escolhido então é o que decide o motor agora. Ver o
+                // comentário equivalente em `promptDaDirecaoDaLinha`.
+                tier: videoTierParaPipeline(video.tier_video),
               },
               imagemAprovada,
               video.provider_job_id ?? "",

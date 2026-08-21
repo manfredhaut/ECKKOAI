@@ -204,6 +204,24 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
   },
   {
     vendor: "fal",
+    // SEM prefixo `fal-ai/`, por ANALOGIA com o Wan acima (mesmo namespace de
+    // modelo Partner) — NÃO VERIFICADO por fusível nem por chamada real. Ver
+    // `ENDPOINT_ANIMAR_PREMIUM` em falPipeline.ts para o aviso por extenso.
+    //
+    // Motor do tier "Premium" (BLOCO A, 21/08). Pesquisado e ligado
+    // brevemente no BLOCO SEEDANCE-1 (mesmo dia, nunca commitado), revertido
+    // antes de qualquer submissão real sair — ver `ENDPOINT_ANIMAR` em
+    // falPipeline.ts.
+    path: "/bytedance/seedance-2.5/reference-to-video",
+    method: "POST",
+    billable: true,
+    note:
+      "animação a partir de imagem — motor do tier Premium. Tarifação por TOKEN, não por segundo " +
+      "(fórmula em `custoSeedanceUsd`, providerCost.ts), ~18,5× o custo por segundo do Wan. Preço " +
+      "DOCUMENTADO por leitura de doc pública (21/08); NÃO MEDIDO, NÃO VERIFICADO por chamada real.",
+  },
+  {
+    vendor: "fal",
     path: "/fal-ai/sync-lipsync/v2",
     method: "POST",
     billable: true,

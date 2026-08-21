@@ -349,6 +349,36 @@ export const PRECOS_FAL = {
 } as const;
 
 /**
+ * O CUSTO do motor Premium (Seedance 2.5), por CLIPE — não por segundo.
+ *
+ * ⚠️ **DOCUMENTADO (não MEDIDO), NÃO VERIFICADO por chamada real nem por
+ * fusível.** Fórmula verbatim do BLOCO SEEDANCE-1 (21/08), citada em
+ * `PRECOS_FAL.animarUsdPorSegundo` acima:
+ * *"tokens = (output_height × output_width × (input_video_duration +
+ * output_duration) × 24) / 1024"*, tarifa *"$0.0214 per 1000 tokens"* —
+ * <https://fal.ai/models/bytedance/seedance-2.5/reference-to-video>.
+ *
+ * `input_video_duration = 0`: este pipeline anima a partir de UMA imagem
+ * (`image_urls` com um elemento), nunca de um vídeo de referência — não há
+ * `reference-to-video` de verdade aqui, só o nome do endpoint. Resolução
+ * fixada em 720×1280 (mesma de `RESOLUCAO_VIDEO`/`720p`, para comparar
+ * como o Wan compara).
+ *
+ * Função, e não uma tarifa por segundo em `PRECOS_FAL`, porque o preço NÃO É
+ * linear na duração por essa fórmula — é (na prática, com `input=0`) — mas
+ * fica como função porque a UNIDADE (tokens) é discreta e amarrada à
+ * resolução, ao contrário de `animarUsdPorSegundo`, que é de fato uma
+ * tarifa por segundo.
+ */
+export function custoSeedanceUsd(duracaoSegundosDeSaida: number): number {
+  const ALTURA = 720;
+  const LARGURA = 1280;
+  const TARIFA_POR_1000_TOKENS = 0.0214;
+  const tokens = (ALTURA * LARGURA * duracaoSegundosDeSaida * 24) / 1024;
+  return (tokens / 1000) * TARIFA_POR_1000_TOKENS;
+}
+
+/**
  * TETO DURO de uma corrida do pipeline da fal, em dólares.
  *
  * Não é preço: é o freio. Vive junto dos preços porque só faz sentido lido ao
@@ -358,11 +388,31 @@ export const PRECOS_FAL = {
  * ~US$ 0,77 (compor US$ 0,08 + animar até 15s×US$0,025 + sincronizar), bem
  * dentro dos US$ 2,00.
  *
- * ⚠️ O tier "Premium" (Seedance 2.5, pesquisado no BLOCO SEEDANCE-1, 21/08 —
- * ver `animarUsdPorSegundo` — mas ainda NÃO implementado) vai precisar de um
- * teto PRÓPRIO: o preço por segundo dele é ~18,5× maior, e reusar este mesmo
- * teto global recusaria a etapa `animar` do Premium antes de qualquer
- * chamada — foi exatamente isso que aconteceu enquanto o Seedance esteve
- * ligado aqui hoje.
+ * ⚠️ O tier "Premium" (Seedance 2.5) usa `PIPELINE_TETO_USD_PREMIUM` abaixo,
+ * não este — o preço por segundo dele é ~18,5× maior, e reusar este mesmo
+ * teto recusaria a etapa `animar` do Premium antes de qualquer chamada, que
+ * foi exatamente o que aconteceu no BLOCO SEEDANCE-1 (21/08), quando o
+ * Seedance ainda usava este teto global.
  */
 export const PIPELINE_TETO_USD = 2.0;
+
+/**
+ * TETO PRÓPRIO do tier "Premium" (Seedance 2.5) — BLOCO A, 21/08.
+ *
+ * Dimensionado para o PIOR CASO de `animar` + `sincronizar` — não de
+ * `compor`, que continua sob `PIPELINE_TETO_USD` fixo (custa sempre
+ * US$ 0,08, tier nenhum muda isso; ver o comentário de `tetoParaTier` em
+ * falPipeline.ts): `animar` o clipe mais longo (15 s, `custoSeedanceUsd(15)`
+ * ≈ US$ 6,93) + `sincronizar` até ~13,04 s de fala (`0,05 × 13,04` ≈
+ * US$ 0,65) ≈ **US$ 7,58 no pior caso**. Fixado em US$ 10,00 para dar margem sem
+ * abrir o freio de propósito — a mesma folga proporcional que
+ * `PIPELINE_TETO_USD` tem sobre o pior caso do Wan (US$ 0,77 contra
+ * US$ 2,00, ~2,6×; aqui US$ 7,58 contra US$ 10,00, ~1,3×: menor de
+ * propósito, porque o motor Premium é caro o bastante para que uma folga
+ * generosa custe caro se o teto nunca vier a barrar nada).
+ *
+ * ⚠️ NÃO VERIFICADO por chamada real: nem o preço-base (`custoSeedanceUsd`)
+ * nem este teto foram provados contra o fornecedor. Ver o mesmo aviso em
+ * `custoSeedanceUsd`.
+ */
+export const PIPELINE_TETO_USD_PREMIUM = 10.0;

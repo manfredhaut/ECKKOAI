@@ -455,7 +455,15 @@ function fixtureResultFor(responseUrl: string): unknown {
       aspect_ratio: params.get("aspect_ratio"),
     };
   }
-  if (endpointId === "wan/v2.6/image-to-video/flash" || endpointId === "fal-ai/sync-lipsync/v2") {
+  if (
+    endpointId === "wan/v2.6/image-to-video/flash" ||
+    // Motor Premium (BLOCO A, 21/08) — mesma forma do Wan: os dois devolvem
+    // `video.url`. Sem isto, toda etapa "animar" do tier premium quebraria em
+    // fixture (mesmo defeito, já registrado no revert do BLOCO SEEDANCE-1,
+    // que este endpoint deixasse de ser reconhecido aqui).
+    endpointId === "bytedance/seedance-2.5/reference-to-video" ||
+    endpointId === "fal-ai/sync-lipsync/v2"
+  ) {
     return { video: { url: FIXTURE_VIDEO_URL } };
   }
   // Endpoint desconhecido (fora dos três de hoje): mantém a forma antiga.

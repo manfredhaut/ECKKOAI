@@ -55,4 +55,14 @@ export interface WizardState {
    * projeto fizeram até 10/08, e é a escolha que não muda o caminho conhecido.
    */
   captions: boolean;
+  /**
+   * O NÍVEL do vídeo — BLOCO A. Nomes de plataforma (HeyGen/Wan/Seedance)
+   * NUNCA aparecem nesta tela nem nos textos, só nos comentários do código —
+   * ver `AdminPlatformKeysSection.tsx` e `falPipeline.ts` no backend.
+   *
+   * Padrão `"normal"`: é o único tier do caminho da fal que já tinha motor
+   * funcionando antes deste bloco, e é o que todo vídeo criado antes dele
+   * teve, sem ter escolhido nada.
+   */
+  tierVideo: "simples" | "normal" | "premium";
 }

@@ -667,6 +667,17 @@
       "longConfirm": "Este roteiro produz cerca de {{seconds}} s de vídeo, acima dos {{limit}} s a partir dos quais pedimos confirmação. A cobrança é por segundo entregue e não há estorno depois que o fornecedor aceita. Confirmo que quero gerar assim.",
       "again": "Gerar novamente",
       "againHelp": "Repete os mesmos parâmetros — roteiro, voz já sintetizada, fundo, interpretação, traje e formato. O serviço pode produzir um resultado diferente com a mesma entrada. Cada tentativa consome do limite diário e aparece na Biblioteca.",
+      "tierLabel": "Nível do vídeo",
+      "tier": {
+        "simples": "Simples",
+        "normal": "Normal",
+        "premium": "Premium"
+      },
+      "tierHint": {
+        "simples": "Rápido e econômico. Bom para testes e rascunhos.",
+        "normal": "O equilíbrio entre custo e qualidade — o nível recomendado para a maioria dos vídeos.",
+        "premium": "A maior qualidade de movimento disponível hoje, por um custo bem mais alto."
+      },
       "captionsLabel": "Legenda",
       "captionsOff": "Sem legenda",
       "captionsOn": "Com legenda",

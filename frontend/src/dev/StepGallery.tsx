@@ -273,6 +273,8 @@ function StepUnderGlass({
       // Sem legenda, que é o padrão do wizard real. A galeria retrata o estado
       // que o produto produz, e não um que só existe aqui.
       captions: false,
+      // "normal", mesmo padrão do wizard real — BLOCO A.
+      tierVideo: "normal" as const,
     }),
     [state],
   );
@@ -309,7 +311,7 @@ function StepUnderGlass({
         />
       );
     case "passo4-gerar":
-      return <GenerateStep wizard={wizard} onCaptionsChange={noop} />;
+      return <GenerateStep wizard={wizard} onCaptionsChange={noop} onTierVideoChange={noop} />;
     case "tela-conteudo":
       return <ContentPage />;
     case "tela-painel-admin":

@@ -30,7 +30,7 @@ import type {
   EntradaDeComposicao,
   EtapaDoPipeline,
 } from "../video/falPipeline.js";
-import { runFalPipeline } from "../video/falPipeline.js";
+import { runFalPipeline, type PipelineTier } from "../video/falPipeline.js";
 import { isFixtureMode } from "./providerMode.js";
 import { withLiveBudget } from "./liveGuard.js";
 import { vendorAcceptsFormat, type VideoFormat } from "./videoFormat.js";
@@ -243,6 +243,13 @@ export interface GenerateVideoInput {
    * Onde a corrida PARA. Default `"compor"` — ver `generateVideoFal`.
    */
   falPararApos?: EtapaDoPipeline | null;
+  /**
+   * O NÍVEL escolhido pelo tenant — BLOCO A. Sem efeito nos caminhos
+   * heygen/did; só `generateVideoFal` o consome, repassando a
+   * `runFalPipeline`. `null`/ausente cai no default do orquestrador
+   * (`"normal"`, o motor Wan).
+   */
+  tier?: PipelineTier | null;
 }
 
 /**
@@ -1227,6 +1234,10 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
     // O default é o FREIO, e não o pipeline inteiro: quem quiser ir além tem de
     // dizer isso explicitamente, e hoje ninguém diz.
     pararApos: input.falPararApos ?? "compor",
+    // BLOCO A — o nível decide o MOTOR (`enderecoAnimarParaTier`) e o TETO
+    // (`tetoParaTier`) dentro do orquestrador; `undefined` cai no default
+    // dele (`"normal"`, Wan).
+    tier: input.tier ?? undefined,
   });
 
   logEvent("info", "fal_pipeline_encerrado", {

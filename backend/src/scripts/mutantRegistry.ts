@@ -58,6 +58,7 @@ import { MUTANTS as falGenerationPathMutants } from "./checkFalGenerationPathPol
 import { MUTANTS as falApprovalMutants } from "./checkFalApprovalPolicy.js";
 import { MUTANTS as falSceneWiringMutants } from "./checkFalSceneWiringPolicy.js";
 import { MUTANTS as falFase0DefaultsMutants } from "./checkFalFase0DefaultsPolicy.js";
+import { MUTANTS as falTierMutants } from "./checkFalTierPolicy.js";
 import { MUTANTS as existingAvatarAssetsMutants } from "./checkExistingAvatarAssetsPolicy.js";
 import { MUTANTS as referenceVideoPhotoOptionalMutants } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { MUTANTS as mutantRegistryMutants } from "./checkMutantRegistryPolicy.js";
@@ -125,6 +126,7 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkFalApprovalPolicy.ts", falApprovalMutants),
   ...de("backend/src/scripts/checkFalSceneWiringPolicy.ts", falSceneWiringMutants),
   ...de("backend/src/scripts/checkFalFase0DefaultsPolicy.ts", falFase0DefaultsMutants),
+  ...de("backend/src/scripts/checkFalTierPolicy.ts", falTierMutants),
   ...de("backend/src/scripts/checkExistingAvatarAssetsPolicy.ts", existingAvatarAssetsMutants),
   ...de("backend/src/scripts/checkReferenceVideoPhotoOptionalPolicy.ts", referenceVideoPhotoOptionalMutants),
   ...de("backend/src/scripts/checkMutantRegistryPolicy.ts", mutantRegistryMutants),

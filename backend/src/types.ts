@@ -78,6 +78,14 @@ export interface Video {
   captioned_output_url: string | null;
   /** Gerado em modo fixture? Fato da LINHA, não do ambiente (ver migration 032). */
   simulated: boolean;
+  /**
+   * O NÍVEL escolhido pelo tenant — BLOCO A, migration 058. `"simples"`
+   * (HeyGen) | `"normal"` (fal/Wan) | `"premium"` (fal/Seedance 2.5). Um
+   * tenant no vendor HeyGen ignora este campo na prática: o despacho por
+   * VENDOR continua vindo de `api_credentials`, não daqui — só dentro do
+   * vendor "fal" é que este campo escolhe o motor.
+   */
+  tier_video: "simples" | "normal" | "premium";
   created_at: string;
 }
 

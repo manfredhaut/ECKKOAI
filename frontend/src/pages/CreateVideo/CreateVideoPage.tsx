@@ -72,6 +72,9 @@ export function CreateVideoPage() {
     // SEM legenda por padrão. A escolha contrária muda o corpo enviado ao
     // fornecedor de um jeito que nenhuma geração deste projeto exercitou.
     captions: false,
+    // "normal" é o único tier do caminho da fal com motor funcionando desde
+    // antes do BLOCO A — mesmo comportamento de toda geração anterior a ele.
+    tierVideo: "normal",
   });
 
   /**
@@ -178,6 +181,7 @@ export function CreateVideoPage() {
         <GenerateStep
           wizard={wizard}
           onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))}
+          onTierVideoChange={(tierVideo) => setWizard((w) => ({ ...w, tierVideo }))}
           // O passo 1 coleta cenário e traje; é aqui que eles atravessam até o
           // corpo de `POST /videos`. Antes desta linha o bloco do passo 1 era o
           // último resto de coleta que não ia a lugar nenhum.

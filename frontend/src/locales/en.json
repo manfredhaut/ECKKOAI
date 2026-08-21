@@ -667,6 +667,17 @@
       "longConfirm": "This script produces about {{seconds}}s of video, above the {{limit}}s threshold where we ask for confirmation. Billing is per delivered second and there is no refund once the vendor accepts the job. I confirm I want to generate it.",
       "again": "Generate again",
       "againHelp": "Repeats the same parameters — script, already synthesised voice, background, performance, outfit and format. The service may produce a different result from the same input. Each attempt counts against the daily limit and shows up in the Library.",
+      "tierLabel": "Video tier",
+      "tier": {
+        "simples": "Simple",
+        "normal": "Normal",
+        "premium": "Premium"
+      },
+      "tierHint": {
+        "simples": "Fast and inexpensive. Good for tests and drafts.",
+        "normal": "The balance between cost and quality — the recommended tier for most videos.",
+        "premium": "The best motion quality available today, at a much higher cost."
+      },
       "captionsLabel": "Captions",
       "captionsOff": "No captions",
       "captionsOn": "With captions",

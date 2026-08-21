@@ -32,7 +32,7 @@ import { randomUUID } from "node:crypto";
 import { falPoll, falResult, falSubmit, falUpload } from "../providers/falClient.js";
 import { synthesizeSpeech } from "../providers/voiceProvider.js";
 import { logEvent } from "../log/safeLog.js";
-import { PIPELINE_TETO_USD, PRECOS_FAL } from "../billing/providerCost.js";
+import { PIPELINE_TETO_USD, PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd } from "../billing/providerCost.js";
 import type { AspectRatio } from "../providers/videoFormat.js";
 
 // ---------------------------------------------------------------------------
@@ -131,7 +131,47 @@ export function escolherDuracao(chars: number): PipelineDuration | null {
 // Os preços e o teto vivem em `billing/providerCost.ts`: a guarda de custo
 // cobra que todo número de dinheiro more lá, e duas cópias de uma medição
 // divergem em silêncio.
-export { PRECOS_FAL, PIPELINE_TETO_USD } from "../billing/providerCost.js";
+export { PRECOS_FAL, PIPELINE_TETO_USD, PIPELINE_TETO_USD_PREMIUM, custoSeedanceUsd } from "../billing/providerCost.js";
+
+/**
+ * O NÍVEL escolhido pelo tenant, dentro do caminho da fal — BLOCO A, 21/08.
+ *
+ * `"simples"` (HeyGen) não aparece aqui: este arquivo é só o pipeline da fal,
+ * e o tier simples nunca o alcança — ver `routes/videos.ts`, onde o
+ * despacho por VENDOR (heygen/did/fal) continua decidido pela credencial do
+ * tenant, e só dentro do vendor "fal" é que `tier_video` escolhe o MOTOR.
+ *
+ * Default `"normal"` em todo lugar que recebe isto opcionalmente: é o único
+ * tier que já tinha motor funcionando (Wan) antes do BLOCO A, e é o
+ * comportamento que toda corrida anterior a ele teve sem ter escolhido nada.
+ */
+export type PipelineTier = "normal" | "premium";
+
+/**
+ * O NÍVEL DE PRODUTO inteiro — os TRÊS, `"simples"` incluído.
+ *
+ * `PipelineTier` acima é só os dois que este arquivo conhece; `VideoTier` é o
+ * que a TELA oferece e o que `videos.tier_video` (migration 058) guarda.
+ * `videoTierParaPipeline` faz a ponte: "simples" nunca chega a este arquivo
+ * (o vendor heygen não passa pelo pipeline da fal), então ele cai no default
+ * do orquestrador — o valor é irrelevante na prática, mas precisa ser
+ * alguma coisa do tipo para o TypeScript aceitar a chamada.
+ */
+export type VideoTier = "simples" | PipelineTier;
+
+export const VIDEO_TIERS: readonly VideoTier[] = ["simples", "normal", "premium"];
+
+/** O tier de toda linha criada antes do BLOCO A, e de todo corpo que não escolhe um. */
+export const DEFAULT_VIDEO_TIER: VideoTier = "normal";
+
+export function isVideoTier(value: unknown): value is VideoTier {
+  return typeof value === "string" && (VIDEO_TIERS as readonly string[]).includes(value);
+}
+
+/** `"simples"` vira `"normal"` aqui — ver o comentário de `VideoTier`. */
+export function videoTierParaPipeline(tier: VideoTier): PipelineTier {
+  return tier === "premium" ? "premium" : "normal";
+}
 
 /** Teto do laço de polling. Ver `aguardarConclusao`. */
 export const PIPELINE_POLL_TIMEOUT_MS = 300_000;
@@ -207,6 +247,28 @@ export const DEFAULTS_NUNCA_HERDADOS = {
   "fal-ai/sync-lipsync/v2": ["sync_mode", "model"],
 } as const;
 
+/**
+ * O EQUIVALENTE do mapa acima, para o motor Premium (Seedance 2.5) — num mapa
+ * SEPARADO, de propósito.
+ *
+ * `checkFalPipelinePolicy.ts` itera `DEFAULTS_NUNCA_HERDADOS` inteiro contra
+ * o CAMINHO FELIZ que ele exercita — que é só o tier "Normal" (Wan). Somar a
+ * chave do Seedance àquele mapa faria aquela guarda procurar, na corrida do
+ * Wan, uma submissão ao Seedance que nunca acontece — falso failure numa
+ * guarda que hoje passa. `checkFalTierPolicy.ts` confere este mapa contra a
+ * corrida do tier "Premium", separadamente.
+ *
+ * ⚠️ Lista MENOR que a do Wan, e por honestidade: os únicos campos do corpo
+ * do Seedance que este projeto sabe nomear vêm do BLOCO SEEDANCE-1 (21/08,
+ * nunca commitado antes do revert) — `duration` e `aspect_ratio`. Não há
+ * schema lido para confirmar se existem outros defaults caros a fechar aqui,
+ * ao contrário do Wan (`enable_prompt_expansion`/`multi_shots`, MEDIDOS por
+ * fusível em 14/08). NÃO VERIFICADO.
+ */
+export const DEFAULTS_NUNCA_HERDADOS_PREMIUM = {
+  "bytedance/seedance-2.5/reference-to-video": ["duration", "aspect_ratio"],
+} as const;
+
 // ---------------------------------------------------------------------------
 // FASE 0 — regras de sistema, SEMPRE concatenadas, nunca editáveis pela pessoa
 // ---------------------------------------------------------------------------
@@ -274,7 +336,29 @@ export const ENDPOINT_COMPOR = "fal-ai/nano-banana-2/edit";
  * próprio (ainda não implementado) em vez do PIPELINE_TETO_USD global.
  */
 export const ENDPOINT_ANIMAR = "wan/v2.6/image-to-video/flash";
+
+/**
+ * O motor do tier "Premium" — BLOCO A, 21/08.
+ *
+ * ⚠️ **NÃO VERIFICADO se o id leva o prefixo `fal-ai/`.** O Wan (`ENDPOINT_ANIMAR`
+ * acima) precisou ter o prefixo REMOVIDO — MEDIDO por fusível em 14/08
+ * (ENDPOINTS-3) — porque é modelo Partner e mora direto no namespace `wan/`.
+ * O Seedance 2.5 é da Bytedance, e se a mesma convenção de Partner valer para
+ * ele, este id também está sem prefixo — mas isso NUNCA foi testado por
+ * fusível nem por chamada real: o BLOCO SEEDANCE-1 (21/08) foi revertido no
+ * mesmo dia, antes de qualquer submissão de verdade sair. Um id errado aqui
+ * vira 404 no fornecedor (custo zero, MEDIDO duas vezes com o Wan errado),
+ * não cobrança — mas é exatamente o tipo de suposição que já custou dois 404
+ * neste arquivo antes de ser corrigida.
+ */
+export const ENDPOINT_ANIMAR_PREMIUM = "bytedance/seedance-2.5/reference-to-video";
+
 export const ENDPOINT_SINCRONIZAR = "fal-ai/sync-lipsync/v2";
+
+/** Qual `animar()` usar, pelo tier. `"normal"` é o default em todo call site. */
+export function enderecoAnimarParaTier(tier: PipelineTier): string {
+  return tier === "premium" ? ENDPOINT_ANIMAR_PREMIUM : ENDPOINT_ANIMAR;
+}
 
 /**
  * `lipsync-2`, EXPLÍCITO — e esta constante existe por causa do preço.
@@ -471,10 +555,23 @@ export interface FalPipelineInput {
    */
   promptDeDirecao: string;
   diario: DiarioDoPipeline;
+  /**
+   * O NÍVEL escolhido pelo tenant — BLOCO A. Default `"normal"` (Wan): é o
+   * único tier que já tinha motor funcionando antes deste bloco, e é o
+   * comportamento de toda corrida anterior a ele. Decide o ENDPOINT, o
+   * PREÇO e o TETO da etapa `animar` — ver `enderecoAnimarParaTier` e o
+   * teto escolhido em `runFalPipeline`/`runFalPipelineDaImagem`.
+   */
+  tier?: PipelineTier;
   /** Sobrescrito só pela guarda; o produto usa o default. */
   pollTimeoutMs?: number;
   pollIntervalMs?: number;
-  /** Teto de gasto PREVISTO. Default `PIPELINE_TETO_USD`. */
+  /**
+   * Teto de gasto PREVISTO. Default: `PIPELINE_TETO_USD` para o tier
+   * "normal", `PIPELINE_TETO_USD_PREMIUM` para o "premium" — ver `tier`
+   * acima. Passar isto explícito SOBRESCREVE a escolha por tier; hoje só a
+   * guarda faz isso.
+   */
   tetoDeGastoUsd?: number;
   /**
    * Encerra a corrida DEPOIS desta etapa, sem disparar as seguintes.
@@ -516,6 +613,29 @@ export interface FalPipelineResult {
 }
 
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * O TETO desta corrida, pelo `tier` — BLOCO A.
+ *
+ * `input.tetoDeGastoUsd` explícito sempre vence (hoje só a guarda o usa). Sem
+ * ele, o tier decide: `PIPELINE_TETO_USD_PREMIUM` para "premium",
+ * `PIPELINE_TETO_USD` (o default de sempre) para "normal" — inclusive
+ * quando `tier` não foi passado, que é o comportamento de toda corrida
+ * anterior ao BLOCO A.
+ *
+ * Aplicado a partir de `animar` (via `contexto.teto`, dentro de
+ * `animarNarrarSincronizar`) — NÃO na etapa `compor` de `runFalPipeline`,
+ * que continua sob `PIPELINE_TETO_USD` fixo. Isso é seguro porque `compor`
+ * custa sempre US$ 0,08 (mesmo preço em qualquer tier): o teto ali nunca
+ * precisou saber de tier, e só a partir de `animar` os preços divergem o
+ * bastante (Wan × Seedance, ~18,5×) para o teto importar. Manter `compor`
+ * no teto fixo também preserva as guardas que já ancoravam aquela linha
+ * antes do BLOCO A — ver `checkFalGenerationPathPolicy.ts`.
+ */
+function tetoParaTier(input: Pick<FalPipelineInput, "tetoDeGastoUsd" | "tier">): number {
+  if (input.tetoDeGastoUsd !== undefined) return input.tetoDeGastoUsd;
+  return input.tier === "premium" ? PIPELINE_TETO_USD_PREMIUM : PIPELINE_TETO_USD;
+}
 
 /**
  * O roteiro cabe em alguma das três durações — e em qual delas?
@@ -785,10 +905,15 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
     });
   }
 
+  // O TETO de `animar` em diante é o do TIER, não o de `compor` acima — ver
+  // `tetoParaTier`. `compor` custa sempre US$ 0,08, tier nenhum muda isso, e
+  // é por isso que o teto ACIMA (fixo, `PIPELINE_TETO_USD`) nunca precisou
+  // saber de tier — só a partir daqui o preço diverge o bastante para importar.
   return animarNarrarSincronizar(input, {
     imagemUrl: String(imagemUrl),
     gastoAcumuladoUsd: gastoPrevistoUsd,
-    teto,
+    teto: tetoParaTier(input),
+    tier: input.tier ?? "normal",
     segundosEstimados,
     duracaoEscolhida,
     composicaoRequestId: composicao.requestId,
@@ -831,7 +956,8 @@ export async function runFalPipelineDaImagem(
   return animarNarrarSincronizar(input, {
     imagemUrl: imagemCompostaUrl,
     gastoAcumuladoUsd: 0,
-    teto: input.tetoDeGastoUsd ?? PIPELINE_TETO_USD,
+    teto: tetoParaTier(input),
+    tier: input.tier ?? "normal",
     segundosEstimados,
     duracaoEscolhida,
     composicaoRequestId,
@@ -842,8 +968,10 @@ interface ContextoDaAnimacao {
   imagemUrl: string;
   gastoAcumuladoUsd: number;
   teto: number;
+  /** Qual motor de animação usar — ver `enderecoAnimarParaTier`. */
+  tier: PipelineTier;
   segundosEstimados: number;
-  /** A duração escolhida por `conferirRoteiro` — vai ao Wan em `duration`. */
+  /** A duração escolhida por `conferirRoteiro` — vai ao motor em `duration`. */
   duracaoEscolhida: PipelineDuration;
   composicaoRequestId: string;
 }
@@ -858,20 +986,21 @@ interface ContextoDaAnimacao {
  * transcreve, fazendo uma guarda do B2 virar ERRO por causa de uma mudança que
  * não tem nada a ver com ela.
  */
-async function animarNarrarSincronizar(
+/**
+ * O corpo de `animar()` para o Wan (tier "normal").
+ *
+ * EXTRAÍDA de dentro de `animarNarrarSincronizar` pelo BLOCO A, byte a byte
+ * (mesmos campos, mesmos comentários, mesma indentação) — vários mutantes já
+ * ancoravam este texto de quando ele vivia inline como o 5º argumento de
+ * `etapaNaFal`, e mover o texto para uma função dedicada, preservando-o
+ * exatamente, é o que permite ramificar por tier sem os quebrar.
+ */
+function corpoAnimarWan(
   input: FalPipelineInput,
-  contexto: ContextoDaAnimacao,
-): Promise<FalPipelineResult> {
-  const { imagemUrl, teto, segundosEstimados, duracaoEscolhida, composicaoRequestId } = contexto;
-  let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
-
-  gastoPrevistoUsd = autorizarGasto(
-    gastoPrevistoUsd,
-    PRECOS_FAL.animarUsdPorSegundo * duracaoEscolhida,
-    teto,
-    "animar",
-  );
-  const animacao = await etapaNaFal(input, "animar", 2, ENDPOINT_ANIMAR, {
+  imagemUrl: string,
+  duracaoEscolhida: PipelineDuration,
+): Record<string, unknown> {
+  return {
     // A DIREÇÃO, e não a composição. O Wan recebe a imagem pronta em
     // `image_url` — repetir ali a descrição do traje e do cenário seria pedir a
     // ele que redesenhasse o que já está no quadro. O que falta ao Wan é a única
@@ -895,7 +1024,55 @@ async function animarNarrarSincronizar(
     // (MEDIDO em 14/08), então `false` explícito não corre risco de 422.
     enable_prompt_expansion: false,
     multi_shots: false,
-  });
+  };
+}
+
+/**
+ * O corpo de `animar()` para o Seedance 2.5 (tier "premium") — BLOCO A.
+ *
+ * MEDIDO por leitura do BLOCO SEEDANCE-1 (21/08, revertido antes de ser
+ * commitado): `image_urls` LISTA (não `image_url` singular), `end_user_id`
+ * (identificação de conta B2B), `aspect_ratio`, SEM `enable_prompt_expansion`/
+ * `multi_shots` (campos do Wan). Ver `DEFAULTS_NUNCA_HERDADOS_PREMIUM`.
+ *
+ * ⚠️ `duration` NÚMERO, não string — o Seedance documenta uma faixa contínua
+ * (4-30), não o enum fechado do Wan. NÃO VERIFICADO por fusível nem por
+ * chamada real — ver `ENDPOINT_ANIMAR_PREMIUM`.
+ */
+function corpoAnimarSeedance(
+  input: FalPipelineInput,
+  imagemUrl: string,
+  duracaoEscolhida: PipelineDuration,
+): Record<string, unknown> {
+  return {
+    prompt: comDefaultsDeDirecao(input.promptDeDirecao),
+    image_urls: [imagemUrl],
+    end_user_id: input.tenantId,
+    aspect_ratio: input.aspectRatio,
+    duration: duracaoEscolhida,
+  };
+}
+
+async function animarNarrarSincronizar(
+  input: FalPipelineInput,
+  contexto: ContextoDaAnimacao,
+): Promise<FalPipelineResult> {
+  const { imagemUrl, teto, tier, segundosEstimados, duracaoEscolhida, composicaoRequestId } = contexto;
+  let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
+
+  // O CUSTO e o ENDPOINT dependem do tier — ver `enderecoAnimarParaTier` e
+  // `custoSeedanceUsd`. "normal" (Wan) é tarifado por segundo; "premium"
+  // (Seedance) é tarifado por CLIPE, pela fórmula de tokens.
+  const custoAnimarUsd =
+    tier === "premium" ? custoSeedanceUsd(duracaoEscolhida) : PRECOS_FAL.animarUsdPorSegundo * duracaoEscolhida;
+  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoAnimarUsd, teto, "animar");
+
+  const corpoDeAnimar =
+    tier === "premium"
+      ? corpoAnimarSeedance(input, imagemUrl, duracaoEscolhida)
+      : corpoAnimarWan(input, imagemUrl, duracaoEscolhida);
+
+  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);
   const videoMudoUrl = animacao.saida?.video?.url;
   if (!videoMudoUrl) {
     throw new FalPipelineError(

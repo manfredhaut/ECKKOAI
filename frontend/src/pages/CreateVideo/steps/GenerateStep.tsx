@@ -78,6 +78,11 @@ export function corpoDaGeracao(
     // passa pelo tradutor; o que ele faz com o texto depois disso não é assunto
     // desta tela, e a versão traduzida nunca volta para cá.
     interface_locale: interfaceLocale,
+    // O NÍVEL — BLOCO A. Vai SEMPRE, inclusive "normal" (o padrão): omitir o
+    // campo quando a escolha é o default reproduziria a mesma ambiguidade que
+    // `captions` já resolveu — "escolheu normal" e "esqueceu de escolher"
+    // ficariam com a mesma aparência no corpo.
+    tier_video: wizard.tierVideo,
   };
 }
 
@@ -93,14 +98,29 @@ const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   error: 100,
 };
 
+/**
+ * Os TRÊS níveis — BLOCO A. Nomes de plataforma nunca aparecem aqui, só nos
+ * comentários do código: o rótulo, a faixa de custo e a chave de tradução.
+ * A faixa é a mesma da tabela decidida na sessão do sistema de tiers (30 s de
+ * referência); custo REAL varia com a duração escolhida pelo roteiro.
+ */
+const TIER_OPTIONS: { value: "simples" | "normal" | "premium"; range: string }[] = [
+  { value: "simples", range: "US$ 0,50–2,00" },
+  { value: "normal", range: "US$ 1,50–3,00" },
+  { value: "premium", range: "US$ 14,19" },
+];
+
 export function GenerateStep({
   wizard,
   onCaptionsChange,
+  onTierVideoChange,
   defaults,
 }: {
   wizard: WizardState;
   /** Mesma forma dos outros passos: o estado mora na página, o passo avisa. */
   onCaptionsChange: (captions: boolean) => void;
+  /** Mesmo padrão de `onCaptionsChange` — BLOCO A. */
+  onTierVideoChange: (tierVideo: "simples" | "normal" | "premium") => void;
   /** Cenário e traje do passo 1. Ver `corpoDaGeracao`. */
   defaults?: AssetDefaults;
 }) {
@@ -270,6 +290,34 @@ export function GenerateStep({
               respondeu 200, e a ausência só apareceu no vídeo pronto. O resumo
               é derivado do MESMO objeto que vai no POST. */}
           <GenerationSummary wizard={wizard} />
+
+          {/* O NÍVEL — BLOCO A. Três cartões, sem nome de plataforma nenhum:
+              o que a pessoa escolhe é um preço e uma qualidade, não um
+              fornecedor. Antes da legenda porque é o campo que mais muda o
+              custo mostrado no painel logo abaixo. */}
+          <fieldset className="tier-choice" style={{ border: 0, padding: 0, margin: "12px 0 0" }}>
+            <legend style={{ fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 6 }}>
+              {t("createVideo.generate.tierLabel")}
+            </legend>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {TIER_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={wizard.tierVideo === opt.value ? "btn btn-primary" : "btn btn-outline"}
+                  aria-pressed={wizard.tierVideo === opt.value}
+                  onClick={() => onTierVideoChange(opt.value)}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 120 }}
+                >
+                  <span>{t(`createVideo.generate.tier.${opt.value}`)}</span>
+                  <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>{opt.range}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+              {t(`createVideo.generate.tierHint.${wizard.tierVideo}`)}
+            </p>
+          </fieldset>
 
           {/* LEGENDA — a escolha fica ANTES do botão, junto do resumo, porque é
               o último campo que muda o corpo enviado. Depois do clique não há
