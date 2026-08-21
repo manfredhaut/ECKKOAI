@@ -15,25 +15,30 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **18/08/2026** (BLOCO N+3 — 4 pontos de `logEvent` sem log em
-`POST /videos`, arnês completo 281/281, e três investigações de produção sem
-código alterado: ENOENT de foto do Mário, prompt vazio na composição fal,
-`invalid_uid` da ElevenLabs), HEAD `fd1ba07`. **Esta linha NÃO está
-commitada** — ver nota no fim do BLOCO N+3, §11, sobre o que falta decidir
-antes de fechar a sessão.
+Atualizado em **21/08/2026** (FASE 1+2 — Fase 1 dos 3 tiers reensaiada por
+HTTP real depois de a primeira tentativa ter bypassado sessão/HTTP; Fase 2
+"Modo B" — segunda aprovação, o vídeo mudo — implementada e provada no
+backend; passada completa do arnês 296/296, zero INERTE/AMBÍGUO/ERRO), HEAD
+**`2b27d3a`**, árvore limpa. Ver §12 abaixo para o detalhe, e
+[PLANO-MESTRE-SEQUENCIAL.md](PLANO-MESTRE-SEQUENCIAL.md) (novo nesta
+sessão) para a versão voltada a troca de conta — os dois cobrem o mesmo
+bloco por ângulos diferentes; este arquivo é o operacional/gotchas, aquele
+é o resumo de handoff.
 
-⚠️ **GAP CONHECIDO, NÃO RECONSTRUÍDO NESTA RODADA:** entre o HEAD anterior
-registrado aqui (`22f9db8`, 14/08) e o início desta sessão (`b314c5d`) o
-repositório recebeu uma dúzia de commits de blocos NÃO cobertos por este
-arquivo — VITE-PROD-3 (Dockerfile de 3 estágios do frontend, BASE_DOMAIN
-obrigatória em build), domínio único (sem redirect de subdomínio), perfil
-ampliado com endereço/WhatsApp (migration 057), verificação de e-mail por
-clique manual + domínio `mail.eckkoai.com`, e a guarda G-D (motion prompt
-vazio recusado antes de `abrirCorrida` em `/approve`, com estorno de crédito
-quando a fal rejeita antes de aceitar o job). Nenhum desses blocos foi lido a
-fundo nesta sessão — o escopo pedido era só o BLOCO N+1 abaixo. `git log
---oneline` entre os dois HEADs é a fonte de verdade até alguém escrever essa
-história aqui.
+⚠️ **GAP CONHECIDO, NÃO RECONSTRUÍDO NESTA RODADA (herdado, mais um layer):**
+entre o HEAD anterior registrado aqui (`22f9db8`, 14/08) e o início da sessão
+de 18/08 (`b314c5d`) o repositório recebeu uma dúzia de commits de blocos NÃO
+cobertos por este arquivo — VITE-PROD-3, domínio único, perfil ampliado,
+verificação de e-mail, guarda G-D. A sessão de 18/08 (BLOCO N+3, §11) também
+NÃO reconstruiu esse gap, e fechou sem commitar a própria atualização deste
+arquivo (a linha "Atualizado em 18/08" ficou registrada como não-commitada).
+**Esta sessão (21/08) soma um SEGUNDO gap por cima:** entre `fd1ba07` (último
+HEAD que este arquivo já viu) e `b8164b4` (HEAD no início desta sessão) há
+mais uma leva de commits não cobertos aqui — troca de avatar de referência,
+independência foto/vídeo de referência, BLOCO A inteiro (sistema de tiers
+Simples/Normal/Premium). **O BLOCO A está coberto no CLAUDE.md**, seção
+histórica, não aqui. `git log --oneline` entre os HEADs é a fonte de verdade
+para o resto até alguém reconstruir essa história neste arquivo.
 
 ---
 
@@ -248,6 +253,104 @@ HEAD no fim desta sessão: `fd1ba07` (sem novo commit desta seção).
 
 ---
 
+## 12 · FASE 1 (reensaio) + FASE 2 "Modo B" (21/08/2026)
+
+**Custo: US$ 0,00 na sessão inteira.** `PROVIDER_MODE=fixture` do início ao
+fim, confirmado desarmado (processo E `docker compose config`) antes de
+qualquer coisa. Nenhuma chamada real à fal.ai. Commits, em sequência a
+partir de `b8164b4`: `5efeaa1` (Fase 2, backend), `fc6f7d6` (2 mutantes que
+disparavam TS2367 em vez de reprovar — corrigidos), `2b27d3a`
+(`PLANO-MESTRE-SEQUENCIAL.md`, novo). Este bloco (§12) é o quarto commit,
+fechando a sessão.
+
+### Fase 1 — ensaio dos 3 tiers, refeito por HTTP real
+
+**A primeira tentativa NÃO contava como ponta a ponta e foi rejeitada pelo
+operador**, corretamente: um script chamando `generateVideo`/
+`aprovarEAnimar`/`runFalPipelineDaImagem` direto bypassa Fastify, sessão,
+`evaluateGenerationReadiness`, o porteiro de vendor e a tradução da
+Interpretação. **Refeito por HTTP de verdade** contra o processo rodando,
+autenticado por uma sessão montada na tabela `sessions` e assinada com
+`@fastify/cookie` + `config.sessionSecret` — **nunca com senha**: entrar
+com senha para autenticar é ação vedada ao assistente sem exceção de
+contexto, mesmo com autorização explícita do operador em chat. Ver o
+gotcha novo no §3 abaixo.
+
+`POST /videos` (201) → `POST /videos/:id/approve` (200, parou em
+`awaiting_approval_video`) → `POST /videos/:id/approve-video` (200,
+`ready`), nos 3 tiers. `tier_video` conferido por SELECT fresco no banco
+DEPOIS do fluxo completo (não só na resposta do POST): `simples`/`normal`/
+`premium`, os três batendo. Motor conferido pelo diário real das 3
+corridas: `normal`/`simples` → `wan/v2.6/image-to-video/flash`; `premium`
+→ `bytedance/seedance-2.5/reference-to-video`.
+
+**Teto do Premium provado isolado do global**: `PIPELINE_TETO_USD_PREMIUM`
+baixado para US$ 1,00 só para o teste (revertido antes do commit, `git
+diff` conferido vazio, imagem reconstruída de novo), a etapa `animar` do
+Premium recusou citando literalmente **"acima do teto de US$ 1.00"**
+enquanto Simples/Normal seguiram em `tetoUsd:2` — a régua de teto lida é
+`PIPELINE_TETO_USD_PREMIUM`, não `PIPELINE_TETO_USD`.
+
+### Fase 2 ("Modo B") — segunda aprovação, o vídeo mudo
+
+Reusa `pararApos` (já existente no `falPipeline.ts`, antes só `"compor"`
+tinha caminho de produto) com o valor `"animar"`: a corrida para depois do
+vídeo ANIMADO e MUDO, antes de narrar+sincronizar.
+
+- Migration 059: `awaiting_approval_video` no `CHECK` de `videos.status`,
+  coluna `fal_muted_video_url`.
+- `falPipeline.ts`: `animarNarrarSincronizar` para em `animar` quando
+  `pararApos==="animar"`; `narrarSincronizar` extraída (as etapas 3–5, dois
+  chamadores); `runFalPipelineDoVideoMudo` novo — retoma direto de um vídeo
+  mudo conhecido, `gastoAcumuladoUsd` zerado (mesma razão de
+  `runFalPipelineDaImagem`), NÃO rechama `animar`.
+- `routes/videos.ts`: `/approve` passa a passar `pararApos: "animar"`
+  (parava em `ready`, agora para em `awaiting_approval_video`);
+  `/approve-video` novo (retoma, completa); `/redo-video` novo (reroda só
+  `animar`, via `runFalPipelineDaImagem` com `pararApos:"animar"` forçado
+  — reusa o mecanismo do "Refazer" da imagem, não duplica lógica).
+- `recovery.ts`: `awaiting_approval_video` entra em `STATUS_VARRIDOS`,
+  tratado como `awaiting_approval` (ignorado se recente, expira SEM
+  estorno se velho), com mensagem PRÓPRIA
+  (`MENSAGEM_APROVACAO_VIDEO_EXPIRADA`) — testada por mutante dedicado, não
+  reaproveita a mensagem da imagem.
+- `routes/jobs.ts`, `routes/notifications.ts`: `awaiting_approval_video`
+  somado aos estados "pendente de ação".
+
+**5 mutantes provados reprovando** (4 novos em
+`checkFalVideoApprovalPolicy.ts` + 1 reancorado em
+`checkFalApprovalPolicy.ts`), passada filtrada pós-commit, árvore
+conferida limpa em cada reversão. **Passada COMPLETA depois: 296/296, zero
+INERTE/AMBÍGUO/ERRO** — HEAD `fc6f7d6`, log em
+`_arnes-logs/mutants-fase2-completa-2026-08-21-{a,b}.log`, md5
+`99dfb1959afd61966e91e20cc344e28a` nas duas cópias.
+
+Ensaiado ponta a ponta duas vezes: por chamada direta às funções de
+serviço (criar → aprovar imagem, para em `animar` → refazer o vídeo mudo
+→ aprovar vídeo, retoma sem reanimar — confirmado pelo `run_id` da
+aprovação final não ter etapa `animar` nenhuma no diário), e depois pela
+Fase 1 refeita por HTTP (acima), que exercitou `/approve` e
+`/approve-video` pela ROTA real.
+
+⚠️ **CONSEQUÊNCIA ACEITA, não regressão descoberta depois do fato — mas
+REAL enquanto durar:** o frontend atual (`frontend/src/types.ts`,
+`GenerateStep.tsx`) não conhece `awaiting_approval_video` — o botão
+"Aprovar" só aparece com `video.status === "awaiting_approval"` (a string
+exata). **Todo vídeo fal aprovado hoje pela tela atual fica preso em
+`awaiting_approval_video` sem nenhum botão para avançar**, até a UI do
+Modo B existir. Mostrado ao operador nesta sessão via pergunta estruturada
+(mecanismo de UI de escolha, não mensagem de chat digitada — ver a
+ressalva sobre timestamp/proveniência dessa confirmação registrada na
+conversa desta sessão); ele optou por seguir sem UI nesta rodada. Sem
+teste pago: a primeira aprovação real (`/approve` parando em `animar`,
+depois `/approve-video` completando) contra o fornecedor de verdade segue
+NÃO VERIFICADA.
+
+**UI do Modo B e teste pago ficam para o próximo bloco** — não iniciados
+nesta sessão, por instrução explícita.
+
+---
+
 ## 1 · Onde o repositório está
 
 *(o último commit desta lista é sempre o penúltimo do repositório: o próprio
@@ -255,24 +358,23 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 --oneline` fecha a diferença.)*
 
 ```
-bfd5364  ESTADO.md: dívida de baixo risco — VENDOR_FORMAT_SUPPORT.fal está desatualizado desde o B2
-a8020af  ESTADO.md: fecho do B5c — 243/243 na completa, dois gotchas novos, o gap de UI declarado
-cf8d869  Guarda B5c: a passada --affected pegou uma INERTE — presença virou CONTAGEM
-dfd5657  BLOCO B5c: cenário e traje ganham campo no fluxo de avatar EXISTENTE
-5ccd090  lipsync: a variante passa a ser NOSSA escolha — `model` era o único default que trocava de preço
-fc784fb  Expect da G-1: TRANSCRITO da mensagem nova, e o rótulo é `cenario` sem acento
-16a164c  G-1 nasceu INERTE: o "ou" da invariante era satisfeito pelo texto quando a imagem sumia
-97c30e8  Mutante da G-1: o corpo precisa ir junto — `if (false as boolean)` matava o narrowing
-c8dd236  BLOCO B5 · P2: duas guardas para a cena, com os mutantes AINDA NÃO provados
-1f4b0d4  BLOCO B5 · P1: a direção deixa de morrer na ponte, e o sync_mode sai do desconhecido
-ff9628e  BLOCO B3 · P2: três guardas para a aprovação, com os mutantes AINDA NÃO provados
+2b27d3a  PLANO-MESTRE-SEQUENCIAL.md: novo — fecho de sessão (Fase 1 refeita por HTTP real, Fase 2/Modo B, HEAD)
+fc6f7d6  checkFalVideoApprovalPolicy: 2 mutantes disparavam TS2367 (gotcha do "if false") em vez de reprovar
+5efeaa1  Fase 2 (Modo B): parada em animar, awaiting_approval_video, /approve-video + /redo-video
+b8164b4  CLAUDE.md: fecho do BLOCO A — passada completa 292/292, zero INERTE/AMBÍGUO/ERRO
+a1c8d46  checkFalTierPolicy: 3 expects eram paráfrase, não transcrição — 3/4 mutantes saíram INERTES na passada afetada
+c066168  Bloco A: sistema de níveis de vídeo — tela de tier, tier_video, roteamento por tier, teto próprio do Premium
+2a04b4a  fal: chave de plataforma centralizada (fal.ai) para o caminho de avatar; fecho de sessão (Fase 0 + revert Seedance + centralização de chave)
+2c1faa4  fal: motor de animação volta a ser o Wan (tier "Normal"); Seedance 2.5 reservado pro tier "Premium"
 ```
 
-⚠️ **TERCEIRA vez que esta lista divergiu do HEAD** — corrigida em 14/08 no
-EXPOSICAO-1, quando estava **nove commits atrasada** (topo em `54bb282`, HEAD
-em `bfd5364`). O registro das três ocorrências e o padrão que as une está em
-[docs-internal/08-ocorrencias.md](docs-internal/08-ocorrencias.md). Quem lê
-esta seção confiando nela e não confere `git log` recebe um mapa de outro
+⚠️ **QUARTA vez que esta lista divergiu do HEAD** — a lista anterior (topo em
+`bfd5364`, 13/08) sobreviveu intacta até esta reescrita em 21/08, oito
+commits atrás do HEAD real por semanas. O registro das ocorrências
+anteriores e o padrão que as une está em
+[docs-internal/08-ocorrencias.md](docs-internal/08-ocorrencias.md) (não
+atualizado com esta quarta ocorrência — fica como dívida). Quem lê esta
+seção confiando nela e não confere `git log` recebe um mapa de outro
 repositório: **conferir a âncora é o primeiro comando da sessão**, não o
 último.
 
@@ -299,7 +401,10 @@ commit, e mensagem de commit não se reescreve.)
 | **COMPOR-1 · a composição paga, ponta a ponta pela tela** | fechado (ver §1.6) — **a animação bateu em 404** |
 | **ENDPOINTS-2 · o candidato do id do Wan foi testado por fusível** | fechado (ver §1.7) — **também 404, id correto SEGUE não encontrado** |
 | **ENDPOINTS-3 · o id certo (sem prefixo `fal-ai/`), MEDIDO por fusível, aplicado e restart feito** | fechado (ver §1.8) — **`de2a366e` segue aprovável, nunca aprovada de verdade** |
-| **PRÓXIMO · aprovar `de2a366e` de verdade (primeiro clique pago no Wan) — exige autorização explícita de gasto** | bloqueado por decisão do operador, não por NÃO VERIFICADO |
+| ~~PRÓXIMO · aprovar `de2a366e` de verdade~~ | **SUPERADO** — `de2a366e` não foi tocado; o produto seguiu para o BLOCO A antes disso ser retomado. Estado atual daquela linha NÃO VERIFICADO nesta sessão. |
+| BLOCO A · sistema de níveis (Simples/Normal/Premium), tier_video, teto próprio do Premium | fechado (`c066168`+`a1c8d46`), completa 292/292 |
+| FASE 1 · ensaio dos 3 tiers, ponta a ponta por HTTP real | fechado 21/08 — ver §12 |
+| FASE 2 "Modo B" · segunda aprovação (vídeo mudo), backend | fechado 21/08 (`5efeaa1`+`fc6f7d6`), completa 296/296 — ver §12. **UI e teste pago NÃO iniciados.** |
 | 6 · custo por camada, régua `(provider, model, resolution)` | não começado |
 
 ### 1.1 · BLOCO 4, o que falta
@@ -926,6 +1031,43 @@ aqui.**
    <arquivo>` (no-op de conteúdo, já que o hash bate) resolveu. **Antes de
    tratar qualquer "dirty" como real, comparar hash contra HEAD** — evita
    tanto pânico à toa quanto, pior, descartar trabalho de verdade por engano.
+13. **`npm run check:mutants` roda no HOST, não dentro do container.**
+   MEDIDO em 21/08: `docker compose exec backend npm run check:mutants`
+   falha com "Missing script" — esse script só existe no `package.json` da
+   RAIZ (`node tools/run-mutants.mjs`), que por sua vez chama `docker
+   compose exec` por mutante. O gate (`npm run check`) é o oposto: roda
+   DENTRO do container. Confundir os dois custa um comando por engano, não
+   uma conclusão errada — mas já aconteceu.
+14. **Path do Git Bash (Windows) mangla argumento que começa com `/`.**
+   MEDIDO em 21/08: `--guard "/approve passa pararApos"` virou `--guard
+   "C:/Program Files/Git/approve passa pararApos"` na linha de comando
+   efetiva, e o filtro casou zero mutantes — sem erro, só silenciosamente
+   pulou o que devia testar. Mesmo mecanismo já visto com caminhos tipo
+   `/app/fixtures` em `docker compose exec ... ls /app/fixtures`. **Prefixe
+   `MSYS_NO_PATHCONV=1`** em qualquer comando cujo argumento comece com `/`.
+15. **Comparar duas vezes a mesma variável narrowed contra literais
+   incompatíveis dispara TS2367 — mesma família do `if (false && …)`, forma
+   nova.** MEDIDO em 21/08: um mutante que troca `if (x === A) {` por `if (x
+   === "sentinela") {` parece seguro (mesmo padrão que já funcionava antes),
+   mas se o BLOCO do `if` compara `x` de novo contra um OUTRO literal (`x
+   === B`, para escolher uma mensagem, por exemplo), o TypeScript narrowed
+   `x` para o tipo do sentinela dentro do bloco, e a segunda comparação vira
+   "sem sobreposição" — `tsc` reprova, o gate sai com o código do `tsc`
+   (2), e a guarda NUNCA chega a rodar: AMBÍGUO, não reprovação limpa. Some
+   isso à lista de formas que produzem AMBÍGUO sem a guarda ter opinado
+   (gotcha 8 e a nota do `if (false && …)` espalhada pelos mutantes deste
+   arquivo). Correção: `String(x) === "sentinela"` evita o narrowing sem
+   mudar comportamento em runtime.
+16. **Mutantes com o MESMO `find`, em arquivos de guarda DIFERENTES, se
+   derrubam mutuamente na passada.** MEDIDO em 21/08: dois mutantes (um em
+   `checkFalApprovalPolicy.ts`, outro em `checkFalVideoApprovalPolicy.ts`)
+   miravam a mesma linha em `recovery.ts` com o find IDÊNTICO. Aplicar
+   qualquer um dos dois faz o `find` do OUTRO desaparecer do arquivo — e
+   `checkMutantRegistryPolicy` (parte do próprio `npm run check`) acusaria
+   os dois como "não casam mais no alvo" na mesma passada. Ancorar em textos
+   DIFERENTES (aqui: o `if` externo guarda-chuva vs. um `if` interno de
+   escolha de mensagem, alvos de invariantes genuinamente distintas) resolve
+   sem reduzir cobertura.
 
 ## 4 · Invocações exatas
 
@@ -987,6 +1129,34 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 ## 5 · Desfecho da última passada completa — LEIA ISTO PRIMEIRO
 
 *(preenchido no último commit de cada sessão)*
+
+**A passada COMPLETA do fecho da FASE 2 (Modo B): 296/296, zero INERTE,
+zero AMBÍGUO, zero ERRO, zero FALHOU.** HEAD `fc6f7d6`. Log em
+`_arnes-logs/mutants-fase2-completa-2026-08-21-{a,b}.log`, md5
+`99dfb1959afd61966e91e20cc344e28a` nas duas cópias — idênticas. Sem carimbo
+de PASSADA FILTRADA/PULADOS: é a completa de verdade. Árvore limpa em cada
+reversão. **NÃO chega a bater por hash contra HEAD** (gotcha 12) —
+verificada só por `git status`; nenhuma divergência de `mtime` observada
+nesta passada.
+
+**Esta passada teve uma PRIMEIRA TENTATIVA ABORTADA no mutante 53/296**,
+por um erro do próprio operador da sessão (o assistente): um arquivo
+`.ts` descartável foi criado no repositório enquanto a passada rodava em
+background, e isso sozinho bastou para `git status` acusar sujeira e
+abortar a reversão — mesmo o arquivo não tendo relação nenhuma com o
+mutante em teste. Relançada do zero sem tocar o repositório até o fim; a
+segunda tentativa fechou 296/296. Ver gotcha 4 (já registrado) e a lição
+de que ele vale para QUALQUER arquivo novo, não só os que fazem parte do
+alvo.
+
+**O arnês foi de 292 (fecho do BLOCO A) para 296 nesta janela** — os 4
+novos são os de `checkFalVideoApprovalPolicy.ts` (a segunda aprovação, o
+vídeo mudo — ver §12), todos provados reprovando dentro desta mesma
+sessão. 1 mutante existente (`checkFalApprovalPolicy.ts`, G-A) foi
+REANCORADO, não somado — a linha que ele media ganhou um segundo braço na
+condição.
+
+---
 
 **A passada COMPLETA do fecho do B5c: 243/243, zero INERTE, zero AMBÍGUO,
 zero ERRO, zero FALHOU.** HEAD `cf8d869`. Log em
@@ -1051,6 +1221,15 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
 
 ## 6 · NÃO VERIFICADO
 
+- **A FASE 2 (Modo B) contra o fornecedor real.** Tudo — as duas paradas
+  (`awaiting_approval` e `awaiting_approval_video`), `/approve`,
+  `/approve-video`, `/redo-video` — foi exercitado só em
+  `PROVIDER_MODE=fixture`. Nenhuma chamada real à fal.ai nesta sessão. O
+  primeiro clique pago no fluxo de duas aprovações segue bloqueado por
+  decisão do operador, não por falta de código.
+- **BLOCO A + FASE 2 juntos, contra o fornecedor real, no MESMO vídeo.**
+  Ninguém ainda gerou um vídeo Premium (Seedance) passando pelas duas
+  aprovações de verdade — só em fixture, separadamente.
 - **A fal.ai INTEIRA, o upload inclusive.** Nenhuma chamada real saiu deste
   repositório até 12/08 — o 3.5 foi bloqueado por credencial ausente (§1.2). As
   formas de resposta (`file_url`, `upload_url`, `request_id`, `status_url`,
@@ -1079,6 +1258,19 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
 
 ## 7 · Dívidas abertas
 
+- 🔴 **O FRONTEND ATUAL FICA PRESO EM `awaiting_approval_video`.** Aberta em
+  21/08 (FASE 2/Modo B, ver §12). `frontend/src/types.ts` (`VideoStatus`) e
+  `GenerateStep.tsx` (`PROGRESS_BY_STATUS`, o botão "Aprovar") só conhecem
+  `awaiting_approval`. Todo vídeo fal aprovado pela tela HOJE fica sem
+  botão para avançar depois de `/approve`. Aceito conscientemente pelo
+  operador nesta sessão para não construir UI ainda — mas é um estado REAL
+  do produto, não hipotético, enquanto a UI do Modo B não existir.
+- **UI do Modo B não existe.** Tela do vídeo mudo (preview + Aprovar +
+  Refazer), espelhando a existente para a imagem. Sem ela, o item acima
+  não se resolve. Ver §12.
+- **Teste pago do Modo B não iniciado.** `/approve` parando em `animar` e
+  `/approve-video` completando seguem NÃO VERIFICADOS contra a fal.ai real
+  — só contra fixture. Bloqueado por decisão do operador.
 - 🔴 **BLOQUEIO DURO — `ENDPOINT_ANIMAR` está ERRADO e o pipeline não passa da
   composição. Aberta em 14/08 (COMPOR-1), MEDIDA numa aprovação real.**
   `fal-ai/wan/v2.6/reference-to-video/flash` → **404 `Path
