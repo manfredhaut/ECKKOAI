@@ -49,7 +49,8 @@ export const MUTANTS: Mutant[] = [
     file: PIPELINE,
     find: '  return tier === "premium" ? ENDPOINT_ANIMAR_PREMIUM : ENDPOINT_ANIMAR;',
     replace: "  return ENDPOINT_ANIMAR;",
-    expect: "tier: o motor de animação não mudou para o Seedance no tier premium",
+    // TRANSCRITO da mensagem real (gotcha 2 do ESTADO.md) — não paráfrase.
+    expect: "tier: nenhuma submissão ao Seedance saiu para o tier premium",
   },
   {
     guard: "pipeline: o teto do tier premium é o PRÓPRIO, não o global",
@@ -70,7 +71,8 @@ export const MUTANTS: Mutant[] = [
       "  if (input.tetoDeGastoUsd !== undefined) return input.tetoDeGastoUsd;\n" +
       "  return PIPELINE_TETO_USD;\n" +
       "}",
-    expect: "tier: o teto do tier premium recusou uma etapa que caberia no teto próprio",
+    // TRANSCRITO da mensagem real.
+    expect: "tier: o tier premium foi recusado por TETO DE GASTO numa corrida que caberia no teto PRÓPRIO",
   },
   {
     guard: "pipeline: o corpo do Seedance leva image_urls (lista) e end_user_id, não o corpo do Wan",
@@ -83,7 +85,9 @@ export const MUTANTS: Mutant[] = [
     file: PIPELINE,
     find: "    end_user_id: input.tenantId,",
     replace: "",
-    expect: "tier: o corpo do Seedance saiu sem end_user_id (identificação de conta)",
+    // TRANSCRITO da mensagem real — inclui os backticks literais em torno
+    // de `end_user_id`, exatamente como o `failures.push` os escreve.
+    expect: "tier: o corpo do Seedance saiu sem `end_user_id`",
   },
   {
     guard: "tier: o formulário propaga tier_video até o corpo do POST",
