@@ -255,6 +255,7 @@ export interface PlatformCredentialView {
   readsBalance: boolean;
   balanceUnavailable: string | null;
   forcedEnv: boolean;
+  hasProbe: boolean;
 }
 
 export interface PlatformCredentialValidation {

@@ -12,7 +12,7 @@
  */
 import { config } from "../config.js";
 
-export type PlatformCredentialId = "google" | "copilot" | "embedding" | "heygen" | "elevenlabs";
+export type PlatformCredentialId = "google" | "copilot" | "embedding" | "heygen" | "elevenlabs" | "fal";
 
 /**
  * Como a credencial é validada. Nenhuma destas formas gera nada:
@@ -40,7 +40,18 @@ export interface PlatformCredentialDef {
   label: string;
   /** Quem consome esta chave hoje. Vazio = armazenada, ainda sem consumidor. */
   servedBy: string;
-  validation: PlatformValidationKind;
+  /**
+   * `null` = sem forma de validação declarada — nunca "esquecemos de
+   * escrever uma", e sim "não existe leitura barata a fazer". Hoje só a
+   * fal.ai: o fornecedor não expõe endpoint de saldo/cota por chave (ver
+   * `providerCost.ts`, comentário de `PRECOS_FAL`), e inventar uma chamada
+   * só para validar seria a mesma armadilha que `elevenlabs` já documentou
+   * (transformar "sem permissão" em "chave inválida"). A tela mostra "Sem
+   * sonda" em vez de um botão que promete o que não pode cumprir —
+   * `checkPlatformKeyPolicy.ts` trata `null` como declaração válida, não
+   * como lacuna.
+   */
+  validation: PlatformValidationKind | null;
   /**
    * Se a validação também lê saldo/cota. Quando não lê, `balanceUnavailable`
    * diz por quê — mesmo contrato das feature flags: recurso indisponível
@@ -120,6 +131,27 @@ export const PLATFORM_CREDENTIALS: Record<PlatformCredentialId, PlatformCredenti
     balanceUnavailable:
       "o endpoint de cota exige a permissão user_read na chave; validar por ele transformaria falta de permissão em chave inválida.",
     readEnv: () => config.platformElevenlabsApiKey,
+  },
+  fal: {
+    id: "fal",
+    envVar: "PLATFORM_FAL_API_KEY",
+    label: "fal.ai — avatar (imagem/vídeo)",
+    // DIFERENTE de heygen/elevenlabs acima: esta É consumida pela geração —
+    // `resolveTenantAvatarFalKey` (providers/platformKeys.ts), chamada nos
+    // 3 pontos de routes/videos.ts que hoje leem a credencial de avatar
+    // (criação, aprovação, recuperação no boot). Precedência: esta chave
+    // primeiro, BYOK do tenant (`api_credentials`) como retaguarda — o
+    // mesmo desenho de `resolveTenantAiKey`, para o copiloto do tenant.
+    servedBy: "geração de vídeo pelo caminho fal (criação, aprovação e recuperação no boot)",
+    // Sem forma de validação: a fal.ai não expõe endpoint de saldo/cota por
+    // chave (ver PRECOS_FAL em providerCost.ts — "a fal não expõe endpoint
+    // de saldo"), e o mesmo vale no nível do tenant (`hasConnectionProbe:
+    // false` em providerVendors.ts). Inventar uma chamada só para validar
+    // seria medir sem ter medido — o oposto do que este projeto faz.
+    validation: null,
+    readsBalance: false,
+    balanceUnavailable: "a fal.ai não expõe endpoint de saldo/cota por chave.",
+    readEnv: () => config.platformFalApiKey,
   },
 };
 

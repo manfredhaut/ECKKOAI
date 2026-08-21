@@ -332,6 +332,7 @@
       "validate": "Validar",
       "validating": "Validando…",
       "validateHint": "Uma chamada de leitura ao fornecedor, só quando você clica. Nunca gera nada.",
+      "noProbe": "Sem sonda de conexão para esta chave — validar exigiria adivinhar para onde mandar. A chave fica guardada e é usada normalmente.",
       "validateFailed": "Não foi possível validar a chave.",
       "saveFailed": "Não foi possível gravar a chave.",
       "balance": "Saldo: {{balance}}",

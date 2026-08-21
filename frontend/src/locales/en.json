@@ -332,6 +332,7 @@
       "validate": "Validate",
       "validating": "Validating…",
       "validateHint": "One read-only call to the vendor, only when you click. Never generates anything.",
+      "noProbe": "No connection probe for this key — validating would mean guessing where to send it. The key is still stored and used normally.",
       "validateFailed": "Could not validate the key.",
       "saveFailed": "Could not store the key.",
       "balance": "Balance: {{balance}}",

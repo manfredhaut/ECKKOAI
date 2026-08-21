@@ -77,3 +77,31 @@ export async function resolveEmbeddingKey(): Promise<string | null> {
   const resolved = await resolvePlatformKey("embedding");
   return resolved?.value ?? null;
 }
+
+export interface ResolvedAvatarFalKey {
+  apiKey: string;
+  source: "platform" | "tenant_byok";
+}
+
+/**
+ * Chave de AVATAR para o caminho da fal — mesma precedência de
+ * `resolveTenantAiKey` acima: plataforma primeiro, BYOK do tenant como
+ * retaguarda.
+ *
+ * Diferente do copiloto, aqui o BYOK NÃO é um resquício a remover: é o que
+ * decide SE o tenant usa fal — `avatarCredential.vendor === "fal"`
+ * (routes/videos.ts) continua vindo da linha do tenant em `api_credentials`,
+ * e esta função nunca opina sobre isso. Ela resolve só a CHAVE, para quem já
+ * decidiu (em outro lugar) que o vendor é fal.
+ *
+ * `byokApiKey` é OBRIGATÓRIO (não opcional como o `byok` de
+ * `resolveTenantAiKey`) porque, nos três call sites que existem hoje
+ * (routes/videos.ts: criação, aprovação, `rearmVideoPolling`), a credencial
+ * do tenant já foi lida e confirmada presente antes desta chamada — um
+ * parâmetro opcional aqui esconderia essa garantia em vez de expressá-la.
+ */
+export async function resolveTenantAvatarFalKey(byokApiKey: string): Promise<ResolvedAvatarFalKey> {
+  const platform = await resolvePlatformKey("fal");
+  if (platform) return { apiKey: platform.value, source: "platform" };
+  return { apiKey: byokApiKey, source: "tenant_byok" };
+}

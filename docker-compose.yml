@@ -107,7 +107,7 @@ services:
       # DOIS serviços para que cliente e servidor concordem por construção —
       # o servidor continua sendo a autoridade.
       MAX_RECORDING_SECONDS: ${MAX_RECORDING_SECONDS:-}
-      # As cinco chaves da plataforma. Só a primeira era repassada até aqui —
+      # As seis chaves da plataforma. Só a primeira era repassada até aqui —
       # as outras estavam documentadas no .env.example e no CLAUDE.md, mas
       # nunca chegavam ao container: preenchê-las no .env não teria efeito
       # nenhum, e o sintoma seria "colei a chave e o copiloto continua caindo
@@ -118,6 +118,10 @@ services:
       PLATFORM_EMBEDDING_API_KEY: ${PLATFORM_EMBEDDING_API_KEY:-}
       PLATFORM_HEYGEN_API_KEY: ${PLATFORM_HEYGEN_API_KEY:-}
       PLATFORM_ELEVENLABS_API_KEY: ${PLATFORM_ELEVENLABS_API_KEY:-}
+      # fal.ai — diferente das duas de cima, esta É consumida pela geração
+      # (resolveTenantAvatarFalKey). Mesma retaguarda: painel primeiro, esta
+      # variável só entra se a tabela estiver vazia.
+      PLATFORM_FAL_API_KEY: ${PLATFORM_FAL_API_KEY:-}
       # Inverte a precedência: o .env volta a vencer o painel. Saída de
       # emergência para uma chave ruim gravada pela tela — ver
       # services/platformCredentialStore.ts.

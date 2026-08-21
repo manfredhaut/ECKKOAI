@@ -12,6 +12,7 @@ import {
 import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCatalog.js";
 import { hasGenerationPath } from "../services/providers/vendorCatalog.js";
 import { getCredential } from "../services/credentialLookup.js";
+import { resolveTenantAvatarFalKey } from "../services/providers/platformKeys.js";
 import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 import { createNotification } from "../services/notifications.js";
 import { recordFailedProviderUsage, recordProviderUsage } from "../services/billing/usageTracking.js";
@@ -395,11 +396,17 @@ export async function rearmVideoPolling(linha: VideoEmVoo): Promise<void> {
   if (!credential) {
     throw new Error(`sem credencial de avatar para o tenant ${linha.tenant_id}; a linha continua em acompanhamento pendente`);
   }
+  const vendorDoJob = (linha.provider_vendor ?? credential.vendor) as AvatarVendor;
+  // fal: chave da plataforma primeiro, BYOK do tenant como retaguarda — ver
+  // `resolveTenantAvatarFalKey`. O vendor continua vindo da linha/credencial,
+  // como sempre; só a origem da CHAVE muda.
+  const apiKey =
+    vendorDoJob === "fal" ? (await resolveTenantAvatarFalKey(credential.apiKey)).apiKey : credential.apiKey;
   pollJob(
     linha.id,
     linha.tenant_id,
-    credential.apiKey,
-    (linha.provider_vendor ?? credential.vendor) as AvatarVendor,
+    apiKey,
+    vendorDoJob,
     linha.provider_job_id,
     linha.duration_seconds,
     resolveVideoFormat(linha.publish_platform),
@@ -1006,6 +1013,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     if (!avatar?.provider_avatar_id || !avatarCredential) {
       throw new Error("readiness passou mas avatar/credencial sumiram entre as duas leituras");
     }
+    // fal: chave da plataforma primeiro, BYOK do tenant como retaguarda — ver
+    // `resolveTenantAvatarFalKey`. `avatarCredential.vendor` não muda (o
+    // ramo `ehFal` abaixo continua decidido pela linha do tenant); só a
+    // CHAVE que os usos seguintes de `avatarCredential.apiKey` leem muda.
+    if (avatarCredential.vendor === "fal") {
+      avatarCredential.apiKey = (await resolveTenantAvatarFalKey(avatarCredential.apiKey)).apiKey;
+    }
 
     // -----------------------------------------------------------------------
     // O PORTEIRO DO VENDOR — antes da linha, antes do débito, antes de tudo.
@@ -1604,10 +1618,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       });
       return null;
     }
+    // fal: chave da plataforma primeiro, BYOK do tenant como retaguarda — ver
+    // `resolveTenantAvatarFalKey`. O vendor já foi confirmado "fal" acima.
+    const apiKeyFal = (await resolveTenantAvatarFalKey(avatarCredential.apiKey)).apiKey;
     return {
       video,
       avatar,
-      apiKeyFal: avatarCredential.apiKey,
+      apiKeyFal,
       apiKeyElevenLabs: voiceCredential.apiKey,
     };
   }

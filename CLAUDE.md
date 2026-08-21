@@ -33,6 +33,16 @@ Always respond in Brazilian Portuguese.
 > corrigido: não é git pull, é colar os arquivos direto (deploy real é
 > tar.gz, não git).**
 
+> **⚠️ NOTA DE TROCA DE CONTA — 21/08/2026.** Sessão de POC standalone (fora
+> deste repositório) em `POC-MOTORES\05-fracoes\`, testando composição de
+> vídeo por frações encadeadas (cada fração parte do último frame da
+> anterior) em dois motores — Seedance e Wan — mais lipsync com voz clonada,
+> e um teste local de atenuação de rugas por `smartblur`. Trabalho pausado
+> para trocar de conta; para retomar do ponto exato onde parou, **digite
+> RETOMAR-FRACOES no Claude Code** — instruções completas em
+> `POC-MOTORES\05-fracoes\RETOMAR.md`, que por sua vez manda ler
+> `POC-MOTORES\05-fracoes\README-CONTINUIDADE.md`.
+
 # eckko.ai (antigo TWINAI)
 
 > ## ⚠️ LEIA [ESTADO.md](ESTADO.md) PRIMEIRO — é o ponto de entrada de toda sessão.
@@ -54,6 +64,8 @@ Always respond in Brazilian Portuguese.
 SaaS multi-tenant de vídeo com avatar digital. Docker Compose: `traefik` (única porta, **8090**), `postgres`, `backend` (Fastify/TS), `frontend` (React/Vite). **HEAD `84fdae3`** + o commit deste fechamento. Há uma **demo a apresentar**.
 
 **0 · REGRA DE ESCRITA — confira o número MEDIDO contra o número AFIRMADO antes de escrever a mensagem de commit.** Três imprecisões em três commits: `84fdae3` disse "nenhuma removida" com 3 guardas reescritas, e `5de2ed6` disse "8 mutantes novos" sendo 7. Nenhuma delas mudou o código; todas fizeram a mensagem valer menos do que o diff. Contar é barato — reler a afirmação com o número na mão custa segundos.
+
+**INTEGRIDADE DO POSTGRES local, MEDIDA em 21/08/2026, depois de um `docker compose up -d backend` ter recriado o CONTAINER do postgres.** `docker inspect twinai-postgres-1` confirma que o volume `twinai_pgdata` é NOMEADO e persistente (`RestartCount: 0`, container novo, volume o mesmo) — recriar o container não apaga o volume. Prova de continuidade não é só a contagem, é registro específico e antigo sobrevivendo: tenant `c77a5b8a…` (`dev-c77a5b`, criado 16/07), avatar "Mário" (`983c7de4…`, 16/07) e avatar "TESTE REAL 15:40 01/08" (`7557957c…`, criado exatamente 01/08) — todos batendo com datas e ids já documentados neste arquivo meses atrás. Controle negativo: o vídeo `9704eb5f…` (citado alhures como existente só em produção) **não aparece** neste banco local, confirmando que a consulta distingue ambiente. **Números de HOJE, para servir de "antes" na próxima comparação:** `tenants` **34**, `videos` **31**, `api_credentials` **102**, `avatars` **20**.
 
 **Amostra de voz — a duração-limite agora é 218 s (3:38)** e é DERIVADA, não escolhida: `floor(10 MiB / (24000 Hz × 2 bytes))`. A saída da conversão passou de 48 para **24 kHz** (item 4.2 do FECHAMENTO-1), o que fez a captura de 2:33 do E2E-1 voltar a caber — 7.338.318 B contra os 14.676.558 B de 48 kHz (os **dados** são metade exata, 7.338.240 B; o arquivo difere em 39 B porque o header de 78 B não se divide). As duas réguas (recusa por tamanho e `checkSampleDuration`) saem da MESMA função, e a faixa 109–120 s em que uma aceitava e a outra recusava não existe mais. O **aceite do fornecedor está MEDIDO desde 05/08 e o risco está FECHADO**: o ElevenLabs aceitou exatamente este WAV numa clonagem real — `cloneVoice` HTTP **200**, `{"voice_id":"5Yeum4QN7o9S5Lc0XVOx","requires_verification":false}`. Era o último NÃO VERIFICADO entre o projeto e a demo. Prova em `uploads/_prova/fechamento1-24khz/` e `uploads/_prova/tiro-final/`.
 

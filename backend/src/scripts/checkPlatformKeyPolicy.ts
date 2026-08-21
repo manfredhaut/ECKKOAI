@@ -366,6 +366,10 @@ function checkProbeIsReadOnly(failures: string[], notes: string[]): void {
     elevenlabs_voices: PROBE_ENDPOINTS.elevenlabs,
   };
   for (const kind of kinds) {
+    // `null` é uma credencial DECLARADAMENTE sem sonda (hoje só a fal.ai —
+    // ver o comentário de `validation` em platformCredentials.ts), não uma
+    // forma de validação esquecida da allowlist.
+    if (kind === null) continue;
     if (!expected[kind]) {
       failures.push(
         `chaves de plataforma: a forma de validação "${kind}" não tem endpoint declarado na allowlist do probe.`,

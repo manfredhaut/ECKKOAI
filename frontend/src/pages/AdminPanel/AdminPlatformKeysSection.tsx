@@ -132,12 +132,21 @@ function PlatformKeyRow({
         <button
           className="btn btn-outline"
           onClick={handleValidate}
-          disabled={validating || !credential.configured}
-          title={t("adminPanel.platformKeys.validateHint")}
+          disabled={validating || !credential.configured || !credential.hasProbe}
+          title={credential.hasProbe ? t("adminPanel.platformKeys.validateHint") : t("adminPanel.platformKeys.noProbe")}
         >
           {validating ? t("adminPanel.platformKeys.validating") : t("adminPanel.platformKeys.validate")}
         </button>
       </div>
+
+      {/* O MOTIVO visível, e não só no `title` — mesmo contrato do
+          equivalente por tenant (AdminApisPanel.tsx): um botão cinza sem
+          explicação faz procurar defeito onde há decisão. */}
+      {!credential.hasProbe && (
+        <p className="text-muted" style={{ fontSize: 12, marginTop: 12, marginBottom: 0 }}>
+          {t("adminPanel.platformKeys.noProbe")}
+        </p>
+      )}
 
       {/* Saldo indisponível aparece COM O MOTIVO, no mesmo contrato das feature
           flags: nunca some, nunca vira botão que dá erro. */}

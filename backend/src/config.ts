@@ -66,6 +66,11 @@ export const config = {
   // decisão de negócio separada (ver CLAUDE.md, migração BYOK→plataforma).
   platformHeygenApiKey: optional("PLATFORM_HEYGEN_API_KEY"),
   platformElevenlabsApiKey: optional("PLATFORM_ELEVENLABS_API_KEY"),
+  // fal.ai É DIFERENTE das duas acima: já é CONSUMIDA pela geração
+  // (resolveTenantAvatarFalKey, providers/platformKeys.ts) — plataforma
+  // primeiro, BYOK do tenant como retaguarda. Não é "armazenar e validar
+  // apenas"; a decisão de migrar já foi tomada para este vendor.
+  platformFalApiKey: optional("PLATFORM_FAL_API_KEY"),
   // Saída de emergência da precedência. Por padrão o BANCO vence o .env, para
   // que gravar pelo painel valha sem reiniciar. Com isto em "1" o .env volta a
   // vencer — o caso de uso é uma chave ruim gravada pelo painel trancando do

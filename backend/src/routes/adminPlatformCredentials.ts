@@ -51,6 +51,9 @@ export async function adminPlatformCredentialRoutes(app: FastifyInstance): Promi
     if ("notConfigured" in outcome) {
       return reply.code(400).send({ error: "not_configured" });
     }
+    if ("noProbe" in outcome) {
+      return reply.code(400).send({ error: "no_probe" });
+    }
 
     await recordAuditLog({
       tenantId: null,

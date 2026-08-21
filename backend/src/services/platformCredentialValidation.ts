@@ -18,11 +18,17 @@ export interface ValidationOutcome extends ProbeResult {
 
 export async function validatePlatformCredential(
   id: PlatformCredentialId,
-): Promise<ValidationOutcome | { notConfigured: true }> {
+): Promise<ValidationOutcome | { notConfigured: true } | { noProbe: true }> {
+  // Checado ANTES de resolver a chave: `null` é uma propriedade do REGISTRO
+  // (não existe forma de validação para este id), não algo que dependa do
+  // valor gravado — não há razão para decifrar nada antes de saber isso.
+  const validation = PLATFORM_CREDENTIALS[id].validation;
+  if (validation === null) return { noProbe: true };
+
   const resolved = await resolvePlatformKey(id);
   if (!resolved) return { notConfigured: true };
 
-  const result = await probePlatformKey(PLATFORM_CREDENTIALS[id].validation, resolved.value);
+  const result = await probePlatformKey(validation, resolved.value);
 
   // Só há linha para atualizar quando a chave veio do painel. Uma chave do
   // .env não tem onde guardar o carimbo — e inventar uma linha para ela faria

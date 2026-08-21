@@ -71,6 +71,8 @@ export interface PlatformCredentialView {
   balanceUnavailable: string | null;
   /** Verdadeiro quando o `.env` está mandando por PLATFORM_KEYS_FORCE_ENV. */
   forcedEnv: boolean;
+  /** Falso quando `validation` é `null` — a tela desabilita "Validar". */
+  hasProbe: boolean;
 }
 
 interface PlatformCredentialRow {
@@ -215,6 +217,7 @@ export function toPublicPlatformCredential(
     readsBalance: def.readsBalance,
     balanceUnavailable: def.balanceUnavailable ?? null,
     forcedEnv: forceEnv && hasEnvValue,
+    hasProbe: def.validation !== null,
   };
 }
 
