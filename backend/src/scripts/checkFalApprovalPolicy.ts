@@ -112,9 +112,19 @@ export const MUTANTS: Mutant[] = [
     // não 2x, então não é o caso do gotcha "linha nova ambígua": é o texto
     // MEDIDO tendo mudado. O `replace` continua o mesmo sentinela morto —
     // ele apaga a condição inteira, os dois braços juntos.
+    //
+    // ⚠️ GOTCHA NOVO, MEDIDO em 21/08: `linha.status === "sentinela"` sozinho
+    // compila, mas o CORPO do bloco compara `linha.status` de novo contra
+    // `STATUS_AGUARDANDO_APROVACAO_VIDEO` (para escolher a mensagem) — e o
+    // TypeScript NARROWS `linha.status` para o literal do sentinela dentro do
+    // bloco, tornando a SEGUNDA comparação "sem sobreposição" (TS2367). É a
+    // MESMA família do gotcha `if (false && …)`: o `tsc` reprova antes de o
+    // gate rodar, e a guarda nunca chega a opinar — AMBÍGUO, não reprovação
+    // limpa. `String(...)` evita o narrowing sem mudar o comportamento em
+    // tempo de execução.
     find:
       "      if (linha.status === STATUS_AGUARDANDO_APROVACAO || linha.status === STATUS_AGUARDANDO_APROVACAO_VIDEO) {",
-    replace: '      if (linha.status === "estado-que-nenhuma-linha-tem") {',
+    replace: '      if (String(linha.status) === "estado-que-nenhuma-linha-tem") {',
     expect: "vídeo aguardando aprovação foi tratado como registro preso",
   },
   {

@@ -7,9 +7,13 @@
  * parar de novo, agora com o vídeo ANIMADO e MUDO gravado, esperando um
  * segundo clique antes de narrar + sincronizar (as duas etapas mais caras).
  *
- *  G-A  vídeo em `awaiting_approval_video` não é tratado como órfão pelo
- *       recovery — mesma invariante de G-A em `checkFalApprovalPolicy.ts`,
- *       um estado adiante.
+ *  G-A  a mensagem de expiração do vídeo mudo é a do VÍDEO, não a da imagem
+ *       — `awaiting_approval_video` não vira órfão (varrido e protegido
+ *       pela MESMA condição guarda-chuva que `checkFalApprovalPolicy.ts`
+ *       já prova reprovando; ver a nota de escopo abaixo), mas o TEXTO da
+ *       expiração é uma invariante SÓ deste estado, e é o que este mutante
+ *       mira — ancorado num `if` interno para não colidir com o mutante
+ *       irmão, que mira o `if` externo (guarda-chuva) da mesma condição.
  *  G-B  `pararApos: "animar"` interrompe a corrida DE VERDADE: narrar
  *       (ElevenLabs) e sincronizar (`fal-ai/sync-lipsync/v2`) não são
  *       alcançados, e o resultado devolve o vídeo MUDO, não o final.
@@ -66,27 +70,49 @@ const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
 
 export const MUTANTS: Mutant[] = [
   {
-    guard: "vídeo em awaiting_approval_video não é tratado como órfão pelo recovery",
-    name: "a exceção da aprovação de vídeo some da varredura",
-    kind: "obvio",
-    // Mesma forma do mutante equivalente em checkFalApprovalPolicy.ts: o `if`
-    // continua no arquivo e o `tsc` continua verde — só a condição deixa de
-    // casar `awaiting_approval_video`. NÃO usar `if (false && …)` — mesmo
-    // gotcha já registrado (o TypeScript marca o corpo inalcançável e o gate
-    // sai 2 pelo `tsc`, AMBÍGUO com a guarda saudável).
+    guard: "a mensagem de expiração do vídeo mudo é a do vídeo, não a da imagem",
+    name: "a expiração do vídeo mudo usa a mensagem da imagem",
+    kind: "esperto",
+    // ESPERTO: a linha aguardando aprovação de vídeo AINDA expira (o `if`
+    // guarda-chuva de checkFalApprovalPolicy.ts, mutante irmão deste arquivo,
+    // é quem prova isso) — só o TEXTO muda, para um que fala de "imagem
+    // composta" sobre uma linha cujo gasto real é composição + animação.
+    //
+    // Alvo DIFERENTE do mutante irmão de G-A em checkFalApprovalPolicy.ts —
+    // de propósito: os dois compartilhavam o MESMO `find` (a condição
+    // guarda-chuva) até esta rodada, e mutar qualquer um dos dois fazia o
+    // outro desaparecer do arquivo junto — o `checkMutantRegistryPolicy`
+    // (parte do próprio gate) acusava os DOIS como "não casam mais no alvo"
+    // na MESMA passada. Ancorar neste `if` interno em vez do `if` externo
+    // evita a colisão: mutar esta linha não toca o texto que o outro
+    // mutante procura.
+    //
+    // ⚠️ Comparar `linha.status` contra os dois literais dentro do MESMO
+    // narrowing também dispara TS2367 (mesmo gotcha do mutante irmão) — por
+    // isso o `replace` remove a COMPARAÇÃO inteira, não troca um literal por
+    // outro.
     file: RECUPERACAO,
     find:
-      "      if (linha.status === STATUS_AGUARDANDO_APROVACAO || linha.status === STATUS_AGUARDANDO_APROVACAO_VIDEO) {",
-    replace: '      if (linha.status === STATUS_AGUARDANDO_APROVACAO) {',
-    expect: "vídeo aguardando aprovação de vídeo foi tratado como registro preso",
+      "        const mensagem =\n" +
+      "          linha.status === STATUS_AGUARDANDO_APROVACAO_VIDEO\n" +
+      "            ? MENSAGEM_APROVACAO_VIDEO_EXPIRADA\n" +
+      "            : MENSAGEM_APROVACAO_EXPIRADA;",
+    replace: "        const mensagem = MENSAGEM_APROVACAO_EXPIRADA;",
+    expect: "a expiração do vídeo mudo usou a mensagem da IMAGEM",
   },
   {
     guard: "pararApos: \"animar\" interrompe a corrida antes de narrar/sincronizar",
     name: "o freio do vídeo mudo desaparece do orquestrador",
     kind: "obvio",
+    // ⚠️ `input.pararApos === "sentinela-fora-do-enum"` sozinho dispara
+    // TS2367: `pararApos` é tipado `EtapaDoPipeline | undefined`, um union
+    // fechado, e o comparador não precisa de narrowing prévio para o `tsc`
+    // recusar — a incompatibilidade já está na comparação direta. Mesmo
+    // gotcha do `if (false && …)`, `String(...)` evita sem mudar o
+    // comportamento em tempo de execução.
     file: PIPELINE,
     find: '  if (input.pararApos === "animar") {',
-    replace: '  if (input.pararApos === "impossivel-pararApos-nenhuma-corrida-tem") {',
+    replace: '  if (String(input.pararApos) === "impossivel-pararApos-nenhuma-corrida-tem") {',
     expect: "a corrida não parou em animar — sincronizar foi alcançado",
   },
   {
@@ -162,7 +188,7 @@ const ROTEIRO_DA_PROVA = "Roteiro da prova, curto o bastante para caber no teto.
 
 interface Varredura {
   reacompanhados: string[];
-  encerrados: { id: string; reason: string }[];
+  encerrados: { id: string; reason: string; mensagem: string }[];
   encontrados: number;
 }
 
@@ -213,7 +239,7 @@ async function varrer(): Promise<Varredura> {
   }));
 
   const reacompanhados: string[] = [];
-  const encerrados: { id: string; reason: string }[] = [];
+  const encerrados: { id: string; reason: string; mensagem: string }[] = [];
   let encontrados = 0;
   try {
     (pool as { query: unknown }).query = (async (texto: unknown, valores?: unknown[]) => {
@@ -221,7 +247,7 @@ async function varrer(): Promise<Varredura> {
       if (/FROM videos\s+WHERE status = ANY/.test(sql)) return { rows: linhas, rowCount: linhas.length };
       if (/UPDATE videos SET status = 'error'/.test(sql)) {
         const v = valores as unknown[];
-        encerrados.push({ id: String(v[0]), reason: String(v[2]) });
+        encerrados.push({ id: String(v[0]), mensagem: String(v[1]), reason: String(v[2]) });
         return { rows: [], rowCount: 1 };
       }
       return { rows: [], rowCount: 0 };
@@ -393,6 +419,17 @@ export async function checkFalVideoApprovalPolicy(): Promise<FalVideoApprovalChe
       "aprovação de vídeo: aprovação de vídeo pendente ALÉM da janela não foi expirada como " +
         `\`approval_expired\` — encerrados: ${JSON.stringify(v.encerrados)}. Ignorar o estado é tão ruim ` +
         "quanto encerrá-lo cedo: sem expiração, `awaiting_approval_video` vira o novo `queued` para sempre.",
+    );
+  } else if (!encerradoVelho.mensagem.includes("vídeo animado")) {
+    // A DISTINÇÃO que este arquivo mede que o irmão (checkFalApprovalPolicy)
+    // não mede: NÃO BASTA expirar — a mensagem tem de dizer o que foi
+    // gasto. "vídeo animado" só aparece em MENSAGEM_APROVACAO_VIDEO_EXPIRADA;
+    // MENSAGEM_APROVACAO_EXPIRADA (a da imagem) fala de "imagem composta".
+    failures.push(
+      "aprovação de vídeo: a expiração do vídeo mudo usou a mensagem da IMAGEM, não a do vídeo — " +
+        `mensagem gravada: ${JSON.stringify(encerradoVelho.mensagem)}. Numa linha em que \`compor\` E ` +
+        "`animar` já foram pagos, dizer só \"a imagem composta ficou esperando\" subestima o que a " +
+        "pessoa perdeu ao deixar a aprovação expirar.",
     );
   }
   if (!v.reacompanhados.includes("v-queued-recente")) {
