@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
-import type { GenerationReadiness, Video } from "../../../types";
+import type { Credential, GenerationReadiness, Video } from "../../../types";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import type { AssetDefaults, WizardState } from "../types";
 import { VideoPlayer } from "../../../features/VideoPlayer";
@@ -181,6 +181,40 @@ export function GenerateStep({
   const blockers = readiness?.blockers ?? [];
 
   /**
+   * O nível "Simples" só produz um vídeo DIFERENTE do Normal quando o
+   * avatar da conta está no vendor HeyGen — para uma conta fal-only ele cai
+   * no mesmo motor do Normal (`videoTierParaPipeline`, `falPipeline.ts`),
+   * sem aviso nenhum. Isto não muda o roteamento: só impede a tela de
+   * oferecer uma escolha que não faz diferença nenhuma sem dizer isso.
+   *
+   * `null` enquanto não se sabe — mesmo padrão de `readiness` acima: o
+   * cartão nasce DESABILITADO (nunca clicável antes da resposta chegar),
+   * porque habilitar por otimismo aqui reproduziria a mesma lacuna que este
+   * bloco existe para fechar. Nunca mostra o nome do fornecedor — só o
+   * fato de o nível estar disponível ou não.
+   */
+  const [credentials, setCredentials] = useState<Credential[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Credential[]>("/credentials")
+      .then((r) => {
+        if (!cancelled) setCredentials(r);
+      })
+      .catch(() => {
+        // Falha ao consultar cai no lado seguro: sem saber o vendor, o
+        // nível fica indisponível — o inverso arriscaria oferecer "Simples"
+        // sem efeito de novo, que é exatamente a lacuna original.
+        if (!cancelled) setCredentials([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const avatarVendor = credentials?.find((c) => c.provider === "avatar")?.vendor ?? null;
+  const podeEscolherSimples = avatarVendor === "heygen";
+
+  /**
    * CONFIRMAÇÃO EXPLÍCITA para roteiro longo.
    *
    * Não é limite e não recusa nada: o roteiro do cliente não é truncado em
@@ -300,23 +334,35 @@ export function GenerateStep({
               {t("createVideo.generate.tierLabel")}
             </legend>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {TIER_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={wizard.tierVideo === opt.value ? "btn btn-primary" : "btn btn-outline"}
-                  aria-pressed={wizard.tierVideo === opt.value}
-                  onClick={() => onTierVideoChange(opt.value)}
-                  style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 120 }}
-                >
-                  <span>{t(`createVideo.generate.tier.${opt.value}`)}</span>
-                  <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>{opt.range}</span>
-                </button>
-              ))}
+              {TIER_OPTIONS.map((opt) => {
+                // Só o "simples" tem restrição — os outros dois seguem
+                // sempre disponíveis, tier nenhum além dele depende do
+                // vendor do avatar.
+                const indisponivel = opt.value === "simples" && !podeEscolherSimples;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={wizard.tierVideo === opt.value ? "btn btn-primary" : "btn btn-outline"}
+                    aria-pressed={wizard.tierVideo === opt.value}
+                    onClick={() => onTierVideoChange(opt.value)}
+                    disabled={indisponivel}
+                    style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 120 }}
+                  >
+                    <span>{t(`createVideo.generate.tier.${opt.value}`)}</span>
+                    <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>{opt.range}</span>
+                  </button>
+                );
+              })}
             </div>
             <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
               {t(`createVideo.generate.tierHint.${wizard.tierVideo}`)}
             </p>
+            {!podeEscolherSimples && (
+              <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+                {t("createVideo.generate.tierUnavailable")}
+              </p>
+            )}
           </fieldset>
 
           {/* LEGENDA — a escolha fica ANTES do botão, junto do resumo, porque é
