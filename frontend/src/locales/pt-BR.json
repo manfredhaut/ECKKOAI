@@ -13,6 +13,7 @@
       "queued": "na fila",
       "processing": "processando",
       "awaiting_approval": "aguardando aprovação",
+      "awaiting_approval_video": "aguardando aprovação do vídeo",
       "ready": "pronto",
       "indexed": "indexado",
       "error": "erro",
@@ -706,7 +707,15 @@
       "approving": "Gerando o vídeo… isto leva alguns minutos",
       "recompose": "Refazer a imagem",
       "recomposing": "Refazendo a imagem…",
-      "approveCost": "Refazer a imagem custa cerca de US$ 0,08. Aprovar dispara a animação, a narração e a sincronia — cerca de US$ 1,50 no total. Nada é cobrado enquanto você não clicar."
+      "approveCost": "Refazer a imagem custa cerca de US$ 0,08. Aprovar dispara a animação, a narração e a sincronia — cerca de US$ 1,50 no total. Nada é cobrado enquanto você não clicar.",
+      "feedbackLabel": "O que precisa mudar? (opcional)",
+      "feedbackPlaceholder": "ex.: o gesto ficou rígido, deixe mais natural",
+      "approveVideoIntro": "Este é o vídeo animado, ainda sem voz. Confira o movimento antes de seguir — narrar e sincronizar a voz são as duas etapas mais caras, e partem exatamente daqui.",
+      "approveVideo": "Aprovar e adicionar a voz",
+      "approvingVideo": "Sincronizando a voz… isto leva alguns minutos",
+      "redoVideo": "Refazer a animação",
+      "redoingVideo": "Refazendo a animação…",
+      "approveVideoCost": "Refazer a animação custa cerca de US$ 0,25 no Wan (mais no Seedance). Aprovar dispara a narração e a sincronia labial. Nada é cobrado enquanto você não clicar."
     },
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",

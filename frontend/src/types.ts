@@ -1,9 +1,18 @@
 /**
- * `awaiting_approval` é EXCLUSIVO do caminho da fal: a imagem composta existe
- * e foi paga, e a etapa seguinte (~US$ 1,50) espera um clique humano. É o único
- * estado desta lista que NÃO sai sozinho.
+ * `awaiting_approval` e `awaiting_approval_video` são EXCLUSIVOS do caminho
+ * da fal — os dois pontos de parada do Modo B (FASE 2, migration 059):
+ * `awaiting_approval` para depois de `compor` (imagem composta, paga);
+ * `awaiting_approval_video` para depois de `animar` (vídeo MUDO, pago,
+ * antes de narrar+sincronizar — as duas etapas mais caras). Nenhum dos
+ * dois sai sozinho: os dois esperam um clique humano.
  */
-export type VideoStatus = "queued" | "processing" | "awaiting_approval" | "ready" | "error";
+export type VideoStatus =
+  | "queued"
+  | "processing"
+  | "awaiting_approval"
+  | "awaiting_approval_video"
+  | "ready"
+  | "error";
 
 export interface Avatar {
   id: string;
@@ -57,6 +66,10 @@ export interface Video {
   status: VideoStatus;
   /** A imagem-base a aprovar, quando `status === "awaiting_approval"`. */
   fal_composed_image_url?: string | null;
+  /** O vídeo MUDO a aprovar, quando `status === "awaiting_approval_video"`. */
+  fal_muted_video_url?: string | null;
+  /** Texto livre do último "Refazer" (imagem ou vídeo mudo). Só exibição. */
+  refazer_feedback?: string | null;
   output_url: string | null;
   /**
    * A URL a EXIBIR, escolhida pelo SERVIDOR entre a versão limpa e a legendada.

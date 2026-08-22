@@ -113,6 +113,9 @@ const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   // saiu convida ao clique distraído — que é exatamente o clique que o botão
   // logo abaixo existe para não receber.
   awaiting_approval: 50,
+  // Um passo adiante de `awaiting_approval`: o vídeo já foi animado (a etapa
+  // mais cara de todas, Wan ou Seedance), só falta narrar+sincronizar.
+  awaiting_approval_video: 75,
   ready: 100,
   error: 100,
 };
@@ -331,7 +334,20 @@ export function GenerateStep({
   // pior do que um botão desabilitado.
   const [approving, setApproving] = useState(false);
   const [recomposing, setRecomposing] = useState(false);
-  const busy = approving || recomposing;
+  // MODO B — a segunda aprovação, do vídeo mudo. Estados PRÓPRIOS, mesma
+  // razão dos dois acima: aprovar e refazer são operações lentas e distintas,
+  // e um botão cinza sem dizer qual delas está rodando é pior que nenhum.
+  const [approvingVideo, setApprovingVideo] = useState(false);
+  const [redoingVideo, setRedoingVideo] = useState(false);
+  const busy = approving || recomposing || approvingVideo || redoingVideo;
+
+  // O CAMPO LIVRE do "Refazer" — um estado por TELA (imagem e vídeo mudo),
+  // não um só: as duas nunca aparecem juntas para o mesmo vídeo (o status só
+  // permite uma de cada vez), mas manter dois evita que o texto digitado numa
+  // tela apareça pré-preenchido na outra se o vídeo passar de uma pra outra
+  // sem reload. SÓ CAPTURA E PERSISTE — ver a migration 061.
+  const [imageFeedback, setImageFeedback] = useState("");
+  const [videoFeedback, setVideoFeedback] = useState("");
 
   async function handleApprove() {
     if (!video) return;
@@ -353,11 +369,41 @@ export function GenerateStep({
     setRecomposing(true);
     setError(null);
     try {
-      setVideo(await api.post<Video>(`/videos/${video.id}/recompose`, {}));
+      setVideo(await api.post<Video>(`/videos/${video.id}/recompose`, { feedback: imageFeedback }));
+      setImageFeedback("");
     } catch (err) {
       setError(err instanceof Error ? err.message : t("errors.generic"));
     } finally {
       setRecomposing(false);
+    }
+  }
+
+  /** MODO B — aprovar o vídeo mudo: segue para narrar + sincronizar. */
+  async function handleApproveVideo() {
+    if (!video) return;
+    setApprovingVideo(true);
+    setError(null);
+    try {
+      setVideo(await api.post<Video>(`/videos/${video.id}/approve-video`, {}));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setApprovingVideo(false);
+    }
+  }
+
+  /** MODO B — refazer o vídeo mudo: reanima só (não recompõe, não narra). */
+  async function handleRedoVideo() {
+    if (!video) return;
+    setRedoingVideo(true);
+    setError(null);
+    try {
+      setVideo(await api.post<Video>(`/videos/${video.id}/redo-video`, { feedback: videoFeedback }));
+      setVideoFeedback("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setRedoingVideo(false);
     }
   }
 
@@ -616,6 +662,17 @@ export function GenerateStep({
                   style={{ maxWidth: "100%", borderRadius: 8, display: "block" }}
                 />
               )}
+              {/* SÓ CAPTURA E PERSISTE (migration 061) — como esse texto
+                  retroalimenta a próxima composição não foi decidido ainda. */}
+              <div className="field" style={{ marginTop: 12 }}>
+                <label>{t("createVideo.generate.feedbackLabel")}</label>
+                <textarea
+                  value={imageFeedback}
+                  onChange={(e) => setImageFeedback(e.target.value)}
+                  placeholder={t("createVideo.generate.feedbackPlaceholder")}
+                  rows={2}
+                />
+              </div>
               <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                 <button
                   className="btn btn-primary"
@@ -633,6 +690,50 @@ export function GenerateStep({
                   passo antes: informar o preço depois da compra. */}
               <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
                 {t("createVideo.generate.approveCost")}
+              </p>
+            </>
+          )}
+
+          {/* MODO B (FASE 2) — a segunda aprovação, do vídeo MUDO. Mesma
+              propriedade do bloco de imagem acima: nada dispara narrar +
+              sincronizar (as duas etapas mais caras da corrida) sem este
+              clique. O vídeo não é prévia: é literalmente a entrada da etapa
+              seguinte, já animado, só sem voz. */}
+          {video.status === "awaiting_approval_video" && (
+            <>
+              <p style={{ fontSize: 14, marginTop: 0 }}>{t("createVideo.generate.approveVideoIntro")}</p>
+              {video.fal_muted_video_url && (
+                // eslint-disable-next-line jsx-a11y/media-has-caption -- mudo de propósito, é o que se está aprovando
+                <video
+                  src={video.fal_muted_video_url}
+                  controls
+                  muted
+                  style={{ maxWidth: "100%", borderRadius: 8, display: "block" }}
+                />
+              )}
+              <div className="field" style={{ marginTop: 12 }}>
+                <label>{t("createVideo.generate.feedbackLabel")}</label>
+                <textarea
+                  value={videoFeedback}
+                  onChange={(e) => setVideoFeedback(e.target.value)}
+                  placeholder={t("createVideo.generate.feedbackPlaceholder")}
+                  rows={2}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => void handleApproveVideo()}
+                  disabled={busy || !video.fal_muted_video_url}
+                >
+                  {approvingVideo ? t("createVideo.generate.approvingVideo") : t("createVideo.generate.approveVideo")}
+                </button>
+                <button className="btn btn-outline" onClick={() => void handleRedoVideo()} disabled={busy}>
+                  {redoingVideo ? t("createVideo.generate.redoingVideo") : t("createVideo.generate.redoVideo")}
+                </button>
+              </div>
+              <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+                {t("createVideo.generate.approveVideoCost")}
               </p>
             </>
           )}

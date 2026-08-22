@@ -78,6 +78,12 @@ export interface Video {
    */
   fal_muted_video_url: string | null;
   /**
+   * Texto livre do "Refazer" — o que precisa mudar, capturado no clique,
+   * tanto na tela de imagem quanto na de vídeo mudo (migration 061). Só
+   * CAPTURADO e PERSISTIDO: nenhum caminho de geração o lê ainda.
+   */
+  refazer_feedback: string | null;
+  /**
    * Quando a aprovação (de QUALQUER uma das duas etapas) passou a ser
    * esperada. Reiniciado a cada recomposição/refazer — é este campo, e não
    * `created_at`, que a expiração de 24 h mede, para os dois estados de

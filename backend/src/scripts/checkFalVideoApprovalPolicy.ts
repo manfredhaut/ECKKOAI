@@ -173,6 +173,45 @@ export const MUTANTS: Mutant[] = [
       "              imagemAprovada,",
     expect: "aprovação de vídeo: /approve não passa pararApos: \"animar\" — a corrida completaria sozinha até ready",
   },
+  {
+    guard: "o campo livre do Refazer (imagem) chega ao UPDATE — migration 061",
+    name: "/recompose para de gravar refazer_feedback",
+    kind: "obvio",
+    file: ROTA_DE_VIDEOS,
+    find: "approval_requested_at = now(), refazer_feedback = $6\n             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval' RETURNING *`,\n          [video.id, imagemAExibir, runId, corrida.requestIds.compor, req.tenantId, refazerFeedback],",
+    replace:
+      "approval_requested_at = now()\n             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval' RETURNING *`,\n          [video.id, imagemAExibir, runId, corrida.requestIds.compor, req.tenantId],",
+    expect: "/recompose deixou de gravar o campo livre do Refazer",
+  },
+  {
+    guard: "o campo livre do Refazer (vídeo mudo) chega ao UPDATE — migration 061",
+    name: "/redo-video para de gravar refazer_feedback",
+    kind: "obvio",
+    file: ROTA_DE_VIDEOS,
+    find: "approval_requested_at = now(), refazer_feedback = $6\n             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval_video' RETURNING *`,\n          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId, refazerFeedback],",
+    replace:
+      "approval_requested_at = now()\n             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval_video' RETURNING *`,\n          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId],",
+    expect: "/redo-video deixou de gravar o campo livre do Refazer",
+  },
+  {
+    guard: "o passo Gerar apresenta o VÍDEO MUDO na segunda aprovação, não a imagem",
+    name: "a tela de aprovação de vídeo passa a mostrar a imagem composta",
+    kind: "esperto",
+    // ESPERTO: o bloco `awaiting_approval_video` continua existindo, os
+    // botões continuam lá — só a TAG muda de `<video>` (o produto real de
+    // `animar()`) para `<img>` apontando pro MESMO campo. O item 2 desta
+    // rodada confirmou por leitura que o Modo B apresenta o vídeo animado
+    // mudo (falPipeline.ts:1103/1121), não a imagem — essa é a garantia que
+    // esta guarda protege.
+    file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
+    find:
+      "                <video\n" +
+      "                  src={video.fal_muted_video_url}\n" +
+      "                  controls\n" +
+      "                  muted\n",
+    replace: "                <img\n                  src={video.fal_muted_video_url}\n",
+    expect: "não tem uma tag <video> lendo fal_muted_video_url",
+  },
 ];
 
 export interface FalVideoApprovalCheckResult {
@@ -596,6 +635,76 @@ export async function checkFalVideoApprovalPolicy(): Promise<FalVideoApprovalChe
         );
       }
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // G-E — o campo livre do "Refazer" (migration 061) chega ao UPDATE, nos
+  // DOIS handlers — recortados por nome de rota, mesma técnica de G-D.
+  // -------------------------------------------------------------------------
+  const inicioRecompose = rota.indexOf('"/videos/:id/recompose",');
+  const fimRecompose = rota.indexOf('"/videos/:id/approve-video",', inicioRecompose);
+  if (inicioRecompose < 0 || fimRecompose < 0) {
+    failures.push(
+      `refazer_feedback: não foi possível recortar o handler /recompose em ${ROTA_DE_VIDEOS} pelas âncoras ` +
+        '`"/videos/:id/recompose",` e `"/videos/:id/approve-video",`.',
+    );
+  } else if (!rota.slice(inicioRecompose, fimRecompose).includes("refazer_feedback = $6")) {
+    failures.push(
+      "refazer_feedback: /recompose deixou de gravar o campo livre do Refazer — o texto que a pessoa " +
+        "digitou na tela de aprovação da imagem é capturado e perdido, sem erro nenhum avisando.",
+    );
+  } else {
+    notes.push("    refazer_feedback: /recompose grava o campo livre do Refazer (imagem)");
+  }
+
+  const inicioRedoVideo = rota.indexOf('"/videos/:id/redo-video",');
+  if (inicioRedoVideo < 0) {
+    failures.push(
+      `refazer_feedback: não achei o handler /redo-video em ${ROTA_DE_VIDEOS} pela âncora ` +
+        '`"/videos/:id/redo-video",`.',
+    );
+  } else if (!rota.slice(inicioRedoVideo).includes("refazer_feedback = $6")) {
+    failures.push(
+      "refazer_feedback: /redo-video deixou de gravar o campo livre do Refazer — o texto que a pessoa " +
+        "digitou na tela de aprovação do vídeo mudo é capturado e perdido, sem erro nenhum avisando.",
+    );
+  } else {
+    notes.push("    refazer_feedback: /redo-video grava o campo livre do Refazer (vídeo mudo)");
+  }
+
+  // -------------------------------------------------------------------------
+  // G-F — a tela apresenta o VÍDEO (não a imagem) na segunda aprovação, e o
+  // rótulo do status não regride para a chave crua.
+  // -------------------------------------------------------------------------
+  const GENERATE_STEP = "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx";
+  const tela = lerDaRaiz(GENERATE_STEP);
+  const inicioBlocoVideo = tela.indexOf('video.status === "awaiting_approval_video"');
+  const fimBlocoVideo = tela.indexOf('video.status === "ready"', inicioBlocoVideo);
+  if (inicioBlocoVideo < 0 || fimBlocoVideo < 0) {
+    failures.push(
+      `aprovação de vídeo: não foi possível recortar o bloco de awaiting_approval_video em ${GENERATE_STEP}.`,
+    );
+  } else {
+    const blocoVideo = tela.slice(inicioBlocoVideo, fimBlocoVideo);
+    if (!/<video\b[\s\S]*?src=\{video\.fal_muted_video_url\}/.test(blocoVideo)) {
+      failures.push(
+        "aprovação de vídeo: o bloco de awaiting_approval_video não tem uma tag <video> lendo " +
+          "fal_muted_video_url — a tela pararia de apresentar o vídeo mudo de verdade.",
+      );
+    } else {
+      notes.push("    aprovação de vídeo: o passo Gerar apresenta o <video> de fal_muted_video_url na segunda aprovação");
+    }
+  }
+
+  const PT_BR = "frontend/src/locales/pt-BR.json";
+  const ptBr = lerDaRaiz(PT_BR);
+  if (!ptBr.includes('"awaiting_approval_video"')) {
+    failures.push(
+      `aprovação de vídeo: ${PT_BR} não tem a chave common.status.awaiting_approval_video — a pastilha de ` +
+        "status voltaria a mostrar a chave de tradução crua na tela, em vez de um rótulo lido.",
+    );
+  } else {
+    notes.push("    aprovação de vídeo: common.status.awaiting_approval_video existe em pt-BR.json");
   }
 
   return { failures, notes };

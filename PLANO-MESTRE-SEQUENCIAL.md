@@ -331,6 +331,15 @@ relatar e parar.
   cookie com `@fastify/cookie` + `config.sessionSecret` (o mesmo
   mecanismo que `@fastify/session` já usa) — nunca leia, digite nem
   verifique senha nenhuma.
+- **A LIMPEZA de uma sessão de ensaio tem de filtrar pelo `id` específico
+  que o próprio script criou, nunca por `tenant_id`.** MEDIDO nesta
+  sessão: `DELETE FROM sessions WHERE sess->>'tenantId' = $1` apagou
+  **95 linhas** da tabela `sessions` do tenant `dev-c77a5b` — toda sessão
+  de login real acumulada ao longo de semanas de trabalho, não só a
+  montada pelo script. Nenhum dado de produto foi tocado (só a tabela de
+  sessão), mas qualquer sessão de navegador aberta naquele tenant foi
+  encerrada. Guarde o `sessionId` retornado por `mountSession()` e limpe
+  só ele: `DELETE FROM sessions WHERE id = $1`.
 - **`POST /videos` responde `201`, não `200`.** Um script de ensaio que
   checa `status !== 200` marca toda criação como falha e nunca chega a
   aprovar nada — sintoma enganoso (parece que o endpoint rejeitou, mas o

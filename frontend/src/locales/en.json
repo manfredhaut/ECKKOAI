@@ -13,6 +13,7 @@
       "queued": "queued",
       "processing": "processing",
       "awaiting_approval": "awaiting approval",
+      "awaiting_approval_video": "awaiting video approval",
       "ready": "ready",
       "indexed": "indexed",
       "error": "error",
@@ -706,7 +707,15 @@
       "approving": "Generating the video… this takes a few minutes",
       "recompose": "Redo the image",
       "recomposing": "Redoing the image…",
-      "approveCost": "Redoing the image costs about US$ 0.08. Approving triggers animation, narration and lip sync — about US$ 1.50 in total. Nothing is charged until you click."
+      "approveCost": "Redoing the image costs about US$ 0.08. Approving triggers animation, narration and lip sync — about US$ 1.50 in total. Nothing is charged until you click.",
+      "feedbackLabel": "What needs to change? (optional)",
+      "feedbackPlaceholder": "e.g.: the gesture looks stiff, make it more natural",
+      "approveVideoIntro": "This is the animated video, still without voice. Check the movement before continuing — narration and lip sync are the two most expensive steps, and they start right from here.",
+      "approveVideo": "Approve and add the voice",
+      "approvingVideo": "Syncing the voice… this takes a few minutes",
+      "redoVideo": "Redo the animation",
+      "redoingVideo": "Redoing the animation…",
+      "approveVideoCost": "Redoing the animation costs about US$ 0.25 on Wan (more on Seedance). Approving triggers narration and lip sync. Nothing is charged until you click."
     },
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",

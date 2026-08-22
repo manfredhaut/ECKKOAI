@@ -2074,13 +2074,17 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.post<{ Params: { id: string } }>(
+  app.post<{ Params: { id: string }; Body: { feedback?: string | null } }>(
     "/videos/:id/recompose",
     { preHandler: requireActiveTenant },
     async (req, reply) => {
       const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, "awaiting_approval", reply);
       if (!carga) return reply;
       const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
+      // SÓ CAPTURA E PERSISTE — ver o comentário da migration 061. Vazio vira
+      // `null`, nunca string vazia: mesma regra de `corpoDaGeracao` no
+      // frontend, aplicada aqui porque este corpo não passa por ele.
+      const refazerFeedback = req.body?.feedback?.trim() || null;
 
       const fotoUrl = avatar.photo_urls?.[0];
       if (!fotoUrl) {
@@ -2138,9 +2142,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // expirar já nascendo.
         const { rows: recomposto } = await pool.query<Video>(
           `UPDATE videos SET fal_composed_image_url = $2, fal_run_id = $3, provider_job_id = $4,
-                             approval_requested_at = now()
+                             approval_requested_at = now(), refazer_feedback = $6
              WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval' RETURNING *`,
-          [video.id, imagemAExibir, runId, corrida.requestIds.compor, req.tenantId],
+          [video.id, imagemAExibir, runId, corrida.requestIds.compor, req.tenantId, refazerFeedback],
         );
         if (!recomposto[0]) {
           // A imagem existe e foi paga; o que sumiu foi o estado que a receberia.
@@ -2356,13 +2360,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.post<{ Params: { id: string } }>(
+  app.post<{ Params: { id: string }; Body: { feedback?: string | null } }>(
     "/videos/:id/redo-video",
     { preHandler: requireActiveTenant },
     async (req, reply) => {
       const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, "awaiting_approval_video", reply);
       if (!carga) return reply;
       const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
+      // SÓ CAPTURA E PERSISTE — mesma regra de `/recompose`, ver migration 061.
+      const refazerFeedback = req.body?.feedback?.trim() || null;
 
       const imagemAprovada = video.fal_composed_image_url;
       if (!imagemAprovada) {
@@ -2432,9 +2438,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // a aprovação pendente passa a ser do vídeo mudo NOVO.
         const { rows: refeito } = await pool.query<Video>(
           `UPDATE videos SET fal_muted_video_url = $2, fal_run_id = $3, provider_job_id = $4,
-                             approval_requested_at = now()
+                             approval_requested_at = now(), refazer_feedback = $6
              WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval_video' RETURNING *`,
-          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId],
+          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId, refazerFeedback],
         );
         if (!refeito[0]) {
           // O vídeo mudo existe e foi pago; o que sumiu foi o estado que o
