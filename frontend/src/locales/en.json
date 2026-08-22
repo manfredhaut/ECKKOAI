@@ -605,6 +605,7 @@
         "help": "Choosing a duration becomes this script's refusal limit — above it, generation is refused and nothing is charged. With no choice, only the system-wide limit applies.",
         "seconds": "{{seconds}} s",
         "more": "More",
+        "customPlaceholder": "duration in seconds (up to {{max}})",
         "limit": "For {{targetSeconds}} s, up to {{targetChars}} characters.",
         "tooLong": "Over the target duration of {{targetSeconds}} s ({{targetChars}} characters). Generation will be refused and nothing will be charged — the text is never truncated automatically. Shorten the script, split it into more than one video, or choose a longer target duration."
       }
@@ -653,7 +654,7 @@
         "facebook": "Facebook feed",
         "linkedin": "LinkedIn"
       },
-      "notVerified": "The chosen aspect ratio is sent to the video service on every generation. So far only the landscape format has been checked against a real video — the others have not been through an actual generation yet.",
+      "notVerified": "The chosen aspect ratio is sent to the video service on every generation. So far only the vertical format (9:16) has been checked against real videos — the others have not been through an actual generation yet.",
       "notHonored": "The video provider connected to your account does not accept an aspect ratio choice."
     },
     "generate": {

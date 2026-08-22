@@ -18,11 +18,14 @@ interface FormatSupport {
  * ferramenta querendo "9:16", quer publicar no Reels. A proporção aparece como
  * informação ao lado, porque quem já sabe o que quer precisa conferir.
  *
- * O aviso no rodapé não é ornamento nem modéstia: até hoje nenhuma geração
- * enviou proporção ao fornecedor, e a única medição que existe é de um vídeo
- * horizontal. Afirmar que o vertical sai vertical seria prometer o que não foi
- * verificado — o mesmo contrato das feature flags, que mostram o recurso e
- * dizem o que falta.
+ * O aviso no rodapé não é ornamento nem modéstia: as únicas medições reais
+ * que existem são de vídeos VERTICAIS (9:16) — Wan em 19/08
+ * (`videoFormat.ts`, `VENDOR_FORMAT_SUPPORT.fal`) e HeyGen em 02/08
+ * (`formatConfidenceForTier`, `CONFIANCA_SIMPLES["9:16"]`). Os outros três
+ * destinos (16:9, 4:5, 1:1), em qualquer vendor, ainda não passaram por uma
+ * geração de verdade. Afirmar que eles saem como pedido seria prometer o que
+ * não foi verificado — o mesmo contrato das feature flags, que mostram o
+ * recurso e dizem o que falta.
  */
 export function PublishStep({
   platform,

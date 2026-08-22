@@ -151,8 +151,11 @@ export function resolveVideoFormat(platform: unknown): VideoFormat {
  * guarda cobrar a diferença — e é o que impede a UI de prometer entrega quando
  * a base é só documentação.
  *
- * `vendor_response` é o único nível que autoriza afirmar que FUNCIONA, e
- * **nenhum vendor está nele hoje**: nenhuma geração nossa enviou formato.
+ * `vendor_response` é o único nível que autoriza afirmar que FUNCIONA — e é
+ * por DESTINO, não por vendor inteiro: `fal` (9:16, Wan) e `heygen` (9:16,
+ * MEDIDO em 02/08) têm UMA proporção cada nesse nível; os outros três
+ * destinos, nos dois vendors, seguem sem chamada real. Ver
+ * `formatConfidenceForTier` para a granularidade completa.
  */
 export type FormatEvidence =
   /** Uma resposta real do fornecedor confirmou. Ninguém está aqui ainda. */
@@ -165,10 +168,18 @@ export type FormatEvidence =
 export const VENDOR_FORMAT_SUPPORT = {
   heygen: {
     supported: true,
+    // "documentation" no nível do VENDOR — nem todo destino tem
+    // vendor_response. Ver `formatConfidenceForTier`/`CONFIANCA_SIMPLES`
+    // para a granularidade por destino: só 9:16 (vertical) tem chamada real
+    // confirmando.
     evidence: "documentation" as FormatEvidence,
     reason:
       "POST /v3/videos documenta `aspect_ratio` e `resolution`; os dois vão em toda geração. " +
-      "DOCUMENTADO pelo fornecedor, ainda NÃO confirmado por resposta real — nenhuma geração live enviou formato.",
+      "DOCUMENTADO pelo fornecedor para os 4 destinos. Para 9:16 (vertical) especificamente, também " +
+      "MEDIDO por chamada real em 02/08/2026: `aspect_ratio: \"9:16\"` produziu vídeo 720×1280 de verdade " +
+      "(ffprobe), quota HeyGen debitada 921→873, carteira -US$0,80 — ver docs-internal/03-blocos-fechados.md " +
+      "\"Bloco 5D\" e `CONFIANCA_SIMPLES[\"9:16\"]` abaixo. 16:9, 4:5 e 1:1 seguem só documentados, nenhuma " +
+      "chamada real enviou esses três.",
   },
   did: {
     supported: false,
@@ -241,8 +252,12 @@ export function vendorFormatSupport(vendor: string | null | undefined): {
  *
  * Fonte de cada linha, verificada por leitura de código nesta mesma sessão:
  *  · simples (HeyGen) — `HEYGEN_ASPECT_RATIOS` bate com as 4 proporções do
- *    catálogo; DOCUMENTADO (doc pública), nenhuma geração enviou o campo
- *    ainda (`VENDOR_FORMAT_SUPPORT.heygen`, acima).
+ *    catálogo. 16:9/4:5/1:1: DOCUMENTADO (doc pública), nenhuma geração
+ *    enviou o campo ainda. 9:16 (vertical): MEDIDO por chamada real em
+ *    02/08/2026 — vídeo 720×1280 de verdade, quota debitada, US$0,80
+ *    cobrados (`VENDOR_FORMAT_SUPPORT.heygen`, acima; achado registrado e
+ *    consolidado nesta sessão — o comentário deste arquivo ficou
+ *    desatualizado por 3 semanas depois da medição real).
  *  · normal (Wan) — a proporção só é enviada a `compor()`
  *    (`fal-ai/nano-banana-2/edit`); o Wan não tem campo de proporção no
  *    schema e herda o que a composição produziu
@@ -259,7 +274,11 @@ export type FormatConfidenceLevel = "vendor_response" | "documentation" | "unver
 
 const CONFIANCA_SIMPLES: Record<AspectRatio, FormatConfidenceLevel> = {
   "16:9": "documentation",
-  "9:16": "documentation",
+  // MEDIDO em 02/08/2026: aspect_ratio:"9:16" produziu vídeo real 720×1280
+  // (ffprobe), quota HeyGen debitada (921→873), US$0,80 cobrados. Achado
+  // consolidado nesta sessão — ver o comentário de VENDOR_FORMAT_SUPPORT.
+  // heygen acima e docs-internal/03-blocos-fechados.md "Bloco 5D".
+  "9:16": "vendor_response",
   "4:5": "documentation",
   "1:1": "documentation",
 };

@@ -171,24 +171,37 @@ export function requiresLongVideoConfirmation(estimatedSeconds: number): boolean
 }
 
 /**
- * Durações-alvo oferecidas no passo Roteiro. Escolher uma vira o teto de
- * RECUSA de verdade para aquele roteiro — não é rótulo, é o mesmo predicado
- * que `exceedsMaxScriptLength` já aplica ao teto global, com um teto MENOR e
- * escolhido pela pessoa. Sem escolha ("mais"), nada muda: o teto continua
- * sendo `MAX_SCRIPT_SECONDS`, como sempre foi.
+ * Durações-alvo em CHIP no passo Roteiro (15/30/45/60). Escolher uma vira o
+ * teto de RECUSA de verdade para aquele roteiro — não é rótulo, é o mesmo
+ * predicado que `exceedsMaxScriptLength` já aplica ao teto global, com um
+ * teto MENOR e escolhido pela pessoa.
+ *
+ * "Mais" (a 5ª opção da tela) NÃO é "sem alvo" — é um CAMPO para digitar a
+ * duração exata, que vira um alvo CUSTOMIZADO e passa pela MESMA validação
+ * de `isTargetDurationSeconds` abaixo (não é uma régua nova, é a régua de
+ * sempre aceitando qualquer valor dentro do teto de dinheiro, não só os 4
+ * chips). Só a AUSÊNCIA de qualquer escolha (campo vazio, nunca clicou em
+ * nada) continua caindo no teto global `MAX_SCRIPT_SECONDS`, como sempre foi.
  */
 export const TARGET_DURATION_OPTIONS = [15, 30, 45, 60] as const;
-export type TargetDurationSeconds = (typeof TARGET_DURATION_OPTIONS)[number];
 
 /**
  * Entrada não confiável (corpo de requisição) vira uma duração-alvo válida,
- * ou nada. Um valor fora da lista (adulterado, ou de um cliente futuro com
- * outras opções) não pode virar um teto arbitrário — cai em "sem alvo", o
- * mesmo comportamento de sempre, em vez de inventar um teto que a tela nunca
- * ofereceu.
+ * ou nada. Aceita os 4 chips E qualquer duração customizada digitada em
+ * "Mais" — a única exigência é ser um inteiro positivo que não ultrapasse o
+ * teto de dinheiro (`MAX_SCRIPT_SECONDS`): um alvo maior que o teto global
+ * seria um teto que nunca teto nada, e um valor adulterado (negativo,
+ * fracionário, `Infinity`, fora da faixa) não pode virar um teto arbitrário —
+ * cai em "sem alvo", o mesmo comportamento de sempre, em vez de inventar um
+ * teto que a tela nunca ofereceria.
  */
-export function isTargetDurationSeconds(value: unknown): value is TargetDurationSeconds {
-  return typeof value === "number" && (TARGET_DURATION_OPTIONS as readonly number[]).includes(value);
+export function isTargetDurationSeconds(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= MAX_SCRIPT_SECONDS
+  );
 }
 
 /**

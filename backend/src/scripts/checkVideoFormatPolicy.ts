@@ -131,6 +131,19 @@ export const MUTANTS: Mutant[] = [
     expect: "deixou de resolver a credencial pelo vendor exigido pelo tier",
   },
   {
+    guard: "formato: HeyGen + 9:16 (vertical) é vendor_response — MEDIDO em 02/08",
+    name: "simples/9:16 perde a distinção de vendor_response e volta a documentation",
+    kind: "esperto",
+    // ESPERTO: a tabela continua com uma entrada por combinação — só o VALOR
+    // de 9:16 regride, apagando a única medição real que existe para o
+    // vendor HeyGen (achado consolidado nesta sessão depois de ficar 3
+    // semanas desatualizado; ver o comentário de VENDOR_FORMAT_SUPPORT.heygen).
+    file: "backend/src/services/providers/videoFormat.ts",
+    find: '  "9:16": "vendor_response",\n  "4:5": "documentation",\n  "1:1": "documentation",\n};\n\nconst CONFIANCA_NORMAL',
+    replace: '  "9:16": "documentation",\n  "4:5": "documentation",\n  "1:1": "documentation",\n};\n\nconst CONFIANCA_NORMAL',
+    expect: "confiança de simples/reels_tiktok (aspect_ratio 9:16) devolveu documentation, esperado vendor_response",
+  },
+  {
     guard: "formato: a confiança por destino é POR TIER — não é o mesmo veredito do vendor inteiro",
     name: "normal/9:16 perde a distinção de vendor_response e vira igual aos outros três",
     kind: "esperto",
@@ -678,7 +691,9 @@ function checkEngineSelectionAlwaysDecides(failures: string[], notes: string[]):
  * os 4).
  */
 const CONFIANCA_ESPERADA: Record<FormatConfidenceTier, Record<string, FormatConfidenceLevel>> = {
-  simples: { youtube: "documentation", reels_tiktok: "documentation", instagram_feed: "documentation", linkedin: "documentation" },
+  // 9:16 (reels_tiktok) é vendor_response desde a consolidação do achado do
+  // 02/08 nesta sessão — ver o comentário de CONFIANCA_SIMPLES em videoFormat.ts.
+  simples: { youtube: "documentation", reels_tiktok: "vendor_response", instagram_feed: "documentation", linkedin: "documentation" },
   normal: { youtube: "unverified", reels_tiktok: "vendor_response", instagram_feed: "unverified", linkedin: "unverified" },
   premium: { youtube: "unverified", reels_tiktok: "unverified", instagram_feed: "unverified", linkedin: "unverified" },
 };

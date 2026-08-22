@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
 import { ScriptCounter } from "../ScriptCounter";
-import { TARGET_DURATION_OPTIONS } from "../targetDuration";
+import { TARGET_DURATION_MAX_SECONDS, TARGET_DURATION_OPTIONS } from "../targetDuration";
 
 export function ScriptStep({
   script,
@@ -13,7 +13,7 @@ export function ScriptStep({
 }: {
   script: string;
   onChange: (script: string) => void;
-  /** `null` = "mais" — sem alvo. Ver `types.ts` (`WizardState.targetDurationSeconds`). */
+  /** `null` = sem escolha ainda — nem chip, nem "mais" preenchido. Ver `types.ts`. */
   targetDurationSeconds: number | null;
   onTargetDurationChange: (value: number | null) => void;
 }) {
@@ -21,6 +21,33 @@ export function ScriptStep({
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // "MAIS" TEM VALOR — antes não tinha: escolher "mais" só desligava o alvo
+  // (caía no teto global, `null`), sem dar à pessoa como pedir UMA duração
+  // específica fora dos 4 chips. Agora "mais" revela um campo numérico, e o
+  // número digitado vira o alvo de verdade — MESMA régua de sempre
+  // (`isTargetDurationSeconds` no servidor aceita qualquer inteiro até o
+  // teto de dinheiro, não só os 4 chips).
+  const ehChip = targetDurationSeconds != null && (TARGET_DURATION_OPTIONS as readonly number[]).includes(targetDurationSeconds);
+  const temValorCustomizado = targetDurationSeconds != null && !ehChip;
+  // Estado local: "a pessoa clicou em Mais NESTA visita ao passo" — some ao
+  // trocar de passo e voltar (o componente desmonta), e nesse caso
+  // `temValorCustomizado` já reconstrói a visibilidade certa a partir do
+  // valor que sobreviveu no wizard.
+  const [maisClicado, setMaisClicado] = useState(false);
+  const mostrarCampoCustom = maisClicado || temValorCustomizado;
+
+  function handleCustomDurationInput(raw: string) {
+    if (raw.trim() === "") {
+      // Campo esvaziado: sem alvo numérico, cai no teto global — mesmo
+      // comportamento de nunca ter escolhido nada.
+      onTargetDurationChange(null);
+      return;
+    }
+    const n = Math.round(Number(raw));
+    if (!Number.isFinite(n) || n <= 0) return; // entrada inválida: mantém o último valor válido
+    onTargetDurationChange(Math.min(n, TARGET_DURATION_MAX_SECONDS));
+  }
 
   async function handleGenerate() {
     if (!prompt) return;
@@ -56,22 +83,45 @@ export function ScriptStep({
             <button
               key={seconds}
               type="button"
-              className={`chip${targetDurationSeconds === seconds ? " selected" : ""}`}
-              aria-pressed={targetDurationSeconds === seconds}
-              onClick={() => onTargetDurationChange(seconds)}
+              className={`chip${ehChip && targetDurationSeconds === seconds ? " selected" : ""}`}
+              aria-pressed={ehChip && targetDurationSeconds === seconds}
+              onClick={() => {
+                setMaisClicado(false);
+                onTargetDurationChange(seconds);
+              }}
             >
               {t("createVideo.script.durationTarget.seconds", { seconds })}
             </button>
           ))}
           <button
             type="button"
-            className={`chip${targetDurationSeconds === null ? " selected" : ""}`}
-            aria-pressed={targetDurationSeconds === null}
-            onClick={() => onTargetDurationChange(null)}
+            className={`chip${mostrarCampoCustom ? " selected" : ""}`}
+            aria-pressed={mostrarCampoCustom}
+            onClick={() => {
+              setMaisClicado(true);
+              // Só desliga o alvo se ele NÃO for já um valor customizado —
+              // reabrir "mais" com um número já digitado não pode apagá-lo.
+              if (!temValorCustomizado) onTargetDurationChange(null);
+            }}
           >
             {t("createVideo.script.durationTarget.more")}
           </button>
         </div>
+        {mostrarCampoCustom && (
+          <div style={{ marginTop: 8, maxWidth: 220 }}>
+            <input
+              type="number"
+              min={1}
+              max={TARGET_DURATION_MAX_SECONDS}
+              step={1}
+              value={targetDurationSeconds ?? ""}
+              onChange={(e) => handleCustomDurationInput(e.target.value)}
+              placeholder={t("createVideo.script.durationTarget.customPlaceholder", {
+                max: TARGET_DURATION_MAX_SECONDS,
+              })}
+            />
+          </div>
+        )}
       </Field>
 
       <Field

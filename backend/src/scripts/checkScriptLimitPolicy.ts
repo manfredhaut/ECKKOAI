@@ -31,6 +31,7 @@ import {
   estimateSecondsFromChars,
   exceedsActiveScriptLimit,
   exceedsMaxScriptLength,
+  isTargetDurationSeconds,
   maxScriptChars,
   maxScriptCharsFor,
 } from "../services/video/scriptDuration.js";
@@ -154,9 +155,12 @@ export const MUTANTS: Mutant[] = [
       "            <button\n" +
       "              key={seconds}\n" +
       '              type="button"\n' +
-      '              className={`chip${targetDurationSeconds === seconds ? " selected" : ""}`}\n' +
-      "              aria-pressed={targetDurationSeconds === seconds}\n" +
-      "              onClick={() => onTargetDurationChange(seconds)}\n" +
+      '              className={`chip${ehChip && targetDurationSeconds === seconds ? " selected" : ""}`}\n' +
+      "              aria-pressed={ehChip && targetDurationSeconds === seconds}\n" +
+      "              onClick={() => {\n" +
+      "                setMaisClicado(false);\n" +
+      "                onTargetDurationChange(seconds);\n" +
+      "              }}\n" +
       "            >\n" +
       '              {t("createVideo.script.durationTarget.seconds", { seconds })}\n' +
       "            </button>\n" +
@@ -176,6 +180,39 @@ export const MUTANTS: Mutant[] = [
     find: '      const alvo = targetDurationSeconds != null ? `&targetSeconds=${targetDurationSeconds}` : "";',
     replace: '      const alvo = "";',
     expect: "deixou de mandar a duração-alvo escolhida para `/video-cost-estimate`",
+  },
+  {
+    guard: "roteiro: 'Mais' aceita qualquer duração customizada, não só os 4 chips",
+    name: "isTargetDurationSeconds volta a aceitar só os 4 chips",
+    kind: "esperto",
+    // ESPERTO: os 4 chips continuam funcionando exatamente igual — 15/30/
+    // 45/60 pertencem às duas listas. O defeito só aparece quando alguém
+    // digita um número em "Mais" que não é um dos 4: o servidor passaria a
+    // tratar o alvo digitado como se não tivesse sido escolhido, caindo em
+    // silêncio no teto global (180 s) sem avisar ninguém.
+    file: "backend/src/services/video/scriptDuration.ts",
+    find:
+      "  return (\n" +
+      '    typeof value === "number" &&\n' +
+      "    Number.isInteger(value) &&\n" +
+      "    value > 0 &&\n" +
+      "    value <= MAX_SCRIPT_SECONDS\n" +
+      "  );",
+    replace: '  return typeof value === "number" && (TARGET_DURATION_OPTIONS as readonly number[]).includes(value);',
+    expect: "isTargetDurationSeconds(20) devolveu false, esperado true",
+  },
+  {
+    guard: "roteiro: o campo customizado de 'Mais' existe no passo Roteiro",
+    name: "o campo numérico de 'Mais' some da tela",
+    kind: "obvio",
+    file: "frontend/src/pages/CreateVideo/steps/ScriptStep.tsx",
+    find:
+      "        {mostrarCampoCustom && (\n" +
+      '          <div style={{ marginTop: 8, maxWidth: 220 }}>\n' +
+      "            <input\n" +
+      '              type="number"',
+    replace: "        {false && (\n          <div style={{ marginTop: 8, maxWidth: 220 }}>\n            <input\n              type=\"number\"",
+    expect: "o campo numérico de \"Mais\" sumiu de",
   },
 ];
 
@@ -395,6 +432,37 @@ export function checkScriptLimitPolicy(repoRoot: string): ScriptLimitCheckResult
       `roteiro: o seletor de duração-alvo sumiu de ${SCRIPT_STEP} — sem ele a pessoa não tem mais como ` +
         "escolher 15/30/45/60 s antes de escrever, e o teto que aparece sob o campo nunca teria de onde vir.",
     );
+  }
+  if (!scriptStepSrc.includes("mostrarCampoCustom") || !/mostrarCampoCustom.*&&[\s\S]{0,80}<input/.test(scriptStepSrc)) {
+    failures.push(
+      `roteiro: o campo numérico de "Mais" sumiu de ${SCRIPT_STEP} — a pessoa clicaria em "Mais" e não ` +
+        "teria como digitar uma duração exata, sem nenhum aviso de que a escolha não teve efeito.",
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 8. isTargetDurationSeconds aceita duração CUSTOMIZADA, não só os 4 chips —
+  // por EXECUÇÃO real da função de produção.
+  // ---------------------------------------------------------------------------
+  const casosDeAlvo: { valor: unknown; esperado: boolean; porque: string }[] = [
+    { valor: 20, esperado: true, porque: "customizado dentro do teto, fora dos 4 chips" },
+    { valor: 1, esperado: true, porque: "o menor inteiro positivo válido" },
+    { valor: MAX_SCRIPT_SECONDS, esperado: true, porque: "no próprio teto de dinheiro" },
+    { valor: MAX_SCRIPT_SECONDS + 1, esperado: false, porque: "1 acima do teto de dinheiro" },
+    { valor: 0, esperado: false, porque: "zero não é uma duração" },
+    { valor: -5, esperado: false, porque: "negativo não é uma duração" },
+    { valor: 20.5, esperado: false, porque: "fracionário — a régua conta caracteres inteiros" },
+    { valor: Infinity, esperado: false, porque: "não-finito" },
+    { valor: "20", esperado: false, porque: "string, não number — corpo de requisição adulterado" },
+  ];
+  for (const caso of casosDeAlvo) {
+    const got = isTargetDurationSeconds(caso.valor);
+    if (got !== caso.esperado) {
+      failures.push(
+        `roteiro: isTargetDurationSeconds(${JSON.stringify(caso.valor)}) devolveu ${got}, esperado ` +
+          `${caso.esperado} (${caso.porque}).`,
+      );
+    }
   }
 
   const GENERATE_STEP = "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx";
