@@ -84,6 +84,46 @@ export const MUTANTS: Mutant[] = [
     expect: "vendor sem caminho de geração não é recusado antes do débito",
   },
   {
+    guard: "look inválido é recusado antes do débito, no handler de criação",
+    name: "o bloco inteiro de validação do look some do handler",
+    kind: "obvio",
+    // A geração passa a aceitar QUALQUER avatar_look_id sem olhar avatar_looks
+    // — um traje ainda `processing`, `simulated` em live, ou de outro avatar
+    // chega intacto a providerAvatarIdParaGeracao. Gap dimensionado em Z0.3.
+    file: ROTA_DE_VIDEOS,
+    find:
+      "    if (avatarLookId) {\n" +
+      "      try {\n" +
+      "        await assertLookUsavel(pool, { tenantId: req.tenantId, avatarId: avatar.id, avatarLookId });\n" +
+      "      } catch (err) {\n" +
+      "        if (err instanceof LookInvalidoError) {\n" +
+      '          logEvent("warn", "video_look_invalido", {\n' +
+      '            context: "videos.create",\n' +
+      "            code: err.code,\n" +
+      '            consequence: "recusado antes do débito; nenhuma linha criada e nenhum crédito tocado",\n' +
+      "          });\n" +
+      "          return reply.code(400).send({ error: err.code, message: err.message });\n" +
+      "        }\n" +
+      "        throw err;\n" +
+      "      }\n" +
+      "    }",
+    replace: "",
+    expect: "não chama assertLookUsavel",
+  },
+  {
+    guard: "a recusa de look inválido interrompe o handler (return antes do 400)",
+    name: "o 400 do look inválido deixa de interromper a execução",
+    kind: "esperto",
+    // ESPERTO: o log continua saindo, o código 400 continua correto, o corpo
+    // da resposta continua certo. Só falta o `return` — e sem ele o Fastify
+    // já mandou a resposta, mas o handler CONTINUA rodando por cima dela: cai
+    // no porteiro do vendor, no débito, na chamada ao fornecedor.
+    file: ROTA_DE_VIDEOS,
+    find: "          return reply.code(400).send({ error: err.code, message: err.message });",
+    replace: "          reply.code(400).send({ error: err.code, message: err.message });",
+    expect: "a recusa de look inválido não interrompe o handler",
+  },
+  {
     guard: "publicarEntradas roda antes do primeiro autorizarGasto",
     name: "a autorização de gasto sobe para antes da publicação",
     kind: "esperto",
@@ -377,6 +417,39 @@ export async function checkFalGenerationPathPolicy(): Promise<FalGenerationPathC
       notes.push(
         "    caminho de geração: o porteiro do vendor vem antes do débito no handler de criação " +
           `(porteiro em ${posPorteiro}, débito em ${posDebito} do recorte)`,
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // G-a2: a validação do LOOK vem antes do débito, e a recusa INTERROMPE o
+    // handler — G2, 22/08/2026 (gap dimensionado em Z0.3). Sem o `return`, o
+    // 400 seria enviado e a execução continuaria por cima dele até o débito e
+    // a chamada ao fornecedor.
+    // -----------------------------------------------------------------------
+    const posLook = trecho.indexOf("await assertLookUsavel(");
+    if (posLook < 0) {
+      failures.push(
+        `caminho de geração: o handler de criação em ${ROTA_DE_VIDEOS} não chama assertLookUsavel — um ` +
+          "avatar_look_id apontando para um traje ainda `processing`, `simulated` em modo live, ou de " +
+          "outro avatar chegaria intacto a providerAvatarIdParaGeracao. Gap dimensionado em Z0.3.",
+      );
+    } else if (posLook > posDebito) {
+      failures.push(
+        "caminho de geração: a validação do look (assertLookUsavel) está DEPOIS de debitCredit — um " +
+          "look inválido só seria recusado depois de já ter cobrado, e a ordem que protege dinheiro é " +
+          "validar antes.",
+      );
+    } else {
+      notes.push(
+        "    caminho de geração: a validação do look vem antes do débito no handler de criação " +
+          `(look em ${posLook}, débito em ${posDebito} do recorte)`,
+      );
+    }
+    if (!trecho.includes("return reply.code(400).send({ error: err.code, message: err.message });")) {
+      failures.push(
+        "caminho de geração: a recusa de look inválido não interrompe o handler — sem `return` antes do " +
+          "`reply.code(400)`, a resposta 400 seria enviada e a execução continuaria por cima dela até o " +
+          "débito e a chamada ao fornecedor.",
       );
     }
   }

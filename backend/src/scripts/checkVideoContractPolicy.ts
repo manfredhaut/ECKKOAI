@@ -35,7 +35,7 @@ import {
   heygenVideoRequestHeaders,
 } from "../services/providers/avatarProvider.js";
 import { resolveVideoFormat } from "../services/providers/videoFormat.js";
-import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
+import { assertLookUsavel, LookInvalidoError, providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 
 export interface VideoContractCheckResult {
   failures: string[];
@@ -130,6 +130,61 @@ export const MUTANTS: Mutant[] = [
     find: "    fit: HEYGEN_FIT,\n  };",
     replace: '    fit: HEYGEN_FIT,\n    outfit_id: "traje",\n  };',
     expect: "campo fora do schema do fornecedor",
+  },
+  {
+    guard: "look: um traje ainda processing/failed é recusado antes de qualquer chamada ao fornecedor",
+    name: "assertLookUsavel deixa de recusar look não-completed",
+    kind: "esperto",
+    // ESPERTO: a função continua existindo, continua sendo chamada, continua
+    // lançando para OUTRO avatar — só o status deixa de ser conferido. Um
+    // traje criado por texto (assíncrono, migration 045) ainda `processing`
+    // passaria intacto para `providerAvatarIdParaGeracao` e viraria o
+    // `avatar_id` de uma chamada real ao fornecedor, para um look que ele
+    // ainda não terminou de preparar.
+    // ⚠️ `replace` usa `doAvatar.status !== doAvatar.status` (sempre falso em
+    // runtime) e NÃO um literal `false`: o TypeScript trata `if (false) {…}`
+    // como bloco inalcançável e para de propagar o narrowing de `doAvatar`
+    // (que vem de `if (!doAvatar) throw` acima) para dentro dele — MEDIDO
+    // nesta rodada, o gate saiu 2 pelo `tsc` ("doAvatar" possibly undefined)
+    // em vez de a guarda opinar. Mesmo gotcha já documentado para
+    // `checkFalGenerationPathPolicy.ts`.
+    file: "backend/src/services/avatar/lookSelection.ts",
+    find: '  if (doAvatar.status !== "completed") {',
+    replace: "  if (doAvatar.status !== doAvatar.status) {",
+    expect: "look_nao_pronto",
+  },
+  {
+    guard: "look: um traje simulated=true não alcança uma geração live",
+    name: "assertLookUsavel deixa de recusar look simulado em live",
+    kind: "esperto",
+    // ESPERTO: o traje nasceu em `fixture` (nunca existiu de verdade no
+    // fornecedor) e a checagem de status continua funcionando — só a de
+    // `simulated` desliga. Em live, o id iria ao fornecedor como se fosse
+    // real.
+    file: "backend/src/services/avatar/lookSelection.ts",
+    find: "  if (doAvatar.simulated && !isFixtureMode()) {",
+    replace: "  if (false) {",
+    expect: "look_simulado_em_live",
+  },
+  {
+    guard: "look: um provider_look_id de OUTRO avatar deste tenant é recusado, não silenciosamente aceito",
+    name: "assertLookUsavel passa a filtrar por avatar_id na consulta, e o look de outro avatar vira \"sem linha local\"",
+    kind: "esperto",
+    // ESPERTO: parece uma simplificação inofensiva — filtrar direto no SQL em
+    // vez de filtrar em memória. O efeito real é o oposto do pretendido: um
+    // look de OUTRO avatar deixa de aparecer na consulta (WHERE avatar_id
+    // não bate), a função lê "nenhuma linha" e devolve — e o comentário do
+    // módulo é claro que "nenhuma linha" é o caminho de PASSAGEM (look nativo
+    // do fornecedor). Um id de traje real, mas de outro avatar, passaria como
+    // se nunca tivesse existido localmente.
+    file: "backend/src/services/avatar/lookSelection.ts",
+    find:
+      '    "SELECT avatar_id, status, simulated FROM avatar_looks WHERE tenant_id = $1 AND provider_look_id = $2",\n' +
+      "    [params.tenantId, params.avatarLookId],",
+    replace:
+      '    "SELECT avatar_id, status, simulated FROM avatar_looks WHERE tenant_id = $1 AND provider_look_id = $2 AND avatar_id = $3",\n' +
+      "    [params.tenantId, params.avatarLookId, params.avatarId],",
+    expect: "look_outro_avatar",
   },
 ];
 
@@ -413,10 +468,115 @@ export async function checkVideoContractPolicy(): Promise<VideoContractCheckResu
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // 7. O LOOK é validado ANTES da substituição — G2, gap dimensionado em Z0.3.
+  //
+  // Duplo de banco em memória: `assertLookUsavel` só usa `pool.query`, e o que
+  // se mede aqui é a DECISÃO sobre as linhas devolvidas, não uma consulta SQL
+  // de verdade — a mesma economia de `checkOutfitPolicy.ts`.
+  // ---------------------------------------------------------------------------
+  {
+    type LinhaDeTeste = { avatar_id: string; status: string; simulated: boolean; provider_look_id: string };
+    // Sensível ao NÚMERO de parâmetros da consulta, não só ao texto: é o que
+    // distingue o código real (2 parâmetros — tenant, look; o filtro por
+    // avatar acontece EM MEMÓRIA, depois) do mutante que move o filtro por
+    // avatar_id para dentro do próprio SQL (3 parâmetros). Um duplo que
+    // ignorasse essa diferença ficaria INERTE para esse mutante específico —
+    // foi MEDIDO nesta rodada: sem esta sensibilidade, o mutante 3 passava
+    // verde porque o duplo sempre devolvia a linha, mascarando o efeito real
+    // de um WHERE avatar_id=$3 (que faria um Postgres de verdade devolver
+    // ZERO linhas para o look de outro avatar, não a linha completa).
+    const poolDuplo = (linhas: LinhaDeTeste[]) =>
+      ({
+        query: async (_texto: unknown, params?: unknown[]) => {
+          const [, providerLookId, avatarIdNoFiltro] = params as [string, string, string?];
+          const rows = linhas
+            .filter((l) => l.provider_look_id === providerLookId)
+            .filter((l) => avatarIdNoFiltro === undefined || l.avatar_id === avatarIdNoFiltro);
+          return { rows, rowCount: rows.length };
+        },
+      }) as unknown as import("pg").Pool;
+
+    const TENANT = "tenant-da-prova";
+    const AVATAR_A = "avatar-a";
+    const AVATAR_B = "avatar-b";
+
+    // 7.1 — sem linha local: PASSA (look nativo do fornecedor, nunca inserido
+    // em avatar_looks — ver o comentário de assertLookUsavel).
+    try {
+      await assertLookUsavel(poolDuplo([]), { tenantId: TENANT, avatarId: AVATAR_A, avatarLookId: "look-nativo" });
+    } catch (err) {
+      failures.push(
+        `look: um avatarLookId sem linha local foi recusado (${String(err)}) — isso quebraria o ` +
+          "caminho de looks nativos do fornecedor, nunca inseridos em avatar_looks (18 órfãos, CLAUDE.md).",
+      );
+    }
+
+    // 7.2 — linha local, completed, do avatar certo, não simulada: PASSA.
+    const linhaBoa: LinhaDeTeste = { avatar_id: AVATAR_A, status: "completed", simulated: false, provider_look_id: "look-ok" };
+    try {
+      await assertLookUsavel(poolDuplo([linhaBoa]), { tenantId: TENANT, avatarId: AVATAR_A, avatarLookId: "look-ok" });
+    } catch (err) {
+      failures.push(`look: um traje completed, do avatar certo e não simulado foi recusado (${String(err)}).`);
+    }
+
+    // 7.3 — status processing: RECUSA como look_nao_pronto.
+    const linhaProcessando: LinhaDeTeste = { avatar_id: AVATAR_A, status: "processing", simulated: false, provider_look_id: "look-processando" };
+    try {
+      await assertLookUsavel(poolDuplo([linhaProcessando]), { tenantId: TENANT, avatarId: AVATAR_A, avatarLookId: "look-processando" });
+      failures.push(
+        "look_nao_pronto: um traje ainda `processing` NÃO foi recusado — ele chegaria intacto a " +
+          "providerAvatarIdParaGeracao e viraria o avatar_id de uma chamada real ao fornecedor.",
+      );
+    } catch (err) {
+      if (!(err instanceof LookInvalidoError) || err.code !== "look_nao_pronto") {
+        failures.push(`look_nao_pronto: traje processing recusado pelo motivo errado (${String(err)}).`);
+      }
+    }
+
+    // 7.4 — simulated=true em modo live: RECUSA como look_simulado_em_live.
+    const linhaSimulada: LinhaDeTeste = { avatar_id: AVATAR_A, status: "completed", simulated: true, provider_look_id: "look-simulado" };
+    const modoOriginal = process.env.PROVIDER_MODE;
+    process.env.PROVIDER_MODE = "live";
+    try {
+      await assertLookUsavel(poolDuplo([linhaSimulada]), { tenantId: TENANT, avatarId: AVATAR_A, avatarLookId: "look-simulado" });
+      failures.push(
+        "look_simulado_em_live: um traje `simulated=true` NÃO foi recusado em modo live — ele nunca " +
+          "existiu de verdade no fornecedor e chegaria como avatar_id de uma chamada real.",
+      );
+    } catch (err) {
+      if (!(err instanceof LookInvalidoError) || err.code !== "look_simulado_em_live") {
+        failures.push(`look_simulado_em_live: traje simulado em live recusado pelo motivo errado (${String(err)}).`);
+      }
+    } finally {
+      if (modoOriginal === undefined) delete process.env.PROVIDER_MODE;
+      else process.env.PROVIDER_MODE = modoOriginal;
+    }
+
+    // 7.5 — linha existe, mas de OUTRO avatar do mesmo tenant: RECUSA como
+    // look_outro_avatar — nunca "sem linha local" (que passaria).
+    const linhaDeOutroAvatar: LinhaDeTeste = { avatar_id: AVATAR_B, status: "completed", simulated: false, provider_look_id: "look-do-b" };
+    try {
+      await assertLookUsavel(poolDuplo([linhaDeOutroAvatar]), { tenantId: TENANT, avatarId: AVATAR_A, avatarLookId: "look-do-b" });
+      failures.push(
+        "look_outro_avatar: um provider_look_id de OUTRO avatar do mesmo tenant NÃO foi recusado — a " +
+          "geração sairia com o rosto/traje de um avatar diferente do que a tela mostrava.",
+      );
+    } catch (err) {
+      if (!(err instanceof LookInvalidoError) || err.code !== "look_outro_avatar") {
+        failures.push(`look_outro_avatar: traje de outro avatar recusado pelo motivo errado (${String(err)}).`);
+      }
+    }
+  }
+
   if (failures.length === 0) {
     notes.push(
       "  contrato de vídeo: o look escolhido vai como `avatar_id` (e o avatar base quando ninguém " +
         "escolhe traje); fundo pedido manda `remove_background`, e sem fundo não manda",
+    );
+    notes.push(
+      "  look: assertLookUsavel recusa processing/simulated-em-live/outro-avatar antes de qualquer " +
+        "chamada ao fornecedor; sem linha local passa (look nativo do fornecedor, caminho legítimo)",
     );
     notes.push(
       `  contrato de vídeo: \`fit: cover\` nos dois corpos, ${CAMPOS_DO_SCHEMA.size} campos do schema ` +

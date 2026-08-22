@@ -13,7 +13,7 @@ import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCat
 import { hasGenerationPath } from "../services/providers/vendorCatalog.js";
 import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 import { resolveTenantAvatarFalKey } from "../services/providers/platformKeys.js";
-import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
+import { assertLookUsavel, LookInvalidoError, providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 import { createNotification } from "../services/notifications.js";
 import { recordFailedProviderUsage, recordProviderUsage } from "../services/billing/usageTracking.js";
 import {
@@ -1180,6 +1180,31 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     // alguém reordenar as duas coisas, e não como validação de verdade.
     if (!avatar?.provider_avatar_id) {
       throw new Error("readiness passou mas o avatar sumiu entre as duas leituras");
+    }
+
+    // -----------------------------------------------------------------------
+    // O LOOK, validado ANTES do débito e antes de qualquer chamada — G2,
+    // 22/08/2026 (gap dimensionado em Z0.3). Sem isto, um `avatar_look_id`
+    // apontando para um traje ainda `processing`, `simulated` em modo live,
+    // ou de OUTRO avatar deste tenant chegava intacto a
+    // `providerAvatarIdParaGeracao` e virava o `avatar_id` da chamada real.
+    // Ver `assertLookUsavel` em lookSelection.ts para o que fica de fora
+    // (look nativo do fornecedor, sem linha local).
+    // -----------------------------------------------------------------------
+    if (avatarLookId) {
+      try {
+        await assertLookUsavel(pool, { tenantId: req.tenantId, avatarId: avatar.id, avatarLookId });
+      } catch (err) {
+        if (err instanceof LookInvalidoError) {
+          logEvent("warn", "video_look_invalido", {
+            context: "videos.create",
+            code: err.code,
+            consequence: "recusado antes do débito; nenhuma linha criada e nenhum crédito tocado",
+          });
+          return reply.code(400).send({ error: err.code, message: err.message });
+        }
+        throw err;
+      }
     }
 
     // -----------------------------------------------------------------------
