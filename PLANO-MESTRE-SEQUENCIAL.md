@@ -5,23 +5,33 @@ de conta — não em toda mudança de código. Quando este arquivo e o
 [ESTADO.md](ESTADO.md) discordarem sobre o estado ATUAL, confira `git log`
 primeiro: os dois podem envelhecer, e o `git log` nunca mente.
 
-**HEAD nesta escrita: `fc6f7d6`, árvore limpa.** `PROVIDER_MODE=fixture`
+**HEAD nesta escrita: `4c5b66c`, árvore limpa.** `PROVIDER_MODE=fixture`
 (desarmado, `PROVIDER_LIVE_CONFIRM` len=0) — confirmado no processo E no
-`docker compose config` antes de qualquer coisa nesta sessão.
+`docker compose config` no início desta sessão.
 
 ```
+4c5b66c  checkAvatarMultiVendorPolicy: G-4 saía INERTE — a checagem casava com o comentário, não com o código
+5192168  Fase B: admin "Integrações por tenant" vira multi-seleção para Avatar
+20a4240  Migration 060: multi-vendor de avatar por tenant (Fase A)
+a03d6ab  GenerateStep: cartão "Simples" desabilitado para tenants sem credencial HeyGen
+af6848c  ESTADO.md: fecho da sessão de 21/08 — Fase 1 por HTTP real, Fase 2/Modo B, 296/296
+2b27d3a  PLANO-MESTRE-SEQUENCIAL.md: novo — fecho de sessão (Fase 1 refeita por HTTP real, Fase 2/Modo B, HEAD)
 fc6f7d6  checkFalVideoApprovalPolicy: 2 mutantes disparavam TS2367 (gotcha do "if false") em vez de reprovar
-5efeaa1  Fase 2 (Modo B): parada em animar, awaiting_approval_video, /approve-video + /redo-video
-b8164b4  CLAUDE.md: fecho do BLOCO A — passada completa 292/292, zero INERTE/AMBÍGUO/ERRO
-a1c8d46  checkFalTierPolicy: 3 expects eram paráfrase, não transcrição — corrigidos
-c066168  Bloco A: sistema de níveis de vídeo — tela de tier, tier_video, roteamento por tier, teto próprio do Premium
 ```
 
-Arnês: **296 mutantes declarados, passada COMPLETA 296/296, zero
-INERTE/AMBÍGUO/ERRO**, rodada depois do commit `fc6f7d6`. Log em
-`_arnes-logs/mutants-fase2-completa-2026-08-21-{a,b}.log`, md5
-`99dfb1959afd61966e91e20cc344e28a` nas duas cópias — idênticas. Sem carimbo
-de PASSADA FILTRADA: é a completa de verdade, sem filtro.
+⚠️ **Arnês: NÃO RODADA UMA PASSADA COMPLETA desde `fc6f7d6` (296/296).** Mudança
+de processo desta sessão, a pedido do operador: a passada completa não é
+mais lançada em background depois de cada commit intermediário dentro de um
+bloco de trabalho (abortou 3 vezes por esse motivo — ver gotcha novo
+abaixo). Só roda UMA vez, no fim do bloco inteiro (depois da Fase D fechar,
+ou quando o operador pedir explicitamente). Os commits desde `fc6f7d6` (Fase
+1 refeita por HTTP, correção do cartão Simples, Fase A, Fase B) foram
+fechados com **passada FILTRADA** (`--guard`) provando só os mutantes novos
+de cada rodada — 5+3+6 mutantes, todos `ok`, mas isso NÃO substitui a
+completa. Registro de mutantes hoje: **305 declarados** (296 → +3 do cartão
+Simples desabilitado → +6 do multi-vendor de avatar; +1 líquido porque um
+mutante antigo foi reancorado, não somado, e a contagem exata está nos
+commits individuais).
 
 ---
 
@@ -132,6 +142,131 @@ operador) esbarrar nisso sem contexto.
 
 ---
 
+## 2.5 · Decisão de produto (22/08) — multi-vendor de avatar por tenant
+
+**Contexto que abriu esta linha de trabalho**: a lacuna de UX do cartão
+"Simples" (§2, correção `a03d6ab`) revelou a causa raiz: `routes/videos.ts`
+decide o VENDOR (heygen/fal) pela credencial FIXA do tenant, antes de olhar
+`tier_video` — então "Simples" só faz diferença num tenant vendor=heygen.
+Decisão: um tenant vai poder ter MAIS DE UM vendor de avatar configurado ao
+mesmo tempo (heygen + fal, por exemplo), e `tier_video` passa a decidir QUAL
+usar, por vídeo. Plano em 4 fases, sequenciais, cada uma aprovada
+explicitamente antes da próxima.
+
+### Fase A — modelo de dados (fechada, aprovada, commit `20a4240`)
+
+`api_credentials` tinha `UNIQUE (tenant_id, provider)` — uma linha por
+categoria, sem exceção. **Migration 060**, aplicada só no banco de dev:
+
+- `is_default boolean NOT NULL DEFAULT true` — backfill automático via o
+  próprio `ADD COLUMN` (sem `UPDATE` separado). É a credencial que os 11
+  call sites NÃO-tier-aware de `getCredential` continuam vendo depois da
+  Fase C existir.
+- `api_credentials_tenant_provider_key` — voice/script, `UNIQUE (tenant_id,
+  provider) WHERE provider <> 'avatar'`, a MESMA garantia de sempre, agora
+  como índice parcial.
+- `api_credentials_tenant_avatar_vendor_key` — avatar, `UNIQUE (tenant_id,
+  provider, vendor) NULLS NOT DISTINCT WHERE provider = 'avatar'`. É isto
+  que permite heygen E fal ao mesmo tempo. `NULLS NOT DISTINCT` preserva a
+  garantia atual das linhas legadas sem vendor (23 de 34 no dia da medição).
+- `api_credentials_tenant_avatar_default_key` — `UNIQUE (tenant_id,
+  provider) WHERE provider = 'avatar' AND is_default`. No máximo UMA linha
+  default por tenant — proposto pelo assistente ALÉM do que foi pedido
+  ("prefiro erro alto e imediato a não-determinismo silencioso em
+  produção", palavras do operador ao aprovar).
+
+**Verificado**: SELECT fresco (102 linhas antes/depois, hash idêntico de
+id/provider/vendor/connected — nada perdido; as 102 ficaram `is_default:
+true`) + os 3 índices testados AO VIVO numa transação revertida (vendor
+duplicado rejeitado, segundo default rejeitado, voice/script duplicado
+continua rejeitado como sempre). **Sem mutante declarado** — mutar o texto
+da migration não afeta o schema já aplicado (o gate não roda migrations de
+novo); seria estruturalmente INERTE. Cobertura por mutante vem com o código
+de aplicação (Fases B/C).
+
+**Pendência registrada, não-urgente** (a pedido do operador): um teste de
+integração comum (não mutante) cobrindo os mesmos 5 cenários contra um
+banco de teste, até existir código de aplicação que os exercite de verdade.
+
+### Fase B — admin multi-seleção (fechada, aprovada, commits `5192168` +
+`4c5b66c`)
+
+A tela "Integrações por tenant" (`AdminApisPanel.tsx` + o editor irmão em
+`AdminPanelPage.tsx`) tinha um card por provider, um vendor por card.
+Avatar passa a ser uma LISTA.
+
+- **Backend** (`adminPanel.ts`): o `PUT` de credenciais bifurca por
+  provider. Avatar mira `ON CONFLICT (tenant_id, provider, vendor) WHERE
+  provider = 'avatar'`; voice/script miram `ON CONFLICT (tenant_id,
+  provider) WHERE provider <> 'avatar'`. A primeira credencial de avatar do
+  tenant (nenhuma linha ainda, de vendor nenhum) nasce `is_default: true`;
+  toda seguinte nasce `false` e nunca desloca a que já é default — sem essa
+  checagem, adicionar um segundo vendor colidiria com
+  `api_credentials_tenant_avatar_default_key` e devolveria 500 no clique.
+  `/credentials/:provider/test` aceita `?vendor=` para escolher qual linha
+  testar (sem isso, com 2+ linhas de avatar, "Testar" pegaria uma
+  arbitrária, `rows[0]` sem `ORDER BY`).
+- **Frontend**: `AvatarCredentialsCard.tsx` (novo, COMPARTILHADO entre os
+  dois editores — duplicar a lógica de lista divergiria na primeira mudança
+  futura) — uma linha por vendor já configurado + bloco para adicionar um
+  vendor novo. `voice`/`script` continuam exatamente como estavam nos dois
+  arquivos. `updateCredential` (a função de merge de estado local, nos dois
+  arquivos) passa a casar por `(provider, vendor)` só para avatar — casar só
+  por `provider` faria salvar o fal SUBSTITUIR a entrada do heygen na tela.
+
+**Verificado por HTTP real** (sessão de ADMIN montada na tabela `sessions`,
+nunca senha): tenant descartável → `GET` vazio → `PUT` heygen
+(`is_default:true`) → `PUT` fal (`is_default:false`) → resalvar heygen
+(`is_default` continua `true`) → `GET` final com as DUAS linhas → `POST
+.../test?vendor=heygen` (200 ok) e `?vendor=fal` (400 `probe_unavailable`,
+como o catálogo já previa — fal não tem sonda).
+
+**6 mutantes novos** em `checkAvatarMultiVendorPolicy.ts` (4 backend FORMA,
+2 frontend LÓGICA AVALIADA), todos provados reprovando por passada
+filtrada. Um deles (G-4) saiu INERTE na primeira tentativa e foi corrigido
+antes de ser declarado provado — ver gotcha novo em §4.
+
+### Fase C — backend: tier_video decide o vendor (NÃO INICIADA)
+
+**Aguardando aprovação explícita do operador antes de tocar em qualquer
+código desta fase.** Os 3 call sites já identificados em sessões
+anteriores, em `routes/videos.ts`:
+
+- criação (~linha 1003 nas notas do operador — conferir número atual antes
+  de editar, linhas deste projeto já mudaram de lugar mais de uma vez)
+- aprovação (~1596–1598)
+- `rearmVideoPolling` (~394)
+
+Hoje os três pegam "a credencial de avatar do tenant" (`getCredential`,
+sem saber de tier). Precisam passar a pegar "a credencial de avatar do
+tenant que corresponde ao vendor exigido pelo `tier_video` escolhido" — o
+que exige uma função de leitura NOVA (`getCredential` genérico continua
+servindo os 11 call sites não-tier-aware via `is_default`, mas os 3 desta
+lista precisam de uma busca por vendor explícito). Regras já combinadas
+com o operador para esta fase:
+
+- Se o tenant não tiver a credencial necessária para o tier escolhido:
+  MESMO padrão de fallback seguro do commit `a03d6ab` — nunca cair
+  silenciosamente em outro vendor sem avisar.
+- Reavaliar o cartão "Simples" desabilitado (`GenerateStep.tsx`, commit
+  `a03d6ab`): deve voltar a ficar HABILITADO quando o tenant tiver AMBAS as
+  credenciais (fal + heygen), continuar desabilitado se só tiver uma.
+- Guardas novas provadas reprovando com mutante declarado, gate verde,
+  commit separado — mesma disciplina de sempre.
+
+### Fase D — validar HeyGen ponta a ponta pela primeira vez (NÃO INICIADA)
+
+Bloqueada até Fase C ser aprovada. `PROVIDER_MODE=fixture`, custo zero.
+Gerar um vídeo tier Simples de verdade, roteando para HeyGen (nunca
+exercitado nesta sessão nem em nenhuma anterior visível neste histórico),
+confirmar pelo diário/log (não pelo código): motor chamado, teto de gasto
+equivalente ao `autorizarGasto` (existe? qual valor?), se o fluxo de
+aprovação do HeyGen é estruturalmente igual ao do Modo B da fal ou
+diferente — SE for diferente, não tentar unificar nesta fase, só relatar e
+parar.
+
+---
+
 ## 3 · O que AINDA falta (não desta rodada, por instrução explícita)
 
 - **UI do Modo B.** Tela do vídeo mudo (preview + Aprovar + Refazer),
@@ -186,3 +321,40 @@ operador) esbarrar nisso sem contexto.
   novo (fixture, asset) é adicionado fora do bind mount — precisa de
   `docker compose build backend` + `up -d backend`. `fixtures/` só entra
   via `COPY` no `Dockerfile`, não é montado.
+- **O backend roda com `tsx src/index.ts` (o script `serve`), SEM
+  `--watch`** — só o script `dev` (`tsx watch`) recarrega sozinho, e é o
+  `serve` que o `docker-entrypoint.sh` usa. Editar uma rota e testar por
+  HTTP contra o processo vivo continua batendo no código ANTIGO até um
+  `docker compose restart backend` manual. MEDIDO nesta sessão como bug
+  real, não hipotético: o primeiro ensaio HTTP da Fase B devolveu 500
+  (`ON CONFLICT` sem `WHERE`, código de ANTES da migration 060) porque o
+  processo não tinha sido reiniciado depois da edição — a query em si
+  estava certa o tempo todo. Isto NÃO afeta o `npm run check` (o gate): ele
+  roda `tsx` fresco a cada invocação, lê o arquivo do zero, sempre atual.
+- **Uma guarda por `string.includes(...)` pode casar com um COMENTÁRIO, não
+  com o código** — e sai INERTE (gate verde com o defeito aplicado) sem
+  avisar. MEDIDO nesta sessão: `checkAvatarMultiVendorPolicy.ts` procurava
+  `"req.query.vendor"` no recorte da rota de teste, e o comentário
+  explicativo LOGO ACIMA da query também continha esse texto — mutar o
+  CÓDIGO real (remover o uso funcional) não mudava o veredito da guarda,
+  porque o comentário sozinho já bastava para o `includes()` achar
+  verdadeiro. Corrigido trocando a âncora para um trecho que só existe em
+  código executável (o array de parâmetros da query, nunca escrito em
+  prosa). Ao escrever uma guarda por FORMA (não por lógica avaliada),
+  prefira âncoras que não têm como aparecer num comentário explicativo
+  sobre a mesma coisa — e teste o mutante à mão antes de declarar provado
+  (a regra de sempre, reforçada por este caso específico).
+- **Verificação visual pelo navegador ficou bloqueada nesta sessão inteira**
+  (Fase B e a correção do cartão Simples): a sessão (de tenant OU de admin)
+  autentica com sucesso quando testada direto contra o backend
+  (`fetch`/`curl` interno, sem passar pelo navegador — 200, identidade
+  correta), mas o MESMO cookie falha (401) em toda tentativa pela
+  automação de navegador desta sessão — fetch com `credentials:'include'`,
+  `SameSite=Lax` explícito, e até navegação completa de página. Traefik foi
+  descartado como causa (proxy transparente, sem middleware de cookie,
+  CORS com `credentials:true` confirmado). NÃO investigado além disso —
+  é provavelmente uma política de cookie do próprio ambiente de navegador
+  automatizado, não um bug do app, mas isso é DEDUZIDO, não confirmado.
+  Verificação de UI nesta sessão ficou inteiramente por HTTP direto
+  (sessão montada no banco + `fetch` contra o backend, sem navegador),
+  nunca por captura de tela real.

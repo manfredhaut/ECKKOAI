@@ -15,15 +15,26 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **21/08/2026** (FASE 1+2 — Fase 1 dos 3 tiers reensaiada por
-HTTP real depois de a primeira tentativa ter bypassado sessão/HTTP; Fase 2
-"Modo B" — segunda aprovação, o vídeo mudo — implementada e provada no
-backend; passada completa do arnês 296/296, zero INERTE/AMBÍGUO/ERRO), HEAD
-**`2b27d3a`**, árvore limpa. Ver §12 abaixo para o detalhe, e
-[PLANO-MESTRE-SEQUENCIAL.md](PLANO-MESTRE-SEQUENCIAL.md) (novo nesta
-sessão) para a versão voltada a troca de conta — os dois cobrem o mesmo
-bloco por ângulos diferentes; este arquivo é o operacional/gotchas, aquele
-é o resumo de handoff.
+Atualizado em **22/08/2026** (mesma sessão que abriu em 21/08 — FASE 1+2,
+mais a correção de UX do cartão Simples e as Fases A+B do multi-vendor de
+avatar). HEAD **`4c5b66c`**, árvore limpa. Ver §12 (Fase 1+2, 21/08) e §13
+(cartão Simples + Fase A + Fase B, 22/08) abaixo para o detalhe, e
+[PLANO-MESTRE-SEQUENCIAL.md](PLANO-MESTRE-SEQUENCIAL.md) para a versão
+voltada a troca de conta — os dois cobrem o mesmo bloco por ângulos
+diferentes; este arquivo é o operacional/gotchas, aquele é o resumo de
+handoff.
+
+⚠️ **Arnês SEM passada completa desde `fc6f7d6` (296/296, 21/08).** Mudança
+de processo desta sessão (pedido do operador, depois de a completa abortar
+3 VEZES por edição concorrente): ela deixa de ser lançada em background
+depois de cada commit intermediário dentro de um bloco de trabalho, e passa
+a rodar só UMA vez, no fim do bloco inteiro. Os 4 commits entre `fc6f7d6` e
+`4c5b66c` (Fase 1 HTTP, cartão Simples, Fase A, Fase B) foram fechados só
+com passada FILTRADA (`--guard`) provando os mutantes novos de cada rodada
+— real, mas não substitui a completa. **Registro atual: 305 mutantes
+declarados** (296 → 299 no cartão Simples → 305 no multi-vendor de avatar).
+Rodar a completa antes de começar a Fase C é decisão do operador, não
+automática.
 
 ⚠️ **GAP CONHECIDO, NÃO RECONSTRUÍDO NESTA RODADA (herdado, mais um layer):**
 entre o HEAD anterior registrado aqui (`22f9db8`, 14/08) e o início da sessão
@@ -348,6 +359,82 @@ NÃO VERIFICADA.
 
 **UI do Modo B e teste pago ficam para o próximo bloco** — não iniciados
 nesta sessão, por instrução explícita.
+
+---
+
+## 13 · Cartão Simples + multi-vendor de avatar, Fases A e B (22/08/2026)
+
+**Custo: US$ 0,00.** `PROVIDER_MODE=fixture` do início ao fim; migration 060
+aplicada só no banco de DEV, nunca produção.
+
+**Achado em ensaio manual pelo operador**: tenant fal-only escolhe o cartão
+"Simples" e recebe um vídeo idêntico ao "Normal" — mesmo motor (Wan), mesmo
+custo, sem aviso. Causa raiz confirmada por leitura + execução:
+`videoTierParaPipeline` (`falPipeline.ts`) só conhece `"normal"`/`"premium"`
+como `PipelineTier`, e o vendor (heygen/fal) já é decidido por
+`routes/videos.ts` pela credencial FIXA do tenant, antes de `tier_video` ser
+consultado. Correção IMEDIATA (`a03d6ab`, escopo fechado — sem mexer no
+roteamento): `GenerateStep.tsx` consulta `GET /credentials` e desabilita o
+cartão "Simples" quando o avatar não está no vendor HeyGen, com legenda que
+nunca nomeia o fornecedor. 3 mutantes (`checkTierAvailabilityPolicy.ts`,
+lógica avaliada), gate verde, `tsc` limpo nos dois lados.
+
+**Decisão de produto que isso abriu**: tenant vai poder ter MAIS DE UM
+vendor de avatar ao mesmo tempo, e `tier_video` decide qual usar por vídeo.
+Plano em 4 fases (A/B/C/D), cada uma aprovada explicitamente antes da
+próxima — ver [PLANO-MESTRE-SEQUENCIAL.md §2.5](PLANO-MESTRE-SEQUENCIAL.md)
+para o detalhe completo de cada fase. Resumo:
+
+- **Fase A (fechada, `20a4240`)** — migration 060: `api_credentials` troca
+  `UNIQUE (tenant_id, provider)` por três índices parciais —
+  `api_credentials_tenant_provider_key` (voice/script, mesma garantia de
+  sempre), `api_credentials_tenant_avatar_vendor_key` (avatar, uma linha
+  por vendor, `NULLS NOT DISTINCT` preserva as linhas legadas sem vendor),
+  `api_credentials_tenant_avatar_default_key` (no máximo uma linha
+  `is_default=true` por tenant — PROPOSTO pelo assistente além do pedido
+  original, aprovado pelo operador: "prefiro erro alto e imediato a
+  não-determinismo silencioso em produção"). Coluna `is_default` nova,
+  backfill automático via `ADD COLUMN ... DEFAULT true` (sem `UPDATE`
+  separado). Verificado por SELECT fresco (102 linhas antes/depois, hash
+  idêntico) + os 3 índices testados AO VIVO numa transação revertida.
+  **Sem mutante declarado** — mutar o texto da migration não afeta o schema
+  já aplicado (`npm run check` não roda migrations de novo); seria
+  estruturalmente INERTE, o defeito que este projeto proíbe.
+- **Fase B (fechada, `5192168` + `4c5b66c`)** — admin "Integrações por
+  tenant" vira multi-seleção para avatar. Backend (`adminPanel.ts`): o
+  `PUT` de credenciais bifurca por provider, mirando o índice parcial
+  certo em cada `ON CONFLICT`; a primeira credencial de avatar do tenant
+  nasce `is_default=true`, as seguintes nascem `false`;
+  `/credentials/:provider/test` aceita `?vendor=`. Frontend:
+  `AvatarCredentialsCard.tsx` (novo, compartilhado entre os dois editores
+  que já existiam) — uma linha por vendor configurado + bloco para
+  adicionar um vendor novo; `updateCredential` corrigido nos dois arquivos
+  para casar por `(provider,vendor)` só no avatar. **Verificado por HTTP
+  real** (sessão de admin montada no banco, nunca senha): heygen primeiro
+  → `is_default:true`, fal segundo → `is_default:false`, resalvar heygen
+  → `is_default` intacto, GET final com as duas linhas, teste por vendor
+  funcionando. 6 mutantes novos (`checkAvatarMultiVendorPolicy.ts`), todos
+  provados reprovando.
+- **Fase C (NÃO INICIADA)** — os 3 call sites de `routes/videos.ts`
+  (criação, aprovação, `rearmVideoPolling`) passam a escolher a credencial
+  pelo vendor exigido pelo `tier_video`, não mais pela credencial fixa do
+  tenant. Bloqueada por aprovação explícita do operador.
+- **Fase D (NÃO INICIADA)** — primeiro vídeo tier Simples de verdade
+  roteando pra HeyGen, ainda em fixture. Bloqueada até C ser aprovada.
+
+**Dois achados reais no caminho da Fase B, os dois corrigidos antes de
+fechar — viram gotchas no §3 abaixo**: (1) um bug genuíno de produto — a
+rota de credenciais devolvia 500 (`42P10`, `ON CONFLICT` sem `WHERE`
+casando nenhum índice) porque o backend não recarrega sozinho; (2) uma
+guarda MINHA saiu INERTE porque a checagem casava com um comentário, não
+com o código.
+
+⚠️ **Verificação visual pelo navegador ficou bloqueada nesta sessão
+inteira** (correção do cartão Simples e Fase B) — mesmo cookie de sessão
+que autentica com sucesso direto contra o backend falha em toda tentativa
+pela automação de navegador. NÃO investigado a fundo (Traefik descartado
+como causa). Toda verificação de UI desta sessão foi por HTTP direto, nunca
+por captura de tela. Ver gotcha detalhado no §3.
 
 ---
 
@@ -1068,6 +1155,47 @@ aqui.**
    DIFERENTES (aqui: o `if` externo guarda-chuva vs. um `if` interno de
    escolha de mensagem, alvos de invariantes genuinamente distintas) resolve
    sem reduzir cobertura.
+17. **O backend roda com `tsx src/index.ts` (script `serve`), SEM
+   `--watch`** — só `dev` (`tsx watch`) recarrega sozinho, e é `serve` que
+   `docker-entrypoint.sh` usa em todo ambiente deste projeto. Editar uma
+   rota e testar contra o processo HTTP vivo continua batendo no código
+   ANTIGO até um `docker compose restart backend` manual. MEDIDO em 22/08
+   como bug real, não hipotético: o primeiro ensaio HTTP da Fase B (§13)
+   devolveu 500 (`42P10`, `ON CONFLICT` sem `WHERE` casando nenhum índice)
+   porque o processo não tinha sido reiniciado depois da edição — a query
+   em si estava certa o tempo todo, e o tempo perdido foi todo de
+   diagnóstico. **Isto NÃO afeta `npm run check`** (o gate): cada invocação
+   roda `tsx` fresco, lê o arquivo do zero — só o SERVIDOR de pé é que
+   fica com código velho.
+18. **Uma guarda por `string.includes(...)` pode casar com um COMENTÁRIO,
+   não com o código, e sai INERTE sem avisar.** MEDIDO em 22/08:
+   `checkAvatarMultiVendorPolicy.ts` procurava `"req.query.vendor"` no
+   recorte de uma rota, e o comentário explicativo logo ACIMA da query
+   também continha esse texto — mutar o código real (remover o uso
+   funcional) não mudava o veredito da guarda, porque o comentário sozinho
+   já bastava pro `includes()` achar verdadeiro. Corrigido trocando a
+   âncora para um trecho que só existe em código executável (o array de
+   parâmetros da query: `[tenantId, provider, req.query.vendor]`, nunca
+   escrito em prosa). Ao escrever guarda por FORMA, prefira âncoras que não
+   têm como aparecer num comentário explicativo sobre a MESMA coisa que o
+   código faz — e teste o mutante à mão antes de declarar provado, sempre
+   (a regra de sempre, reforçada por este caso específico de colisão).
+19. **Verificação visual pelo navegador ficou bloqueada na sessão de
+   22/08 inteira, gotcha NÃO RESOLVIDO.** A sessão (de tenant OU de admin)
+   autentica com sucesso quando testada direto contra o backend
+   (`fetch`/`curl` interno, sem passar pelo navegador — 200, identidade
+   correta), mas o MESMO cookie falha (401) em toda tentativa pela
+   automação de navegador desta sessão — fetch com `credentials:'include'`,
+   `SameSite=Lax` explícito, e até navegação completa de página (não só
+   XHR). Traefik foi DESCARTADO como causa: é proxy transparente para
+   `/api/*` (só `stripPrefix`, sem middleware de cookie), e CORS já está
+   com `credentials:true`. **NÃO investigado além disso** — a hipótese mais
+   provável é uma política de cookie do próprio ambiente de navegador
+   automatizado, não um bug do app, mas isso é DEDUZIDO, não confirmado.
+   Enquanto durar, verificação de UI depende inteiramente de HTTP direto
+   (sessão montada no banco + `fetch`/`curl` contra o backend, nunca
+   captura de tela real) — mais trabalhoso, mas já provado suficiente para
+   fechar a Fase B com confiança.
 
 ## 4 · Invocações exatas
 
@@ -1129,6 +1257,17 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 ## 5 · Desfecho da última passada completa — LEIA ISTO PRIMEIRO
 
 *(preenchido no último commit de cada sessão)*
+
+⚠️ **Esta é a última passada completa MEDIDA — HEAD `4c5b66c` (fim de
+22/08) já está 4 commits À FRENTE dela.** Por mudança de processo desta
+sessão (§3, gotcha correlato no CLAUDE.md), a completa não roda mais a
+cada commit intermediário — só uma vez, no fim de um bloco de trabalho
+inteiro. Os 4 commits desde `fc6f7d6` (Fase 1 HTTP, cartão Simples, Fase
+A, Fase B) foram fechados só com passada FILTRADA, cada mutante novo
+provado individualmente — real, mas não é a mesma garantia de uma
+completa. **Não leia o "296/296" abaixo como o estado ATUAL do arnês**
+(hoje são 305 mutantes declarados) — é o histórico da última vez que a
+completa rodou de verdade.
 
 **A passada COMPLETA do fecho da FASE 2 (Modo B): 296/296, zero INERTE,
 zero AMBÍGUO, zero ERRO, zero FALHOU.** HEAD `fc6f7d6`. Log em
@@ -1258,6 +1397,12 @@ Aquele log está em `mutants-227-2026-08-12-a.log` e não vale como desfecho.
 
 ## 7 · Dívidas abertas
 
+- **Fase C (multi-vendor por tier em `routes/videos.ts`) e Fase D (primeiro
+  teste real HeyGen) NÃO INICIADAS.** Fases A (migration 060) e B (admin
+  multi-vendor) fechadas e aprovadas — ver §13. Bloqueadas por aprovação
+  explícita do operador, não por falta de desenho: os 3 call sites e a
+  regra de fallback já estão descritos em §13 e no
+  [PLANO-MESTRE-SEQUENCIAL.md](PLANO-MESTRE-SEQUENCIAL.md), §2.5.
 - 🔴 **O FRONTEND ATUAL FICA PRESO EM `awaiting_approval_video`.** Aberta em
   21/08 (FASE 2/Modo B, ver §12). `frontend/src/types.ts` (`VideoStatus`) e
   `GenerateStep.tsx` (`PROGRESS_BY_STATUS`, o botão "Aprovar") só conhecem
