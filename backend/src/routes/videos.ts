@@ -45,6 +45,7 @@ import { logEvent } from "../services/log/safeLog.js";
 import { evaluateGenerationReadiness } from "../services/generationReadiness.js";
 import {
   CONFIRM_ABOVE_SECONDS,
+  COST_REFERENCE_SECONDS,
   MAX_SCRIPT_SECONDS,
   estimateSecondsFromChars,
   estimateSecondsFromScript,
@@ -679,6 +680,39 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       };
     },
   );
+
+  /**
+   * TABELA orientativa de duração×custo, para o passo Roteiro — E3,
+   * 22/08/2026. Pontos fixos de segundos (`COST_REFERENCE_SECONDS`), custo
+   * de cada um pela MESMA função de sempre (`estimateVideoCost`) — nunca
+   * uma tabela calculada no cliente, mesmo motivo de `/video-cost-estimate`
+   * logo acima.
+   *
+   * `tier` decide o VENDOR (`vendorRequiredByTier`), não a credencial: os
+   * pontos são "quanto custaria SE você gerasse N segundos neste nível",
+   * antes de qualquer roteiro existir — não depende de o tenant já ter a
+   * credencial conectada, e por isso não consulta o banco. Sem `tier`
+   * válido, cai no tier default do produto (`DEFAULT_VIDEO_TIER`), mesmo
+   * padrão de `isVideoTier(...) ? ... : DEFAULT_VIDEO_TIER` já usado na
+   * criação.
+   */
+  app.get<{ Querystring: { tier?: string } }>("/video-cost-reference", async (req) => {
+    const tierBruto = req.query.tier;
+    const tier = isVideoTier(tierBruto) ? tierBruto : DEFAULT_VIDEO_TIER;
+    const vendor = vendorRequiredByTier(tier);
+    return {
+      tier,
+      vendor,
+      points: COST_REFERENCE_SECONDS.map((seconds) => {
+        const cost = estimateVideoCost(seconds, vendor);
+        return {
+          seconds,
+          costUsd: cost.known ? cost.usd : null,
+          costUnknownReason: cost.known ? null : cost.explanation,
+        };
+      }),
+    };
+  });
 
   /**
    * "Dá para gerar agora, e se não, por quê?" — a MESMA função que

@@ -45,6 +45,7 @@ import { checkBackupPolicy } from "./checkBackupPolicy.js";
 import { checkHeygenSpendCapPolicy } from "./checkHeygenSpendCapPolicy.js";
 import { checkSimpleConfirmPolicy } from "./checkSimpleConfirmPolicy.js";
 import { checkFrontendBundleFreshnessPolicy } from "./checkFrontendBundleFreshnessPolicy.js";
+import { checkCostReferencePolicy } from "./checkCostReferencePolicy.js";
 import { checkSingleDomainPolicy } from "./checkSingleDomainPolicy.js";
 import { checkTenantOnboardingPolicy } from "./checkTenantOnboardingPolicy.js";
 import { checkEmailVerificationPolicy } from "./checkEmailVerificationPolicy.js";
@@ -551,6 +552,11 @@ async function main(): Promise<void> {
   const bundleFreshnessResult = await checkFrontendBundleFreshnessPolicy(process.env.REPO_ROOT ?? "/repo");
   bundleFreshnessResult.failures.forEach((f) => failures.push(f));
   bundleFreshnessResult.notes.forEach((n) => note(n));
+
+  // --- 18i. tabela de custo por duração: calculada de verdade, nunca fixa
+  const costReferenceResult = checkCostReferencePolicy(process.env.REPO_ROOT ?? "/repo");
+  costReferenceResult.failures.forEach((f) => failures.push(f));
+  costReferenceResult.notes.forEach((n) => note(n));
 
   // --- 18c. domínio único: sem redirect de subdomínio, e-mail único global
   const singleDomainResult = await checkSingleDomainPolicy(process.env.REPO_ROOT ?? "/repo");

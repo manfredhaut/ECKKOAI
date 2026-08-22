@@ -173,6 +173,7 @@ export function CreateVideoPage() {
           onTargetDurationChange={(targetDurationSeconds) =>
             setWizard((w) => ({ ...w, targetDurationSeconds }))
           }
+          tierVideo={wizard.tierVideo}
         />
       )}
       {step === 2 && (

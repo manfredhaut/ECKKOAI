@@ -299,6 +299,7 @@ function StepUnderGlass({
           onChange={noop}
           targetDurationSeconds={wizard.targetDurationSeconds}
           onTargetDurationChange={noop}
+          tierVideo={wizard.tierVideo}
         />
       );
     case "passo3-cena":

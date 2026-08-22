@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
 import { ScriptCounter } from "../ScriptCounter";
+import { DurationCostReference } from "../DurationCostReference";
 import { TARGET_DURATION_MAX_SECONDS, TARGET_DURATION_OPTIONS } from "../targetDuration";
 
 export function ScriptStep({
@@ -10,12 +11,20 @@ export function ScriptStep({
   onChange,
   targetDurationSeconds,
   onTargetDurationChange,
+  tierVideo,
 }: {
   script: string;
   onChange: (script: string) => void;
   /** `null` = sem escolha ainda — nem chip, nem "mais" preenchido. Ver `types.ts`. */
   targetDurationSeconds: number | null;
   onTargetDurationChange: (value: number | null) => void;
+  /**
+   * O tier ATUAL do wizard (default "normal" — `types.ts`), só para a
+   * tabela de referência de custo. Escolhido de verdade no passo Gerar;
+   * aqui é só "o que já está selecionado agora", e atualiza sozinho se a
+   * pessoa voltar depois de trocar de nível.
+   */
+  tierVideo: "simples" | "normal" | "premium";
 }) {
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState("");
@@ -138,6 +147,7 @@ export function ScriptStep({
             no fim, quem escreve descobre que o roteiro é caro depois de já ter
             escrito. Aqui o número muda enquanto se digita. */}
         <ScriptCounter script={script} targetDurationSeconds={targetDurationSeconds} />
+        <DurationCostReference tier={tierVideo} />
       </Field>
 
       <div style={{ maxWidth: 480 }}>

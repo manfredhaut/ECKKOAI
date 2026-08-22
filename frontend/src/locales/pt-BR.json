@@ -608,6 +608,11 @@
         "customPlaceholder": "duração em segundos (até {{max}})",
         "limit": "Para {{targetSeconds}} s, até {{targetChars}} caracteres.",
         "tooLong": "Acima da duração-alvo de {{targetSeconds}} s ({{targetChars}} caracteres). A geração será recusada e nada será cobrado — o texto não é cortado automaticamente. Encurte o roteiro, divida em mais de um vídeo, ou escolha uma duração-alvo maior."
+      },
+      "costReference": {
+        "toggle": "Ver custo estimado por duração",
+        "durationHeader": "Duração",
+        "costHeader": "Custo estimado"
       }
     },
     "assets": {
