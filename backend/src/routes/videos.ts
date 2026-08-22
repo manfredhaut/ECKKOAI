@@ -80,6 +80,7 @@ import {
   escolherDuracao,
   isVideoTier,
   maxReachableSecondsForTier,
+  PRECOS_FAL,
   runFalPipelineDaImagem,
   runFalPipelineDoVideoMudo,
   videoTierParaPipeline,
@@ -669,6 +670,14 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           costUsd: estimate.known ? estimate.usd : null,
           costUnknownReason: estimate.known ? null : estimate.explanation,
         },
+        // O CUSTO FIXO DA COMPOSIÇÃO — G3, 22/08/2026. `null` para "simples"
+        // (HeyGen não tem etapa de composição; a chamada única já anima).
+        // Para "normal"/"premium" é sempre PRECOS_FAL.comporUsd: é o único
+        // gasto que o diálogo de confirmação pode afirmar com certeza ANTES
+        // do clique — animar (Wan/Seedance) e narrar+sincronizar têm
+        // aprovação própria, DEPOIS de cada etapa paga, exatamente porque o
+        // custo delas não é fixo. Ver GenerateStep.tsx.
+        composeCostUsd: tier === "normal" || tier === "premium" ? PRECOS_FAL.comporUsd : null,
         // O teto DIÁRIO viaja com a estimativa para a tela poder avisar antes do
         // clique, e não depois do 429. É leitura: quem recusa continua sendo o
         // servidor, na rota de criação.

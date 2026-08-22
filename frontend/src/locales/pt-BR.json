@@ -734,6 +734,11 @@
         "correct": "Corrigir",
         "confirm": "Confirmar e gerar",
         "noteHint": "Nota da última correção: \"{{note}}\""
+      },
+      "falConfirm": {
+        "intro": "Este nível compõe a imagem antes de animar — a composição custa um valor FIXO, cobrado já na primeira etapa. Animar e narrar+sincronizar vêm depois, e cada uma delas pede sua própria aprovação antes de gastar.",
+        "composeCost": "Custo da composição",
+        "animationNote": "Depois de compor, você vê a imagem e aprova (ou pede para refazer) antes de animar — e o vídeo mudo antes de narrar e sincronizar. Nada disso é cobrado agora."
       }
     },
     "blocked": {

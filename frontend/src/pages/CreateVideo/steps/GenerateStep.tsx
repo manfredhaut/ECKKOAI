@@ -313,6 +313,8 @@ export function GenerateStep({
     requiresConfirmation: boolean;
     confirmAboveSeconds: number;
     estimate: { costUsd: number | null; costUnknownReason: string | null };
+    /** G3 — só não-`null` para "normal"/"premium". Ver o diálogo abaixo. */
+    composeCostUsd: number | null;
   } | null>(null);
   const [confirmedLong, setConfirmedLong] = useState(false);
   // Roteiro novo, confirmação nova: a duração que foi confirmada não é mais a
@@ -323,7 +325,8 @@ export function GenerateStep({
   const blocked = readiness === null || !readiness.ready || (needsConfirm && !confirmedLong);
 
   /**
-   * CONFIRMAÇÃO EXPLÍCITA para o tier Simples/HeyGen — T3, 22/08/2026.
+   * CONFIRMAÇÃO EXPLÍCITA antes de qualquer chamada paga — T3 (Simples,
+   * 22/08/2026) estendida a Normal/Premium em G3, mesma data.
    *
    * O tier Simples dispara DIRETO no fornecedor: diferente do fal (que
    * pausa depois de UMA chamada paga, na composição, para aprovar ANTES da
@@ -333,12 +336,19 @@ export function GenerateStep({
    * fornecedor não tem. O que existe é ANTES de qualquer chamada: um
    * resumo do pedido, com um clique extra para confirmar.
    *
-   * NENHUM estado novo em `videos.status`, NENHUM artefato pago — é
-   * inteiramente do lado do cliente, antes de `POST /videos` existir. Ver
-   * o comentário do botão "Gerar vídeo" abaixo para a diferença registrada
-   * contra o Modo B da fal.
+   * Normal/Premium JÁ TÊM uma pausa depois da composição
+   * (`awaiting_approval`, ver o bloco mais abaixo) — mas essa pausa é DEPOIS
+   * de `PRECOS_FAL.comporUsd` (US$ 0,08) já ter sido gasto. Este diálogo é
+   * ANTES disso: mostra o custo FIXO da composição (o único número que dá
+   * para afirmar com certeza aqui — animar e narrar+sincronizar não têm
+   * preço fixo, e por isso têm aprovação própria depois) e deixa claro que
+   * o resto da corrida ainda vai pedir aprovação, etapa por etapa.
+   *
+   * NENHUM estado novo em `videos.status`, NENHUM artefato pago além do que
+   * `POST /videos` já dispara — é inteiramente do lado do cliente, antes de
+   * qualquer chamada paga existir.
    */
-  const [showSimpleConfirm, setShowSimpleConfirm] = useState(false);
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [correctionNote, setCorrectionNote] = useState("");
   const [lastCorrectionNote, setLastCorrectionNote] = useState("");
   // Roteiro novo: a nota da correção anterior já não fala do que está na
@@ -346,12 +356,8 @@ export function GenerateStep({
   useEffect(() => setLastCorrectionNote(""), [wizard.script]);
 
   function handleGenerateClick() {
-    if (wizard.tierVideo === "simples") {
-      setCorrectionNote("");
-      setShowSimpleConfirm(true);
-      return;
-    }
-    void handleGenerate();
+    setCorrectionNote("");
+    setShowGenerateConfirm(true);
   }
 
   /**
@@ -359,14 +365,14 @@ export function GenerateStep({
    * o texto digitado como referência, para a pessoa ajustar manualmente os
    * campos do wizard. Nenhuma chamada de rede, nenhum estado de vídeo.
    */
-  function handleSimpleConfirmCorrect() {
+  function handleConfirmDialogCorrect() {
     setLastCorrectionNote(correctionNote);
-    setShowSimpleConfirm(false);
+    setShowGenerateConfirm(false);
   }
 
   /** "Confirmar e gerar" — o único caminho que dispara `POST /videos` daqui. */
-  function handleSimpleConfirmGenerate() {
-    setShowSimpleConfirm(false);
+  function handleConfirmDialogGenerate() {
+    setShowGenerateConfirm(false);
     void handleGenerate();
   }
 
@@ -683,28 +689,32 @@ export function GenerateStep({
                 atual &&
                 atual.estimatedSeconds === info.estimatedSeconds &&
                 atual.requiresConfirmation === info.requiresConfirmation &&
-                atual.estimate.costUsd === info.estimate.costUsd
+                atual.estimate.costUsd === info.estimate.costUsd &&
+                atual.composeCostUsd === info.composeCostUsd
                   ? atual
                   : info,
               )
             }
           />
 
-          {/* DIÁLOGO DE CONFIRMAÇÃO — só tier Simples/HeyGen. Nenhum estado
-              novo em `videos.status`, nenhuma chamada de rede além da que
+          {/* DIÁLOGO DE CONFIRMAÇÃO — os TRÊS níveis, G3 (22/08/2026)
+              estendendo o T3 (só Simples). Nenhum estado novo em
+              `videos.status`, nenhuma chamada de rede além da que
               `POST /videos` já faria — é inteiramente do lado do cliente,
               ANTES de qualquer chamada paga existir. Diferença registrada
-              contra o Modo B da fal: lá a pausa é DEPOIS de uma chamada paga
-              já ter saído (aprovar o que já foi gerado); aqui é ANTES de
-              qualquer chamada paga existir (confirmar o que está prestes a
-              ser gerado). */}
-          {showSimpleConfirm && (
+              contra o Modo B da fal (o bloco `awaiting_approval` mais
+              abaixo): lá a pausa é DEPOIS de uma chamada paga já ter saído
+              (aprovar o que já foi gerado); aqui é ANTES de qualquer chamada
+              paga existir (confirmar o que está prestes a ser gerado) — para
+              Normal/Premium as duas pausas convivem, uma antes da
+              composição e outra depois dela. */}
+          {showGenerateConfirm && (
             <div
               role="dialog"
               aria-modal="true"
-              aria-labelledby="simple-confirm-title"
+              aria-labelledby="generate-confirm-title"
               onClick={(e) => {
-                if (e.target === e.currentTarget) handleSimpleConfirmCorrect();
+                if (e.target === e.currentTarget) handleConfirmDialogCorrect();
               }}
               style={{
                 position: "fixed",
@@ -729,11 +739,15 @@ export function GenerateStep({
                   overflowY: "auto",
                 }}
               >
-                <h3 id="simple-confirm-title" style={{ marginTop: 0, fontSize: 16 }}>
+                <h3 id="generate-confirm-title" style={{ marginTop: 0, fontSize: 16 }}>
                   {t("createVideo.generate.simpleConfirm.title")}
                 </h3>
                 <p className="text-muted" style={{ fontSize: 13 }}>
-                  {t("createVideo.generate.simpleConfirm.intro")}
+                  {t(
+                    wizard.tierVideo === "simples"
+                      ? "createVideo.generate.simpleConfirm.intro"
+                      : "createVideo.generate.falConfirm.intro",
+                  )}
                 </p>
 
                 <div style={{ fontSize: 13, marginBottom: 4 }}>
@@ -746,13 +760,31 @@ export function GenerateStep({
                       <strong>{t("createVideo.generate.simpleConfirm.estimatedDuration")}:</strong>{" "}
                       {estimate.estimatedSeconds.toFixed(0)} s
                     </div>
-                    <div style={{ fontSize: 13, marginBottom: 4 }}>
-                      <strong>{t("createVideo.generate.simpleConfirm.estimatedCost")}:</strong>{" "}
-                      {estimate.estimate.costUsd != null
-                        ? `US$ ${estimate.estimate.costUsd.toFixed(2).replace(".", ",")}`
-                        : t("createVideo.cost.notMeasured")}
-                    </div>
+                    {wizard.tierVideo === "simples" ? (
+                      <div style={{ fontSize: 13, marginBottom: 4 }}>
+                        <strong>{t("createVideo.generate.simpleConfirm.estimatedCost")}:</strong>{" "}
+                        {estimate.estimate.costUsd != null
+                          ? `US$ ${estimate.estimate.costUsd.toFixed(2).replace(".", ",")}`
+                          : t("createVideo.cost.notMeasured")}
+                      </div>
+                    ) : (
+                      // O CUSTO FIXO da composição — o único número certo antes
+                      // do clique neste caminho. Vem PRONTO do servidor
+                      // (`/video-cost-estimate`, campo `composeCostUsd`,
+                      // `PRECOS_FAL.comporUsd`) — nunca escrito aqui.
+                      <div style={{ fontSize: 13, marginBottom: 4 }}>
+                        <strong>{t("createVideo.generate.falConfirm.composeCost")}:</strong>{" "}
+                        {estimate.composeCostUsd != null
+                          ? `US$ ${estimate.composeCostUsd.toFixed(2).replace(".", ",")}`
+                          : t("createVideo.cost.notMeasured")}
+                      </div>
+                    )}
                   </>
+                )}
+                {wizard.tierVideo !== "simples" && (
+                  <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+                    {t("createVideo.generate.falConfirm.animationNote")}
+                  </p>
                 )}
 
                 {/* Resumo completo (avatar, traje, fundo, interpretação,
@@ -772,10 +804,10 @@ export function GenerateStep({
                 </div>
 
                 <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-                  <button type="button" className="btn btn-outline" onClick={handleSimpleConfirmCorrect}>
+                  <button type="button" className="btn btn-outline" onClick={handleConfirmDialogCorrect}>
                     {t("createVideo.generate.simpleConfirm.correct")}
                   </button>
-                  <button type="button" className="btn btn-primary" onClick={handleSimpleConfirmGenerate}>
+                  <button type="button" className="btn btn-primary" onClick={handleConfirmDialogGenerate}>
                     {t("createVideo.generate.simpleConfirm.confirm")}
                   </button>
                 </div>

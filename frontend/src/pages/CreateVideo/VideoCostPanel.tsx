@@ -47,6 +47,13 @@ export interface CostResponse {
   targetMaxChars: number | null;
   exceedsTarget: boolean | null;
   estimate: { costUsd: number | null; costUnknownReason: string | null };
+  /**
+   * O custo FIXO da composição (fal, "normal"/"premium") — `null` para
+   * "simples", que não tem etapa de composição. G3, 22/08/2026: é o único
+   * número que o diálogo de confirmação pode afirmar com certeza antes do
+   * clique, porque animar e narrar+sincronizar têm aprovação própria depois.
+   */
+  composeCostUsd: number | null;
   actual: {
     seconds: number;
     unitSource: string | null;
@@ -108,7 +115,10 @@ export function VideoCostPanel({
    * vezes nem reimplementar a comparação.
    */
   onEstimate?: (
-    info: Pick<CostResponse, "estimatedSeconds" | "requiresConfirmation" | "confirmAboveSeconds" | "estimate">,
+    info: Pick<
+      CostResponse,
+      "estimatedSeconds" | "requiresConfirmation" | "confirmAboveSeconds" | "estimate" | "composeCostUsd"
+    >,
   ) => void;
 }) {
   const { t } = useTranslation();

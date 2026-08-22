@@ -734,6 +734,11 @@
         "correct": "Fix it",
         "confirm": "Confirm and generate",
         "noteHint": "Note from the last correction: \"{{note}}\""
+      },
+      "falConfirm": {
+        "intro": "This tier composes the image before animating it — composition has a FIXED cost, charged at that first step. Animating and narrating+syncing come after, and each of them asks for its own approval before spending.",
+        "composeCost": "Composition cost",
+        "animationNote": "After composing, you'll see the image and approve it (or ask for a redo) before animating — and the muted video before narrating and syncing. None of that is charged yet."
       }
     },
     "blocked": {
