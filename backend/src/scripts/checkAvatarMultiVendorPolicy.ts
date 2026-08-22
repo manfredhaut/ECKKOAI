@@ -343,7 +343,12 @@ export function checkAvatarMultiVendorPolicy(repoRoot: string): AvatarMultiVendo
     );
   } else {
     const trechoTest = rota.slice(inicioTest, fimTest);
-    if (!trechoTest.includes("req.query.vendor")) {
+    // ÂNCORA DE CÓDIGO, não de prosa: o comentário logo acima da query
+    // também menciona `req.query.vendor` em texto explicativo — um
+    // `includes("req.query.vendor")` sozinho casava com o COMENTÁRIO e
+    // ficava INERTE quando o CÓDIGO era mutado (MEDIDO nesta sessão,
+    // mutação testada à mão). O array de parâmetros só existe no código.
+    if (!trechoTest.includes("[tenantId, provider, req.query.vendor]")) {
       failures.push(
         "avatar multi-vendor: a rota de teste ignora o vendor da query string — com um tenant que tem mais " +
           "de uma linha de avatar, \"Testar\" no card do fal (ou de qualquer vendor) testaria uma linha " +
