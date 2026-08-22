@@ -677,6 +677,7 @@ export function GenerateStep({
               da compra. */}
           <VideoCostPanel
             scriptChars={wizard.script.length}
+            tier={wizard.tierVideo}
             onEstimate={(info) =>
               setEstimate((atual) =>
                 atual &&

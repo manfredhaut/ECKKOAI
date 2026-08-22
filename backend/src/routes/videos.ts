@@ -603,67 +603,82 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * conceitualmente com `/videos/:id`, e depender da ordem de resolução do
    * roteador para desempatar é o tipo de sutileza que quebra em silêncio.
    */
-  app.get<{ Querystring: { chars?: string; targetSeconds?: string } }>("/video-cost-estimate", async (req) => {
-    // A CONTAGEM de caracteres, nunca o roteiro. O texto é conteúdo do cliente
-    // e numa query string iria parar no log de acesso, no histórico e no
-    // referer — o mesmo motivo que fez `/videos/readiness` ser POST. Para
-    // estimar duração, o comprimento é tudo o que se precisa.
-    const chars = Number(req.query.chars);
-    const scriptChars = Number.isFinite(chars) && chars > 0 ? Math.floor(chars) : 0;
-    const estimatedSeconds = estimateSecondsFromChars(scriptChars);
-    const credential = await getCredential(req.tenantId, "avatar");
-    const estimate = estimateVideoCost(estimatedSeconds, credential?.vendor ?? "heygen");
+  app.get<{ Querystring: { chars?: string; targetSeconds?: string; tier?: string } }>(
+    "/video-cost-estimate",
+    async (req) => {
+      // A CONTAGEM de caracteres, nunca o roteiro. O texto é conteúdo do cliente
+      // e numa query string iria parar no log de acesso, no histórico e no
+      // referer — o mesmo motivo que fez `/videos/readiness` ser POST. Para
+      // estimar duração, o comprimento é tudo o que se precisa.
+      const chars = Number(req.query.chars);
+      const scriptChars = Number.isFinite(chars) && chars > 0 ? Math.floor(chars) : 0;
+      const estimatedSeconds = estimateSecondsFromChars(scriptChars);
+      // `?tier=` é OPCIONAL, MESMA razão de `/video-format-support` logo acima:
+      // o painel de custo também é montado no passo Roteiro (via `ScriptCounter`),
+      // antes de o tier existir — SEM `tier`, cai no comportamento de sempre
+      // (credencial DEFAULT do tenant). COM `tier` (chamado do passo Gerar, pelo
+      // diálogo de confirmação do Simples/HeyGen — achado #2 do ensaio de
+      // 22/08/2026: o diálogo mostrava "sem medição" para um tenant fal-default
+      // mesmo com "Simples" escolhido, porque esta rota nunca soube do tier),
+      // o vendor é o EXIGIDO por aquele tier, nunca o default.
+      const tierBruto = req.query.tier;
+      const tier = isVideoTier(tierBruto) ? tierBruto : null;
+      const credential = tier
+        ? await getCredentialForVendor(req.tenantId, "avatar", vendorRequiredByTier(tier))
+        : await getCredential(req.tenantId, "avatar");
+      const estimate = estimateVideoCost(estimatedSeconds, credential?.vendor ?? "heygen");
 
-    // A DURAÇÃO-ALVO do passo Roteiro (15/30/45/60 s), quando presente. Só
-    // ALIMENTA campos NOVOS (abaixo) — `maxScriptSeconds`/`maxScriptChars`/
-    // `exceedsMaxScript` continuam sendo sempre o teto GLOBAL, sem exceção:
-    // outros consumidores desta mesma rota (o painel de custo do passo Gerar,
-    // que nunca manda `targetSeconds`) dependem deles significarem sempre a
-    // mesma coisa.
-    const targetRaw = Number(req.query.targetSeconds);
-    const targetDurationSeconds = isTargetDurationSeconds(targetRaw) ? targetRaw : null;
+      // A DURAÇÃO-ALVO do passo Roteiro (15/30/45/60 s), quando presente. Só
+      // ALIMENTA campos NOVOS (abaixo) — `maxScriptSeconds`/`maxScriptChars`/
+      // `exceedsMaxScript` continuam sendo sempre o teto GLOBAL, sem exceção:
+      // outros consumidores desta mesma rota (o painel de custo do passo Gerar,
+      // que nunca manda `targetSeconds`) dependem deles significarem sempre a
+      // mesma coisa.
+      const targetRaw = Number(req.query.targetSeconds);
+      const targetDurationSeconds = isTargetDurationSeconds(targetRaw) ? targetRaw : null;
 
-    return {
-      // Estimada, e não pedida: desde o bloco DURAÇÃO-1 não existe mais duração
-      // pedida. O passo 3 do assistente escolhia 15/30/60 s e nada no caminho
-      // até o fornecedor lia esse número.
-      estimatedSeconds,
-      scriptChars,
-      pacing: scriptDurationBasis(),
-      // O teto vem do SERVIDOR, junto do veredito. Uma tela que reimplementa a
-      // comparação passa a discordar do servidor no dia em que o teto mudar.
-      confirmAboveSeconds: CONFIRM_ABOVE_SECONDS,
-      requiresConfirmation: requiresLongVideoConfirmation(estimatedSeconds),
-      // O TETO DURO viaja junto, nas duas unidades, pelo mesmo motivo do teto
-      // diário logo abaixo: a tela precisa contar caracteres enquanto alguém
-      // digita, e a única alternativa a receber o número pronto seria
-      // recalculá-lo no cliente — uma segunda régua, que é exatamente o defeito
-      // que `scriptDuration.ts` fecha. Quem RECUSA continua sendo o servidor,
-      // em `evaluateGenerationReadiness`.
-      maxScriptSeconds: MAX_SCRIPT_SECONDS,
-      maxScriptChars: maxScriptChars(),
-      exceedsMaxScript: estimatedSeconds > MAX_SCRIPT_SECONDS,
-      // A DURAÇÃO-ALVO — `null` quando a pessoa não escolheu nenhuma ("mais"),
-      // e nesse caso os dois campos abaixo também são `null`: a tela não tem
-      // com o que desenhar um segundo teto que não existe.
-      targetDurationSeconds,
-      targetMaxChars: targetDurationSeconds != null ? maxScriptCharsFor(targetDurationSeconds) : null,
-      exceedsTarget: targetDurationSeconds != null ? estimatedSeconds > targetDurationSeconds : null,
-      estimate: {
-        costUsd: estimate.known ? estimate.usd : null,
-        costUnknownReason: estimate.known ? null : estimate.explanation,
-      },
-      // O teto DIÁRIO viaja com a estimativa para a tela poder avisar antes do
-      // clique, e não depois do 429. É leitura: quem recusa continua sendo o
-      // servidor, na rota de criação.
-      dailyBudget: await readDailyBudget(),
-      actual: null,
-      difference: null,
-      failure: null,
-      basis: costBasisNote(),
-      simulated: isFixtureMode(),
-    };
-  });
+      return {
+        // Estimada, e não pedida: desde o bloco DURAÇÃO-1 não existe mais duração
+        // pedida. O passo 3 do assistente escolhia 15/30/60 s e nada no caminho
+        // até o fornecedor lia esse número.
+        estimatedSeconds,
+        scriptChars,
+        pacing: scriptDurationBasis(),
+        // O teto vem do SERVIDOR, junto do veredito. Uma tela que reimplementa a
+        // comparação passa a discordar do servidor no dia em que o teto mudar.
+        confirmAboveSeconds: CONFIRM_ABOVE_SECONDS,
+        requiresConfirmation: requiresLongVideoConfirmation(estimatedSeconds),
+        // O TETO DURO viaja junto, nas duas unidades, pelo mesmo motivo do teto
+        // diário logo abaixo: a tela precisa contar caracteres enquanto alguém
+        // digita, e a única alternativa a receber o número pronto seria
+        // recalculá-lo no cliente — uma segunda régua, que é exatamente o defeito
+        // que `scriptDuration.ts` fecha. Quem RECUSA continua sendo o servidor,
+        // em `evaluateGenerationReadiness`.
+        maxScriptSeconds: MAX_SCRIPT_SECONDS,
+        maxScriptChars: maxScriptChars(),
+        exceedsMaxScript: estimatedSeconds > MAX_SCRIPT_SECONDS,
+        // A DURAÇÃO-ALVO — `null` quando a pessoa não escolheu nenhuma ("mais"),
+        // e nesse caso os dois campos abaixo também são `null`: a tela não tem
+        // com o que desenhar um segundo teto que não existe.
+        targetDurationSeconds,
+        targetMaxChars: targetDurationSeconds != null ? maxScriptCharsFor(targetDurationSeconds) : null,
+        exceedsTarget: targetDurationSeconds != null ? estimatedSeconds > targetDurationSeconds : null,
+        estimate: {
+          costUsd: estimate.known ? estimate.usd : null,
+          costUnknownReason: estimate.known ? null : estimate.explanation,
+        },
+        // O teto DIÁRIO viaja com a estimativa para a tela poder avisar antes do
+        // clique, e não depois do 429. É leitura: quem recusa continua sendo o
+        // servidor, na rota de criação.
+        dailyBudget: await readDailyBudget(),
+        actual: null,
+        difference: null,
+        failure: null,
+        basis: costBasisNote(),
+        simulated: isFixtureMode(),
+      };
+    },
+  );
 
   /**
    * "Dá para gerar agora, e se não, por quê?" — a MESMA função que

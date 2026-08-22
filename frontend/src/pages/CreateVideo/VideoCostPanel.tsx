@@ -77,6 +77,7 @@ const secs = (v: number) => v.toFixed(2).replace(".", ",");
 export function VideoCostPanel({
   videoId,
   scriptChars,
+  tier,
   refreshKey,
   onEstimate,
 }: {
@@ -90,6 +91,16 @@ export function VideoCostPanel({
    * dura — o mesmo defeito que o bloco 4A tirou do banco, só que na tela.
    */
   scriptChars?: number;
+  /**
+   * O nível escolhido no passo Gerar — OPCIONAL, mesma razão de `tier` em
+   * `/video-format-support`: este painel também é montado no passo Roteiro
+   * (via `ScriptCounter`), antes de o tier existir. Sem ele, o servidor cai
+   * na credencial default do tenant, o comportamento de sempre. Achado #2 do
+   * ensaio de 22/08/2026: sem isto, o diálogo de confirmação do Simples
+   * mostrava "sem medição" para qualquer tenant cujo vendor default não
+   * fosse heygen, mesmo com "Simples" escolhido.
+   */
+  tier?: "simples" | "normal" | "premium";
   refreshKey?: unknown;
   /**
    * A estimativa, de volta para quem pediu o painel. Existe para o passo 6
@@ -106,7 +117,10 @@ export function VideoCostPanel({
   useEffect(() => {
     // As duas rotas devolvem a MESMA forma, então há um caminho de
     // renderização só — ver o comentário de /video-cost-estimate no backend.
-    const url = videoId ? `/videos/${videoId}/cost` : `/video-cost-estimate?chars=${scriptChars ?? 0}`;
+    const tierQuery = tier ? `&tier=${tier}` : "";
+    const url = videoId
+      ? `/videos/${videoId}/cost`
+      : `/video-cost-estimate?chars=${scriptChars ?? 0}${tierQuery}`;
     api
       .get<CostResponse>(url)
       .then((r) => {
@@ -117,7 +131,7 @@ export function VideoCostPanel({
     // `onEstimate` fora das dependências de propósito: é uma função nova a cada
     // render do pai, e incluí-la refaria a requisição em laço.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoId, scriptChars, refreshKey]);
+  }, [videoId, scriptChars, tier, refreshKey]);
 
   if (!cost) return null;
 

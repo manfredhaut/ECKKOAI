@@ -23,6 +23,12 @@
  *       diretamente, não a default do tenant seguida de checagem de vendor
  *  G-7  `rearmVideoPolling`: busca a credencial do vendor JÁ GRAVADO na
  *       linha (`provider_vendor`), não a default do tenant
+ *  G-8  `GET /video-cost-estimate`, quando recebe `?tier=`, busca a
+ *       credencial do vendor EXIGIDO por aquele tier — achado #2 do ensaio
+ *       de 22/08/2026: sem isto, o diálogo de confirmação do Simples
+ *       mostrava "sem medição" para um tenant fal-default com "Simples"
+ *       escolhido, porque a rota nunca soube do tier e sempre perguntava
+ *       pela credencial DEFAULT do tenant.
  *
  * ┌─ G-1, G-2, G-3, G-7 medem por EXECUÇÃO ───────────────────────────────┐
  * │ `vendorRequiredByTier`, `getCredential`, `getCredentialForVendor` e    │
@@ -198,6 +204,29 @@ export const MUTANTS: Mutant[] = [
       "  const vendorConhecido = linha.provider_vendor as AvatarVendor | null;\n" +
       '  const credential = await getCredential(linha.tenant_id, "avatar");',
     expect: "vendor por tier: rearmVideoPolling não buscou a credencial pelo vendor gravado na linha",
+  },
+  {
+    guard: "GET /video-cost-estimate: com ?tier=, busca a credencial do vendor EXIGIDO pelo tier",
+    name: "a estimativa de custo volta a usar sempre getCredential (a genérica), ignorando ?tier=",
+    kind: "esperto",
+    // ESPERTO: `isVideoTier`/`tierBruto` continuam lidos (nenhum código morto
+    // óbvio), `getCredential` existe e devolve a MESMA forma — só que um
+    // tenant com heygen+fal configurados, tier "simples" (heygen) escolhido
+    // mas fal como DEFAULT, volta a ver "sem medição" no diálogo de
+    // confirmação, porque a rota pergunta pela credencial errada. É o
+    // achado #2 do ensaio de 22/08/2026, reproduzido.
+    file: ROTA_DE_VIDEOS,
+    find:
+      "      const tierBruto = req.query.tier;\n" +
+      "      const tier = isVideoTier(tierBruto) ? tierBruto : null;\n" +
+      "      const credential = tier\n" +
+      '        ? await getCredentialForVendor(req.tenantId, "avatar", vendorRequiredByTier(tier))\n' +
+      '        : await getCredential(req.tenantId, "avatar");',
+    replace:
+      "      const tierBruto = req.query.tier;\n" +
+      "      const tier = isVideoTier(tierBruto) ? tierBruto : null;\n" +
+      '      const credential = await getCredential(req.tenantId, "avatar");',
+    expect: "vendor por tier: /video-cost-estimate ignorou ?tier= e usou a credencial default do tenant",
   },
 ];
 
@@ -487,6 +516,30 @@ export async function checkTierVendorPolicy(): Promise<TierVendorCheckResult> {
     );
   } else {
     notes.push("    vendor por tier: a aprovação busca a credencial fal diretamente, não a default do tenant");
+  }
+
+  // -------------------------------------------------------------------------
+  // G-8 — FORMA, no arquivo real. Achado #2 do ensaio de 22/08/2026.
+  // -------------------------------------------------------------------------
+  if (
+    !rota.includes(
+      "      const tierBruto = req.query.tier;\n" +
+        "      const tier = isVideoTier(tierBruto) ? tierBruto : null;\n" +
+        "      const credential = tier\n" +
+        '        ? await getCredentialForVendor(req.tenantId, "avatar", vendorRequiredByTier(tier))\n' +
+        '        : await getCredential(req.tenantId, "avatar");',
+    )
+  ) {
+    failures.push(
+      "vendor por tier: /video-cost-estimate ignorou ?tier= e usou a credencial default do tenant — o " +
+        "trecho tier-aware não está mais presente logo após a leitura de `req.query.tier` em " +
+        `${ROTA_DE_VIDEOS}. O diálogo de confirmação do Simples volta a mostrar "sem medição" para ` +
+        "qualquer tenant cujo vendor default de avatar não seja heygen.",
+    );
+  } else {
+    notes.push(
+      "    vendor por tier: /video-cost-estimate busca a credencial do vendor exigido por ?tier= quando presente",
+    );
   }
 
   return { failures, notes };
