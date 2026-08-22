@@ -5,33 +5,37 @@ de conta — não em toda mudança de código. Quando este arquivo e o
 [ESTADO.md](ESTADO.md) discordarem sobre o estado ATUAL, confira `git log`
 primeiro: os dois podem envelhecer, e o `git log` nunca mente.
 
-**HEAD nesta escrita: `4c5b66c`, árvore limpa.** `PROVIDER_MODE=fixture`
+**HEAD nesta escrita: `50324c6`, árvore limpa.** `PROVIDER_MODE=fixture`
 (desarmado, `PROVIDER_LIVE_CONFIRM` len=0) — confirmado no processo E no
 `docker compose config` no início desta sessão.
 
 ```
+50324c6  checkTierVendorPolicy: mutante do 400 tier_vendor_unavailable saía AMBÍGUO
+de1258b  checkTierVendorPolicy/checkTierAvailabilityPolicy: expects divergiam da mensagem real
+ed4e634  Fase C: os 3 call sites de routes/videos.ts decidem vendor pelo tier_video
+d17ccc2  ESTADO.md + PLANO-MESTRE-SEQUENCIAL.md: fecho de sessão — Fases A/B do multi-vendor de avatar
 4c5b66c  checkAvatarMultiVendorPolicy: G-4 saía INERTE — a checagem casava com o comentário, não com o código
 5192168  Fase B: admin "Integrações por tenant" vira multi-seleção para Avatar
 20a4240  Migration 060: multi-vendor de avatar por tenant (Fase A)
 a03d6ab  GenerateStep: cartão "Simples" desabilitado para tenants sem credencial HeyGen
-af6848c  ESTADO.md: fecho da sessão de 21/08 — Fase 1 por HTTP real, Fase 2/Modo B, 296/296
-2b27d3a  PLANO-MESTRE-SEQUENCIAL.md: novo — fecho de sessão (Fase 1 refeita por HTTP real, Fase 2/Modo B, HEAD)
-fc6f7d6  checkFalVideoApprovalPolicy: 2 mutantes disparavam TS2367 (gotcha do "if false") em vez de reprovar
 ```
 
 ⚠️ **Arnês: NÃO RODADA UMA PASSADA COMPLETA desde `fc6f7d6` (296/296).** Mudança
 de processo desta sessão, a pedido do operador: a passada completa não é
 mais lançada em background depois de cada commit intermediário dentro de um
 bloco de trabalho (abortou 3 vezes por esse motivo — ver gotcha novo
-abaixo). Só roda UMA vez, no fim do bloco inteiro (depois da Fase D fechar,
-ou quando o operador pedir explicitamente). Os commits desde `fc6f7d6` (Fase
-1 refeita por HTTP, correção do cartão Simples, Fase A, Fase B) foram
-fechados com **passada FILTRADA** (`--guard`) provando só os mutantes novos
-de cada rodada — 5+3+6 mutantes, todos `ok`, mas isso NÃO substitui a
-completa. Registro de mutantes hoje: **305 declarados** (296 → +3 do cartão
-Simples desabilitado → +6 do multi-vendor de avatar; +1 líquido porque um
-mutante antigo foi reancorado, não somado, e a contagem exata está nos
-commits individuais).
+abaixo). Só roda UMA vez, no fim do bloco inteiro, quando o operador pedir
+explicitamente — **nesta sessão ele pediu para PARAR depois da Fase C, sem
+lançá-la e sem iniciar a Fase D.** Os commits desde `fc6f7d6` (Fase 1
+refeita por HTTP, correção do cartão Simples, Fase A, Fase B, Fase C + 2
+correções de guarda da própria Fase C) foram fechados com **passada
+FILTRADA** (`--guard`) provando só os mutantes novos/reescritos de cada
+rodada — 5+3+6+10 mutantes, todos `ok`, mas isso NÃO substitui a completa.
+**Registro de mutantes hoje: 315 declarados**, confirmado por
+`npm run check:mutants -- --list` (296 → +3 do cartão Simples desabilitado
+→ +6 do multi-vendor A/B → +10 líquidos da Fase C — 6 mutantes de
+`checkTierVendorPolicy.ts` em `ed4e634`, +1 completado em `de1258b`, +3 de
+`checkTierAvailabilityPolicy.ts` reescritos em `ed4e634`).
 
 ---
 
@@ -226,44 +230,72 @@ como o catálogo já previa — fal não tem sonda).
 filtrada. Um deles (G-4) saiu INERTE na primeira tentativa e foi corrigido
 antes de ser declarado provado — ver gotcha novo em §4.
 
-### Fase C — backend: tier_video decide o vendor (NÃO INICIADA)
+### Fase C — backend: tier_video decide o vendor (fechada, aprovada,
+commits `ed4e634` + `de1258b` + `50324c6`)
 
-**Aguardando aprovação explícita do operador antes de tocar em qualquer
-código desta fase.** Os 3 call sites já identificados em sessões
-anteriores, em `routes/videos.ts`:
+Os 3 call sites de `routes/videos.ts` (criação, aprovação,
+`rearmVideoPolling`) pegavam "a credencial de avatar do tenant"
+(`getCredential`, sem `ORDER BY` determinístico, sem saber de vendor).
+Agora `tier_video` decide: `vendorRequiredByTier` (novo,
+`credentialLookup.ts`) mapeia `"simples" → heygen`, `"normal"/"premium" →
+fal`, e cada call site busca a credencial DESSE vendor via
+`getCredentialForVendor` (nova). Credencial ausente para o tier vira
+**400 `tier_vendor_unavailable`** antes do débito, nunca fallback
+silencioso nem crash — mesmo padrão de segurança do commit `a03d6ab`.
+`getCredential` (a genérica, ainda usada pelos 11 call sites
+não-tier-aware) ganhou `ORDER BY is_default DESC LIMIT 1` — sem isso, com
+dois vendors de avatar por tenant (Fase B), o Postgres não prometia ordem
+nenhuma.
 
-- criação (~linha 1003 nas notas do operador — conferir número atual antes
-  de editar, linhas deste projeto já mudaram de lugar mais de uma vez)
-- aprovação (~1596–1598)
-- `rearmVideoPolling` (~394)
+**Frontend (`GenerateStep.tsx`)**: a restrição do cartão "Simples"
+(`a03d6ab`) virou SIMÉTRICA — "Normal"/"Premium" também desabilitam sem
+credencial fal, mesma legenda neutra que nunca nomeia o fornecedor. Um
+`useEffect` novo troca o tier selecionado para um disponível quando o
+atual deixa de ser (nunca silencioso: o botão destacado muda junto) — sem
+ele, um tenant heygen-only bateria na recusa do servidor ao clicar em
+Gerar com o default "normal" nunca tocado.
 
-Hoje os três pegam "a credencial de avatar do tenant" (`getCredential`,
-sem saber de tier). Precisam passar a pegar "a credencial de avatar do
-tenant que corresponde ao vendor exigido pelo `tier_video` escolhido" — o
-que exige uma função de leitura NOVA (`getCredential` genérico continua
-servindo os 11 call sites não-tier-aware via `is_default`, mas os 3 desta
-lista precisam de uma busca por vendor explícito). Regras já combinadas
-com o operador para esta fase:
+**Duas correções de guarda, depois do commit de implementação:**
 
-- Se o tenant não tiver a credencial necessária para o tier escolhido:
-  MESMO padrão de fallback seguro do commit `a03d6ab` — nunca cair
-  silenciosamente em outro vendor sem avisar.
-- Reavaliar o cartão "Simples" desabilitado (`GenerateStep.tsx`, commit
-  `a03d6ab`): deve voltar a ficar HABILITADO quando o tenant tiver AMBAS as
-  credenciais (fal + heygen), continuar desabilitado se só tiver uma.
-- Guardas novas provadas reprovando com mutante declarado, gate verde,
-  commit separado — mesma disciplina de sempre.
+- `de1258b` — 3 `expect` de `checkTierAvailabilityPolicy.ts` saíam
+  AMBÍGUOS porque eram paráfrase da mensagem real, não transcrição
+  literal; e faltava por inteiro o 7º mutante planejado de
+  `checkTierVendorPolicy.ts` (`rearmVideoPolling` ignorar
+  `provider_vendor`) — não estava INERTE, **não existia**.
+- `50324c6` — o mutante "óbvio" do 400 `tier_vendor_unavailable` (apagar o
+  bloco `if` inteiro) removia o narrowing do TypeScript e o gate saía por
+  **TS18047** antes da guarda opinar — nova variante do gotcha
+  "`if (false && …)`" já registrado (lá TS2367). Corrigido virando
+  mutante "esperto": o `if` fica, só o corpo muda para um 500 genérico.
+
+**10 mutantes novos/reescritos** (7 em `checkTierVendorPolicy.ts`, novo — 6
+em `ed4e634` + 1 completado em `de1258b`; 3 em
+`checkTierAvailabilityPolicy.ts`, reescrita de G-1 para avaliar os dois
+predicados por execução). Registro: 305 → **315**. Gate relatado nesta
+sessão: **307/315 verde** — não é a passada completa (não rodada, ver
+aviso no topo). `tsc` limpo nos dois lados em cada um dos 3 commits.
+
+⚠️ **Pendência aberta, registrada e NÃO investigada — não inventar
+resposta.** Ficou sem resposta se o avatar HeyGen de um tenant é
+**genérico** (um avatar serve qualquer vídeo — o que a Fase C assume ao
+tratar "a credencial heygen do tenant" como uma coisa só) ou se, no uso
+real, um tenant vai precisar de **múltiplos avatares HeyGen** para casos
+sem modelagem nenhuma hoje no multi-vendor: troca de traje, troca de
+cenário, avatares com movimento diferente. A Fase C resolveu "qual
+VENDOR" por tier; não resolveu "qual AVATAR dentro do mesmo vendor" para
+esses casos. Fica para quando o operador quiser abrir essa linha.
 
 ### Fase D — validar HeyGen ponta a ponta pela primeira vez (NÃO INICIADA)
 
-Bloqueada até Fase C ser aprovada. `PROVIDER_MODE=fixture`, custo zero.
-Gerar um vídeo tier Simples de verdade, roteando para HeyGen (nunca
-exercitado nesta sessão nem em nenhuma anterior visível neste histórico),
-confirmar pelo diário/log (não pelo código): motor chamado, teto de gasto
-equivalente ao `autorizarGasto` (existe? qual valor?), se o fluxo de
-aprovação do HeyGen é estruturalmente igual ao do Modo B da fal ou
-diferente — SE for diferente, não tentar unificar nesta fase, só relatar e
-parar.
+**Bloqueada — o operador pediu explicitamente para PARAR depois da Fase C
+nesta sessão, sem iniciar a Fase D.** Quando retomada: `PROVIDER_MODE=fixture`,
+custo zero. Gerar um vídeo tier Simples de verdade, roteando para HeyGen
+(nunca exercitado nesta sessão nem em nenhuma anterior visível neste
+histórico), confirmar pelo diário/log (não pelo código): motor chamado,
+teto de gasto equivalente ao `autorizarGasto` (existe? qual valor?), se o
+fluxo de aprovação do HeyGen é estruturalmente igual ao do Modo B da fal
+ou diferente — SE for diferente, não tentar unificar nesta fase, só
+relatar e parar.
 
 ---
 
@@ -344,6 +376,17 @@ parar.
   prefira âncoras que não têm como aparecer num comentário explicativo
   sobre a mesma coisa — e teste o mutante à mão antes de declarar provado
   (a regra de sempre, reforçada por este caso específico).
+- **`if (!x) {...}` apagado por inteiro também derruba o narrowing — nova
+  variante, MEDIDA na Fase C (`50324c6`).** Mesma família do gotcha
+  `if (false && …)` já registrado (lá o `tsc` barrava com TS2367), agora
+  com **TS18047** (`'x' is possibly 'null'`): apagar o bloco inteiro de um
+  guard clause remove a garantia de não-nulo que o código seguinte
+  depende, e o gate reprova pelo compilador antes da guarda opinar —
+  AMBÍGUO, não prova nada sobre a guarda em si. Mutante "óbvio" (apagar o
+  bloco) não serve para guard clauses cujo corpo é preciso para o
+  narrowing; use "esperto" (trocar só o CORPO do `if`, preservando a
+  condição) sempre que a guarda proteger um acesso a propriedade logo
+  depois.
 - **Verificação visual pelo navegador ficou bloqueada nesta sessão inteira**
   (Fase B e a correção do cartão Simples): a sessão (de tenant OU de admin)
   autentica com sucesso quando testada direto contra o backend

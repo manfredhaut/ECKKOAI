@@ -15,26 +15,29 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **22/08/2026** (mesma sessão que abriu em 21/08 — FASE 1+2,
-mais a correção de UX do cartão Simples e as Fases A+B do multi-vendor de
-avatar). HEAD **`4c5b66c`**, árvore limpa. Ver §12 (Fase 1+2, 21/08) e §13
-(cartão Simples + Fase A + Fase B, 22/08) abaixo para o detalhe, e
-[PLANO-MESTRE-SEQUENCIAL.md](PLANO-MESTRE-SEQUENCIAL.md) para a versão
-voltada a troca de conta — os dois cobrem o mesmo bloco por ângulos
-diferentes; este arquivo é o operacional/gotchas, aquele é o resumo de
-handoff.
+Atualizado em **22/08/2026** (mesma sessão que abriu em 21/08 — FASE 1+2, a
+correção de UX do cartão Simples, e as Fases A/B/C do multi-vendor de
+avatar). HEAD **`50324c6`**, árvore limpa. Ver §12 (Fase 1+2, 21/08), §13
+(cartão Simples + Fase A + Fase B, 22/08) e §14 (Fase C, 22/08) abaixo para
+o detalhe, e [PLANO-MESTRE-SEQUENCIAL.md](PLANO-MESTRE-SEQUENCIAL.md) para
+a versão voltada a troca de conta — os dois cobrem o mesmo bloco por
+ângulos diferentes; este arquivo é o operacional/gotchas, aquele é o
+resumo de handoff.
 
 ⚠️ **Arnês SEM passada completa desde `fc6f7d6` (296/296, 21/08).** Mudança
 de processo desta sessão (pedido do operador, depois de a completa abortar
 3 VEZES por edição concorrente): ela deixa de ser lançada em background
 depois de cada commit intermediário dentro de um bloco de trabalho, e passa
-a rodar só UMA vez, no fim do bloco inteiro. Os 4 commits entre `fc6f7d6` e
-`4c5b66c` (Fase 1 HTTP, cartão Simples, Fase A, Fase B) foram fechados só
-com passada FILTRADA (`--guard`) provando os mutantes novos de cada rodada
-— real, mas não substitui a completa. **Registro atual: 305 mutantes
-declarados** (296 → 299 no cartão Simples → 305 no multi-vendor de avatar).
-Rodar a completa antes de começar a Fase C é decisão do operador, não
-automática.
+a rodar só UMA vez, no fim do bloco inteiro. Os 7 commits entre `fc6f7d6` e
+`50324c6` (Fase 1 HTTP, cartão Simples, Fase A, Fase B, Fase C + 2 correções
+de guarda da própria Fase C) foram fechados só com passada FILTRADA
+(`--guard`) provando os mutantes novos/reescritos de cada rodada — real, mas
+não substitui a completa. **Registro atual: 315 mutantes declarados**
+(296 → 299 no cartão Simples → 305 no multi-vendor A/B → 315 na Fase C),
+contagem confirmada por `npm run check:mutants -- --list` nesta escrita.
+Rodar a completa é decisão do operador, não automática — **e nesta sessão
+ele pediu explicitamente para PARAR depois da Fase C, sem iniciar a Fase D
+nem lançar a completa.**
 
 ⚠️ **GAP CONHECIDO, NÃO RECONSTRUÍDO NESTA RODADA (herdado, mais um layer):**
 entre o HEAD anterior registrado aqui (`22f9db8`, 14/08) e o início da sessão
@@ -438,6 +441,94 @@ por captura de tela. Ver gotcha detalhado no §3.
 
 ---
 
+## 14 · Fase C do multi-vendor de avatar (22/08/2026) — o vendor sai do
+tier_video, não mais da credencial fixa do tenant
+
+**Custo: US$ 0,00.** `PROVIDER_MODE=fixture` do início ao fim, mesma sessão
+que fechou as Fases A e B (§13). Três commits em sequência a partir de
+`4c5b66c`: `ed4e634` (implementação), `de1258b` (3 `expect` de guarda eram
+paráfrase da mensagem real, não transcrição, mais 1 mutante planejado que
+faltava por inteiro), `50324c6` (1 mutante saía AMBÍGUO por remover
+narrowing do TypeScript, mesma família do gotcha "`if (false && …)`" já
+registrado neste arquivo).
+
+**O que mudou, `ed4e634`:** antes, os 3 call sites de `routes/videos.ts`
+que precisam de credencial de avatar (criação, aprovação,
+`rearmVideoPolling`) chamavam `getCredential(tenantId, "avatar")` — "a
+credencial do tenant", sem `ORDER BY` determinístico e sem saber de vendor.
+Com a Fase B permitindo dois vendors por tenant (heygen + fal), isso virou
+ambíguo. Agora:
+
+- `vendorRequiredByTier` (novo, `credentialLookup.ts`) mapeia
+  `"simples" → heygen`, `"normal"/"premium" → fal`.
+- `getCredentialForVendor` (novo) busca a credencial de avatar de UM vendor
+  específico — os 3 call sites passam a chamar esta, não a genérica.
+- `getCredential` (a genérica) ganhou `ORDER BY is_default DESC LIMIT 1` —
+  ela continua servindo os outros 11 call sites não-tier-aware, e sem o
+  `ORDER BY` o Postgres não prometia qual das duas linhas (heygen/fal)
+  viria com dois vendors configurados.
+- Credencial ausente para o vendor exigido pelo tier vira **400
+  `tier_vendor_unavailable`** nos 3 call sites, **antes de qualquer
+  débito** — nunca fallback silencioso para o outro vendor, nunca crash.
+- **Frontend (`GenerateStep.tsx`):** a restrição do cartão "Simples"
+  (commit `a03d6ab`, §13) virou SIMÉTRICA — "Normal"/"Premium" também
+  desabilitam sem credencial fal configurada, mesma legenda neutra (nunca
+  nomeia o fornecedor). Um `useEffect` novo troca o tier selecionado para
+  um disponível quando o atual deixa de ser — sem ele, um tenant
+  heygen-only bateria na recusa do servidor ao clicar em Gerar com o
+  default "normal" nunca tocado pela pessoa.
+
+**As duas correções, cada uma um gotcha registrável:**
+
+- `de1258b` — 3 `expect` de `checkTierAvailabilityPolicy.ts` saíam
+  AMBÍGUOS na passada filtrada porque o texto esperado era paráfrase da
+  mensagem real ("o cartão" vs "um cartão", palavra inserida, frase da
+  condição reescrita) — a mesma regra de sempre (`expect` é transcrição
+  literal, nunca paráfrase) pegou a própria guarda desta rodada. Também
+  faltava por inteiro o 7º mutante planejado de `checkTierVendorPolicy.ts`
+  (`rearmVideoPolling` ignorar `provider_vendor` e voltar a usar sempre a
+  credencial default) — não é que ele saísse INERTE, é que **não existia**:
+  a guarda tinha execução saudável provada, mas nenhum mutante quebrava o
+  código para provar a reprovação.
+- `50324c6` — apagar o bloco `if (!avatarCredential) {...}` inteiro (o
+  jeito "óbvio" de mutar essa guarda) removia o narrowing do TypeScript e o
+  `tsc` reprovava por **TS18047** antes de a guarda opinar — nova variante
+  do gotcha "`if (false && …)`" (lá era TS2367, aqui TS18047; mesma
+  família: o compilador barra o mutante antes do runtime). Corrigido
+  trocando de mutante "óbvio" para "esperto": o `if` fica, só o corpo muda
+  para um 500 genérico (preserva o narrowing, e o corpo genérico ainda é
+  uma reprovação real — perde a mensagem `tier_vendor_unavailable` que a
+  tela precisa para orientar a pessoa).
+
+**Mutantes: 10 novos/reescritos** (7 em `checkTierVendorPolicy.ts`, novo —
+6 declarados em `ed4e634`, o 7º completado em `de1258b`; 3 em
+`checkTierAvailabilityPolicy.ts`, que ganhou a reescrita de G-1 para avaliar
+os dois predicados — cartão disponível E tier selecionável — por execução
+em vez de só por forma). Registro total: **305 → 315**, confirmado por
+`--list` nesta escrita (§ acima). **Gate relatado nesta sessão: 307/315
+verde** — não é a passada completa (essa segue sem rodar desde `fc6f7d6`,
+ver o aviso no topo deste arquivo); `tsc` limpo nos dois lados
+(backend/frontend) em cada um dos 3 commits.
+
+⚠️ **PENDÊNCIA REGISTRADA, NÃO INVESTIGADA — não inventar resposta.** Ao
+fechar a Fase C ficou em aberto se o avatar HeyGen de um tenant é
+**genérico** (um avatar serve para qualquer vídeo, o que a Fase C já
+assume implicitamente ao tratar "a credencial heygen do tenant" como uma
+coisa só) ou se, na prática de uso, um tenant vai precisar de **múltiplos
+avatares HeyGen** para casos que hoje não têm modelagem nenhuma no
+multi-vendor — troca de traje, troca de cenário, ou avatares com
+movimento diferente. A Fase A/B/C resolveram "qual VENDOR" (heygen × fal)
+por tier; **não resolveram "qual AVATAR dentro do mesmo vendor"** para
+esses casos. Sem medição nem decisão de produto ainda — fica para quando o
+operador quiser abrir essa linha.
+
+**Fase D (validar HeyGen ponta a ponta pela primeira vez) segue NÃO
+INICIADA — parado aqui por instrução explícita do operador nesta sessão.**
+Nenhum código tocado além dos 3 commits acima; nenhuma passada completa do
+arnês lançada; nenhuma chamada real a fornecedor.
+
+---
+
 ## 1 · Onde o repositório está
 
 *(o último commit desta lista é sempre o penúltimo do repositório: o próprio
@@ -445,14 +536,14 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 --oneline` fecha a diferença.)*
 
 ```
-2b27d3a  PLANO-MESTRE-SEQUENCIAL.md: novo — fecho de sessão (Fase 1 refeita por HTTP real, Fase 2/Modo B, HEAD)
-fc6f7d6  checkFalVideoApprovalPolicy: 2 mutantes disparavam TS2367 (gotcha do "if false") em vez de reprovar
-5efeaa1  Fase 2 (Modo B): parada em animar, awaiting_approval_video, /approve-video + /redo-video
-b8164b4  CLAUDE.md: fecho do BLOCO A — passada completa 292/292, zero INERTE/AMBÍGUO/ERRO
-a1c8d46  checkFalTierPolicy: 3 expects eram paráfrase, não transcrição — 3/4 mutantes saíram INERTES na passada afetada
-c066168  Bloco A: sistema de níveis de vídeo — tela de tier, tier_video, roteamento por tier, teto próprio do Premium
-2a04b4a  fal: chave de plataforma centralizada (fal.ai) para o caminho de avatar; fecho de sessão (Fase 0 + revert Seedance + centralização de chave)
-2c1faa4  fal: motor de animação volta a ser o Wan (tier "Normal"); Seedance 2.5 reservado pro tier "Premium"
+50324c6  checkTierVendorPolicy: mutante do 400 tier_vendor_unavailable saía AMBÍGUO
+de1258b  checkTierVendorPolicy/checkTierAvailabilityPolicy: expects divergiam da mensagem real
+ed4e634  Fase C: os 3 call sites de routes/videos.ts decidem vendor pelo tier_video
+d17ccc2  ESTADO.md + PLANO-MESTRE-SEQUENCIAL.md: fecho de sessão — Fases A/B do multi-vendor de avatar
+4c5b66c  checkAvatarMultiVendorPolicy: G-4 saía INERTE — a checagem casava com o comentário, não com o código
+5192168  Fase B: admin "Integrações por tenant" vira multi-seleção para Avatar
+20a4240  Migration 060: multi-vendor de avatar por tenant (Fase A)
+a03d6ab  GenerateStep: cartão "Simples" desabilitado para tenants sem credencial HeyGen
 ```
 
 ⚠️ **QUARTA vez que esta lista divergiu do HEAD** — a lista anterior (topo em
@@ -492,6 +583,10 @@ commit, e mensagem de commit não se reescreve.)
 | BLOCO A · sistema de níveis (Simples/Normal/Premium), tier_video, teto próprio do Premium | fechado (`c066168`+`a1c8d46`), completa 292/292 |
 | FASE 1 · ensaio dos 3 tiers, ponta a ponta por HTTP real | fechado 21/08 — ver §12 |
 | FASE 2 "Modo B" · segunda aprovação (vídeo mudo), backend | fechado 21/08 (`5efeaa1`+`fc6f7d6`), completa 296/296 — ver §12. **UI e teste pago NÃO iniciados.** |
+| multi-vendor de avatar · cartão Simples desabilitado sem HeyGen | fechado 22/08 (`a03d6ab`) — ver §13 |
+| multi-vendor de avatar · Fase A (migration 060, índices parciais) | fechado 22/08 (`20a4240`) — ver §13 |
+| multi-vendor de avatar · Fase B (admin multi-seleção) | fechado 22/08 (`5192168`+`4c5b66c`) — ver §13 |
+| multi-vendor de avatar · Fase C (vendor pelo tier_video, 3 call sites) | fechado 22/08 (`ed4e634`+`de1258b`+`50324c6`) — ver §14. **Fase D NÃO iniciada, parado por instrução do operador.** |
 | 6 · custo por camada, régua `(provider, model, resolution)` | não começado |
 
 ### 1.1 · BLOCO 4, o que falta
