@@ -44,6 +44,7 @@ import { checkFrontendBuildEnvPolicy } from "./checkFrontendBuildEnvPolicy.js";
 import { checkBackupPolicy } from "./checkBackupPolicy.js";
 import { checkHeygenSpendCapPolicy } from "./checkHeygenSpendCapPolicy.js";
 import { checkSimpleConfirmPolicy } from "./checkSimpleConfirmPolicy.js";
+import { checkFrontendBundleFreshnessPolicy } from "./checkFrontendBundleFreshnessPolicy.js";
 import { checkSingleDomainPolicy } from "./checkSingleDomainPolicy.js";
 import { checkTenantOnboardingPolicy } from "./checkTenantOnboardingPolicy.js";
 import { checkEmailVerificationPolicy } from "./checkEmailVerificationPolicy.js";
@@ -545,6 +546,11 @@ async function main(): Promise<void> {
   const simpleConfirmResult = await checkSimpleConfirmPolicy(process.env.REPO_ROOT ?? "/repo");
   simpleConfirmResult.failures.forEach((f) => failures.push(f));
   simpleConfirmResult.notes.forEach((n) => note(n));
+
+  // --- 18h. frescor do bundle do frontend: "Pronto." exige o código atual
+  const bundleFreshnessResult = await checkFrontendBundleFreshnessPolicy(process.env.REPO_ROOT ?? "/repo");
+  bundleFreshnessResult.failures.forEach((f) => failures.push(f));
+  bundleFreshnessResult.notes.forEach((n) => note(n));
 
   // --- 18c. domínio único: sem redirect de subdomínio, e-mail único global
   const singleDomainResult = await checkSingleDomainPolicy(process.env.REPO_ROOT ?? "/repo");

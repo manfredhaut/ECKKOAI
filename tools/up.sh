@@ -88,6 +88,15 @@ failed=0
 check_http "/" "landing" || failed=1
 check_http "/api/health" "API" || failed=1
 
+# --- o frontend está servindo o CÓDIGO ATUAL, não um bundle antigo --------
+# Achado #1 do ensaio de 22/08/2026: o container do frontend pode estar
+# `healthy` e responder 200 na landing (os dois checks acima) e AINDA ASSIM
+# servir um módulo de ANTES do último commit — o Vite não recarregou
+# sozinho. Ver tools/checkFrontendBundleFreshness.mjs para o porquê e o
+# incidente real que motivou isto. Faz parte deste mesmo script, não um
+# script à parte, de propósito: "Pronto." só aparece se isto também passar.
+ORIGIN="$ORIGIN" BASE_DOMAIN="$BASE_DOMAIN" node "$ROOT/tools/checkFrontendBundleFreshness.mjs" || failed=1
+
 if [ "$failed" -ne 0 ]; then
   echo
   red "O ambiente subiu mas não está servindo."
