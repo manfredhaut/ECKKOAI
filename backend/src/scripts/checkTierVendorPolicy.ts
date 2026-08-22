@@ -132,12 +132,15 @@ export const MUTANTS: Mutant[] = [
   },
   {
     guard: "criação: credencial ausente para o tier vira 400 tier_vendor_unavailable, nunca um crash",
-    name: "a recusa tier_vendor_unavailable desaparece",
-    kind: "obvio",
-    // ÓBVIO: sem este bloco, `avatarCredential` pode ser `null` no ponto em
-    // que o código seguinte lê `avatarCredential.vendor` — um TypeError em
-    // produção (500 genérico, sem `error: "tier_vendor_unavailable"`
-    // nenhum) no lugar de uma recusa limpa e ANTES de qualquer débito.
+    name: "a recusa tier_vendor_unavailable vira um 500 genérico",
+    kind: "esperto",
+    // ESPERTO: o `if (!avatarCredential)` FICA — apagar o bloco inteiro
+    // removeria o narrowing e faria o `tsc` reprovar por TS18047 antes de a
+    // guarda opinar (mesma família do gotcha `if (false && …)` já registrado
+    // no CLAUDE.md). Só o CORPO muda: em vez do 400 limpo com
+    // `tier_vendor_unavailable` e a mensagem explicando o que fazer, um 500
+    // genérico — a recusa ainda acontece (nada é cobrado), mas sem o código
+    // que a tela precisa para dizer à pessoa QUAL nível escolher.
     file: ROTA_DE_VIDEOS,
     find:
       '    if (!avatarCredential) {\n' +
@@ -154,7 +157,10 @@ export const MUTANTS: Mutant[] = [
       '          "Escolha outro nível, ou conecte o provedor em Configurações. Nada foi cobrado.",\n' +
       "      });\n" +
       "    }",
-    replace: "",
+    replace:
+      '    if (!avatarCredential) {\n' +
+      '      return reply.code(500).send({ error: "internal_error", message: "Erro interno." });\n' +
+      "    }",
     expect: "vendor por tier: a recusa tier_vendor_unavailable desapareceu do handler de criação",
   },
   {
