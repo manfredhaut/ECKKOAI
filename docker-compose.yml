@@ -189,6 +189,13 @@ services:
       - ./frontend/Dockerfile:/repo/frontend/Dockerfile:ro
       - ./frontend/image-stamp.mjs:/repo/frontend/image-stamp.mjs:ro
       - ./tools:/repo/tools:ro
+      # Os dois arquivos que checkBackupPolicy.ts precisa ler na raiz do
+      # repositório — atalho do npm (package.json) e a exclusão do git
+      # (.gitignore) para backups/. Nenhum dos dois estava montado antes:
+      # a lista acima monta cada arquivo/pasta um a um de propósito, e
+      # backup-db.mjs é o primeiro caso que precisa da raiz.
+      - ./package.json:/repo/package.json:ro
+      - ./.gitignore:/repo/.gitignore:ro
     depends_on:
       postgres:
         condition: service_healthy

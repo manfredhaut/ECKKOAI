@@ -44,3 +44,8 @@ twinai.dump
 
 # pacotes de deploy
 *.tar.gz
+
+# Backups do Postgres local (tools/backup-db.mjs). Cada um é um dump inteiro
+# do banco — nunca pertence ao git, mesmo raciocínio de uploads/ e
+# twinai.dump acima.
+backups/
