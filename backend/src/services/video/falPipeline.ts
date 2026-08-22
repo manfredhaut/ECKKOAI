@@ -33,6 +33,7 @@ import { falPoll, falResult, falSubmit, falUpload } from "../providers/falClient
 import { synthesizeSpeech } from "../providers/voiceProvider.js";
 import { logEvent } from "../log/safeLog.js";
 import { PIPELINE_TETO_USD, PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd } from "../billing/providerCost.js";
+import { HEYGEN_MAX_SCRIPT_CHARS, estimateSecondsFromChars } from "./scriptDuration.js";
 import type { AspectRatio } from "../providers/videoFormat.js";
 import type { AvatarVendor } from "../providers/vendorCatalog.js";
 
@@ -188,6 +189,31 @@ export function videoTierParaPipeline(tier: VideoTier): PipelineTier {
  */
 export function vendorRequiredByTier(tier: VideoTier): AvatarVendor {
   return tier === "simples" ? "heygen" : "fal";
+}
+
+/**
+ * A maior duração que este tier consegue ALCANÇAR DE VERDADE hoje — F2,
+ * 22/08/2026. Não é `MAX_SCRIPT_SECONDS` nem `PIPELINE_DURACAO_MAXIMA`
+ * sozinhos: é o que sobra depois do teto mais apertado de cada caminho.
+ *
+ * "simples" (HeyGen): o roteiro para de crescer em `HEYGEN_MAX_SCRIPT_CHARS`
+ * (5.000 caracteres, teto do FORNECEDOR — ver `scriptDuration.ts`), que
+ * hoje binda ANTES do teto de segundos (`MAX_SCRIPT_SECONDS`, 600 s) —
+ * 5.000 caracteres estimam ≈459 s, não 600. Um vídeo de 600 s não existe
+ * neste tier hoje, mesmo o número aparecendo como teto "de dinheiro".
+ *
+ * "normal"/"premium" (fal): `PIPELINE_DURACAO_MAXIMA` (15 s) — o enum que o
+ * `wan/v2.6/image-to-video/flash` aceita, "não emenda clipes" (ver
+ * `PIPELINE_DURATION_OPTIONS`). Nada no roteiro muda isso: é o motor que
+ * não anima mais que 15 s por clipe, ponto.
+ *
+ * Existe para a tabela de referência de custo (`/video-cost-reference`)
+ * distinguir "não sabemos o preço" (`sem medição`, fal em qualquer
+ * duração ALCANÇÁVEL) de "essa duração não existe neste nível"
+ * (qualquer ponto acima deste teto, nos dois vendors).
+ */
+export function maxReachableSecondsForTier(tier: VideoTier): number {
+  return tier === "simples" ? estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS) : PIPELINE_DURACAO_MAXIMA;
 }
 
 /** Teto do laço de polling. Ver `aguardarConclusao`. */

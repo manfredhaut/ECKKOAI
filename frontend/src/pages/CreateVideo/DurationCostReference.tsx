@@ -19,11 +19,23 @@ interface CostReferencePoint {
   seconds: number;
   costUsd: number | null;
   costUnknownReason: string | null;
+  /**
+   * F2, 22/08/2026: esta duração excede o que o tier consegue alcançar
+   * HOJE (15s para normal/premium — o Wan não anima mais que isso; ≈459s
+   * para simples — o teto de caracteres da HeyGen binda antes dos 600s
+   * "de dinheiro"). Distinto de `costUsd == null` sozinho: aquele é "não
+   * sabemos o preço" (poderia ficar sabido amanhã); isto é "essa duração
+   * não existe neste nível" — nunca vai ficar sabido, porque não há o que
+   * medir.
+   */
+  unavailableForTier: boolean;
 }
 
 interface CostReferenceResponse {
   tier: string;
   vendor: string;
+  /** Piso da maior duração alcançável — já truncado, pronto para exibir. */
+  maxReachableSeconds: number;
   points: CostReferencePoint[];
 }
 
@@ -71,7 +83,13 @@ export function DurationCostReference({ tier }: { tier: "simples" | "normal" | "
             <tr key={p.seconds}>
               <td style={{ padding: "2px 12px 2px 0" }}>{p.seconds} s</td>
               <td className={p.costUsd == null ? "text-muted" : undefined} style={{ padding: "2px 0" }}>
-                {p.costUsd != null ? usd(p.costUsd) : t("createVideo.cost.notMeasured")}
+                {p.unavailableForTier
+                  ? t("createVideo.script.costReference.unavailableForTier", {
+                      max: data.maxReachableSeconds,
+                    })
+                  : p.costUsd != null
+                    ? usd(p.costUsd)
+                    : t("createVideo.cost.notMeasured")}
               </td>
             </tr>
           ))}

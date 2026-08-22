@@ -612,7 +612,8 @@
       "costReference": {
         "toggle": "Ver custo estimado por duração",
         "durationHeader": "Duração",
-        "costHeader": "Custo estimado"
+        "costHeader": "Custo estimado",
+        "unavailableForTier": "Não disponível neste nível (máx. {{max}} s)"
       }
     },
     "assets": {

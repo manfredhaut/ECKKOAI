@@ -79,6 +79,7 @@ import {
   DEFAULT_VIDEO_TIER,
   escolherDuracao,
   isVideoTier,
+  maxReachableSecondsForTier,
   runFalPipelineDaImagem,
   runFalPipelineDoVideoMudo,
   videoTierParaPipeline,
@@ -700,15 +701,23 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     const tierBruto = req.query.tier;
     const tier = isVideoTier(tierBruto) ? tierBruto : DEFAULT_VIDEO_TIER;
     const vendor = vendorRequiredByTier(tier);
+    // F2, 22/08/2026: teto de duração REAL deste tier — 15 s para
+    // normal/premium (o Wan não anima mais que isso), ≈459 s para simples
+    // (o teto de caracteres da HeyGen binda antes dos 600 s "de dinheiro").
+    // Um ponto acima dele não é "sem medição" (que soa a "ainda não
+    // calculamos") — é uma duração que este nível não alcança HOJE.
+    const maxAlcancavel = maxReachableSecondsForTier(tier);
     return {
       tier,
       vendor,
+      maxReachableSeconds: Math.floor(maxAlcancavel),
       points: COST_REFERENCE_SECONDS.map((seconds) => {
         const cost = estimateVideoCost(seconds, vendor);
         return {
           seconds,
           costUsd: cost.known ? cost.usd : null,
           costUnknownReason: cost.known ? null : cost.explanation,
+          unavailableForTier: seconds > maxAlcancavel,
         };
       }),
     };

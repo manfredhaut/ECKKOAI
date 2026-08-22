@@ -16,6 +16,7 @@
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { maxReachableSecondsForTier } from "../services/video/falPipeline.js";
 import type { Mutant } from "./mutants.js";
 
 const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
@@ -39,20 +40,37 @@ export const MUTANTS: Mutant[] = [
       "          seconds,\n" +
       "          costUsd: cost.known ? cost.usd : null,\n" +
       "          costUnknownReason: cost.known ? null : cost.explanation,\n" +
+      "          unavailableForTier: seconds > maxAlcancavel,\n" +
       "        };\n" +
       "      }),",
     replace:
       "      points: [\n" +
-      "        { seconds: 15, costUsd: 0.75, costUnknownReason: null },\n" +
-      "        { seconds: 30, costUsd: 1.5, costUnknownReason: null },\n" +
-      "        { seconds: 60, costUsd: 3, costUnknownReason: null },\n" +
-      "        { seconds: 90, costUsd: 4.5, costUnknownReason: null },\n" +
-      "        { seconds: 120, costUsd: 6, costUnknownReason: null },\n" +
-      "        { seconds: 180, costUsd: 9, costUnknownReason: null },\n" +
-      "        { seconds: 300, costUsd: 15, costUnknownReason: null },\n" +
-      "        { seconds: 600, costUsd: 30, costUnknownReason: null },\n" +
+      "        { seconds: 15, costUsd: 0.75, costUnknownReason: null, unavailableForTier: false },\n" +
+      "        { seconds: 30, costUsd: 1.5, costUnknownReason: null, unavailableForTier: false },\n" +
+      "        { seconds: 60, costUsd: 3, costUnknownReason: null, unavailableForTier: false },\n" +
+      "        { seconds: 90, costUsd: 4.5, costUnknownReason: null, unavailableForTier: false },\n" +
+      "        { seconds: 120, costUsd: 6, costUnknownReason: null, unavailableForTier: false },\n" +
+      "        { seconds: 180, costUsd: 9, costUnknownReason: null, unavailableForTier: false },\n" +
+      "        { seconds: 300, costUsd: 15, costUnknownReason: null, unavailableForTier: false },\n" +
+      "        { seconds: 600, costUsd: 30, costUnknownReason: null, unavailableForTier: true },\n" +
       "      ],",
     expect: "/video-cost-reference não delega mais a estimateVideoCost",
+  },
+  {
+    guard: "tabela de custo: unavailableForTier vem de maxReachableSecondsForTier(tier), não de um teto fixo",
+    name: "unavailableForTier passa a comparar contra MAX_SCRIPT_SECONDS (600) para todo tier",
+    kind: "esperto",
+    // ESPERTO: para tier "simples" quase nada muda no efeito prático (o teto
+    // real, ≈459s, já é menor que 600 — só o ponto de 600s mudaria de
+    // "indisponível" para "disponível", incorretamente). O defeito GRAVE
+    // aparece em normal/premium: os pontos de 30 a 600s passariam a mostrar
+    // "sem medição" como se fossem apenas não-medidos, escondendo que o Wan
+    // não anima mais que 15s — a MESMA confusão que este bloco existe para
+    // fechar.
+    file: ROTA_DE_VIDEOS,
+    find: "    const maxAlcancavel = maxReachableSecondsForTier(tier);",
+    replace: "    const maxAlcancavel = 600;",
+    expect: "um ponto acima do que o Wan anima (15s) não foi marcado como indisponível para o tier",
   },
   {
     guard: "tabela de custo: o vendor de cada ponto vem de vendorRequiredByTier(tier), nunca de um vendor fixo",
@@ -105,6 +123,42 @@ export function checkCostReferencePolicy(repoRoot: string): CostReferenceCheckRe
           "/video-cost-reference não resolve mais o vendor por vendorRequiredByTier(tier).",
       );
     }
+    if (!corpoRota.includes("maxReachableSecondsForTier(tier)")) {
+      failures.push(
+        "um ponto acima do que o Wan anima (15s) não foi marcado como indisponível para o tier — " +
+          "/video-cost-reference não resolve mais o teto real por maxReachableSecondsForTier(tier).",
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // maxReachableSecondsForTier — por EXECUÇÃO real (import estático, topo do
+  // arquivo — mesmo padrão de checkTierVendorPolicy.ts), os 3 tiers. F2,
+  // 22/08. Nenhum mutante desta rodada muta falPipeline.ts, então não há
+  // razão para o import dinâmico com cache-bust; um import estático de uma
+  // função exportada é suficiente e evita o mount /repo (só leitura, sem
+  // node_modules próprio — falPipeline.ts arrasta credentialLookup.ts →
+  // db/pool.ts → `pg`, que só resolve a partir de /app, onde o processo
+  // real roda).
+  // ---------------------------------------------------------------------------
+  const normal = maxReachableSecondsForTier("normal");
+  const premium = maxReachableSecondsForTier("premium");
+  const simples = maxReachableSecondsForTier("simples");
+
+  if (normal !== 15 || premium !== 15) {
+    failures.push(
+      `tabela de custo: maxReachableSecondsForTier deu normal=${normal}, premium=${premium}, esperado ` +
+        "15 para os dois — o Wan (wan/v2.6/image-to-video/flash) não anima clipe mais longo que isso, " +
+        "e é o MESMO teto para os dois tiers hoje (Seedance ainda usa o mesmo enum de duração).",
+    );
+  }
+  // ~459s é o esperado (5000 caracteres, ritmo medido) — faixa, não igualdade
+  // exata, porque o valor é uma estimativa fracionária, não um inteiro fixo.
+  if (!(simples > 450 && simples < 470)) {
+    failures.push(
+      `tabela de custo: maxReachableSecondsForTier("simples") deu ${simples}, esperado entre 450 e 470 ` +
+        "— o teto de caracteres da HeyGen (5.000) deveria bindar bem antes dos 600s de dinheiro.",
+    );
   }
 
   // ---------------------------------------------------------------------------
