@@ -654,7 +654,7 @@ async function main(): Promise<void> {
   // Só funções puras e leitura de arquivo: nada de rede, banco ou substituição
   // de global. Pode rodar em qualquer posição — fica aqui por assunto, junto
   // das outras invariantes de `routes/videos.ts` e do que custa dinheiro.
-  const scriptLimit = checkScriptLimitPolicy(process.env.REPO_ROOT ?? "/repo");
+  const scriptLimit = await checkScriptLimitPolicy(process.env.REPO_ROOT ?? "/repo");
   scriptLimit.failures.forEach((f) => failures.push(f));
   scriptLimit.notes.forEach((n) => note(n));
 

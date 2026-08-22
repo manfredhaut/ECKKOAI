@@ -136,28 +136,83 @@ export const CONFIRM_MARGIN = 1.1;
  * RECUSADA — não confirmada, não truncada.
  *
  * Irmão de `CONFIRM_ABOVE_SECONDS`, e a diferença entre os dois é o que cada um
- * faz: aos 60 s a tela PERGUNTA, aos 180 s ela RECUSA. Um teto sem o aviso
+ * faz: aos 60 s a tela PERGUNTA, aos 600 s ela RECUSA. Um teto sem o aviso
  * intermediário transformaria toda surpresa de custo em parede; um aviso sem
  * teto deixa um roteiro colado por engano — um artigo inteiro no lugar de uma
  * frase — virar débito de dezenas de dólares atrás de um único checkbox.
  *
- * **180 s são DECLARADOS**, e a escolha é de dinheiro: a 3 unidades por segundo
- * inteiro são 540 unidades, **US$ 9,00** — quase o dobro da carteira medida em
- * 10/08 (US$ 4,90). Nenhum roteiro que a conta consegue pagar hoje chega perto
- * disto, que é a propriedade desejada de um teto: ele existe para o caso
- * anormal, não para o dia a dia.
+ * **600 s (10 min) — E1, 22/08/2026, elevado do valor anterior (180 s).**
+ * DOCUMENTADO pelo fornecedor, não escolhido por nós: a HeyGen declara
+ * "Maximum 10 minutes (600 seconds)" para o áudio de entrada de
+ * `POST /v3/videos` (developers.heygen.com/docs/usage-limits, seção "Avatar
+ * Input" — confirmado por leitura direta da doc pública em 22/08/2026, não
+ * por chamada real). Esta é a MESMA doc que declara, para o campo `script`
+ * (não usado por este produto, que manda áudio pronto via
+ * `audio_asset_id`), um teto INDEPENDENTE de **5.000 caracteres** — ver
+ * `HEYGEN_MAX_SCRIPT_CHARS` abaixo. Os dois tetos não têm relação
+ * matemática entre si pela régua medida deste projeto (600 s × 12,8151 c/s
+ * × 0,85 ≈ 6.536 caracteres, ACIMA de 5.000): são dois campos diferentes do
+ * mesmo fornecedor, e o produto respeita os dois, cada um pela sua conta —
+ * ver `exceedsMaxScriptLength`.
+ *
+ * A revisão do teto em DÓLAR por tier (que dependia do antigo 180 s como
+ * pior caso) é o PASSO E2, deliberadamente NÃO feita aqui — subir só a
+ * duração sem revisar o teto de gasto deixaria `HEYGEN_TETO_USD` (derivado
+ * de `MAX_SCRIPT_SECONDS × USD_PER_BILLED_SECOND` em `providerCost.ts`)
+ * saltar de US$ 9,00 para ~US$ 29,95 SOZINHO, sem ninguém ter decidido isso
+ * como valor de produto.
  *
  * NUNCA CORTAR. Truncar o roteiro do cliente entregaria um vídeo que para no
  * meio de uma frase, cobrado integralmente, sem ninguém ter escolhido isso —
  * pior que recusar, porque a recusa custa zero e é reversível editando o texto.
  *
- * Anotado como `number`, e não deixado inferir o literal `180`: sem a anotação
+ * Anotado como `number`, e não deixado inferir o literal `600`: sem a anotação
  * o TypeScript estreita o tipo para o próprio valor, e qualquer comparação com
  * outro número vira erro de compilação em vez de verificação — a guarda
  * passaria a testar o compilador e ficaria INERTE. É a mesma razão, medida, que
  * já obrigou a anotação em `VOICE_SPEED`.
  */
-export const MAX_SCRIPT_SECONDS: number = 180;
+export const MAX_SCRIPT_SECONDS: number = 600;
+
+/**
+ * TETO DURO de roteiro, em CARACTERES — independente de `MAX_SCRIPT_SECONDS`.
+ *
+ * DOCUMENTADO pela HeyGen: "Maximum 5,000 characters" para o campo `script`
+ * de `POST /v3/videos` (mesma doc/seção de `MAX_SCRIPT_SECONDS` acima,
+ * lida em 22/08/2026). Este produto não manda esse campo — a HeyGen recebe
+ * áudio pronto via `audio_asset_id`, nunca o roteiro em texto —, mas é um
+ * teto REAL do mesmo fornecedor, para um conteúdo do mesmo tamanho
+ * conceitual, e ignorá-lo só porque o campo que ele descreve não é o nosso
+ * seria apostar que um roteiro de milhares de caracteres a mais não
+ * encontra NENHUM outro limite no caminho (ElevenLabs, tamanho do corpo,
+ * tempo de processamento) — aposta que este projeto historicamente perde.
+ *
+ * Vira o teto EFETIVO sempre que for mais apertado que o derivado da
+ * duração — ver `maxScriptChars()` — e ambos os pontos de recusa
+ * (`exceedsMaxScriptLength`, `exceedsTargetScriptLength`) o testam, além do
+ * teto de segundos, nunca no lugar dele.
+ *
+ * Anotado como `number`, mesma razão MEDIDA já registrada em
+ * `MAX_SCRIPT_SECONDS`/`VOICE_SPEED`: sem a anotação o TypeScript estreita
+ * para o literal `5000`, e um mutante que mudasse o valor pararia no
+ * `tsc` (erro de tipo, "no overlap") antes de a guarda rodar — AMBÍGUO,
+ * não reprovação pela guarda certa. Achado nesta mesma rodada, testando o
+ * mutante à mão.
+ */
+export const HEYGEN_MAX_SCRIPT_CHARS: number = 5000;
+
+/**
+ * Pontos fixos de DURAÇÃO para a tabela orientativa do passo Roteiro — E3,
+ * 22/08/2026. Só os pontos: o CUSTO em cada um vem de `estimateVideoCost`
+ * (`providerCost.ts`), nunca calculado aqui — esta lista não sabe de
+ * dólar, só de segundos, para não virar uma segunda régua de preço.
+ *
+ * Cobrem a faixa toda: do CONFIRM_ABOVE_SECONDS (60) ao MAX_SCRIPT_SECONDS
+ * (600), com pontos intermediários para dar noção de progressão — não é
+ * uma lista arbitrária, é a mesma proposta de pontos já usada na conversa
+ * que abriu este bloco, mantida como referência de produto.
+ */
+export const COST_REFERENCE_SECONDS = [15, 30, 60, 90, 120, 180, 300, 600] as const;
 
 /**
  * O veredito, num lugar só.
@@ -209,24 +264,35 @@ export function isTargetDurationSeconds(value: unknown): value is number {
  * `maxScriptChars()` (`CHARS_PER_SECOND`, `VOICE_SPEED`), só que com a
  * duração-alvo no lugar do teto de dinheiro fixo. Não é uma régua nova: é a
  * mesma conta, parametrizada.
+ *
+ * `Math.min` com `HEYGEN_MAX_SCRIPT_CHARS`, mesmo aqui: uma duração-alvo
+ * customizada ("Mais") pode chegar perto de `MAX_SCRIPT_SECONDS` (600 s),
+ * e nesse trecho a derivação por duração (≈6.536 caracteres) já ultrapassa
+ * o teto de 5.000 do fornecedor — sem o `min`, o número mostrado na tela
+ * prometeria mais do que a recusa de fato aceita.
  */
 export function maxScriptCharsFor(targetSeconds: number): number {
-  return Math.floor(targetSeconds * CHARS_PER_SECOND * VOICE_SPEED);
+  return Math.min(Math.floor(targetSeconds * CHARS_PER_SECOND * VOICE_SPEED), HEYGEN_MAX_SCRIPT_CHARS);
 }
 
 /**
  * RECUSA acima da duração-alvo — irmã de `exceedsMaxScriptLength`, mesma
- * regra (nunca corta, sempre compara SEGUNDOS), aplicada a um teto que a
- * pessoa escolheu em vez do teto de dinheiro fixo.
+ * regra (nunca corta, sempre compara SEGUNDOS como razão primária, porque é
+ * a duração que custa dinheiro), MAIS o teto de caracteres do fornecedor
+ * — independente da duração-alvo escolhida, porque é um teto do CAMPO, não
+ * do relógio.
  */
 export function exceedsTargetScriptLength(script: string | null | undefined, targetSeconds: number): boolean {
-  return estimateSecondsFromScript(script) > targetSeconds;
+  return (
+    estimateSecondsFromScript(script) > targetSeconds || (script?.length ?? 0) > HEYGEN_MAX_SCRIPT_CHARS
+  );
 }
 
 /**
  * O veredito de RECUSA que `evaluateGenerationReadiness` usa: a duração-alvo,
- * quando presente, decide sozinha — ela é sempre MENOR que
- * `MAX_SCRIPT_SECONDS` (15/30/45/60 contra 180), então checá-la já cobre o
+ * quando presente, decide sozinha — ela é sempre MENOR OU IGUAL a
+ * `MAX_SCRIPT_SECONDS` (15/30/45/60, ou um valor customizado em "Mais" até
+ * 600), então checá-la já cobre o
  * teto de dinheiro por construção. Sem alvo, o teto continua sendo só o
  * global, como sempre foi.
  *
@@ -250,27 +316,46 @@ export function exceedsActiveScriptLimit(
  * É DERIVADO da régua em execução, e essa é a propriedade que importa: o valor
  * sai da inversa exata de `estimateSecondsFromChars`, então mudar o ritmo
  * medido ou a velocidade da voz move o limite junto, sozinho. Um número colado
- * aqui (hoje 1960) continuaria parecendo certo depois de a régua mudar, e a
- * tela passaria a recusar num ponto que não corresponde a 180 s de vídeo
- * nenhum — a mesma classe de defeito que fez a estimativa valer 0,42× do
- * cobrado.
+ * aqui (hoje 5.000 — o teto do FORNECEDOR, não mais o derivado da duração;
+ * ver `HEYGEN_MAX_SCRIPT_CHARS` abaixo) continuaria parecendo certo depois
+ * de a régua mudar, e a tela passaria a recusar num ponto que não
+ * corresponde a 600 s de vídeo nenhum — a mesma classe de defeito que fez a
+ * estimativa valer 0,42× do cobrado.
  *
  * `floor` e não `round`: o último caractere aceito tem de caber DENTRO do teto.
+ *
+ * `Math.min` com `HEYGEN_MAX_SCRIPT_CHARS` desde E1 (22/08/2026): a
+ * 600 s × 12,8151 c/s × 0,85 ≈ 6.536 caracteres, ACIMA do teto de 5.000 que
+ * o próprio fornecedor documenta para o campo `script` — o teto EFETIVO
+ * hoje é o dos caracteres, não o da duração (`estimateSecondsFromChars` no
+ * teto de caracteres dá ≈459 s, bem abaixo de 600 s). Sem o `min`, a tela
+ * prometeria um teto que `exceedsMaxScriptLength` recusaria antes de
+ * chegar lá.
  */
 export function maxScriptChars(): number {
-  return Math.floor(MAX_SCRIPT_SECONDS * CHARS_PER_SECOND * VOICE_SPEED);
+  return Math.min(Math.floor(MAX_SCRIPT_SECONDS * CHARS_PER_SECOND * VOICE_SPEED), HEYGEN_MAX_SCRIPT_CHARS);
 }
 
 /**
  * O veredito de tamanho, na mesma forma dos outros: uma função só, consumida
  * pela rota de estimativa, pelo portão de geração e pela tela.
  *
- * Compara SEGUNDOS, não caracteres, porque é a duração que custa dinheiro —
- * `maxScriptChars()` existe para a tela contar enquanto se digita, e é derivado
- * daqui, nunca o contrário.
+ * DOIS tetos independentes, cada um pela sua conta — nunca um substituindo o
+ * outro:
+ *  · SEGUNDOS, porque é a duração que custa dinheiro — `maxScriptChars()`
+ *    existe para a tela contar enquanto se digita, e é derivado daqui.
+ *  · CARACTERES, porque a HeyGen documenta um teto de 5.000 para o campo
+ *    `script` independente de qualquer relógio — ver `HEYGEN_MAX_SCRIPT_CHARS`.
+ *    Hoje é ELE quem primeiro recusa (a régua medida faz 5.000 caracteres
+ *    caberem em ≈459 s, bem abaixo de 600 s), mas a checagem de segundos
+ *    continua aqui como o freio de dinheiro que ela sempre foi — se a
+ *    velocidade da voz mudar e afastar as duas fronteiras, nenhuma delas
+ *    some sozinha.
  */
 export function exceedsMaxScriptLength(script: string | null | undefined): boolean {
-  return estimateSecondsFromScript(script) > MAX_SCRIPT_SECONDS;
+  return (
+    estimateSecondsFromScript(script) > MAX_SCRIPT_SECONDS || (script?.length ?? 0) > HEYGEN_MAX_SCRIPT_CHARS
+  );
 }
 
 /**

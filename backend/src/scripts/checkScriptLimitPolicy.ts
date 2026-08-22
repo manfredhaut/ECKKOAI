@@ -7,7 +7,7 @@
  *  1. O limite em CARACTERES é DERIVADO da régua em execução, nunca digitado.
  *     Um literal continuaria parecendo certo depois de o ritmo medido ou a
  *     velocidade da voz mudarem, e a tela passaria a recusar num ponto que não
- *     corresponde a 180 s de vídeo nenhum. É a mesma família do defeito que fez
+ *     corresponde a 600 s de vídeo nenhum. É a mesma família do defeito que fez
  *     a estimativa valer 0,42× do cobrado.
  *
  *  2. O roteiro é RECUSADO, nunca cortado. Truncar entregaria um vídeo que para
@@ -26,11 +26,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   CHARS_PER_SECOND,
+  HEYGEN_MAX_SCRIPT_CHARS,
   MAX_SCRIPT_SECONDS,
   TARGET_DURATION_OPTIONS,
   estimateSecondsFromChars,
   exceedsActiveScriptLimit,
   exceedsMaxScriptLength,
+  exceedsTargetScriptLength,
   isTargetDurationSeconds,
   maxScriptChars,
   maxScriptCharsFor,
@@ -40,29 +42,34 @@ import type { Mutant } from "./mutants.js";
 
 export const MUTANTS: Mutant[] = [
   {
-    guard: "roteiro: o teto em caracteres é derivado da régua",
+    guard: "roteiro: o teto em caracteres é derivado da régua (E o menor entre duração e o teto do fornecedor)",
     name: "o limite de caracteres vira literal fixo",
     kind: "esperto",
-    // ESPERTO porque nada quebra hoje: 1960 é exatamente o que a derivação
-    // produz agora. O defeito só aparece no dia em que a régua mudar — e nesse
-    // dia ninguém vai olhar para esta linha. A guarda pega porque compara o
-    // valor com a inversa da função de estimativa, e não com o número.
+    // ESPERTO porque nada quebra hoje: 5000 é exatamente o que o `Math.min`
+    // produz agora. O defeito só aparece no dia em que uma das duas réguas
+    // mudar — e nesse dia ninguém vai olhar para esta linha. A guarda pega
+    // porque compara o valor com o veredito real de `exceedsMaxScriptLength`,
+    // não com o número.
     file: "backend/src/services/video/scriptDuration.ts",
-    find: "  return Math.floor(MAX_SCRIPT_SECONDS * CHARS_PER_SECOND * VOICE_SPEED);",
-    replace: "  return 1960;",
+    find: "  return Math.min(Math.floor(MAX_SCRIPT_SECONDS * CHARS_PER_SECOND * VOICE_SPEED), HEYGEN_MAX_SCRIPT_CHARS);",
+    replace: "  return 5000;",
     expect: "o limite em caracteres deixou de ser derivado",
   },
   {
     guard: "roteiro: acima do teto RECUSA, nunca corta",
     name: "o portão para de recusar roteiro acima do teto",
     kind: "obvio",
-    // Muta a FUNÇÃO, e não a condição no portão. `} else if (false) {` também
-    // desliga a recusa, mas deixa o import sem uso e reprova por não compilar —
-    // o arnês devolveu AMBÍGUO nessa forma, porque o gate ficava vermelho sem
-    // nunca chegar a imprimir a mensagem da guarda. É o mesmo defeito de
-    // anotação de tipo já medido em `VOICE_SPEED`, por outro caminho.
+    // Muta a FUNÇÃO inteira (os dois braços do OR), e não uma condição
+    // isolada. `} else if (false) {` também desliga a recusa, mas deixa o
+    // import sem uso e reprova por não compilar — o arnês devolveu AMBÍGUO
+    // nessa forma, porque o gate ficava vermelho sem nunca chegar a imprimir
+    // a mensagem da guarda. É o mesmo defeito de anotação de tipo já medido
+    // em `VOICE_SPEED`, por outro caminho.
     file: "backend/src/services/video/scriptDuration.ts",
-    find: "  return estimateSecondsFromScript(script) > MAX_SCRIPT_SECONDS;",
+    find:
+      "  return (\n" +
+      "    estimateSecondsFromScript(script) > MAX_SCRIPT_SECONDS || (script?.length ?? 0) > HEYGEN_MAX_SCRIPT_CHARS\n" +
+      "  );",
     replace: "  return false;",
     expect: "passaram pelo portão",
   },
@@ -80,17 +87,35 @@ export const MUTANTS: Mutant[] = [
     expect: "apareceu corte de texto no portão",
   },
   {
-    guard: "roteiro: acima do teto RECUSA, nunca corta",
-    name: "o teto passa a comparar caracteres em vez de segundos",
+    guard: "roteiro: o teto de CARACTERES do fornecedor (HEYGEN_MAX_SCRIPT_CHARS) é um freio independente do de duração",
+    name: "a checagem de caracteres do fornecedor some de exceedsMaxScriptLength, só a duração decide",
     kind: "esperto",
-    // Continua recusando roteiro gigante, continua tendo teto, e a mensagem
-    // continua saindo. O que muda é a FRONTEIRA: comparar contra o número de
-    // caracteres ignora a velocidade da voz, então a 0.85 o portão passa a
-    // aceitar textos que produzem mais de 180 s.
+    // ESPERTO, e é o que mais importa hoje: `HEYGEN_MAX_SCRIPT_CHARS` (5.000)
+    // é o teto que BINDA de verdade (o de duração, 600 s, só seria alcançado
+    // com ≈6.536 caracteres — muito acima). Sem esta cláusula, um roteiro de
+    // 5.001 a 6.535 caracteres — que a HeyGen documenta como ACIMA do que
+    // aceita — passaria pelo portão sem ninguém perceber, porque a duração
+    // estimada (≈460 a 600 s) ainda cabe dentro do teto de segundos.
     file: "backend/src/services/video/scriptDuration.ts",
-    find: "  return estimateSecondsFromScript(script) > MAX_SCRIPT_SECONDS;",
-    replace: "  return (script?.length ?? 0) > MAX_SCRIPT_SECONDS * CHARS_PER_SECOND;",
-    expect: "a fronteira do teto não corresponde",
+    find:
+      "  return (\n" +
+      "    estimateSecondsFromScript(script) > MAX_SCRIPT_SECONDS || (script?.length ?? 0) > HEYGEN_MAX_SCRIPT_CHARS\n" +
+      "  );",
+    replace: "  return estimateSecondsFromScript(script) > MAX_SCRIPT_SECONDS;",
+    expect: "um roteiro acima do teto de caracteres da HeyGen passou pelo portão",
+  },
+  {
+    guard: "roteiro: HEYGEN_MAX_SCRIPT_CHARS é 5.000 — o teto que a HeyGen documenta, não um número maior",
+    name: "HEYGEN_MAX_SCRIPT_CHARS sobe para um valor bem acima do documentado",
+    kind: "esperto",
+    // ESPERTO: a constante continua existindo, continua sendo usada nos
+    // mesmos dois lugares — só o VALOR infla. Um roteiro de, digamos, 6.000
+    // caracteres (acima do que a HeyGen documenta, dentro do que a duração
+    // sozinha permitiria) passaria a ser aceito.
+    file: "backend/src/services/video/scriptDuration.ts",
+    find: "export const HEYGEN_MAX_SCRIPT_CHARS: number = 5000;",
+    replace: "export const HEYGEN_MAX_SCRIPT_CHARS: number = 50000;",
+    expect: "um roteiro de 6000 caracteres, acima do que a HeyGen documenta, foi aceito",
   },
   {
     guard: "roteiro: o contador da tela lê a régua do servidor",
@@ -111,7 +136,7 @@ export const MUTANTS: Mutant[] = [
     kind: "esperto",
     // ESPERTO: sem duração-alvo escolhida ("mais"), o comportamento é
     // IDÊNTICO — os dois braços colapsam no mesmo `exceedsMaxScriptLength`.
-    // O defeito só aparece na faixa entre o alvo escolhido e os 180 s
+    // O defeito só aparece na faixa entre o alvo escolhido e os 600 s
     // globais: um roteiro de 20 s com alvo de 15 s passaria a ser aceito.
     file: "backend/src/services/video/scriptDuration.ts",
     find:
@@ -119,7 +144,7 @@ export const MUTANTS: Mutant[] = [
       "    ? exceedsTargetScriptLength(script, targetDurationSeconds)\n" +
       "    : exceedsMaxScriptLength(script);",
     replace: "  return exceedsMaxScriptLength(script);",
-    expect: "tem de ser recusado, mesmo estando bem abaixo do teto global de 180 s",
+    expect: "tem de ser recusado, mesmo estando bem abaixo do teto global de 600 s",
   },
   {
     guard: "roteiro: o teto de caracteres da duração-alvo é derivado da MESMA régua (CHARS_PER_SECOND × VOICE_SPEED)",
@@ -129,8 +154,8 @@ export const MUTANTS: Mutant[] = [
     // de dois — sem VOICE_SPEED (0.85), o teto sai maior do que a voz em uso
     // realmente permite, e o roteiro aceito estoura o alvo na síntese real.
     file: "backend/src/services/video/scriptDuration.ts",
-    find: "  return Math.floor(targetSeconds * CHARS_PER_SECOND * VOICE_SPEED);",
-    replace: "  return Math.floor(targetSeconds * CHARS_PER_SECOND);",
+    find: "  return Math.min(Math.floor(targetSeconds * CHARS_PER_SECOND * VOICE_SPEED), HEYGEN_MAX_SCRIPT_CHARS);",
+    replace: "  return Math.min(Math.floor(targetSeconds * CHARS_PER_SECOND), HEYGEN_MAX_SCRIPT_CHARS);",
     expect: "Um fator esquecido aqui deixa passar roteiro que estoura o alvo escolhido na síntese real",
   },
   {
@@ -175,7 +200,7 @@ export const MUTANTS: Mutant[] = [
     // ESPERTO: sem alvo escolhido (o estado inicial, "mais") o comportamento
     // é idêntico — `alvo` já seria "" nesse caso. O defeito só aparece depois
     // de escolher 15/30/45/60: o servidor nunca soube, e o contador mostraria
-    // o teto GLOBAL (180 s) rotulado como se fosse o do alvo escolhido.
+    // o teto GLOBAL (600 s) rotulado como se fosse o do alvo escolhido.
     file: "frontend/src/pages/CreateVideo/ScriptCounter.tsx",
     find: '      const alvo = targetDurationSeconds != null ? `&targetSeconds=${targetDurationSeconds}` : "";',
     replace: '      const alvo = "";',
@@ -189,7 +214,7 @@ export const MUTANTS: Mutant[] = [
     // 45/60 pertencem às duas listas. O defeito só aparece quando alguém
     // digita um número em "Mais" que não é um dos 4: o servidor passaria a
     // tratar o alvo digitado como se não tivesse sido escolhido, caindo em
-    // silêncio no teto global (180 s) sem avisar ninguém.
+    // silêncio no teto global (600 s) sem avisar ninguém.
     file: "backend/src/services/video/scriptDuration.ts",
     find:
       "  return (\n" +
@@ -200,6 +225,33 @@ export const MUTANTS: Mutant[] = [
       "  );",
     replace: '  return typeof value === "number" && (TARGET_DURATION_OPTIONS as readonly number[]).includes(value);',
     expect: "isTargetDurationSeconds(20) devolveu false, esperado true",
+  },
+  {
+    guard: "roteiro: o limite da duração-alvo aparece com o campo VAZIO, não só depois de digitar",
+    name: "o contador volta a esconder tudo com o roteiro vazio, mesmo com duração-alvo escolhida",
+    kind: "esperto",
+    // ESPERTO: com roteiro não-vazio nada muda — a condição só diverge no
+    // caso `chars === 0`. É exatamente o achado do ensaio de 22/08/2026:
+    // clicar em "30 s" com o campo vazio voltava a não mostrar limite
+    // nenhum até a primeira letra ser digitada.
+    file: "frontend/src/pages/CreateVideo/ScriptCounter.tsx",
+    find: "  if (chars === 0 && targetDurationSeconds == null) return null;",
+    replace: "  if (chars === 0) return null;",
+    expect: "o limite da duração-alvo não aparece mais com o roteiro vazio",
+  },
+  {
+    guard: "roteiro: campo vazio + duração-alvo ainda CONSULTA o servidor pelo limite",
+    name: "o efeito volta a pular a consulta sempre que o roteiro está vazio, mesmo com alvo escolhido",
+    kind: "esperto",
+    // ESPERTO: sem duração-alvo o comportamento é idêntico (`targetDurationSeconds
+    // == null` já cobria isso). O defeito só aparece com um alvo escolhido e
+    // campo vazio: sem a consulta, `cost` nunca chega a ter `targetMaxChars`
+    // nenhum, e a guarda acima (que depende de `cost`) ficaria sem dado para
+    // provar — as duas metades do conserto têm de andar juntas.
+    file: "frontend/src/pages/CreateVideo/ScriptCounter.tsx",
+    find: "    if (chars === 0 && targetDurationSeconds == null) {\n      setCost(null);\n      return;\n    }",
+    replace: "    if (chars === 0) {\n      setCost(null);\n      return;\n    }",
+    expect: "a consulta ao servidor voltou a ser pulada com o roteiro vazio, mesmo com duração-alvo escolhida",
   },
   {
     guard: "roteiro: o campo customizado de 'Mais' existe no passo Roteiro",
@@ -213,6 +265,20 @@ export const MUTANTS: Mutant[] = [
       '              type="number"',
     replace: "        {false && (\n          <div style={{ marginTop: 8, maxWidth: 220 }}>\n            <input\n              type=\"number\"",
     expect: "o campo numérico de \"Mais\" sumiu de",
+  },
+  {
+    guard: "roteiro: frontend/targetDuration.ts espelha MAX_SCRIPT_SECONDS de verdade, não por coincidência",
+    name: "TARGET_DURATION_MAX_SECONDS diverge de MAX_SCRIPT_SECONDS (volta ao valor antigo)",
+    kind: "esperto",
+    // ESPERTO, e é o achado da rodada E1: o comentário original deste
+    // arquivo AFIRMAVA que checkScriptLimitPolicy.ts pegava esta divergência
+    // — e não pegava. 180 continuava parecendo certo porque coincidia com o
+    // `MAX_SCRIPT_SECONDS` de então; o mutante prova que a coincidência não
+    // é uma checagem.
+    file: "frontend/src/pages/CreateVideo/targetDuration.ts",
+    find: "export const TARGET_DURATION_MAX_SECONDS = 600;",
+    replace: "export const TARGET_DURATION_MAX_SECONDS = 180;",
+    expect: "divergente de MAX_SCRIPT_SECONDS",
   },
 ];
 
@@ -232,64 +298,109 @@ const CONTADOR = "frontend/src/pages/CreateVideo/ScriptCounter.tsx";
  */
 const NUMEROS_DA_REGUA = [/12[.,]8/, /0[.,]85/];
 
-export function checkScriptLimitPolicy(repoRoot: string): ScriptLimitCheckResult {
+export async function checkScriptLimitPolicy(repoRoot: string): Promise<ScriptLimitCheckResult> {
   const failures: string[] = [];
   const notes: string[] = [];
 
   // ---------------------------------------------------------------------------
-  // 1. O limite em caracteres é a INVERSA da estimativa, e não um número.
+  // 1. O limite em caracteres é a INVERSA da estimativa, e não um número —
+  // AGORA sob DOIS tetos independentes (E1, 22/08/2026): duração
+  // (`MAX_SCRIPT_SECONDS`, 600 s) e o teto de CARACTERES que a HeyGen
+  // documenta para o campo `script` (`HEYGEN_MAX_SCRIPT_CHARS`, 5.000) —
+  // o que efetivamente aparece na tela é o MENOR dos dois
+  // (`Math.min`), e hoje é o de caracteres que binda: a derivação pura por
+  // duração dá ≈6.536, acima de 5.000.
   //
-  // Conferido pelos dois lados da fronteira, que é o que distingue "derivado"
-  // de "coincide hoje": o último caractere aceito tem de caber dentro do teto e
-  // o primeiro recusado tem de estourá-lo.
+  // Conferido pelos dois lados da fronteira, e pela FUNÇÃO PÚBLICA
+  // (`exceedsMaxScriptLength`), não recalculando a régua aqui — testar contra
+  // o veredito real, e não contra `estimateSecondsFromChars` sozinho, é o que
+  // continua correto não importa qual dos dois tetos esteja bindando.
   // ---------------------------------------------------------------------------
   const limite = maxScriptChars();
-  const noLimite = estimateSecondsFromChars(limite);
-  const umAMais = estimateSecondsFromChars(limite + 1);
+  const derivadoPelaDuracao = Math.floor(MAX_SCRIPT_SECONDS * CHARS_PER_SECOND * VOICE_SPEED);
 
-  if (!(noLimite <= MAX_SCRIPT_SECONDS && umAMais > MAX_SCRIPT_SECONDS)) {
+  if (!(exceedsMaxScriptLength("x".repeat(limite)) === false && exceedsMaxScriptLength("x".repeat(limite + 1)) === true)) {
     failures.push(
-      `roteiro: o limite em caracteres deixou de ser derivado da régua. ${limite} caracteres estimam ` +
-        `${noLimite.toFixed(4)} s e ${limite + 1} estimam ${umAMais.toFixed(4)} s, mas o teto é ` +
-        `${MAX_SCRIPT_SECONDS} s — a fronteira precisa cair exatamente entre os dois. ` +
-        "Um número escrito à mão aqui continua parecendo certo depois de o ritmo medido ou a " +
-        "velocidade da voz mudarem, e aí a tela recusa num ponto que não corresponde a duração nenhuma.",
+      `roteiro: a fronteira de \`maxScriptChars()\` não bate com o veredito real de ` +
+        `\`exceedsMaxScriptLength\` — ${limite} caracteres deveriam PASSAR e ${limite + 1} deveriam ` +
+        "SER RECUSADOS, e pelo menos um dos dois não aconteceu. Um limite mostrado na tela que não " +
+        "corresponde ao ponto real de recusa é pior que nenhum limite: promete o que não cumpre.",
     );
   }
 
-  // A derivação também tem de bater com a conta feita a partir das duas
-  // constantes de origem. Isto pega o caso em que alguém mantém a fórmula mas
-  // troca de qual velocidade ela sai.
-  const esperado = Math.floor(MAX_SCRIPT_SECONDS * CHARS_PER_SECOND * VOICE_SPEED);
+  // O teto MOSTRADO tem de ser o MENOR dos dois documentados — nunca o maior,
+  // que prometeria mais do que a recusa de fato aceita, nem um terceiro
+  // número que não é nenhum dos dois.
+  const esperado = Math.min(derivadoPelaDuracao, HEYGEN_MAX_SCRIPT_CHARS);
   if (limite !== esperado) {
     failures.push(
-      `roteiro: o limite derivado (${limite}) não bate com ${MAX_SCRIPT_SECONDS} s × ` +
-        `${CHARS_PER_SECOND.toFixed(6)} c/s × velocidade ${VOICE_SPEED} = ${esperado}.`,
+      `roteiro: o limite mostrado (${limite}) não bate com o menor entre a derivação por duração ` +
+        `(${MAX_SCRIPT_SECONDS} s × ${CHARS_PER_SECOND.toFixed(6)} c/s × velocidade ${VOICE_SPEED} = ` +
+        `${derivadoPelaDuracao}) e o teto documentado da HeyGen (${HEYGEN_MAX_SCRIPT_CHARS}) = ${esperado}.`,
+    );
+  }
+  if (derivadoPelaDuracao <= HEYGEN_MAX_SCRIPT_CHARS) {
+    // Não é falha — é um FATO que mudaria qual comentário do código está
+    // certo. Se a régua de ritmo mudar o bastante para o teto de DURAÇÃO
+    // voltar a bindar primeiro, os comentários de `scriptDuration.ts` que
+    // afirmam "hoje é o de caracteres" ficam desatualizados, e é bom que
+    // apareça aqui como nota, não como surpresa muda.
+    notes.push(
+      `    roteiro: ATENÇÃO — o teto de DURAÇÃO (${derivadoPelaDuracao} caracteres) passou a ser mais ` +
+        `apertado que o de caracteres da HeyGen (${HEYGEN_MAX_SCRIPT_CHARS}); os comentários que afirmam ` +
+        "o contrário em scriptDuration.ts precisam de revisão.",
     );
   }
 
-  // E — o único que pega o literal — a derivação é conferida no CÓDIGO.
-  //
-  // As duas verificações acima são tautologias contra este defeito, e isso foi
-  // MEDIDO: com `return 1960;` no lugar da fórmula, as duas continuam passando,
-  // porque 1960 é exatamente o que a derivação produz hoje. O arnês devolveu
-  // INERTE, que é a pior categoria — a guarda ocupava o lugar da verificação
-  // sem fazê-la.
-  //
-  // "Derivado" é propriedade do CÓDIGO, não do valor: nenhum valor consegue
-  // distinguir um número certo por construção de um número certo por
-  // coincidência. Por isso aqui se lê o corpo da função.
+  // O único que pega o LITERAL — a derivação é conferida no CÓDIGO, não só
+  // no valor. MEDIDO: com um número escrito à mão no lugar da fórmula, as
+  // duas verificações acima continuam passando enquanto o número escrito
+  // coincidir com a derivação de hoje — foi assim que a guarda anterior
+  // (contra 1960) ficou INERTE até ser testada por execução de mutante.
   const regua = readFileSync(path.join(repoRoot, "backend/src/services/video/scriptDuration.ts"), "utf8");
   const corpo = /export function maxScriptChars\(\): number \{([\s\S]*?)\n\}/.exec(regua)?.[1] ?? "";
   const derivada = /MAX_SCRIPT_SECONDS\s*\*\s*CHARS_PER_SECOND\s*\*\s*VOICE_SPEED/.test(corpo);
-  const temLiteral = /return\s+\d/.test(corpo);
-  if (!derivada || temLiteral) {
+  const usaTetoDoFornecedor = /HEYGEN_MAX_SCRIPT_CHARS/.test(corpo);
+  const temLiteral = /return\s+(Math\.min\()?\s*\d/.test(corpo);
+  if (!derivada || !usaTetoDoFornecedor || temLiteral) {
     failures.push(
-      "roteiro: o limite em caracteres deixou de ser derivado — `maxScriptChars()` não multiplica " +
-        `MAX_SCRIPT_SECONDS por CHARS_PER_SECOND e VOICE_SPEED${temLiteral ? ", e devolve um número escrito à mão" : ""}. ` +
-        "Um literal aqui continua parecendo certo depois de a régua mudar (hoje as duas dão 1960), e " +
-        "aí a tela passa a recusar num ponto que não corresponde a duração nenhuma. " +
-        `Corpo lido: ${JSON.stringify(corpo.trim())}`,
+      "roteiro: o limite em caracteres deixou de ser derivado — `maxScriptChars()` " +
+        `${!derivada ? "não multiplica MAX_SCRIPT_SECONDS por CHARS_PER_SECOND e VOICE_SPEED" : ""}` +
+        `${!usaTetoDoFornecedor ? " não compara mais com HEYGEN_MAX_SCRIPT_CHARS" : ""}` +
+        `${temLiteral ? ", e devolve um número escrito à mão" : ""}. ` +
+        "Um literal aqui continua parecendo certo enquanto a régua não mudar, e aí a tela passa a " +
+        `recusar num ponto que não corresponde a duração nem a teto nenhum. Corpo lido: ${JSON.stringify(corpo.trim())}`,
+    );
+  }
+
+  // O VALOR absoluto de HEYGEN_MAX_SCRIPT_CHARS — não só a consistência
+  // interna com `Math.min`, que seria tautológica contra uma constante
+  // inflada (as duas pontas leriam o MESMO valor errado e concordariam).
+  if (HEYGEN_MAX_SCRIPT_CHARS !== 5000) {
+    failures.push(
+      `roteiro: HEYGEN_MAX_SCRIPT_CHARS é ${HEYGEN_MAX_SCRIPT_CHARS}, esperado 5000 — o teto que a HeyGen ` +
+        "documenta para o campo `script` de POST /v3/videos (developers.heygen.com/docs/usage-limits). " +
+        "Um valor maior aqui aceitaria roteiros acima do que o fornecedor declara suportar.",
+    );
+  }
+
+  // A cláusula de CARACTERES em exceedsMaxScriptLength é um freio
+  // INDEPENDENTE do de duração — testado no ponto onde SÓ ela opina: 5.001
+  // caracteres estimam ≈459 s (bem abaixo dos 600 s), então só a cláusula de
+  // caracteres pode recusar aqui. Se a guarda acima (item 1) já não pegou a
+  // ausência da cláusula pela leitura do código, esta pega pelo COMPORTAMENTO.
+  const acimaDoTetoDeChars = "x".repeat(HEYGEN_MAX_SCRIPT_CHARS + 1);
+  if (exceedsMaxScriptLength(acimaDoTetoDeChars) !== true) {
+    failures.push(
+      `roteiro: um roteiro acima do teto de caracteres da HeyGen passou pelo portão — ` +
+        `${HEYGEN_MAX_SCRIPT_CHARS + 1} caracteres estimam ${estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS + 1).toFixed(2)} s ` +
+        `(bem abaixo dos ${MAX_SCRIPT_SECONDS} s), então só a checagem de caracteres deveria ter recusado, e não recusou.`,
+    );
+  } else {
+    notes.push(
+      `    roteiro: teto de ${MAX_SCRIPT_SECONDS} s (HeyGen: "Maximum 10 minutes") E teto de ` +
+        `${HEYGEN_MAX_SCRIPT_CHARS} caracteres (HeyGen: "Maximum 5,000 characters") — dois freios ` +
+        "independentes, o de caracteres bindando hoje",
     );
   }
 
@@ -440,6 +551,48 @@ export function checkScriptLimitPolicy(repoRoot: string): ScriptLimitCheckResult
     );
   }
 
+  // O espelho `frontend/.../targetDuration.ts` — por EXECUÇÃO, não grep: o
+  // arquivo é TS puro (sem JSX), então dá para importar de verdade, a mesma
+  // razão de `checkFrontendBundleFreshnessPolicy.ts` importar tools/*.mjs.
+  //
+  // Achado ao escrever este bloco: o comentário do PRÓPRIO arquivo afirma
+  // "checkScriptLimitPolicy.ts reprova o build se as duas divergirem" para
+  // `TARGET_DURATION_MAX_SECONDS` — e isso era FALSO. Nenhum check deste
+  // arquivo jamais leu `targetDuration.ts`. Só sobreviveu despercebido
+  // porque o valor (180) coincidia com `MAX_SCRIPT_SECONDS` por terem sido
+  // escritos juntos — exatamente a MESMA classe de coincidência que o resto
+  // deste arquivo existe para não deixar passar em `maxScriptChars()`.
+  const TARGET_DURATION_TS = "frontend/src/pages/CreateVideo/targetDuration.ts";
+  const targetDurationFull = path.join(repoRoot, TARGET_DURATION_TS);
+  try {
+    const targetDurationMod = (await import(
+      `file://${targetDurationFull.replace(/\\/g, "/")}?bust=${Date.now()}-${Math.random()}`
+    )) as { TARGET_DURATION_OPTIONS: readonly number[]; TARGET_DURATION_MAX_SECONDS: number };
+
+    if (targetDurationMod.TARGET_DURATION_MAX_SECONDS !== MAX_SCRIPT_SECONDS) {
+      failures.push(
+        `roteiro: ${TARGET_DURATION_TS} declara TARGET_DURATION_MAX_SECONDS=` +
+          `${targetDurationMod.TARGET_DURATION_MAX_SECONDS}, divergente de MAX_SCRIPT_SECONDS=` +
+          `${MAX_SCRIPT_SECONDS} do servidor — o campo "Mais" aceitaria (ou recusaria) uma duração ` +
+          "que o servidor decide de outro jeito, sem nenhum aviso na tela.",
+      );
+    }
+    if (JSON.stringify(targetDurationMod.TARGET_DURATION_OPTIONS) !== JSON.stringify(TARGET_DURATION_OPTIONS)) {
+      failures.push(
+        `roteiro: ${TARGET_DURATION_TS} declara TARGET_DURATION_OPTIONS=` +
+          `${JSON.stringify(targetDurationMod.TARGET_DURATION_OPTIONS)}, divergente do servidor ` +
+          `(${JSON.stringify(TARGET_DURATION_OPTIONS)}) — um chip apareceria na tela prometendo um teto ` +
+          "que o servidor não reconhece do mesmo jeito.",
+      );
+    }
+  } catch (err) {
+    failures.push(
+      `roteiro: não consegui importar ${TARGET_DURATION_TS} para conferir contra o servidor (${
+        err instanceof Error ? err.message : String(err)
+      }).`,
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // 8. isTargetDurationSeconds aceita duração CUSTOMIZADA, não só os 4 chips —
   // por EXECUÇÃO real da função de produção.
@@ -488,14 +641,48 @@ export function checkScriptLimitPolicy(repoRoot: string): ScriptLimitCheckResult
   if (!contador.includes("targetSeconds=${targetDurationSeconds}")) {
     failures.push(
       `roteiro: ${CONTADOR} deixou de mandar a duração-alvo escolhida para \`/video-cost-estimate\` — o ` +
-        "contador mostraria o teto GLOBAL (180 s) como se fosse o do alvo escolhido, e o servidor recusaria " +
+        "contador mostraria o teto GLOBAL (600 s) como se fosse o do alvo escolhido, e o servidor recusaria " +
         "num ponto que a tela nunca avisou.",
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // 9. O limite da duração-alvo aparece com o roteiro VAZIO — achado do ensaio
+  // de 22/08/2026: antes deste bloco, `ScriptCounter` escondia tudo (e o
+  // efeito nem consultava o servidor) sempre que `chars === 0`, mesmo com uma
+  // duração-alvo já escolhida. Só por LEITURA — é a AUSÊNCIA da consulta que
+  // é o defeito, e ausência de código não se exercita chamando função.
+  // ---------------------------------------------------------------------------
+  if (!contador.includes("if (chars === 0 && targetDurationSeconds == null) return null;")) {
+    failures.push(
+      `roteiro: ${CONTADOR} voltou a esconder o contador com o roteiro vazio mesmo quando uma duração-alvo ` +
+        'foi escolhida — a condição do early-return precisa ser `chars === 0 && targetDurationSeconds == ' +
+        "null`, não `chars === 0` sozinho. Clicar em \"30 s\" com o campo vazio não mostraria limite " +
+        "nenhum até a primeira letra ser digitada.",
+    );
+  }
+  if (
+    !contador.includes(
+      "    if (chars === 0 && targetDurationSeconds == null) {\n      setCost(null);\n      return;\n    }",
+    )
+  ) {
+    failures.push(
+      `roteiro: ${CONTADOR} voltou a pular a consulta ao servidor sempre que o roteiro está vazio — sem ` +
+        "ela, o teto de caracteres da duração-alvo escolhida nunca chega a ser conhecido, e não há como " +
+        "mostrá-lo antes da primeira letra.",
+    );
+  }
+  if (!contador.includes('t("createVideo.script.durationTarget.limit"')) {
+    failures.push(
+      `roteiro: ${CONTADOR} não usa mais a chave de tradução do limite da duração-alvo — sem ela, mesmo ` +
+        "consultando o servidor, não haveria texto nenhum para mostrar com o roteiro vazio.",
+    );
+  }
+
   notes.push(
-    `roteiro: teto de ${MAX_SCRIPT_SECONDS} s = ${limite} caracteres DERIVADOS ` +
-      `(${noLimite.toFixed(4)} s no limite, ${umAMais.toFixed(4)} s um caractere depois); ` +
+    `roteiro: teto de ${MAX_SCRIPT_SECONDS} s (HeyGen: áudio até 10 min) e ${HEYGEN_MAX_SCRIPT_CHARS} ` +
+      `caracteres (HeyGen: script até 5.000) — efetivo hoje: ${limite} caracteres (${estimateSecondsFromChars(limite).toFixed(4)} s ` +
+      `no limite, ${estimateSecondsFromChars(limite + 1).toFixed(4)} s um caractere depois); ` +
       `${casos.length} pontos da fronteira conferidos; contador lê a rota do servidor`,
   );
   return { failures, notes };

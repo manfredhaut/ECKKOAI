@@ -17,5 +17,11 @@ export const TARGET_DURATION_OPTIONS = [15, 30, 45, 60] as const;
  * global, e por isso também o teto do campo customizado de "Mais": um alvo
  * maior que o teto global seria um alvo que nunca teto nada, porque o teto
  * de dinheiro recusaria antes dele valer.
+ *
+ * 600 — E1, 22/08/2026, elevado junto com `MAX_SCRIPT_SECONDS` (era 180).
+ * Achado ao mexer nisto: o comentário acima ("as duas listas têm de
+ * concordar... checkScriptLimitPolicy.ts reprova o build se divergirem")
+ * afirmava uma guarda que não existia — o arquivo nunca era lido pelo
+ * check. Corrigido junto: agora existe de verdade.
  */
-export const TARGET_DURATION_MAX_SECONDS = 180;
+export const TARGET_DURATION_MAX_SECONDS = 600;

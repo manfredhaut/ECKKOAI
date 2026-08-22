@@ -53,10 +53,12 @@ export function ScriptCounter({
   const chars = script.length;
 
   useEffect(() => {
-    // Roteiro vazio não consulta: a rota devolveria zeros e o contador
-    // escreveria "0 s · US$ 0,00" antes de a pessoa digitar a primeira letra,
-    // o que parece um preço e não é.
-    if (chars === 0) {
+    // Sem roteiro E sem duração-alvo, não há nada que a rota possa dizer:
+    // nem caracteres digitados, nem limite (o limite só existe quando uma
+    // duração foi escolhida). COM duração-alvo, consulta mesmo vazio — é o
+    // teto que precisa aparecer assim que a duração é clicada, antes de
+    // qualquer letra ser digitada, não só depois.
+    if (chars === 0 && targetDurationSeconds == null) {
       setCost(null);
       return;
     }
@@ -80,7 +82,24 @@ export function ScriptCounter({
     };
   }, [chars, targetDurationSeconds]);
 
-  if (chars === 0) return null;
+  if (chars === 0 && targetDurationSeconds == null) return null;
+
+  // Roteiro VAZIO com duração-alvo escolhida: só o limite, nunca "0
+  // caracteres · ~0 s · sem medição" — isso pareceria a estimativa real de
+  // um vídeo vazio, que não existe. `cost.targetDurationSeconds` (não
+  // `targetDurationSeconds` da prop) porque é a resposta do SERVIDOR que
+  // decide se o alvo é válido, mesma régua de sempre.
+  if (chars === 0) {
+    if (!cost || cost.targetDurationSeconds == null) return null;
+    return (
+      <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+        {t("createVideo.script.durationTarget.limit", {
+          targetSeconds: cost.targetDurationSeconds,
+          targetChars: cost.targetMaxChars,
+        })}
+      </p>
+    );
+  }
 
   // Enquanto a primeira resposta não chega, o contador ainda diz o que sabe
   // sem ajuda de ninguém: quantos caracteres foram digitados. Duração e custo
