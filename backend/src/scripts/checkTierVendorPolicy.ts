@@ -172,6 +172,27 @@ export const MUTANTS: Mutant[] = [
     replace: '    const avatarCredential = await getCredential(tenantId, "avatar");',
     expect: "vendor por tier: a aprovação usou a credencial default do tenant em vez da credencial fal",
   },
+  {
+    guard: "rearmVideoPolling: busca a credencial pelo vendor JÁ GRAVADO na linha, não a default do tenant",
+    name: "rearmVideoPolling volta a ignorar provider_vendor e usar sempre a credencial default",
+    kind: "esperto",
+    // ESPERTO: `vendorConhecido` continua sendo lido e usado logo abaixo
+    // (em `vendorDoJob = vendorConhecido ?? credential.vendor`), então o
+    // VENDOR do job continua certo — só a CHAVE muda, silenciosamente, para
+    // a de outro vendor num tenant com heygen+fal configurados. O `tsc`
+    // fica verde (mesma forma, `ResolvedCredential | null`), e o caminho
+    // feliz de um tenant com UM SÓ vendor continua funcionando por acidente.
+    file: ROTA_DE_VIDEOS,
+    find:
+      "  const vendorConhecido = linha.provider_vendor as AvatarVendor | null;\n" +
+      "  const credential = vendorConhecido\n" +
+      '    ? await getCredentialForVendor(linha.tenant_id, "avatar", vendorConhecido)\n' +
+      '    : await getCredential(linha.tenant_id, "avatar");',
+    replace:
+      "  const vendorConhecido = linha.provider_vendor as AvatarVendor | null;\n" +
+      '  const credential = await getCredential(linha.tenant_id, "avatar");',
+    expect: "vendor por tier: rearmVideoPolling não buscou a credencial pelo vendor gravado na linha",
+  },
 ];
 
 export interface TierVendorCheckResult {

@@ -122,7 +122,7 @@ export const MUTANTS: Mutant[] = [
     file: ARQUIVO_DA_TELA,
     find: "                    disabled={indisponivel}\n",
     replace: "",
-    expect: "o cartão continua clicável mesmo indisponível",
+    expect: "um cartão continua clicável mesmo indisponível",
   },
   {
     guard: "a legenda de indisponibilidade aparece quando QUALQUER nível está desabilitado",
@@ -140,7 +140,7 @@ export const MUTANTS: Mutant[] = [
       "              </p>\n" +
       "            )}\n",
     replace: "",
-    expect: "a legenda de indisponibilidade dos níveis não aparece",
+    expect: "a legenda de indisponibilidade não aparece",
   },
   {
     guard: "a legenda considera os DOIS sentidos (Simples sem heygen, ou Normal/Premium sem fal)",
@@ -154,7 +154,7 @@ export const MUTANTS: Mutant[] = [
     file: ARQUIVO_DA_TELA,
     find: "            {(!podeEscolherSimples || !podeEscolherFal) && (",
     replace: "            {!podeEscolherSimples && (",
-    expect: "tier: a legenda de indisponibilidade não cobre o caso Normal/Premium sem fal",
+    expect: "tier: a condição da legenda não cobre os dois sentidos",
   },
 ];
 
