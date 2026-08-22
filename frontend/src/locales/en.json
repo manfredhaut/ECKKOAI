@@ -680,7 +680,7 @@
         "normal": "The balance between cost and quality — the recommended tier for most videos.",
         "premium": "The best motion quality available today, at a much higher cost."
       },
-      "tierUnavailable": "The Simple tier isn't available for this account yet.",
+      "tierUnavailable": "One of the tiers above isn't available for this account yet.",
       "captionsLabel": "Captions",
       "captionsOff": "No captions",
       "captionsOn": "With captions",

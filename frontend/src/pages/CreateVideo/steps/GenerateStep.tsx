@@ -181,17 +181,28 @@ export function GenerateStep({
   const blockers = readiness?.blockers ?? [];
 
   /**
-   * O nível "Simples" só produz um vídeo DIFERENTE do Normal quando o
-   * avatar da conta está no vendor HeyGen — para uma conta fal-only ele cai
-   * no mesmo motor do Normal (`videoTierParaPipeline`, `falPipeline.ts`),
-   * sem aviso nenhum. Isto não muda o roteamento: só impede a tela de
-   * oferecer uma escolha que não faz diferença nenhuma sem dizer isso.
+   * FASE C (multi-vendor de avatar) — "Simples" exige heygen; "Normal" e
+   * "Premium" exigem fal (`vendorRequiredByTier`, `falPipeline.ts`). Um
+   * tenant pode ter as duas credenciais, uma só, ou nenhuma — desde a Fase A
+   * (migration 060) `GET /credentials` devolve uma linha POR VENDOR de
+   * avatar, não mais uma só.
    *
-   * `null` enquanto não se sabe — mesmo padrão de `readiness` acima: o
-   * cartão nasce DESABILITADO (nunca clicável antes da resposta chegar),
-   * porque habilitar por otimismo aqui reproduziria a mesma lacuna que este
-   * bloco existe para fechar. Nunca mostra o nome do fornecedor — só o
-   * fato de o nível estar disponível ou não.
+   * Antes da Fase C, o vendor era decidido inteiramente pela credencial
+   * default do tenant e `tier_video` só escolhia o motor DENTRO do pipeline
+   * da fal — daí um tenant fal-only ver "Simples" produzir o mesmo vídeo do
+   * "Normal", sem aviso (o defeito que abriu esta linha de trabalho, ver
+   * `checkTierAvailabilityPolicy.ts`). Agora o servidor recusa a geração
+   * quando o vendor exigido pelo tier não está conectado
+   * (`tier_vendor_unavailable`) — os dois predicados abaixo existem para a
+   * TELA nunca oferecer essa recusa como escolha clicável, nos dois
+   * sentidos (Simples sem heygen, ou Normal/Premium sem fal).
+   *
+   * `[]` enquanto não se sabe (`credentials === null`) — mesmo padrão de
+   * `readiness` acima: os cartões nascem DESABILITADOS (nunca clicáveis
+   * antes da resposta chegar), porque habilitar por otimismo aqui
+   * reproduziria a mesma lacuna que este bloco existe para fechar. Nunca
+   * mostra o nome do fornecedor — só o fato de o nível estar disponível ou
+   * não.
    */
   const [credentials, setCredentials] = useState<Credential[] | null>(null);
   useEffect(() => {
@@ -202,17 +213,32 @@ export function GenerateStep({
         if (!cancelled) setCredentials(r);
       })
       .catch(() => {
-        // Falha ao consultar cai no lado seguro: sem saber o vendor, o
-        // nível fica indisponível — o inverso arriscaria oferecer "Simples"
-        // sem efeito de novo, que é exatamente a lacuna original.
+        // Falha ao consultar cai no lado seguro: sem saber o vendor, os
+        // níveis ficam indisponíveis — o inverso arriscaria oferecer um
+        // nível sem efeito de novo, que é exatamente a lacuna original.
         if (!cancelled) setCredentials([]);
       });
     return () => {
       cancelled = true;
     };
   }, []);
-  const avatarVendor = credentials?.find((c) => c.provider === "avatar")?.vendor ?? null;
-  const podeEscolherSimples = avatarVendor === "heygen";
+  const podeEscolherSimples = (credentials ?? []).some((c) => c.provider === "avatar" && c.vendor === "heygen");
+  const podeEscolherFal = (credentials ?? []).some((c) => c.provider === "avatar" && c.vendor === "fal");
+
+  // Se o tier selecionado deixou de estar disponível (ou nunca esteve, e o
+  // wizard nasceu com "normal" por padrão — `CreateVideoPage.tsx`), o
+  // próprio wizard troca para um nível que a conta REALMENTE tem, assim que
+  // as credenciais chegam. Nunca silencioso: o botão destacado na tela muda
+  // junto, então quem olha vê exatamente o que vai ser gerado. Sem os dois
+  // vendors, não há para onde trocar — a recusa vira `no_avatar_credential`
+  // em `readiness`, que já bloqueia o botão "Gerar".
+  useEffect(() => {
+    if (credentials === null) return;
+    const atualDisponivel = wizard.tierVideo === "simples" ? podeEscolherSimples : podeEscolherFal;
+    if (atualDisponivel) return;
+    if (podeEscolherFal) onTierVideoChange("normal");
+    else if (podeEscolherSimples) onTierVideoChange("simples");
+  }, [credentials, podeEscolherSimples, podeEscolherFal, wizard.tierVideo, onTierVideoChange]);
 
   /**
    * CONFIRMAÇÃO EXPLÍCITA para roteiro longo.
@@ -335,10 +361,11 @@ export function GenerateStep({
             </legend>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {TIER_OPTIONS.map((opt) => {
-                // Só o "simples" tem restrição — os outros dois seguem
-                // sempre disponíveis, tier nenhum além dele depende do
-                // vendor do avatar.
-                const indisponivel = opt.value === "simples" && !podeEscolherSimples;
+                // "simples" exige heygen; "normal"/"premium" exigem fal —
+                // Fase C. Os dois sentidos importam: um tenant fal-only não
+                // vê "Simples" clicável, e um heygen-only não vê
+                // "Normal"/"Premium" clicáveis.
+                const indisponivel = opt.value === "simples" ? !podeEscolherSimples : !podeEscolherFal;
                 return (
                   <button
                     key={opt.value}
@@ -358,7 +385,7 @@ export function GenerateStep({
             <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
               {t(`createVideo.generate.tierHint.${wizard.tierVideo}`)}
             </p>
-            {!podeEscolherSimples && (
+            {(!podeEscolherSimples || !podeEscolherFal) && (
               <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
                 {t("createVideo.generate.tierUnavailable")}
               </p>

@@ -11,7 +11,7 @@ import {
 } from "../services/providers/avatarProvider.js";
 import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCatalog.js";
 import { hasGenerationPath } from "../services/providers/vendorCatalog.js";
-import { getCredential } from "../services/credentialLookup.js";
+import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 import { resolveTenantAvatarFalKey } from "../services/providers/platformKeys.js";
 import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 import { createNotification } from "../services/notifications.js";
@@ -69,6 +69,7 @@ import {
   runFalPipelineDaImagem,
   runFalPipelineDoVideoMudo,
   videoTierParaPipeline,
+  vendorRequiredByTier,
   type EntradaDeComposicao,
   type VideoTier,
 } from "../services/video/falPipeline.js";
@@ -397,11 +398,25 @@ export async function rearmVideoPolling(linha: VideoEmVoo): Promise<void> {
   if (!linha.provider_job_id) {
     throw new Error("rearmVideoPolling chamado sem provider_job_id — a varredura deveria ter encerrado a linha");
   }
-  const credential = await getCredential(linha.tenant_id, "avatar");
+  // Fase C — o VENDOR vem primeiro da LINHA, não da credencial default do
+  // tenant: `linha.provider_vendor` (migration 016) é o vendor DE VERDADE
+  // que gerou este job, mesmo que o tenant tenha trocado de vendor default
+  // desde então. Buscar a credencial DESSE vendor evita o bug que existia
+  // antes: um tenant com heygen+fal configurados podia ter `getCredential`
+  // devolvendo a chave de UM vendor enquanto o job era do OUTRO — a chave
+  // errada indo para `resolveTenantAvatarFalKey` (ou o inverso). Linhas
+  // legadas sem `provider_vendor` (anteriores à migration 016) caem no
+  // fallback de sempre: a credencial default do tenant.
+  const vendorConhecido = linha.provider_vendor as AvatarVendor | null;
+  const credential = vendorConhecido
+    ? await getCredentialForVendor(linha.tenant_id, "avatar", vendorConhecido)
+    : await getCredential(linha.tenant_id, "avatar");
   if (!credential) {
-    throw new Error(`sem credencial de avatar para o tenant ${linha.tenant_id}; a linha continua em acompanhamento pendente`);
+    throw new Error(
+      `sem credencial de avatar (vendor ${vendorConhecido ?? "default do tenant"}) para o tenant ${linha.tenant_id}; a linha continua em acompanhamento pendente`,
+    );
   }
-  const vendorDoJob = (linha.provider_vendor ?? credential.vendor) as AvatarVendor;
+  const vendorDoJob = (vendorConhecido ?? credential.vendor) as AvatarVendor;
   // fal: chave da plataforma primeiro, BYOK do tenant como retaguarda — ver
   // `resolveTenantAvatarFalKey`. O vendor continua vindo da linha/credencial,
   // como sempre; só a origem da CHAVE muda.
@@ -1025,15 +1040,41 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       [avatar_id, req.tenantId],
     );
     const avatar = avatarRows[0];
-    const avatarCredential = await getCredential(req.tenantId, "avatar");
     // Impossível pelo predicado acima; o `throw` existe para o dia em que
     // alguém reordenar as duas coisas, e não como validação de verdade.
-    if (!avatar?.provider_avatar_id || !avatarCredential) {
-      throw new Error("readiness passou mas avatar/credencial sumiram entre as duas leituras");
+    if (!avatar?.provider_avatar_id) {
+      throw new Error("readiness passou mas o avatar sumiu entre as duas leituras");
+    }
+
+    // -----------------------------------------------------------------------
+    // FASE C — o VENDOR sai do tier_video escolhido, não da credencial
+    // default do tenant. "simples" exige heygen; "normal"/"premium" exigem
+    // fal. `readiness` (acima) só garantiu que existe ALGUMA credencial de
+    // avatar — não que existe a credencial DESTE tier. Um tenant fal-only
+    // que escolhe "Simples" (ou heygen-only que escolhe "Normal"/"Premium")
+    // precisa de uma recusa CLARA aqui, nunca de cair silenciosamente no
+    // outro vendor — mesma regra do porteiro `hasGenerationPath` logo
+    // abaixo. A TELA já evita a maior parte disto desabilitando cartões sem
+    // vendor (`GenerateStep.tsx`), mas o servidor nunca confia nisso sozinho.
+    // -----------------------------------------------------------------------
+    const vendorDoTier = vendorRequiredByTier(tierVideo);
+    const avatarCredential = await getCredentialForVendor(req.tenantId, "avatar", vendorDoTier);
+    if (!avatarCredential) {
+      logEvent("warn", "video_tier_vendor_unavailable", {
+        context: "videos.create",
+        tier: tierVideo,
+        vendorRequerido: vendorDoTier,
+        consequence: "recusado antes do débito; nenhuma linha criada e nenhum crédito tocado",
+      });
+      return reply.code(400).send({
+        error: "tier_vendor_unavailable",
+        message:
+          `O nível "${tierVideo}" exige um provedor (${vendorDoTier}) que esta conta não tem conectado. ` +
+          "Escolha outro nível, ou conecte o provedor em Configurações. Nada foi cobrado.",
+      });
     }
     // fal: chave da plataforma primeiro, BYOK do tenant como retaguarda — ver
-    // `resolveTenantAvatarFalKey`. `avatarCredential.vendor` não muda (o
-    // ramo `ehFal` abaixo continua decidido pela linha do tenant); só a
+    // `resolveTenantAvatarFalKey`. `avatarCredential.vendor` não muda; só a
     // CHAVE que os usos seguintes de `avatarCredential.apiKey` leem muda.
     if (avatarCredential.vendor === "fal") {
       avatarCredential.apiKey = (await resolveTenantAvatarFalKey(avatarCredential.apiKey)).apiKey;
@@ -1642,9 +1683,17 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       [video.avatar_id, tenantId],
     );
     const avatar = avatarRows[0];
-    const avatarCredential = await getCredential(tenantId, "avatar");
+    // Fase C — esta função só existe no caminho da fal
+    // (`awaiting_approval`/`awaiting_approval_video` nunca acontecem para
+    // heygen/did): buscar a credencial JÁ pelo vendor "fal", não a default
+    // do tenant. Antes, um tenant com heygen como default e fal como
+    // segundo vendor falhava aqui SEMPRE — `getCredential` podia devolver a
+    // linha errada — mesmo tendo a chave certa guardada; a aprovação é
+    // sobre o vídeo que ESTÁ na fal, não sobre o vendor que o tenant
+    // prefere hoje.
+    const avatarCredential = await getCredentialForVendor(tenantId, "avatar", "fal");
     const voiceCredential = await getCredential(tenantId, "voice");
-    if (!avatar || !avatarCredential || avatarCredential.vendor !== "fal" || !voiceCredential) {
+    if (!avatar || !avatarCredential || !voiceCredential) {
       await reply.code(409).send({
         error: "approval_unavailable",
         message:

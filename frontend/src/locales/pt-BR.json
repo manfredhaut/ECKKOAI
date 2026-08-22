@@ -680,7 +680,7 @@
         "normal": "O equilíbrio entre custo e qualidade — o nível recomendado para a maioria dos vídeos.",
         "premium": "A maior qualidade de movimento disponível hoje, por um custo bem mais alto."
       },
-      "tierUnavailable": "O nível Simples ainda não está disponível para esta conta.",
+      "tierUnavailable": "Um dos níveis acima ainda não está disponível para esta conta.",
       "captionsLabel": "Legenda",
       "captionsOff": "Sem legenda",
       "captionsOn": "Com legenda",

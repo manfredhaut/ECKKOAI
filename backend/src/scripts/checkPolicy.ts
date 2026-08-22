@@ -67,6 +67,7 @@ import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPo
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
 import { checkTierAvailabilityPolicy } from "./checkTierAvailabilityPolicy.js";
 import { checkAvatarMultiVendorPolicy } from "./checkAvatarMultiVendorPolicy.js";
+import { checkTierVendorPolicy } from "./checkTierVendorPolicy.js";
 import { checkVendorProbePolicy } from "./checkVendorProbePolicy.js";
 import { checkAudioDurationGatePolicy } from "./checkAudioDurationGatePolicy.js";
 import { checkFalClientPolicy } from "./checkFalClientPolicy.js";
@@ -671,6 +672,11 @@ async function main(): Promise<void> {
   const avatarMultiVendor = checkAvatarMultiVendorPolicy(process.env.REPO_ROOT ?? "/repo");
   avatarMultiVendor.failures.forEach((f) => failures.push(f));
   avatarMultiVendor.notes.forEach((n) => note(n));
+
+  // --- 25k-bis-4. o VENDOR sai do tier_video, não da credencial default (Fase C)
+  const tierVendor = await checkTierVendorPolicy();
+  tierVendor.failures.forEach((f) => failures.push(f));
+  tierVendor.notes.forEach((n) => note(n));
 
   // --- 25k-ter. vendor sem sonda não alcança a rede, e a chave da fal some do log
   const vendorProbe = checkVendorProbePolicy(process.env.REPO_ROOT ?? "/repo");

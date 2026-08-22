@@ -34,6 +34,7 @@ import { synthesizeSpeech } from "../providers/voiceProvider.js";
 import { logEvent } from "../log/safeLog.js";
 import { PIPELINE_TETO_USD, PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd } from "../billing/providerCost.js";
 import type { AspectRatio } from "../providers/videoFormat.js";
+import type { AvatarVendor } from "../providers/vendorCatalog.js";
 
 // ---------------------------------------------------------------------------
 // A RÉGUA DESTE PIPELINE — separada da do caminho HeyGen, DE PROPÓSITO
@@ -171,6 +172,22 @@ export function isVideoTier(value: unknown): value is VideoTier {
 /** `"simples"` vira `"normal"` aqui — ver o comentário de `VideoTier`. */
 export function videoTierParaPipeline(tier: VideoTier): PipelineTier {
   return tier === "premium" ? "premium" : "normal";
+}
+
+/**
+ * O VENDOR que este tier EXIGE — Fase C (multi-vendor de avatar), 22/08.
+ *
+ * Antes da Fase C, o vendor (heygen/did/fal) era decidido inteiramente pela
+ * credencial default do tenant, e `tier_video` só escolhia o MOTOR dentro do
+ * pipeline da fal — daí um tenant fal-only ver "Simples" produzir o mesmo
+ * vídeo do "Normal" (o defeito que abriu esta linha de trabalho, ver
+ * `checkTierAvailabilityPolicy.ts`). A partir daqui, `tier_video` decide os
+ * DOIS: "simples" é HeyGen puro; "normal"/"premium" passam pela fal. Os 3
+ * call sites de `routes/videos.ts` usam isto para buscar a credencial do
+ * vendor EXIGIDO (`getCredentialForVendor`), nunca mais a default do tenant.
+ */
+export function vendorRequiredByTier(tier: VideoTier): AvatarVendor {
+  return tier === "simples" ? "heygen" : "fal";
 }
 
 /** Teto do laço de polling. Ver `aguardarConclusao`. */
