@@ -68,6 +68,7 @@
  * │   zero.                                                                 │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
+import { MAX_SCRIPT_SECONDS } from "../video/scriptDuration.js";
 
 /**
  * A medição, num objeto só. Mexer aqui muda todo custo exibido no produto —
@@ -202,6 +203,82 @@ export function costFor(input: {
  */
 export function estimateVideoCost(requestedSeconds: number, vendor: string): Cost {
   return costFor({ provider: "avatar", vendor, unitType: "seconds", unitCount: requestedSeconds });
+}
+
+/**
+ * TETO EM DÓLARES do caminho de custo CONHECIDO (hoje, só HeyGen — ver
+ * `costFor` acima) — T2, 22/08/2026.
+ *
+ * IRMÃ pequena de `PIPELINE_TETO_USD`/`PIPELINE_TETO_USD_PREMIUM`, e não a
+ * MESMA função: o pipeline da fal soma várias etapas pagas de UMA corrida
+ * (compor → animar → sincronizar), e por isso `autorizarGasto`
+ * (falPipeline.ts) recebe um ACUMULADO. O caminho HeyGen tem uma etapa paga
+ * só — `POST /v3/videos`, sem passos intermediários — então não há o que
+ * acumular: a pergunta é sempre "este vídeo, sozinho, custaria mais que o
+ * teto?".
+ *
+ * Não recusa por VENDOR (nunca `if (vendor === "heygen")`): recusa quando
+ * `costFor` devolve um custo CONHECIDO acima do teto, e fica muda quando não
+ * há medição — a mesma decisão que `costFor` já toma para a TELA
+ * (`/video-cost-estimate`: mostrar ausência, nunca inventar zero nem
+ * bloquear às cegas). Hoje só HeyGen tem `known: true`; se outro vendor
+ * ganhar medição própria no futuro, este teto passa a valer para ele
+ * automaticamente, sem precisar ser editado.
+ *
+ * O pipeline fal segue com o SEU freio (`autorizarGasto`), inalterado — os
+ * dois nunca se sobrepõem: `costFor` devolve `known:false` para `fal`
+ * (nenhuma medição própria ainda), então este teto nunca opina sobre ele.
+ */
+export const HEYGEN_TETO_USD_ENV = "HEYGEN_TETO_USD";
+
+/**
+ * DEFAULT DERIVADO, nunca digitado: o PIOR CASO que a régua de duração já
+ * permite hoje — `MAX_SCRIPT_SECONDS` (o teto de recusa global, 180 s) ×
+ * `USD_PER_BILLED_SECOND` (US$ 0,05/s, medido). Um vídeo dentro do teto de
+ * duração NUNCA deveria bater neste teto de dólar — ele existe para o dia em
+ * que a régua de duração for contornada (defeito, não uso normal), não para
+ * apertar geração comum.
+ */
+export const DEFAULT_HEYGEN_TETO_USD = round(MAX_SCRIPT_SECONDS * USD_PER_BILLED_SECOND, 2);
+
+/** O teto em vigor. Mesma regra de sempre: ausente ou inválido cai no default. */
+export function heygenSpendCapUsd(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env[HEYGEN_TETO_USD_ENV];
+  if (!raw) return DEFAULT_HEYGEN_TETO_USD;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_HEYGEN_TETO_USD;
+}
+
+export class HeygenSpendCapExceededError extends Error {
+  constructor(
+    readonly estimatedUsd: number,
+    readonly capUsd: number,
+  ) {
+    super(
+      `TETO DE GASTO: esta geração custaria aproximadamente US$ ${estimatedUsd.toFixed(2)}, acima do ` +
+        `teto de US$ ${capUsd.toFixed(2)}. Nada foi pedido ao fornecedor — a recusa acontece antes do ` +
+        `débito de crédito. Para seguir, defina ${HEYGEN_TETO_USD_ENV} no ambiente com um valor maior.`,
+    );
+    this.name = "HeygenSpendCapExceededError";
+  }
+}
+
+/**
+ * O PORTEIRO. Roda ANTES do débito e antes de qualquer chamada — mesmo
+ * princípio de `assertDailyGenerationBudget`/`withLiveBudget`: uma recusa
+ * depois de gastar é relatório, não freio.
+ */
+export function assertHeygenSpendBudget(
+  estimatedSeconds: number,
+  vendor: string,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const cost = estimateVideoCost(estimatedSeconds, vendor);
+  if (!cost.known) return;
+  const cap = heygenSpendCapUsd(env);
+  if (cost.usd > cap) {
+    throw new HeygenSpendCapExceededError(cost.usd, cap);
+  }
 }
 
 /**

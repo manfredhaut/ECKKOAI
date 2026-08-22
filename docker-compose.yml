@@ -72,6 +72,10 @@ services:
       # o sintoma era "subi o limite e o sistema continua recusando em 5 de 5".
       # Ver services/billing/dailyGenerationLimit.ts.
       DAILY_PAID_GENERATION_LIMIT: ${DAILY_PAID_GENERATION_LIMIT:-5}
+      # Teto em DÓLARES do caminho de custo conhecido (hoje só HeyGen — T2,
+      # 22/08/2026). Vazio = derivado de MAX_SCRIPT_SECONDS × USD_PER_BILLED_SECOND
+      # (US$ 9,00). Ver services/billing/providerCost.ts (assertHeygenSpendBudget).
+      HEYGEN_TETO_USD: ${HEYGEN_TETO_USD:-}
       # Teto de TENTATIVAS (qualquer desfecho). Vazio = 3× o de gasto. Existe
       # porque a falha passou a devolver o GASTO: sem um contador que não
       # volta, um caminho que falha sempre dispararia para sempre.

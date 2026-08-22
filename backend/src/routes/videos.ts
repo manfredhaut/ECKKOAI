@@ -16,7 +16,14 @@ import { resolveTenantAvatarFalKey } from "../services/providers/platformKeys.js
 import { providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 import { createNotification } from "../services/notifications.js";
 import { recordFailedProviderUsage, recordProviderUsage } from "../services/billing/usageTracking.js";
-import { costBasisNote, costDifference, costFor, estimateVideoCost } from "../services/billing/providerCost.js";
+import {
+  assertHeygenSpendBudget,
+  costBasisNote,
+  costDifference,
+  costFor,
+  estimateVideoCost,
+  HeygenSpendCapExceededError,
+} from "../services/billing/providerCost.js";
 import { contaDe, debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { persistRemoteArtifact, probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.js";
@@ -1178,6 +1185,29 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           "ela. Nada foi cobrado e nenhum vídeo foi criado — a recusa acontece antes do débito de " +
           "crédito e antes de qualquer chamada a fornecedor.",
       });
+    }
+
+    // -----------------------------------------------------------------------
+    // TETO EM DÓLARES — T2, 22/08/2026. Antes do débito, antes de qualquer
+    // chamada, depois de já saber o VENDOR (o teto só tem opinião sobre
+    // vendor com custo medido — ver `assertHeygenSpendBudget`). Irmã pequena
+    // de `autorizarGasto` (fal): aqui há uma etapa paga só, não uma corrida
+    // de várias somadas.
+    // -----------------------------------------------------------------------
+    try {
+      assertHeygenSpendBudget(estimatedSeconds, avatarCredential.vendor);
+    } catch (err) {
+      if (err instanceof HeygenSpendCapExceededError) {
+        logEvent("warn", "video_heygen_spend_cap_exceeded", {
+          context: "videos.create",
+          tenantId: req.tenantId,
+          estimatedUsd: err.estimatedUsd,
+          capUsd: err.capUsd,
+          consequence: "recusado antes do débito; nenhuma linha criada e nenhum crédito tocado",
+        });
+        return reply.code(402).send({ error: "heygen_spend_cap_exceeded", message: err.message });
+      }
+      throw err;
     }
 
     const voiceCredential = await getCredential(req.tenantId, "voice");

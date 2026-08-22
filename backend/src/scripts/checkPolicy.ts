@@ -42,6 +42,7 @@ import { checkVendorErrorPathPolicy } from "./checkVendorErrorPathPolicy.js";
 import { checkImageFreshnessPolicy } from "./checkImageFreshnessPolicy.js";
 import { checkFrontendBuildEnvPolicy } from "./checkFrontendBuildEnvPolicy.js";
 import { checkBackupPolicy } from "./checkBackupPolicy.js";
+import { checkHeygenSpendCapPolicy } from "./checkHeygenSpendCapPolicy.js";
 import { checkSingleDomainPolicy } from "./checkSingleDomainPolicy.js";
 import { checkTenantOnboardingPolicy } from "./checkTenantOnboardingPolicy.js";
 import { checkEmailVerificationPolicy } from "./checkEmailVerificationPolicy.js";
@@ -533,6 +534,11 @@ async function main(): Promise<void> {
   const backupResult = await checkBackupPolicy(process.env.REPO_ROOT ?? "/repo");
   backupResult.failures.forEach((f) => failures.push(f));
   backupResult.notes.forEach((n) => note(n));
+
+  // --- 18f. teto em dólares (HeyGen): recusa antes do débito -------------
+  const heygenSpendCapResult = await checkHeygenSpendCapPolicy(process.env.REPO_ROOT ?? "/repo");
+  heygenSpendCapResult.failures.forEach((f) => failures.push(f));
+  heygenSpendCapResult.notes.forEach((n) => note(n));
 
   // --- 18c. domínio único: sem redirect de subdomínio, e-mail único global
   const singleDomainResult = await checkSingleDomainPolicy(process.env.REPO_ROOT ?? "/repo");
