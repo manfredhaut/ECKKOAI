@@ -273,7 +273,9 @@
       "testHint": "Faz uma chamada real ao provedor, só quando você clica.",
       "testUnavailable": "Sem sonda de conexão para este provedor — testar exigiria adivinhar para onde mandar a chave. A chave fica guardada normalmente.",
       "testOk": "Conexão bem-sucedida — o provedor aceitou a chave.",
-      "testFailed": "Falhou: {{message}}"
+      "testFailed": "Falhou: {{message}}",
+      "addAvatarVendor": "Adicionar outro provedor de avatar para este tenant.",
+      "addVendorButton": "Adicionar"
     },
     "plans": {
       "title": "Planos",

@@ -6,8 +6,12 @@ import { Field } from "../../components/ui/Field";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { VENDORS_BY_PROVIDER } from "../Settings/providerVendors";
 import { AdminPlatformKeysSection } from "./AdminPlatformKeysSection";
+import { AvatarCredentialsCard } from "./AvatarCredentialsCard";
 
-const PROVIDERS: CredentialProviderId[] = ["avatar", "voice", "script"];
+// `avatar` sai desta lista — ela vira `AvatarCredentialsCard`, o único dos
+// três que pode ter mais de uma linha por tenant (migration 060). `voice` e
+// `script` continuam exatamente como estavam.
+const SINGLE_CREDENTIAL_PROVIDERS: CredentialProviderId[] = ["voice", "script"];
 
 interface TestResult {
   ok: boolean;
@@ -189,16 +193,25 @@ export function AdminApisPanel({ tenants }: { tenants: AdminTenantSummary[] }) {
   }, [selectedTenantId]);
 
   function updateCredential(updated: Credential) {
-    setDetail((prev) =>
-      prev
-        ? {
-            ...prev,
-            credentials: prev.credentials.some((c) => c.provider === updated.provider)
-              ? prev.credentials.map((c) => (c.provider === updated.provider ? updated : c))
-              : [...prev.credentials, updated],
-          }
-        : prev,
-    );
+    setDetail((prev) => {
+      if (!prev) return prev;
+      // `avatar` pode ter mais de uma linha (migration 060) — casar só por
+      // `provider` faria salvar o fal SUBSTITUIR a entrada do heygen na
+      // tela (as duas "são avatar"). `voice`/`script` continuam com uma
+      // linha só, casada por `provider` sozinho: o vendor pode mudar de
+      // uma chamada para a outra (a pessoa trocou de fornecedor no
+      // seletor), e a linha antiga tem de ser aquela mesma, não uma nova.
+      const mesmaEntrada = (c: Credential) =>
+        updated.provider === "avatar"
+          ? c.provider === updated.provider && c.vendor === updated.vendor
+          : c.provider === updated.provider;
+      return {
+        ...prev,
+        credentials: prev.credentials.some(mesmaEntrada)
+          ? prev.credentials.map((c) => (mesmaEntrada(c) ? updated : c))
+          : [...prev.credentials, updated],
+      };
+    });
   }
 
   return (
@@ -243,7 +256,8 @@ export function AdminApisPanel({ tenants }: { tenants: AdminTenantSummary[] }) {
         <p className="text-muted">{t("adminPanel.loading")}</p>
       ) : (
         <div className="grid grid-cols-3">
-          {PROVIDERS.map((provider) => (
+          <AvatarCredentialsCard tenantId={detail.id} credentials={detail.credentials} onSaved={updateCredential} />
+          {SINGLE_CREDENTIAL_PROVIDERS.map((provider) => (
             <IntegrationCard
               key={provider}
               tenantId={detail.id}

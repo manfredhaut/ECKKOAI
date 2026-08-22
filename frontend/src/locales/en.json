@@ -273,7 +273,9 @@
       "testHint": "Makes a real call to the provider, only when you click.",
       "testUnavailable": "No connection probe for this provider — testing would mean guessing where to send the key. The key is still stored normally.",
       "testOk": "Connection succeeded — the provider accepted the key.",
-      "testFailed": "Failed: {{message}}"
+      "testFailed": "Failed: {{message}}",
+      "addAvatarVendor": "Add another avatar provider for this tenant.",
+      "addVendorButton": "Add"
     },
     "plans": {
       "title": "Plans",

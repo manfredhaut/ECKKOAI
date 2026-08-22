@@ -25,6 +25,7 @@ interface CredentialRow {
   vendor: string | null;
   connected: boolean;
   updated_at: string;
+  is_default: boolean;
 }
 
 function isProvider(value: string): value is CredentialProvider {
@@ -44,6 +45,7 @@ function credentialToPublic(row: CredentialRow) {
     updated_at: row.updated_at,
     masked_key: row.encrypted_key ? maskKey(row.encrypted_key).slice(-8) : null,
     vendor: row.vendor ?? defaultVendor(row.provider),
+    is_default: row.is_default,
   };
 }
 
@@ -122,21 +124,56 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "Unknown vendor for this provider" });
     }
 
+    // MULTI-VENDOR — só `avatar` (migration 060). `voice` e `script`
+    // continuam com UMA linha por tenant: o `before`, o INSERT e o
+    // `ON CONFLICT` abaixo têm de mirar o índice parcial CERTO — os dois
+    // existem ao mesmo tempo na tabela, e um `ON CONFLICT` sem `WHERE`
+    // deixaria de casar com QUALQUER um dos dois (Postgres exige que a
+    // cláusula de inferência bata exatamente com um índice existente).
+    const ehAvatar = provider === "avatar";
+
     const { rows: beforeRows } = await pool.query<CredentialRow>(
-      "SELECT * FROM api_credentials WHERE tenant_id = $1 AND provider = $2",
-      [tenantId, provider],
+      ehAvatar
+        ? "SELECT * FROM api_credentials WHERE tenant_id = $1 AND provider = $2 AND vendor = $3"
+        : "SELECT * FROM api_credentials WHERE tenant_id = $1 AND provider = $2",
+      ehAvatar ? [tenantId, provider, vendor] : [tenantId, provider],
     );
     const before = beforeRows[0] ? credentialToPublic(beforeRows[0]) : null;
 
     const encrypted = encrypt(req.body.apiKey);
-    const { rows } = await pool.query<CredentialRow>(
-      `INSERT INTO api_credentials (tenant_id, provider, encrypted_key, vendor, connected, updated_at)
-       VALUES ($1, $2, $3, $4, true, now())
-       ON CONFLICT (tenant_id, provider)
-       DO UPDATE SET encrypted_key = $3, vendor = $4, connected = true, updated_at = now()
-       RETURNING *`,
-      [tenantId, provider, encrypted, vendor],
-    );
+    let rows: CredentialRow[];
+    if (ehAvatar) {
+      // Nasce `is_default=true` só quando é a PRIMEIRA credencial de avatar
+      // deste tenant (nenhuma linha ainda, de vendor nenhum) — não a
+      // primeira DESTE vendor. Toda credencial de avatar SEGUINTE nasce
+      // `is_default=false` e nunca desloca a que já é default; sem essa
+      // checagem, um tenant que já tem heygen (is_default=true) e adiciona
+      // fal pela primeira vez teria duas linhas competindo por
+      // `api_credentials_tenant_avatar_default_key`, e o INSERT abaixo
+      // simplesmente falharia com 500 no clique de "Adicionar vendor".
+      const { rows: existentes } = await pool.query<{ count: string }>(
+        "SELECT count(*) FROM api_credentials WHERE tenant_id = $1 AND provider = 'avatar'",
+        [tenantId],
+      );
+      const primeiraCredencialDeAvatar = Number(existentes[0].count) === 0;
+      ({ rows } = await pool.query<CredentialRow>(
+        `INSERT INTO api_credentials (tenant_id, provider, encrypted_key, vendor, connected, updated_at, is_default)
+         VALUES ($1, $2, $3, $4, true, now(), $5)
+         ON CONFLICT (tenant_id, provider, vendor) WHERE provider = 'avatar'
+         DO UPDATE SET encrypted_key = $3, connected = true, updated_at = now()
+         RETURNING *`,
+        [tenantId, provider, encrypted, vendor, primeiraCredencialDeAvatar],
+      ));
+    } else {
+      ({ rows } = await pool.query<CredentialRow>(
+        `INSERT INTO api_credentials (tenant_id, provider, encrypted_key, vendor, connected, updated_at)
+         VALUES ($1, $2, $3, $4, true, now())
+         ON CONFLICT (tenant_id, provider) WHERE provider <> 'avatar'
+         DO UPDATE SET encrypted_key = $3, vendor = $4, connected = true, updated_at = now()
+         RETURNING *`,
+        [tenantId, provider, encrypted, vendor],
+      ));
+    }
     const after = credentialToPublic(rows[0]);
 
     await recordAuditLog({
@@ -161,7 +198,7 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
   // flag means "a key is stored", and a failing test doesn't unstore it.
   // The result is reported to the caller and audit-logged, not persisted
   // as state — no schema change (see CLAUDE.md / admin panel plan).
-  app.post<{ Params: { tenantId: string; provider: string } }>(
+  app.post<{ Params: { tenantId: string; provider: string }; Querystring: { vendor?: string } }>(
     "/admin/tenants/:tenantId/credentials/:provider/test",
     async (req, reply) => {
       const { tenantId, provider } = req.params;
@@ -170,9 +207,18 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
       const tenant = await getTenantOr404(tenantId);
       if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
 
+      // `avatar` pode ter mais de uma linha (migration 060) — sem o vendor
+      // na query, `rows[0]` seria arbitrário entre elas, e "Testar" no
+      // card do fal testaria a chave do heygen (ou o contrário) por
+      // acaso. `voice`/`script` continuam com uma linha só, e um cliente
+      // antigo que não manda `?vendor=` continua funcionando exatamente
+      // como antes — `req.query.vendor` ausente cai no comportamento de
+      // sempre.
       const { rows } = await pool.query<CredentialRow>(
-        "SELECT * FROM api_credentials WHERE tenant_id = $1 AND provider = $2",
-        [tenantId, provider],
+        req.query.vendor
+          ? "SELECT * FROM api_credentials WHERE tenant_id = $1 AND provider = $2 AND vendor = $3"
+          : "SELECT * FROM api_credentials WHERE tenant_id = $1 AND provider = $2",
+        req.query.vendor ? [tenantId, provider, req.query.vendor] : [tenantId, provider],
       );
       const credential = rows[0];
       if (!credential?.encrypted_key) {

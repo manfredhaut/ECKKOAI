@@ -16,12 +16,15 @@ import { Field } from "../../components/ui/Field";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { VENDORS_BY_PROVIDER } from "../Settings/providerVendors";
 import { AdminApisPanel } from "./AdminApisPanel";
+import { AvatarCredentialsCard } from "./AvatarCredentialsCard";
 import { AdminPlansPanel } from "./AdminPlansPanel";
 import { Copilot } from "../../components/copilot/Copilot";
 import { useAdminCopilot } from "../../adminCopilot/AdminCopilotContext";
 
 const STORAGE_OPTIONS: StorageProviderId[] = ["drive", "platform_hosted"];
-const PROVIDERS: CredentialProviderId[] = ["avatar", "voice", "script"];
+// `avatar` sai desta lista — vira `AvatarCredentialsCard`, o único dos três
+// que pode ter mais de uma linha por tenant (migration 060).
+const SINGLE_CREDENTIAL_PROVIDERS: CredentialProviderId[] = ["voice", "script"];
 
 // Usado na lista E no detalhe — os dois mostravam status como binário
 // (active ?  connected : error), que pintava "pending" com o vermelho de
@@ -274,9 +277,23 @@ function AdminTenantDetailPanel({
   }, [tenantId]);
 
   function updateCredential(updated: Credential) {
-    setDetail((prev) =>
-      prev ? { ...prev, credentials: prev.credentials.map((c) => (c.provider === updated.provider ? updated : c)) } : prev,
-    );
+    setDetail((prev) => {
+      if (!prev) return prev;
+      // Mesmo raciocínio de `AdminApisPanel.tsx`: `avatar` pode ter mais de
+      // uma linha (migration 060), então casar só por `provider` faria
+      // salvar um segundo vendor SUBSTITUIR o primeiro na tela em vez de
+      // somar a ele.
+      const mesmaEntrada = (c: Credential) =>
+        updated.provider === "avatar"
+          ? c.provider === updated.provider && c.vendor === updated.vendor
+          : c.provider === updated.provider;
+      return {
+        ...prev,
+        credentials: prev.credentials.some(mesmaEntrada)
+          ? prev.credentials.map((c) => (mesmaEntrada(c) ? updated : c))
+          : [...prev.credentials, updated],
+      };
+    });
   }
 
   // Três estados, não dois. O toggle binário anterior ("suspended" ? active
@@ -352,7 +369,8 @@ function AdminTenantDetailPanel({
       </div>
 
       <div className="grid grid-cols-3">
-        {PROVIDERS.map((provider) => (
+        <AvatarCredentialsCard tenantId={tenantId} credentials={detail.credentials} onSaved={updateCredential} />
+        {SINGLE_CREDENTIAL_PROVIDERS.map((provider) => (
           <AdminCredentialEditor
             key={provider}
             tenantId={tenantId}

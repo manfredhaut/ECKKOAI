@@ -113,6 +113,13 @@ export interface Credential {
   updated_at: string;
   masked_key: string | null;
   vendor: string;
+  /**
+   * A credencial "de sempre" para este (tenant, provider) — a que
+   * consumidores não-tier-aware de getCredential continuam vendo. Só
+   * `avatar` pode ter mais de uma linha (migration 060); `voice`/`script`
+   * seguem com uma linha só, sempre `is_default: true`.
+   */
+  is_default: boolean;
 }
 
 export type DocumentStatus = "processing" | "indexed" | "error";

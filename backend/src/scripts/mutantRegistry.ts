@@ -52,6 +52,7 @@ import { MUTANTS as expressivenessDefaultMutants } from "./checkExpressivenessDe
 import { MUTANTS as audioDurationGateMutants } from "./checkAudioDurationGatePolicy.js";
 import { MUTANTS as avatarCardSelectableMutants } from "./checkAvatarCardSelectablePolicy.js";
 import { MUTANTS as tierAvailabilityMutants } from "./checkTierAvailabilityPolicy.js";
+import { MUTANTS as avatarMultiVendorMutants } from "./checkAvatarMultiVendorPolicy.js";
 import { MUTANTS as vendorProbeMutants } from "./checkVendorProbePolicy.js";
 import { MUTANTS as falClientMutants } from "./checkFalClientPolicy.js";
 import { MUTANTS as falPipelineMutants } from "./checkFalPipelinePolicy.js";
@@ -122,6 +123,7 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkAudioDurationGatePolicy.ts", audioDurationGateMutants),
   ...de("backend/src/scripts/checkAvatarCardSelectablePolicy.ts", avatarCardSelectableMutants),
   ...de("backend/src/scripts/checkTierAvailabilityPolicy.ts", tierAvailabilityMutants),
+  ...de("backend/src/scripts/checkAvatarMultiVendorPolicy.ts", avatarMultiVendorMutants),
   ...de("backend/src/scripts/checkVendorProbePolicy.ts", vendorProbeMutants),
   ...de("backend/src/scripts/checkFalClientPolicy.ts", falClientMutants),
   ...de("backend/src/scripts/checkFalPipelinePolicy.ts", falPipelineMutants),
