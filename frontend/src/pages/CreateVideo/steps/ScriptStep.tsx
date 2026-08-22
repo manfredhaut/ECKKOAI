@@ -3,13 +3,19 @@ import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
 import { ScriptCounter } from "../ScriptCounter";
+import { TARGET_DURATION_OPTIONS } from "../targetDuration";
 
 export function ScriptStep({
   script,
   onChange,
+  targetDurationSeconds,
+  onTargetDurationChange,
 }: {
   script: string;
   onChange: (script: string) => void;
+  /** `null` = "mais" — sem alvo. Ver `types.ts` (`WizardState.targetDurationSeconds`). */
+  targetDurationSeconds: number | null;
+  onTargetDurationChange: (value: number | null) => void;
 }) {
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState("");
@@ -36,6 +42,38 @@ export function ScriptStep({
   return (
     <div className="card">
       <div className="card-title">{t("createVideo.script.title")}</div>
+
+      {/* ANTES do roteiro, de propósito: a duração-alvo muda o teto que o
+          contador mostra assim que a pessoa começa a digitar — pedir a
+          escolha depois do campo faria o teto aparecer tarde demais para
+          orientar quem já está escrevendo. */}
+      <Field
+        label={t("createVideo.script.durationTarget.label")}
+        help={t("createVideo.script.durationTarget.help")}
+      >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {TARGET_DURATION_OPTIONS.map((seconds) => (
+            <button
+              key={seconds}
+              type="button"
+              className={`chip${targetDurationSeconds === seconds ? " selected" : ""}`}
+              aria-pressed={targetDurationSeconds === seconds}
+              onClick={() => onTargetDurationChange(seconds)}
+            >
+              {t("createVideo.script.durationTarget.seconds", { seconds })}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`chip${targetDurationSeconds === null ? " selected" : ""}`}
+            aria-pressed={targetDurationSeconds === null}
+            onClick={() => onTargetDurationChange(null)}
+          >
+            {t("createVideo.script.durationTarget.more")}
+          </button>
+        </div>
+      </Field>
+
       <Field
         label={t("createVideo.script.scriptLabel")}
         help={t("createVideo.script.scriptHelp")}
@@ -49,7 +87,7 @@ export function ScriptStep({
         {/* Sob o campo, e não no passo de geração: quando o custo só aparece
             no fim, quem escreve descobre que o roteiro é caro depois de já ter
             escrito. Aqui o número muda enquanto se digita. */}
-        <ScriptCounter script={script} />
+        <ScriptCounter script={script} targetDurationSeconds={targetDurationSeconds} />
       </Field>
 
       <div style={{ maxWidth: 480 }}>

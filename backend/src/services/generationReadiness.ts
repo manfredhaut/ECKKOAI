@@ -45,8 +45,9 @@ import { isFixtureMode } from "./providers/providerMode.js";
 import {
   MAX_SCRIPT_SECONDS,
   estimateSecondsFromScript,
-  exceedsMaxScriptLength,
+  exceedsActiveScriptLimit,
   maxScriptChars,
+  maxScriptCharsFor,
 } from "./video/scriptDuration.js";
 // O teto da Interpretação mora junto da normalização da cena, e não aqui: é o
 // mesmo módulo que decide o que é uma cena válida, e separar os dois faria a
@@ -125,6 +126,14 @@ export interface GenerationReadinessInput {
    * produto nunca teve direção nenhuma. Ausente conta como vazia, e vazia passa.
    */
   motionPrompt?: string | null;
+  /**
+   * A DURAÇÃO-ALVO escolhida no passo Roteiro (15/30/45/60 s). Presente, ela
+   * vira o teto de recusa — MENOR que `MAX_SCRIPT_SECONDS` por construção,
+   * então checá-la já cobre o teto global (ver `exceedsTargetScriptLength`).
+   * Ausente ("mais", ou um cliente antigo que nunca soube deste campo): o
+   * teto continua sendo só `MAX_SCRIPT_SECONDS`, como sempre foi.
+   */
+  targetDurationSeconds?: number | null;
 }
 
 export async function evaluateGenerationReadiness(
@@ -193,24 +202,32 @@ export async function evaluateGenerationReadiness(
       status: 400,
       message: "Escreva o roteiro no passo 2 antes de gerar o vídeo.",
     });
-  } else if (exceedsMaxScriptLength(input.script)) {
-    // RECUSA, e nunca corte. Um roteiro truncado geraria um vídeo que para no
-    // meio de uma frase — cobrado por inteiro, sem ninguém ter escolhido isso.
-    // Recusar custa zero e se resolve editando o texto.
-    //
-    // Os dois números da mensagem saem da MESMA régua que estima o custo: o
-    // limite em caracteres é derivado de `MAX_SCRIPT_SECONDS`, não digitado, e
-    // por isso não tem como discordar da duração mostrada logo acima dele.
-    const estimado = estimateSecondsFromScript(input.script);
-    blockers.push({
-      code: "script_too_long",
-      status: 400,
-      message:
-        `O roteiro tem ${input.script.length} caracteres, cerca de ${estimado.toFixed(0)} s de vídeo, ` +
-        `e o limite é ${MAX_SCRIPT_SECONDS} s (${maxScriptChars()} caracteres). ` +
-        "Nada foi cobrado. Encurte o roteiro ou divida em mais de um vídeo — " +
-        "o texto não é cortado automaticamente para não entregar um vídeo que para no meio de uma frase.",
-    });
+  } else {
+    // exceedsActiveScriptLimit decide QUAL régua vale — a duração-alvo do
+    // passo Roteiro, quando escolhida, ou o teto global na ausência dela.
+    const alvo = input.targetDurationSeconds ?? null;
+    if (exceedsActiveScriptLimit(input.script, alvo)) {
+      // RECUSA, e nunca corte. Um roteiro truncado geraria um vídeo que para no
+      // meio de uma frase — cobrado por inteiro, sem ninguém ter escolhido isso.
+      // Recusar custa zero e se resolve editando o texto.
+      //
+      // Os números da mensagem saem da MESMA régua que estima o custo: o
+      // limite em caracteres é derivado do teto em vigor (o alvo escolhido, ou
+      // MAX_SCRIPT_SECONDS na ausência dele), nunca digitado.
+      const tetoSegundos = alvo ?? MAX_SCRIPT_SECONDS;
+      const tetoCaracteres = alvo != null ? maxScriptCharsFor(alvo) : maxScriptChars();
+      const estimado = estimateSecondsFromScript(input.script);
+      blockers.push({
+        code: "script_too_long",
+        status: 400,
+        message:
+          `O roteiro tem ${input.script.length} caracteres, cerca de ${estimado.toFixed(0)} s de vídeo, ` +
+          `e o limite é ${tetoSegundos} s (${tetoCaracteres} caracteres)` +
+          (alvo != null ? ", a duração escolhida no passo Roteiro" : "") +
+          ". Nada foi cobrado. Encurte o roteiro ou divida em mais de um vídeo — " +
+          "o texto não é cortado automaticamente para não entregar um vídeo que para no meio de uma frase.",
+      });
+    }
   }
 
   // --- Interpretação ------------------------------------------------------

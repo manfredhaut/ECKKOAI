@@ -38,6 +38,13 @@ export interface WizardState {
   estimatedSeconds: number | null;
   /** Teto declarado pelo servidor, acima do qual o passo Gerar confirma. */
   confirmAboveSeconds: number | null;
+  /**
+   * DURAÇÃO-ALVO escolhida no passo Roteiro (15/30/45/60 s). `null` = "mais"
+   * — sem alvo, o teto de recusa continua sendo só o global do servidor
+   * (`MAX_SCRIPT_SECONDS`). Presente, ela vira o teto de recusa DE VERDADE:
+   * o servidor recusa acima dela, não é só uma dica na tela.
+   */
+  targetDurationSeconds: number | null;
   /** CENA — os controles que o fornecedor de fato aceita. */
   background: SceneBackground | null;
   motionPrompt: string;

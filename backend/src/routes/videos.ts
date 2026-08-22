@@ -25,6 +25,9 @@ import { toClientVendorError, vendorErrorStatus } from "../services/providers/ve
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 import {
+  PUBLISH_PLATFORMS,
+  formatConfidenceForTier,
+  isFormatConfidenceTier,
   resolveVideoFormat,
   vendorFormatSupport,
   type AspectRatio,
@@ -38,7 +41,9 @@ import {
   MAX_SCRIPT_SECONDS,
   estimateSecondsFromChars,
   estimateSecondsFromScript,
+  isTargetDurationSeconds,
   maxScriptChars,
+  maxScriptCharsFor,
   requiresLongVideoConfirmation,
   scriptDurationBasis,
 } from "../services/video/scriptDuration.js";
@@ -538,16 +543,44 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
   /**
    * O provedor conectado a ESTE tenant honra a proporção escolhida?
    *
-   * Existe para o passo "Publicação" não prometer o que o vendor do cliente
-   * não entrega. Sem isto, a tela ofereceria 9:16 a um tenant em D-ID e a
+   * Existe para o passo Cena não prometer o que o vendor do cliente não
+   * entrega. Sem isto, a tela ofereceria 9:16 a um tenant em D-ID e a
    * geometria sairia da imagem de origem — sem erro nenhum, que é o modo de
    * falha mais caro: o cliente só descobre olhando o vídeo pronto.
    *
    * Nunca devolve chave nem nada da credencial além do nome do vendor.
+   *
+   * ⚠️ `?tier=` é OPCIONAL, e a razão é a ORDEM do wizard: o formato é
+   * escolhido no passo Cena (3 de 4), o tier só no passo Gerar (4 de 4) — no
+   * momento em que este endpoint é chamado do passo 3, o tier ainda não
+   * existe para se saber dele. SEM `tier`, o comportamento é o de sempre: a
+   * credencial DEFAULT do tenant (`getCredential`, `ORDER BY is_default`) —
+   * imperfeito para um tenant com os dois vendors configurados, mas não é
+   * regressão, é o mesmo que já valia antes deste bloco. COM `tier` válido
+   * (chamado do passo Gerar, onde o tier já é conhecido), o vendor é o
+   * EXIGIDO por aquele tier (`vendorRequiredByTier` + `getCredentialForVendor`
+   * — Fase C), nunca o default — é isto que fecha o achado da verificação
+   * anterior: "o aviso calculado sobre o vendor errado".
    */
-  app.get("/video-format-support", async (req) => {
-    const credential = await getCredential(req.tenantId, "avatar");
-    return vendorFormatSupport(credential?.vendor ?? null);
+  app.get<{ Querystring: { tier?: string } }>("/video-format-support", async (req) => {
+    const tierBruto = req.query.tier;
+    const tier = isFormatConfidenceTier(tierBruto) ? tierBruto : null;
+    const credential = tier
+      ? await getCredentialForVendor(req.tenantId, "avatar", vendorRequiredByTier(tier))
+      : await getCredential(req.tenantId, "avatar");
+    return {
+      ...vendorFormatSupport(credential?.vendor ?? null),
+      // POR DESTINO, e só quando o tier é conhecido: é a checagem fina que o
+      // vendor sozinho não distingue — o fal inteiro é "vendor_response" pela
+      // tabela de cima, mas só 9:16 no tier Normal tem chamada real por trás.
+      // `null` sem tier — a tela do passo Cena não tem com o que preencher
+      // isto ainda, e inventar um valor aqui seria pior que omitir.
+      perPlatformConfidence: tier
+        ? Object.fromEntries(
+            PUBLISH_PLATFORMS.map((p) => [p.id, formatConfidenceForTier(tier, p.aspectRatio)]),
+          )
+        : null,
+    };
   });
 
   /**
@@ -563,7 +596,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * conceitualmente com `/videos/:id`, e depender da ordem de resolução do
    * roteador para desempatar é o tipo de sutileza que quebra em silêncio.
    */
-  app.get<{ Querystring: { chars?: string } }>("/video-cost-estimate", async (req) => {
+  app.get<{ Querystring: { chars?: string; targetSeconds?: string } }>("/video-cost-estimate", async (req) => {
     // A CONTAGEM de caracteres, nunca o roteiro. O texto é conteúdo do cliente
     // e numa query string iria parar no log de acesso, no histórico e no
     // referer — o mesmo motivo que fez `/videos/readiness` ser POST. Para
@@ -573,6 +606,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     const estimatedSeconds = estimateSecondsFromChars(scriptChars);
     const credential = await getCredential(req.tenantId, "avatar");
     const estimate = estimateVideoCost(estimatedSeconds, credential?.vendor ?? "heygen");
+
+    // A DURAÇÃO-ALVO do passo Roteiro (15/30/45/60 s), quando presente. Só
+    // ALIMENTA campos NOVOS (abaixo) — `maxScriptSeconds`/`maxScriptChars`/
+    // `exceedsMaxScript` continuam sendo sempre o teto GLOBAL, sem exceção:
+    // outros consumidores desta mesma rota (o painel de custo do passo Gerar,
+    // que nunca manda `targetSeconds`) dependem deles significarem sempre a
+    // mesma coisa.
+    const targetRaw = Number(req.query.targetSeconds);
+    const targetDurationSeconds = isTargetDurationSeconds(targetRaw) ? targetRaw : null;
 
     return {
       // Estimada, e não pedida: desde o bloco DURAÇÃO-1 não existe mais duração
@@ -594,6 +636,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       maxScriptSeconds: MAX_SCRIPT_SECONDS,
       maxScriptChars: maxScriptChars(),
       exceedsMaxScript: estimatedSeconds > MAX_SCRIPT_SECONDS,
+      // A DURAÇÃO-ALVO — `null` quando a pessoa não escolheu nenhuma ("mais"),
+      // e nesse caso os dois campos abaixo também são `null`: a tela não tem
+      // com o que desenhar um segundo teto que não existe.
+      targetDurationSeconds,
+      targetMaxChars: targetDurationSeconds != null ? maxScriptCharsFor(targetDurationSeconds) : null,
+      exceedsTarget: targetDurationSeconds != null ? estimatedSeconds > targetDurationSeconds : null,
       estimate: {
         costUsd: estimate.known ? estimate.usd : null,
         costUnknownReason: estimate.known ? null : estimate.explanation,
@@ -622,10 +670,16 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * Não debita, não reserva, não chama fornecedor. É leitura pura.
    */
   app.post<{
-    Body: { avatar_id?: string | null; script?: string | null; motion_prompt?: string | null };
+    Body: {
+      avatar_id?: string | null;
+      script?: string | null;
+      motion_prompt?: string | null;
+      target_duration_seconds?: number | null;
+    };
   }>(
     "/videos/readiness",
     async (req) => {
+      const alvoBruto = req.body?.target_duration_seconds;
       return evaluateGenerationReadiness({
         tenantId: req.tenantId,
         avatarId: req.body?.avatar_id ?? null,
@@ -633,6 +687,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // Vai junto para a tela poder avisar ANTES do clique. Quem recusa
         // continua sendo a rota de criação, com o mesmo predicado.
         motionPrompt: req.body?.motion_prompt ?? null,
+        targetDurationSeconds: isTargetDurationSeconds(alvoBruto) ? alvoBruto : null,
       });
     },
   );
@@ -795,6 +850,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       maxScriptSeconds: MAX_SCRIPT_SECONDS,
       maxScriptChars: maxScriptChars(),
       exceedsMaxScript: estimatedSeconds > MAX_SCRIPT_SECONDS,
+      // O vídeo já foi gerado — a duração-alvo do passo Roteiro não se aplica
+      // mais aqui. `null` nos três, sempre, para manter a MESMA forma de
+      // `/video-cost-estimate` (ver o comentário logo acima daquela rota).
+      targetDurationSeconds: null,
+      targetMaxChars: null,
+      exceedsTarget: null,
       estimate: {
         costUsd: estimate.known ? estimate.usd : null,
         costUnknownReason: estimate.known ? null : estimate.explanation,
@@ -928,6 +989,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
        * "normal" é o comportamento que essas gerações sempre tiveram.
        */
       tier_video?: string | null;
+      /**
+       * A DURAÇÃO-ALVO escolhida no passo Roteiro (15/30/45/60 s). Ausente ou
+       * inválida ("mais", ou um cliente antigo que não conhece este campo)
+       * cai em `null` — o teto de recusa continua sendo só o global
+       * (`MAX_SCRIPT_SECONDS`), o comportamento de sempre.
+       */
+      target_duration_seconds?: number | null;
     };
   }>("/videos", { preHandler: requireActiveTenant }, async (req, reply) => {
     const {
@@ -943,8 +1011,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       engine_choice: engineChoiceBruto,
       avatar_look_id: avatarLookId,
       tier_video: tierVideoBruto,
+      target_duration_seconds: targetDurationBruta,
     } = req.body;
     const tierVideo: VideoTier = isVideoTier(tierVideoBruto) ? tierVideoBruto : DEFAULT_VIDEO_TIER;
+    const targetDurationSeconds = isTargetDurationSeconds(targetDurationBruta) ? targetDurationBruta : null;
 
     // A cena é NORMALIZADA aqui, uma vez, e o resultado é o que vai para o
     // banco E para o fornecedor. Normalizar em dois lugares deixaria o que foi
@@ -991,6 +1061,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // sobre o português, e recusar por causa disso cobraria dela um passo que
       // ela não sabe que existe. Ver MOTION_PROMPT_MAX_CHARS.
       motionPrompt: scene.motionPrompt,
+      targetDurationSeconds,
     });
     if (!readiness.ready) {
       const [primeiro] = readiness.blockers;

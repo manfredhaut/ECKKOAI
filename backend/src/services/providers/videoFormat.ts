@@ -230,3 +230,78 @@ export function vendorFormatSupport(vendor: string | null | undefined): {
   }
   return { vendor: vendor ?? null, supported: entry.supported, evidence: entry.evidence, reason: entry.reason };
 }
+
+/**
+ * O nível de confiança REAL de cada proporção, POR TIER — não por vendor
+ * sozinho. `VENDOR_FORMAT_SUPPORT.fal` é grosso demais para isto: ele diz
+ * "vendor_response" para o vendor fal inteiro, mas a única chamada real
+ * mediu 9:16 no MOTOR DO TIER NORMAL (Wan/nano-banana) — 16:9, 4:5 e 1:1
+ * seguem sem nenhuma chamada real, e o tier Premium (Seedance) não tem
+ * NENHUMA proporção medida.
+ *
+ * Fonte de cada linha, verificada por leitura de código nesta mesma sessão:
+ *  · simples (HeyGen) — `HEYGEN_ASPECT_RATIOS` bate com as 4 proporções do
+ *    catálogo; DOCUMENTADO (doc pública), nenhuma geração enviou o campo
+ *    ainda (`VENDOR_FORMAT_SUPPORT.heygen`, acima).
+ *  · normal (Wan) — a proporção só é enviada a `compor()`
+ *    (`fal-ai/nano-banana-2/edit`); o Wan não tem campo de proporção no
+ *    schema e herda o que a composição produziu
+ *    (`falPipeline.ts`, comentário de `aspectRatio` em `FalPipelineInput`).
+ *    Medido por chamada real SÓ para 9:16 (`VENDOR_FORMAT_SUPPORT.fal`,
+ *    acima); as outras três nunca foram tentadas, e não há doc pública do
+ *    nano-banana citada neste repositório — "unverified", não "documented".
+ *  · premium (Seedance) — `corpoAnimarSeedance` ENVIA `aspect_ratio`
+ *    diretamente (diferente do Wan), mas o comentário do próprio código
+ *    (`falPipeline.ts`, `ENDPOINT_ANIMAR_PREMIUM`) registra que isso nunca
+ *    foi testado por fusível nem por chamada real, para proporção nenhuma.
+ */
+export type FormatConfidenceLevel = "vendor_response" | "documentation" | "unverified";
+
+const CONFIANCA_SIMPLES: Record<AspectRatio, FormatConfidenceLevel> = {
+  "16:9": "documentation",
+  "9:16": "documentation",
+  "4:5": "documentation",
+  "1:1": "documentation",
+};
+
+const CONFIANCA_NORMAL: Record<AspectRatio, FormatConfidenceLevel> = {
+  "16:9": "unverified",
+  "9:16": "vendor_response",
+  "4:5": "unverified",
+  "1:1": "unverified",
+};
+
+const CONFIANCA_PREMIUM: Record<AspectRatio, FormatConfidenceLevel> = {
+  "16:9": "unverified",
+  "9:16": "unverified",
+  "4:5": "unverified",
+  "1:1": "unverified",
+};
+
+/**
+ * `"simples" | "normal" | "premium"` sem importar de `falPipeline.ts`: esse
+ * arquivo já importa `AspectRatio` DAQUI (type-only), e fechar o ciclo pelo
+ * lado de `VideoTier` não ganha nada — é um literal de três strings.
+ */
+export type FormatConfidenceTier = "simples" | "normal" | "premium";
+
+const FORMAT_CONFIDENCE_BY_TIER: Record<FormatConfidenceTier, Record<AspectRatio, FormatConfidenceLevel>> = {
+  simples: CONFIANCA_SIMPLES,
+  normal: CONFIANCA_NORMAL,
+  premium: CONFIANCA_PREMIUM,
+};
+
+/**
+ * O nível de confiança da proporção `aspectRatio` NO TIER `tier` — nunca
+ * bloqueia, só informa. Ver a tabela acima para a origem de cada valor.
+ */
+export function formatConfidenceForTier(
+  tier: FormatConfidenceTier,
+  aspectRatio: AspectRatio,
+): FormatConfidenceLevel {
+  return FORMAT_CONFIDENCE_BY_TIER[tier][aspectRatio];
+}
+
+export function isFormatConfidenceTier(value: unknown): value is FormatConfidenceTier {
+  return value === "simples" || value === "normal" || value === "premium";
+}

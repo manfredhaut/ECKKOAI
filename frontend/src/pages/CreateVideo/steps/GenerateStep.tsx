@@ -9,6 +9,19 @@ import { VideoPlayer } from "../../../features/VideoPlayer";
 import { VideoCostPanel } from "../VideoCostPanel";
 import { GenerationSummary } from "../GenerationSummary";
 
+/** Espelho de `formatConfidenceForTier` (`backend/src/services/providers/videoFormat.ts`). */
+type FormatConfidenceLevel = "vendor_response" | "documentation" | "unverified";
+
+/** Resposta de `GET /video-format-support?tier=…`. */
+interface FormatSupport {
+  vendor: string | null;
+  supported: boolean;
+  evidence: string;
+  reason: string;
+  /** `null` sem `?tier=` — nunca o caso aqui, que sempre manda o tier. */
+  perPlatformConfidence: Record<string, FormatConfidenceLevel> | null;
+}
+
 /**
  * O corpo de `POST /videos`, montado num lugar só.
  *
@@ -83,6 +96,12 @@ export function corpoDaGeracao(
     // `captions` já resolveu — "escolheu normal" e "esqueceu de escolher"
     // ficariam com a mesma aparência no corpo.
     tier_video: wizard.tierVideo,
+    // A DURAÇÃO-ALVO do passo Roteiro (15/30/45/60 s), ou `null` para "mais".
+    // Vai SEMPRE, inclusive `null` — mesma razão de `tier_video` acima: sem
+    // o campo, "escolheu mais" e "esqueceu de escolher" ficam indistinguíveis
+    // no corpo, e é o servidor (`evaluateGenerationReadiness`) quem recusa de
+    // verdade acima dela, não esta tela.
+    target_duration_seconds: wizard.targetDurationSeconds,
   };
 }
 
@@ -163,6 +182,10 @@ export function GenerateStep({
         // `<textarea>` do passo Cena continua lá como conveniência, mas quem
         // recusa é a rota — e é dela que sai o motivo escrito na tela.
         motion_prompt: wizard.motionPrompt,
+        // A DURAÇÃO-ALVO do passo Roteiro. Sem ela aqui, este botão ficaria
+        // habilitado para um roteiro que `POST /videos` vai recusar — a
+        // mesma divergência que este predicado inteiro existe para fechar.
+        target_duration_seconds: wizard.targetDurationSeconds,
       })
       .then((r) => {
         if (!cancelled) setReadiness(r);
@@ -176,7 +199,7 @@ export function GenerateStep({
     return () => {
       cancelled = true;
     };
-  }, [wizard.avatarId, wizard.script, wizard.motionPrompt, reloadKey]);
+  }, [wizard.avatarId, wizard.script, wizard.motionPrompt, wizard.targetDurationSeconds, reloadKey]);
 
   const blockers = readiness?.blockers ?? [];
 
@@ -239,6 +262,35 @@ export function GenerateStep({
     if (podeEscolherFal) onTierVideoChange("normal");
     else if (podeEscolherSimples) onTierVideoChange("simples");
   }, [credentials, podeEscolherSimples, podeEscolherFal, wizard.tierVideo, onTierVideoChange]);
+
+  /**
+   * A CONFIANÇA do formato escolhido no passo Cena, NO TIER escolhido aqui.
+   *
+   * Achado da verificação anterior a este bloco: `/video-format-support`
+   * calculava o aviso sobre a credencial DEFAULT do tenant, não sobre o
+   * vendor que o tier realmente vai usar — em uma conta com os dois vendors
+   * configurados, o aviso podia estar certo por acidente ou errado por
+   * acidente, sem relação com a escolha real. Agora a rota recebe `?tier=`
+   * (Fase C: `vendorRequiredByTier` + `getCredentialForVendor`, nunca a
+   * default) e devolve confiança POR DESTINO — refeito a cada troca de tier,
+   * porque é exatamente o que muda a resposta.
+   */
+  const [formatSupport, setFormatSupport] = useState<FormatSupport | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<FormatSupport>(`/video-format-support?tier=${wizard.tierVideo}`)
+      .then((r) => {
+        if (!cancelled) setFormatSupport(r);
+      })
+      .catch(() => {
+        if (!cancelled) setFormatSupport(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wizard.tierVideo]);
+  const confiancaDoFormato = formatSupport?.perPlatformConfidence?.[wizard.publishPlatform] ?? null;
 
   /**
    * CONFIRMAÇÃO EXPLÍCITA para roteiro longo.
@@ -388,6 +440,23 @@ export function GenerateStep({
             {(!podeEscolherSimples || !podeEscolherFal) && (
               <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
                 {t("createVideo.generate.tierUnavailable")}
+              </p>
+            )}
+            {/* A confiança do FORMATO (escolhido no passo Cena) NESTE tier —
+                nunca bloqueia a escolha, só informa o que sustenta a
+                afirmação de que ele funciona. Ver o comentário de
+                `formatSupport` acima. */}
+            {confiancaDoFormato && (
+              <p
+                className="text-muted"
+                style={{
+                  fontSize: 12,
+                  marginTop: 4,
+                  marginBottom: 0,
+                  color: confiancaDoFormato === "unverified" ? "var(--color-danger, #b42318)" : undefined,
+                }}
+              >
+                {t(`createVideo.generate.formatConfidence.${confiancaDoFormato}`)}
               </p>
             )}
           </fieldset>

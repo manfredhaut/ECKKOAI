@@ -37,6 +37,15 @@ export interface CostResponse {
   maxScriptSeconds: number;
   maxScriptChars: number;
   exceedsMaxScript: boolean;
+  /**
+   * A DURAÇÃO-ALVO do passo Roteiro (15/30/45/60 s) — `null` sem escolha
+   * ("mais") ou depois de o vídeo já existir (`/videos/:id/cost` sempre
+   * devolve os três `null`; o alvo só faz sentido antes de gerar). Presente,
+   * ela é o teto de RECUSA de verdade, mais estrito que `maxScriptSeconds`.
+   */
+  targetDurationSeconds: number | null;
+  targetMaxChars: number | null;
+  exceedsTarget: boolean | null;
   estimate: { costUsd: number | null; costUnknownReason: string | null };
   actual: {
     seconds: number;

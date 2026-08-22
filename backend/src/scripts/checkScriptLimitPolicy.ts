@@ -27,9 +27,12 @@ import path from "node:path";
 import {
   CHARS_PER_SECOND,
   MAX_SCRIPT_SECONDS,
+  TARGET_DURATION_OPTIONS,
   estimateSecondsFromChars,
+  exceedsActiveScriptLimit,
   exceedsMaxScriptLength,
   maxScriptChars,
+  maxScriptCharsFor,
 } from "../services/video/scriptDuration.js";
 import { VOICE_SPEED } from "../services/providers/voiceProvider.js";
 import type { Mutant } from "./mutants.js";
@@ -100,6 +103,79 @@ export const MUTANTS: Mutant[] = [
     find: "  const chars = script.length;",
     replace: "  const chars = script.length;\n  const segundosLocais = chars / 12.8151 / 0.85;",
     expect: "calcula duração no cliente",
+  },
+  {
+    guard: "roteiro: a duração-alvo decide a recusa quando presente, o teto global quando ausente",
+    name: "exceedsActiveScriptLimit ignora a duração-alvo e recusa só pelo teto global",
+    kind: "esperto",
+    // ESPERTO: sem duração-alvo escolhida ("mais"), o comportamento é
+    // IDÊNTICO — os dois braços colapsam no mesmo `exceedsMaxScriptLength`.
+    // O defeito só aparece na faixa entre o alvo escolhido e os 180 s
+    // globais: um roteiro de 20 s com alvo de 15 s passaria a ser aceito.
+    file: "backend/src/services/video/scriptDuration.ts",
+    find:
+      "  return targetDurationSeconds != null\n" +
+      "    ? exceedsTargetScriptLength(script, targetDurationSeconds)\n" +
+      "    : exceedsMaxScriptLength(script);",
+    replace: "  return exceedsMaxScriptLength(script);",
+    expect: "tem de ser recusado, mesmo estando bem abaixo do teto global de 180 s",
+  },
+  {
+    guard: "roteiro: o teto de caracteres da duração-alvo é derivado da MESMA régua (CHARS_PER_SECOND × VOICE_SPEED)",
+    name: "maxScriptCharsFor esquece a velocidade da voz",
+    kind: "esperto",
+    // ESPERTO: continua sendo uma conta derivada, só que de UM fator em vez
+    // de dois — sem VOICE_SPEED (0.85), o teto sai maior do que a voz em uso
+    // realmente permite, e o roteiro aceito estoura o alvo na síntese real.
+    file: "backend/src/services/video/scriptDuration.ts",
+    find: "  return Math.floor(targetSeconds * CHARS_PER_SECOND * VOICE_SPEED);",
+    replace: "  return Math.floor(targetSeconds * CHARS_PER_SECOND);",
+    expect: "Um fator esquecido aqui deixa passar roteiro que estoura o alvo escolhido na síntese real",
+  },
+  {
+    guard: "roteiro: o formulário propaga a duração-alvo escolhida até o corpo de POST /videos",
+    name: "o formulário deixa de propagar a duração-alvo",
+    kind: "obvio",
+    file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
+    find:
+      "    target_duration_seconds: wizard.targetDurationSeconds,\n" +
+      "  };\n" +
+      "}",
+    replace: "  };\n}",
+    expect: "a duração-alvo não chega ao payload pelo formulário",
+  },
+  {
+    guard: "roteiro: o passo Roteiro oferece o seletor de duração-alvo (15/30/45/60)",
+    name: "o seletor de duração-alvo some do passo Roteiro",
+    kind: "obvio",
+    file: "frontend/src/pages/CreateVideo/steps/ScriptStep.tsx",
+    find:
+      "          {TARGET_DURATION_OPTIONS.map((seconds) => (\n" +
+      "            <button\n" +
+      "              key={seconds}\n" +
+      '              type="button"\n' +
+      '              className={`chip${targetDurationSeconds === seconds ? " selected" : ""}`}\n' +
+      "              aria-pressed={targetDurationSeconds === seconds}\n" +
+      "              onClick={() => onTargetDurationChange(seconds)}\n" +
+      "            >\n" +
+      '              {t("createVideo.script.durationTarget.seconds", { seconds })}\n' +
+      "            </button>\n" +
+      "          ))}",
+    replace: "",
+    expect: "sem ele a pessoa não tem mais como escolher 15/30/45/60 s antes de escrever",
+  },
+  {
+    guard: "roteiro: o contador manda a duração-alvo escolhida para /video-cost-estimate",
+    name: "o contador para de mandar a duração-alvo ao servidor",
+    kind: "esperto",
+    // ESPERTO: sem alvo escolhido (o estado inicial, "mais") o comportamento
+    // é idêntico — `alvo` já seria "" nesse caso. O defeito só aparece depois
+    // de escolher 15/30/45/60: o servidor nunca soube, e o contador mostraria
+    // o teto GLOBAL (180 s) rotulado como se fosse o do alvo escolhido.
+    file: "frontend/src/pages/CreateVideo/ScriptCounter.tsx",
+    find: '      const alvo = targetDurationSeconds != null ? `&targetSeconds=${targetDurationSeconds}` : "";',
+    replace: '      const alvo = "";',
+    expect: "deixou de mandar a duração-alvo escolhida para `/video-cost-estimate`",
   },
 ];
 
@@ -254,6 +330,98 @@ export function checkScriptLimitPolicy(repoRoot: string): ScriptLimitCheckResult
     failures.push(
       `roteiro: ${CONTADOR} deixou de consultar \`/video-cost-estimate\`. É essa rota que carrega a ` +
         "única cópia do ritmo medido.",
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 5. exceedsActiveScriptLimit: a duração-alvo (15/30/45/60 s) decide a
+  // recusa quando presente; o teto global decide na ausência dela. Por
+  // EXECUÇÃO real da função de produção — pura, sem banco.
+  // ---------------------------------------------------------------------------
+  for (const alvo of TARGET_DURATION_OPTIONS) {
+    const limiteDoAlvo = maxScriptCharsFor(alvo);
+    const dentro = "x".repeat(limiteDoAlvo);
+    const fora = "x".repeat(limiteDoAlvo + 1);
+    if (exceedsActiveScriptLimit(dentro, alvo) !== false) {
+      failures.push(
+        `roteiro: exceedsActiveScriptLimit recusou ${limiteDoAlvo} caracteres com alvo de ${alvo} s, mas ` +
+          `esse é exatamente o limite do alvo — o último caractere que cabe tem de passar.`,
+      );
+    }
+    if (exceedsActiveScriptLimit(fora, alvo) !== true) {
+      failures.push(
+        `roteiro: exceedsActiveScriptLimit deixou de recusar ${limiteDoAlvo + 1} caracteres com alvo de ` +
+          `${alvo} s — o primeiro caractere que estoura o alvo tem de ser recusado, mesmo estando bem ` +
+          `abaixo do teto global de ${MAX_SCRIPT_SECONDS} s.`,
+      );
+    }
+  }
+  // Sem alvo ("mais"), o veredito tem de continuar sendo só o teto global —
+  // o mesmo contraponto do item 2, agora atravessando a função nova.
+  const semAlvoDentro = "x".repeat(maxScriptChars());
+  const semAlvoFora = "x".repeat(maxScriptChars() + 1);
+  if (exceedsActiveScriptLimit(semAlvoDentro, null) !== false || exceedsActiveScriptLimit(semAlvoFora, null) !== true) {
+    failures.push(
+      "roteiro: exceedsActiveScriptLimit sem duração-alvo não bate mais com o teto global — a ausência " +
+        "de escolha ('mais') tem de continuar valendo exatamente o mesmo que valia antes deste bloco.",
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 6. maxScriptCharsFor é a MESMA régua de maxScriptChars — CHARS_PER_SECOND
+  // × VOICE_SPEED —, só que com a duração-alvo no lugar de MAX_SCRIPT_SECONDS.
+  // ---------------------------------------------------------------------------
+  for (const alvo of TARGET_DURATION_OPTIONS) {
+    const limiteDoAlvo = maxScriptCharsFor(alvo);
+    const esperadoDoAlvo = Math.floor(alvo * CHARS_PER_SECOND * VOICE_SPEED);
+    if (limiteDoAlvo !== esperadoDoAlvo) {
+      failures.push(
+        `roteiro: maxScriptCharsFor(${alvo}) devolveu ${limiteDoAlvo}, esperado ${esperadoDoAlvo} ` +
+          `(${alvo} × ${CHARS_PER_SECOND.toFixed(6)} c/s × velocidade ${VOICE_SPEED}). Um fator esquecido ` +
+          "aqui deixa passar roteiro que estoura o alvo escolhido na síntese real.",
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 7. A duração-alvo atravessa a TELA: o seletor existe, o formulário
+  // propaga a escolha, e o contador avisa o servidor dela. Só por LEITURA —
+  // são componentes React, a mesma razão do item 4 acima.
+  // ---------------------------------------------------------------------------
+  const SCRIPT_STEP = "frontend/src/pages/CreateVideo/steps/ScriptStep.tsx";
+  const scriptStepSrc = readFileSync(path.join(repoRoot, SCRIPT_STEP), "utf8");
+  if (!scriptStepSrc.includes("TARGET_DURATION_OPTIONS.map(")) {
+    failures.push(
+      `roteiro: o seletor de duração-alvo sumiu de ${SCRIPT_STEP} — sem ele a pessoa não tem mais como ` +
+        "escolher 15/30/45/60 s antes de escrever, e o teto que aparece sob o campo nunca teria de onde vir.",
+    );
+  }
+
+  const GENERATE_STEP = "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx";
+  const generateStepSrc = readFileSync(path.join(repoRoot, GENERATE_STEP), "utf8");
+  // Recorte da FUNÇÃO, não do arquivo inteiro — mesma razão do
+  // `checkSpendControlPolicy.ts`: um homônimo alhures no arquivo (por exemplo
+  // na consulta de prontidão, que também manda `target_duration_seconds`)
+  // faria a presença no arquivo mentir sobre a presença no CORPO enviado.
+  const inicioCorpo = generateStepSrc.indexOf("export function corpoDaGeracao");
+  const corpoDaGeracaoSrc =
+    inicioCorpo >= 0 ? generateStepSrc.slice(inicioCorpo, generateStepSrc.indexOf("\n}", inicioCorpo)) : "";
+  if (
+    !corpoDaGeracaoSrc.includes("target_duration_seconds:") ||
+    !corpoDaGeracaoSrc.includes("wizard.targetDurationSeconds")
+  ) {
+    failures.push(
+      `roteiro: a duração-alvo não chega ao payload pelo formulário — ${GENERATE_STEP} monta o corpo de ` +
+        "`POST /videos` sem `target_duration_seconds` vindo de `wizard.targetDurationSeconds`. O servidor " +
+        "recusaria pelo teto global, e a pessoa nunca saberia que a escolha dela não valeu nada.",
+    );
+  }
+
+  if (!contador.includes("targetSeconds=${targetDurationSeconds}")) {
+    failures.push(
+      `roteiro: ${CONTADOR} deixou de mandar a duração-alvo escolhida para \`/video-cost-estimate\` — o ` +
+        "contador mostraria o teto GLOBAL (180 s) como se fosse o do alvo escolhido, e o servidor recusaria " +
+        "num ponto que a tela nunca avisou.",
     );
   }
 

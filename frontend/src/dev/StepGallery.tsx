@@ -275,6 +275,9 @@ function StepUnderGlass({
       captions: false,
       // "normal", mesmo padrão do wizard real — BLOCO A.
       tierVideo: "normal" as const,
+      // "mais" (sem alvo) no estado "vazio"; 30 s no "preenchido", para a
+      // galeria também mostrar o teto de caracteres em ação.
+      targetDurationSeconds: state === "vazio" ? null : 30,
     }),
     [state],
   );
@@ -290,7 +293,14 @@ function StepUnderGlass({
         />
       );
     case "passo2-roteiro":
-      return <ScriptStep script={state === "vazio" ? "" : SAMPLE_SCRIPT} onChange={noop} />;
+      return (
+        <ScriptStep
+          script={state === "vazio" ? "" : SAMPLE_SCRIPT}
+          onChange={noop}
+          targetDurationSeconds={wizard.targetDurationSeconds}
+          onTargetDurationChange={noop}
+        />
+      );
     case "passo3-cena":
       // O passo que substituiu Recursos, Duração e Publicação. `key` no
       // suporte de formato porque o seletor embutido consulta o vendor.

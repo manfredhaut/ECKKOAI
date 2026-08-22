@@ -598,7 +598,15 @@
       "generating": "Gerando…",
       "counterChars": "{{chars}} caracteres",
       "counter": "{{chars}} caracteres · ~{{seconds}} s de vídeo · {{cost}}",
-      "tooLong": "Acima do limite de {{maxSeconds}} s ({{maxChars}} caracteres). A geração será recusada e nada será cobrado — o texto não é cortado automaticamente. Encurte o roteiro ou divida em mais de um vídeo."
+      "tooLong": "Acima do limite de {{maxSeconds}} s ({{maxChars}} caracteres). A geração será recusada e nada será cobrado — o texto não é cortado automaticamente. Encurte o roteiro ou divida em mais de um vídeo.",
+      "durationTarget": {
+        "label": "Duração-alvo (opcional)",
+        "help": "Escolher uma duração vira o limite de recusa deste roteiro — acima dela, a geração é recusada e nada é cobrado. Sem escolha, vale só o limite geral do sistema.",
+        "seconds": "{{seconds}} s",
+        "more": "Mais",
+        "limit": "Para {{targetSeconds}} s, até {{targetChars}} caracteres.",
+        "tooLong": "Acima da duração-alvo de {{targetSeconds}} s ({{targetChars}} caracteres). A geração será recusada e nada será cobrado — o texto não é cortado automaticamente. Encurte o roteiro, divida em mais de um vídeo, ou escolha uma duração-alvo maior."
+      }
     },
     "assets": {
       "title": "Escolha os recursos para este vídeo",
@@ -681,6 +689,11 @@
         "premium": "A maior qualidade de movimento disponível hoje, por um custo bem mais alto."
       },
       "tierUnavailable": "Um dos níveis acima ainda não está disponível para esta conta.",
+      "formatConfidence": {
+        "vendor_response": "Este formato já saiu assim numa geração real, neste nível.",
+        "documentation": "O fornecedor documenta este formato, mas nenhuma geração real confirmou ainda.",
+        "unverified": "Este formato não foi verificado neste nível — pode não sair como esperado."
+      },
       "captionsLabel": "Legenda",
       "captionsOff": "Sem legenda",
       "captionsOn": "Com legenda",

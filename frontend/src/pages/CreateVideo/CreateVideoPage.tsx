@@ -18,8 +18,12 @@ import type { AssetDefaults, WizardState } from "./types";
  *    o passo 1. Foi substituído por **Cena**, onde cada controle existe porque
  *    há campo para ele do outro lado.
  *  · **Duração** oferecia 15/30/60 s e não limitava nada — nenhum campo de
- *    duração chega ao fornecedor. A duração continua sendo calculada, agora
- *    como linha informativa dentro de Gerar.
+ *    duração chega ao fornecedor. A duração continua sendo calculada, e
+ *    aparece como linha informativa dentro de Gerar.
+ *
+ * Uma DURAÇÃO-ALVO voltou depois, dentro de **Roteiro** — mas é outra coisa:
+ * não é enviada ao fornecedor (nenhum motor tem campo para isso), e sim o
+ * teto de RECUSA do roteiro escrito ali. Ver `ScriptStep.tsx`.
  *
  * **Publicação** saiu do fluxo de criação: ela nunca publicou nada: era um
  * seletor de plataforma que servia para derivar a proporção. A proporção é
@@ -60,6 +64,8 @@ export function CreateVideoPage() {
     script: "",
     estimatedSeconds: null,
     confirmAboveSeconds: null,
+    // "mais" — sem alvo escolhido. Ver o comentário do campo em `types.ts`.
+    targetDurationSeconds: null,
     background: null,
     motionPrompt: "",
     // PRÉ-SELECIONADO, nunca null: sem escolha, o campo some do corpo enviado
@@ -160,7 +166,14 @@ export function CreateVideoPage() {
         />
       )}
       {step === 1 && (
-        <ScriptStep script={wizard.script} onChange={(script) => setWizard((w) => ({ ...w, script }))} />
+        <ScriptStep
+          script={wizard.script}
+          onChange={(script) => setWizard((w) => ({ ...w, script }))}
+          targetDurationSeconds={wizard.targetDurationSeconds}
+          onTargetDurationChange={(targetDurationSeconds) =>
+            setWizard((w) => ({ ...w, targetDurationSeconds }))
+          }
+        />
       )}
       {step === 2 && (
         <SceneStep

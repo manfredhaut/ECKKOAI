@@ -36,7 +36,18 @@ const usd = (v: number) => `US$ ${v.toFixed(2).replace(".", ",")}`;
  *  piscam sem acrescentar nada que ajude a decidir. */
 const secs = (v: number) => v.toFixed(1).replace(".", ",");
 
-export function ScriptCounter({ script }: { script: string }) {
+export function ScriptCounter({
+  script,
+  targetDurationSeconds,
+}: {
+  script: string;
+  /**
+   * A duração-alvo do passo Roteiro (15/30/45/60 s), ou `null` para "mais" —
+   * mesmo valor de `WizardState.targetDurationSeconds`. Vai na query para o
+   * SERVIDOR calcular o teto correspondente; este componente nunca calcula.
+   */
+  targetDurationSeconds?: number | null;
+}) {
   const { t } = useTranslation();
   const [cost, setCost] = useState<CostResponse | null>(null);
   const chars = script.length;
@@ -51,8 +62,9 @@ export function ScriptCounter({ script }: { script: string }) {
     }
     let cancelado = false;
     const timer = setTimeout(() => {
+      const alvo = targetDurationSeconds != null ? `&targetSeconds=${targetDurationSeconds}` : "";
       api
-        .get<CostResponse>(`/video-cost-estimate?chars=${chars}`)
+        .get<CostResponse>(`/video-cost-estimate?chars=${chars}${alvo}`)
         .then((r) => {
           if (!cancelado) setCost(r);
         })
@@ -66,7 +78,7 @@ export function ScriptCounter({ script }: { script: string }) {
       cancelado = true;
       clearTimeout(timer);
     };
-  }, [chars]);
+  }, [chars, targetDurationSeconds]);
 
   if (chars === 0) return null;
 
@@ -81,7 +93,12 @@ export function ScriptCounter({ script }: { script: string }) {
     );
   }
 
-  const excedeu = cost.exceedsMaxScript;
+  // Com duração-alvo escolhida, o teto ATIVO é o dela — sempre menor que o
+  // global, e é ele quem decide a recusa de verdade (ver
+  // `evaluateGenerationReadiness` no servidor). Sem alvo ("mais"), nada muda:
+  // o teto continua sendo só o global, como sempre foi.
+  const alvoAtivo = cost.targetDurationSeconds != null;
+  const excedeu = alvoAtivo ? Boolean(cost.exceedsTarget) : cost.exceedsMaxScript;
 
   return (
     <div style={{ marginTop: 6 }}>
@@ -103,16 +120,32 @@ export function ScriptCounter({ script }: { script: string }) {
           cost: cost.estimate.costUsd != null ? usd(cost.estimate.costUsd) : t("createVideo.cost.notMeasured"),
         })}
       </p>
+      {/* Com alvo escolhido e AINDA dentro dele, o teto de caracteres aparece
+          como referência neutra — é o pedido original: mostrar o teto assim
+          que a duração é escolhida, antes de qualquer coisa dar errado. */}
+      {alvoAtivo && !excedeu && (
+        <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+          {t("createVideo.script.durationTarget.limit", {
+            targetSeconds: cost.targetDurationSeconds,
+            targetChars: cost.targetMaxChars,
+          })}
+        </p>
+      )}
       {excedeu && (
         // O texto diz o limite E diz que nada é cortado. Um aviso que só
         // mostrasse o excesso deixaria em aberto a pergunta que importa — o
         // que acontece com o resto do texto —, e a resposta é: nada, porque a
         // geração é recusada inteira.
         <p style={{ fontSize: 12, marginTop: 4, marginBottom: 0, color: "var(--color-danger, #b42318)" }}>
-          {t("createVideo.script.tooLong", {
-            maxSeconds: cost.maxScriptSeconds,
-            maxChars: cost.maxScriptChars,
-          })}
+          {alvoAtivo
+            ? t("createVideo.script.durationTarget.tooLong", {
+                targetSeconds: cost.targetDurationSeconds,
+                targetChars: cost.targetMaxChars,
+              })
+            : t("createVideo.script.tooLong", {
+                maxSeconds: cost.maxScriptSeconds,
+                maxChars: cost.maxScriptChars,
+              })}
         </p>
       )}
     </div>

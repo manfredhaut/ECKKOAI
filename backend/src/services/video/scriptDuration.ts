@@ -171,6 +171,66 @@ export function requiresLongVideoConfirmation(estimatedSeconds: number): boolean
 }
 
 /**
+ * Durações-alvo oferecidas no passo Roteiro. Escolher uma vira o teto de
+ * RECUSA de verdade para aquele roteiro — não é rótulo, é o mesmo predicado
+ * que `exceedsMaxScriptLength` já aplica ao teto global, com um teto MENOR e
+ * escolhido pela pessoa. Sem escolha ("mais"), nada muda: o teto continua
+ * sendo `MAX_SCRIPT_SECONDS`, como sempre foi.
+ */
+export const TARGET_DURATION_OPTIONS = [15, 30, 45, 60] as const;
+export type TargetDurationSeconds = (typeof TARGET_DURATION_OPTIONS)[number];
+
+/**
+ * Entrada não confiável (corpo de requisição) vira uma duração-alvo válida,
+ * ou nada. Um valor fora da lista (adulterado, ou de um cliente futuro com
+ * outras opções) não pode virar um teto arbitrário — cai em "sem alvo", o
+ * mesmo comportamento de sempre, em vez de inventar um teto que a tela nunca
+ * ofereceu.
+ */
+export function isTargetDurationSeconds(value: unknown): value is TargetDurationSeconds {
+  return typeof value === "number" && (TARGET_DURATION_OPTIONS as readonly number[]).includes(value);
+}
+
+/**
+ * O teto em CARACTERES para uma duração-alvo escolhida — a MESMA régua de
+ * `maxScriptChars()` (`CHARS_PER_SECOND`, `VOICE_SPEED`), só que com a
+ * duração-alvo no lugar do teto de dinheiro fixo. Não é uma régua nova: é a
+ * mesma conta, parametrizada.
+ */
+export function maxScriptCharsFor(targetSeconds: number): number {
+  return Math.floor(targetSeconds * CHARS_PER_SECOND * VOICE_SPEED);
+}
+
+/**
+ * RECUSA acima da duração-alvo — irmã de `exceedsMaxScriptLength`, mesma
+ * regra (nunca corta, sempre compara SEGUNDOS), aplicada a um teto que a
+ * pessoa escolheu em vez do teto de dinheiro fixo.
+ */
+export function exceedsTargetScriptLength(script: string | null | undefined, targetSeconds: number): boolean {
+  return estimateSecondsFromScript(script) > targetSeconds;
+}
+
+/**
+ * O veredito de RECUSA que `evaluateGenerationReadiness` usa: a duração-alvo,
+ * quando presente, decide sozinha — ela é sempre MENOR que
+ * `MAX_SCRIPT_SECONDS` (15/30/45/60 contra 180), então checá-la já cobre o
+ * teto de dinheiro por construção. Sem alvo, o teto continua sendo só o
+ * global, como sempre foi.
+ *
+ * Função ÚNICA, e não um `if` duplicado no chamador: é ela que decide qual
+ * das duas réguas vale, e duas cópias dessa escolha divergiriam no dia em
+ * que uma mudasse sozinha.
+ */
+export function exceedsActiveScriptLimit(
+  script: string | null | undefined,
+  targetDurationSeconds?: number | null,
+): boolean {
+  return targetDurationSeconds != null
+    ? exceedsTargetScriptLength(script, targetDurationSeconds)
+    : exceedsMaxScriptLength(script);
+}
+
+/**
  * O teto convertido em CARACTERES — o número que a tela consegue contar
  * enquanto alguém digita.
  *

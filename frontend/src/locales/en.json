@@ -598,7 +598,15 @@
       "generating": "Generating…",
       "counterChars": "{{chars}} characters",
       "counter": "{{chars}} characters · ~{{seconds}} s of video · {{cost}}",
-      "tooLong": "Over the {{maxSeconds}} s limit ({{maxChars}} characters). Generation will be refused and nothing will be charged — the text is never truncated automatically. Shorten the script or split it into more than one video."
+      "tooLong": "Over the {{maxSeconds}} s limit ({{maxChars}} characters). Generation will be refused and nothing will be charged — the text is never truncated automatically. Shorten the script or split it into more than one video.",
+      "durationTarget": {
+        "label": "Target duration (optional)",
+        "help": "Choosing a duration becomes this script's refusal limit — above it, generation is refused and nothing is charged. With no choice, only the system-wide limit applies.",
+        "seconds": "{{seconds}} s",
+        "more": "More",
+        "limit": "For {{targetSeconds}} s, up to {{targetChars}} characters.",
+        "tooLong": "Over the target duration of {{targetSeconds}} s ({{targetChars}} characters). Generation will be refused and nothing will be charged — the text is never truncated automatically. Shorten the script, split it into more than one video, or choose a longer target duration."
+      }
     },
     "assets": {
       "title": "Choose assets for this video",
@@ -681,6 +689,11 @@
         "premium": "The best motion quality available today, at a much higher cost."
       },
       "tierUnavailable": "One of the tiers above isn't available for this account yet.",
+      "formatConfidence": {
+        "vendor_response": "This format has already come out this way in a real generation, at this tier.",
+        "documentation": "The provider documents this format, but no real generation has confirmed it yet.",
+        "unverified": "This format hasn't been verified at this tier — it may not come out as expected."
+      },
       "captionsLabel": "Captions",
       "captionsOff": "No captions",
       "captionsOn": "With captions",

@@ -23,7 +23,10 @@ import {
   HEYGEN_RESOLUTIONS,
   PUBLISH_PLATFORMS,
   VENDOR_FORMAT_SUPPORT,
+  formatConfidenceForTier,
   resolveVideoFormat,
+  type FormatConfidenceLevel,
+  type FormatConfidenceTier,
 } from "../services/providers/videoFormat.js";
 import {
   FIXTURE_VIDEO_DIMENSIONS,
@@ -111,6 +114,43 @@ export const MUTANTS: Mutant[] = [
     replace: `  "9:16": "simulated-video-16x9.mp4",`,
     expect: "apontam para o MESMO arquivo",
   },
+  {
+    guard: "formato: /video-format-support com ?tier= usa o vendor EXIGIDO pelo tier, nunca a credencial default",
+    name: "a rota volta a ignorar ?tier= e usa sempre a credencial default",
+    kind: "obvio",
+    // Achado da verificação anterior a este bloco, agora fechado: com dois
+    // vendors configurados (Fase A/B), a credencial DEFAULT pode não ser a
+    // que o tier escolhido vai usar de verdade — o aviso mostrado na tela
+    // ficava certo ou errado por acidente.
+    file: "backend/src/routes/videos.ts",
+    find:
+      "    const credential = tier\n" +
+      '      ? await getCredentialForVendor(req.tenantId, "avatar", vendorRequiredByTier(tier))\n' +
+      '      : await getCredential(req.tenantId, "avatar");',
+    replace: '    const credential = await getCredential(req.tenantId, "avatar");',
+    expect: "deixou de resolver a credencial pelo vendor exigido pelo tier",
+  },
+  {
+    guard: "formato: a confiança por destino é POR TIER — não é o mesmo veredito do vendor inteiro",
+    name: "normal/9:16 perde a distinção de vendor_response e vira igual aos outros três",
+    kind: "esperto",
+    // ESPERTO: a tabela continua tendo uma entrada para cada combinação
+    // tier×proporção — nenhum campo desaparece. Só o VALOR de uma célula
+    // muda, de "vendor_response" (a única chamada real medida, 19/08 — ver
+    // o comentário de CONFIANCA_NORMAL) para "unverified", igual às outras
+    // três que nunca foram tentadas. A tela pararia de distinguir a única
+    // combinação que já saiu certa de verdade das três que nunca saíram.
+    file: "backend/src/services/providers/videoFormat.ts",
+    find:
+      "const CONFIANCA_NORMAL: Record<AspectRatio, FormatConfidenceLevel> = {\n" +
+      '  "16:9": "unverified",\n' +
+      '  "9:16": "vendor_response",',
+    replace:
+      "const CONFIANCA_NORMAL: Record<AspectRatio, FormatConfidenceLevel> = {\n" +
+      '  "16:9": "unverified",\n' +
+      '  "9:16": "unverified",',
+    expect: "reels_tiktok (aspect_ratio 9:16) devolveu unverified, esperado vendor_response",
+  },
 ];
 
 export interface VideoFormatCheckResult {
@@ -134,6 +174,8 @@ export async function checkVideoFormatPolicy(repoRoot: string): Promise<VideoFor
   checkResolutionIsNotSimulated(failures, notes);
   await checkNoProductTextPromisesResolution(repoRoot, failures, notes);
   checkSupportClaimsHaveEvidence(failures, notes);
+  checkFormatConfidencePerTier(failures, notes);
+  await checkFormatSupportRouteIsTierAware(repoRoot, failures);
 
   notes.push(
     `formato: ${montagens} montagem(ns) de payload de geração conferida(s) — todas com ` +
@@ -619,4 +661,71 @@ function checkEngineSelectionAlwaysDecides(failures: string[], notes: string[]):
   }
 
   notes.push(`formato: ${casos.length} forma(s) de declaração de motor conferidas — todas decidem e registram a razão`);
+}
+
+/**
+ * A confiança POR TIER, para as 12 combinações (3 tiers × 4 destinos) — por
+ * EXECUÇÃO real de `formatConfidenceForTier`, contra a tabela DECLARADA
+ * aqui (não lida de volta do próprio arquivo de produção, ou a guarda
+ * provaria só que a função concorda consigo mesma).
+ *
+ * A tabela abaixo é a mesma que sustenta os comentários de
+ * `videoFormat.ts` — cada valor tem uma citação de código por trás,
+ * verificada por leitura antes deste bloco existir: `HEYGEN_ASPECT_RATIOS`
+ * bate com os 4 destinos (documentation, os 4); o Wan só recebe a proporção
+ * via `compor()` e a ÚNICA chamada real mediu 9:16 (vendor_response só
+ * ali); o Seedance nunca foi exercitado por nenhuma proporção (unverified,
+ * os 4).
+ */
+const CONFIANCA_ESPERADA: Record<FormatConfidenceTier, Record<string, FormatConfidenceLevel>> = {
+  simples: { youtube: "documentation", reels_tiktok: "documentation", instagram_feed: "documentation", linkedin: "documentation" },
+  normal: { youtube: "unverified", reels_tiktok: "vendor_response", instagram_feed: "unverified", linkedin: "unverified" },
+  premium: { youtube: "unverified", reels_tiktok: "unverified", instagram_feed: "unverified", linkedin: "unverified" },
+};
+
+function checkFormatConfidencePerTier(failures: string[], notes: string[]): void {
+  let conferidas = 0;
+  for (const tier of Object.keys(CONFIANCA_ESPERADA) as FormatConfidenceTier[]) {
+    for (const platform of PUBLISH_PLATFORMS) {
+      const got = formatConfidenceForTier(tier, platform.aspectRatio);
+      const want = CONFIANCA_ESPERADA[tier][platform.id];
+      conferidas++;
+      if (got !== want) {
+        failures.push(
+          `formato: confiança de ${tier}/${platform.id} (aspect_ratio ${platform.aspectRatio}) devolveu ` +
+            `${got}, esperado ${want}. Cada nível de confiança tem uma medição ou uma ausência de medição ` +
+            "por trás — mudar um sem mudar a evidência real transforma a tela numa promessa que ninguém verificou.",
+        );
+      }
+    }
+  }
+  notes.push(`formato: confiança por tier conferida em ${conferidas} combinações (3 tiers × ${PUBLISH_PLATFORMS.length} destinos)`);
+}
+
+/**
+ * `/video-format-support?tier=` tem de resolver a credencial pelo VENDOR
+ * exigido pelo tier (Fase C), não pela credencial default do tenant — por
+ * LEITURA, porque exercitar a rota de verdade pede sessão e banco, e o que
+ * se quer aqui é a FORMA da decisão, não uma resposta HTTP específica.
+ */
+async function checkFormatSupportRouteIsTierAware(repoRoot: string, failures: string[]): Promise<void> {
+  const ROTA = "backend/src/routes/videos.ts";
+  const fonte = await readFile(path.join(repoRoot, ROTA), "utf8").catch(() => "");
+  if (!fonte) {
+    failures.push(`formato: ${ROTA} não foi encontrado — a guarda de tier-awareness não olhou nada.`);
+    return;
+  }
+  const inicio = fonte.indexOf('"/video-format-support"');
+  const recorte = inicio >= 0 ? fonte.slice(inicio, fonte.indexOf("});", inicio)) : "";
+  if (!recorte) {
+    failures.push(`formato: não achei o handler de /video-format-support em ${ROTA}.`);
+    return;
+  }
+  if (!recorte.includes('getCredentialForVendor(req.tenantId, "avatar", vendorRequiredByTier(tier))')) {
+    failures.push(
+      `formato: /video-format-support deixou de resolver a credencial pelo vendor exigido pelo tier — ` +
+        "o aviso mostrado na tela voltaria a refletir a credencial DEFAULT do tenant, não o vendor que " +
+        "o tier escolhido vai usar de verdade (o achado da verificação que abriu este bloco).",
+    );
+  }
 }
