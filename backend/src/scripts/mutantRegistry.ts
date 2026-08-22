@@ -24,6 +24,7 @@ import { MUTANTS as imageFreshnessMutants } from "./checkImageFreshnessPolicy.js
 import { MUTANTS as frontendBuildEnvMutants } from "./checkFrontendBuildEnvPolicy.js";
 import { MUTANTS as backupMutants } from "./checkBackupPolicy.js";
 import { MUTANTS as heygenSpendCapMutants } from "./checkHeygenSpendCapPolicy.js";
+import { MUTANTS as simpleConfirmMutants } from "./checkSimpleConfirmPolicy.js";
 import { MUTANTS as singleDomainMutants } from "./checkSingleDomainPolicy.js";
 import { MUTANTS as tenantOnboardingMutants } from "./checkTenantOnboardingPolicy.js";
 import { MUTANTS as emailVerificationMutants } from "./checkEmailVerificationPolicy.js";
@@ -98,6 +99,7 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkFrontendBuildEnvPolicy.ts", frontendBuildEnvMutants),
   ...de("backend/src/scripts/checkBackupPolicy.ts", backupMutants),
   ...de("backend/src/scripts/checkHeygenSpendCapPolicy.ts", heygenSpendCapMutants),
+  ...de("backend/src/scripts/checkSimpleConfirmPolicy.ts", simpleConfirmMutants),
   ...de("backend/src/scripts/checkSingleDomainPolicy.ts", singleDomainMutants),
   ...de("backend/src/scripts/checkTenantOnboardingPolicy.ts", tenantOnboardingMutants),
   ...de("backend/src/scripts/checkEmailVerificationPolicy.ts", emailVerificationMutants),

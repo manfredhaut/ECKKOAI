@@ -75,9 +75,19 @@ export const MUTANTS: Mutant[] = [
     // O componente continua no repositório, com os seis campos e as traduções
     // todas — e deixa de ser renderizado. A guarda que só olhasse o arquivo do
     // resumo passaria verde com a tela vazia.
+    //
+    // ÂNCORA ESTENDIDA — T3 (22/08/2026): `<GenerationSummary wizard={wizard}
+    // />` sozinho, mesmo com a indentação de 10 espaços, casava DUAS vezes por
+    // SUBSTRING — o diálogo de confirmação do tier Simples reaproveita o
+    // mesmo componente, só com 16 espaços de indentação, e uma string mais
+    // curta casa dentro de uma mais longa independente de onde a linha
+    // começa. O comentário que antecede esta ocorrência (a ORIGINAL, fora do
+    // diálogo) é único; o do diálogo fala de "reaproveitado, não duplicado" —
+    // textos diferentes de propósito.
     file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
-    find: "          <GenerationSummary wizard={wizard} />",
-    replace: "",
+    find:
+      "é derivado do MESMO objeto que vai no POST. */}\n          <GenerationSummary wizard={wizard} />",
+    replace: "é derivado do MESMO objeto que vai no POST. */}",
     expect: "gerar: o resumo do que vai ser enviado não é mostrado",
   },
   {
@@ -213,17 +223,27 @@ export async function checkPreflightSummaryPolicy(
   }
 
   if (gerar) {
-    if (!gerar.includes("<GenerationSummary wizard={wizard} />")) {
+    // ÂNCORA ESPECÍFICA — T3 (22/08/2026): `<GenerationSummary wizard=
+    // {wizard} />` sozinho passou a ocorrer DUAS vezes (o diálogo de
+    // confirmação do tier Simples reaproveita o mesmo componente). Um
+    // `includes` genérico nunca detectaria a ORIGINAL sumindo — a do
+    // diálogo bastaria para o texto continuar "presente". A âncora inclui
+    // o comentário que só existe junto da ocorrência de FORA do diálogo.
+    const ANCORA_RESUMO_PRINCIPAL =
+      "é derivado do MESMO objeto que vai no POST. */}\n          <GenerationSummary wizard={wizard} />";
+    if (!gerar.includes(ANCORA_RESUMO_PRINCIPAL)) {
       failures.push(
         `gerar: o resumo do que vai ser enviado não é mostrado — \`<GenerationSummary>\` não é ` +
-          `renderizado em ${GERAR}. O componente pode continuar perfeito no repositório e a tela ` +
-          "continuar calada, que é o estado em que os dois vídeos saíram.",
+          `renderizado em ${GERAR}, antes do botão principal. O componente pode continuar perfeito no ` +
+          "repositório e a tela continuar calada, que é o estado em que os dois vídeos saíram.",
       );
     } else {
       // ANTES do botão, e é o ponto todo: um resumo abaixo do botão informa o
-      // preço depois da compra.
-      const iResumo = gerar.indexOf("<GenerationSummary");
-      const iBotao = gerar.indexOf("onClick={handleGenerate}");
+      // preço depois da compra. `handleGenerateClick`, não `handleGenerate` —
+      // T3: o botão principal passou a abrir o diálogo de confirmação antes
+      // de chamar `handleGenerate`.
+      const iResumo = gerar.indexOf(ANCORA_RESUMO_PRINCIPAL);
+      const iBotao = gerar.indexOf("onClick={handleGenerateClick}");
       if (iBotao >= 0 && iResumo > iBotao) {
         failures.push(
           "gerar: o resumo aparece DEPOIS do botão de gerar. Conferir o que vai ser enviado só serve " +

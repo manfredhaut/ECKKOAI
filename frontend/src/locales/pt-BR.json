@@ -716,7 +716,19 @@
       "approvingVideo": "Sincronizando a voz… isto leva alguns minutos",
       "redoVideo": "Refazer a animação",
       "redoingVideo": "Refazendo a animação…",
-      "approveVideoCost": "Refazer a animação custa cerca de US$ 0,25 no Wan (mais no Seedance). Aprovar dispara a narração e a sincronia labial. Nada é cobrado enquanto você não clicar."
+      "approveVideoCost": "Refazer a animação custa cerca de US$ 0,25 no Wan (mais no Seedance). Aprovar dispara a narração e a sincronia labial. Nada é cobrado enquanto você não clicar.",
+      "simpleConfirm": {
+        "title": "Confira antes de gerar",
+        "intro": "O nível Simples dispara direto no fornecedor, sem etapa intermediária para aprovar antes de pagar. Confira o resumo abaixo.",
+        "script": "Roteiro",
+        "estimatedDuration": "Duração estimada",
+        "estimatedCost": "Custo estimado",
+        "correctionLabel": "O que precisa ser corrigido? (opcional)",
+        "correctionPlaceholder": "ex.: o roteiro está longo demais, trocar o formato",
+        "correct": "Corrigir",
+        "confirm": "Confirmar e gerar",
+        "noteHint": "Nota da última correção: \"{{note}}\""
+      }
     },
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",

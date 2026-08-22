@@ -43,8 +43,12 @@ export const MUTANTS: Mutant[] = [
     // do mutante que precisava distinguir qual dos dois ela muta.
     //
     // O alvo é o botão PRINCIPAL. As três linhas juntas ocorrem 1 vez.
-    find: '            className="btn btn-primary"\n            onClick={handleGenerate}\n            disabled={submitting || blocked}',
-    replace: '            className="btn btn-primary"\n            onClick={handleGenerate}\n            disabled={submitting}',
+    // `handleGenerateClick`, não `handleGenerate` — T3 (22/08/2026): o botão
+    // principal passou a abrir o diálogo de confirmação do tier Simples antes
+    // de chamar `handleGenerate`; o predicado que este mutante testa
+    // (`disabled`) continua o mesmo, só o nome do handler mudou.
+    find: '            className="btn btn-primary"\n            onClick={handleGenerateClick}\n            disabled={submitting || blocked}',
+    replace: '            className="btn btn-primary"\n            onClick={handleGenerateClick}\n            disabled={submitting}',
     expect: "não desabilita o botão de gerar a partir do predicado",
   },
   {

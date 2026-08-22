@@ -716,7 +716,19 @@
       "approvingVideo": "Syncing the voice… this takes a few minutes",
       "redoVideo": "Redo the animation",
       "redoingVideo": "Redoing the animation…",
-      "approveVideoCost": "Redoing the animation costs about US$ 0.25 on Wan (more on Seedance). Approving triggers narration and lip sync. Nothing is charged until you click."
+      "approveVideoCost": "Redoing the animation costs about US$ 0.25 on Wan (more on Seedance). Approving triggers narration and lip sync. Nothing is charged until you click.",
+      "simpleConfirm": {
+        "title": "Check before generating",
+        "intro": "The Simple tier goes straight to the provider, with no in-between step to approve before paying. Review the summary below.",
+        "script": "Script",
+        "estimatedDuration": "Estimated duration",
+        "estimatedCost": "Estimated cost",
+        "correctionLabel": "What needs fixing? (optional)",
+        "correctionPlaceholder": "e.g.: the script is too long, change the format",
+        "correct": "Fix it",
+        "confirm": "Confirm and generate",
+        "noteHint": "Note from the last correction: \"{{note}}\""
+      }
     },
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",

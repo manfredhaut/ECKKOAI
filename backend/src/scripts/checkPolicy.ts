@@ -43,6 +43,7 @@ import { checkImageFreshnessPolicy } from "./checkImageFreshnessPolicy.js";
 import { checkFrontendBuildEnvPolicy } from "./checkFrontendBuildEnvPolicy.js";
 import { checkBackupPolicy } from "./checkBackupPolicy.js";
 import { checkHeygenSpendCapPolicy } from "./checkHeygenSpendCapPolicy.js";
+import { checkSimpleConfirmPolicy } from "./checkSimpleConfirmPolicy.js";
 import { checkSingleDomainPolicy } from "./checkSingleDomainPolicy.js";
 import { checkTenantOnboardingPolicy } from "./checkTenantOnboardingPolicy.js";
 import { checkEmailVerificationPolicy } from "./checkEmailVerificationPolicy.js";
@@ -539,6 +540,11 @@ async function main(): Promise<void> {
   const heygenSpendCapResult = await checkHeygenSpendCapPolicy(process.env.REPO_ROOT ?? "/repo");
   heygenSpendCapResult.failures.forEach((f) => failures.push(f));
   heygenSpendCapResult.notes.forEach((n) => note(n));
+
+  // --- 18g. diálogo de confirmação (Simples/HeyGen): Corrigir nunca gera -
+  const simpleConfirmResult = await checkSimpleConfirmPolicy(process.env.REPO_ROOT ?? "/repo");
+  simpleConfirmResult.failures.forEach((f) => failures.push(f));
+  simpleConfirmResult.notes.forEach((n) => note(n));
 
   // --- 18c. domínio único: sem redirect de subdomínio, e-mail único global
   const singleDomainResult = await checkSingleDomainPolicy(process.env.REPO_ROOT ?? "/repo");

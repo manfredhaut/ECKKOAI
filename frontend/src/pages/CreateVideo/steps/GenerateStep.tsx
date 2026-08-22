@@ -312,6 +312,7 @@ export function GenerateStep({
     estimatedSeconds: number;
     requiresConfirmation: boolean;
     confirmAboveSeconds: number;
+    estimate: { costUsd: number | null; costUnknownReason: string | null };
   } | null>(null);
   const [confirmedLong, setConfirmedLong] = useState(false);
   // Roteiro novo, confirmação nova: a duração que foi confirmada não é mais a
@@ -320,6 +321,54 @@ export function GenerateStep({
 
   const needsConfirm = estimate?.requiresConfirmation === true;
   const blocked = readiness === null || !readiness.ready || (needsConfirm && !confirmedLong);
+
+  /**
+   * CONFIRMAÇÃO EXPLÍCITA para o tier Simples/HeyGen — T3, 22/08/2026.
+   *
+   * O tier Simples dispara DIRETO no fornecedor: diferente do fal (que
+   * pausa depois de UMA chamada paga, na composição, para aprovar ANTES da
+   * etapa cara), o HeyGen não tem artefato intermediário nenhum para
+   * mostrar — é um único `POST /v3/videos` que já anima. Inventar uma
+   * "aprovação de imagem" para o HeyGen seria inventar um passo que o
+   * fornecedor não tem. O que existe é ANTES de qualquer chamada: um
+   * resumo do pedido, com um clique extra para confirmar.
+   *
+   * NENHUM estado novo em `videos.status`, NENHUM artefato pago — é
+   * inteiramente do lado do cliente, antes de `POST /videos` existir. Ver
+   * o comentário do botão "Gerar vídeo" abaixo para a diferença registrada
+   * contra o Modo B da fal.
+   */
+  const [showSimpleConfirm, setShowSimpleConfirm] = useState(false);
+  const [correctionNote, setCorrectionNote] = useState("");
+  const [lastCorrectionNote, setLastCorrectionNote] = useState("");
+  // Roteiro novo: a nota da correção anterior já não fala do que está na
+  // tela agora.
+  useEffect(() => setLastCorrectionNote(""), [wizard.script]);
+
+  function handleGenerateClick() {
+    if (wizard.tierVideo === "simples") {
+      setCorrectionNote("");
+      setShowSimpleConfirm(true);
+      return;
+    }
+    void handleGenerate();
+  }
+
+  /**
+   * "Corrigir" — NUNCA dispara `POST /videos`. Só fecha o diálogo e guarda
+   * o texto digitado como referência, para a pessoa ajustar manualmente os
+   * campos do wizard. Nenhuma chamada de rede, nenhum estado de vídeo.
+   */
+  function handleSimpleConfirmCorrect() {
+    setLastCorrectionNote(correctionNote);
+    setShowSimpleConfirm(false);
+  }
+
+  /** "Confirmar e gerar" — o único caminho que dispara `POST /videos` daqui. */
+  function handleSimpleConfirmGenerate() {
+    setShowSimpleConfirm(false);
+    void handleGenerate();
+  }
 
   useEffect(() => {
     return () => {
@@ -565,12 +614,21 @@ export function GenerateStep({
 
           <button
             className="btn btn-primary"
-            onClick={handleGenerate}
+            onClick={handleGenerateClick}
             disabled={submitting || blocked}
             style={{ marginTop: 12 }}
           >
             {submitting ? t("createVideo.generate.submitting") : t("createVideo.generate.generateButton")}
           </button>
+
+          {/* A nota da última "Corrigir" — referência para ajustar os campos
+              manualmente. Some sozinha quando o roteiro muda (o texto já não
+              fala do que está na tela agora). */}
+          {lastCorrectionNote && (
+            <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+              {t("createVideo.generate.simpleConfirm.noteHint", { note: lastCorrectionNote })}
+            </p>
+          )}
 
           {/* O motivo fica AO LADO do botão, sempre visível e sem exigir hover.
               Um botão cinza que não explica parece produto quebrado — numa
@@ -623,12 +681,106 @@ export function GenerateStep({
               setEstimate((atual) =>
                 atual &&
                 atual.estimatedSeconds === info.estimatedSeconds &&
-                atual.requiresConfirmation === info.requiresConfirmation
+                atual.requiresConfirmation === info.requiresConfirmation &&
+                atual.estimate.costUsd === info.estimate.costUsd
                   ? atual
                   : info,
               )
             }
           />
+
+          {/* DIÁLOGO DE CONFIRMAÇÃO — só tier Simples/HeyGen. Nenhum estado
+              novo em `videos.status`, nenhuma chamada de rede além da que
+              `POST /videos` já faria — é inteiramente do lado do cliente,
+              ANTES de qualquer chamada paga existir. Diferença registrada
+              contra o Modo B da fal: lá a pausa é DEPOIS de uma chamada paga
+              já ter saído (aprovar o que já foi gerado); aqui é ANTES de
+              qualquer chamada paga existir (confirmar o que está prestes a
+              ser gerado). */}
+          {showSimpleConfirm && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="simple-confirm-title"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) handleSimpleConfirmCorrect();
+              }}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 60,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 20,
+                background: "rgba(0, 0, 0, 0.5)",
+              }}
+            >
+              <div
+                style={{
+                  width: "100%",
+                  maxWidth: 480,
+                  background: "var(--color-surface, #fff)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-card)",
+                  padding: 20,
+                  maxHeight: "90vh",
+                  overflowY: "auto",
+                }}
+              >
+                <h3 id="simple-confirm-title" style={{ marginTop: 0, fontSize: 16 }}>
+                  {t("createVideo.generate.simpleConfirm.title")}
+                </h3>
+                <p className="text-muted" style={{ fontSize: 13 }}>
+                  {t("createVideo.generate.simpleConfirm.intro")}
+                </p>
+
+                <div style={{ fontSize: 13, marginBottom: 4 }}>
+                  <strong>{t("createVideo.generate.simpleConfirm.script")}:</strong>{" "}
+                  {wizard.script.length > 160 ? `${wizard.script.slice(0, 160)}…` : wizard.script}
+                </div>
+                {estimate && (
+                  <>
+                    <div style={{ fontSize: 13, marginBottom: 4 }}>
+                      <strong>{t("createVideo.generate.simpleConfirm.estimatedDuration")}:</strong>{" "}
+                      {estimate.estimatedSeconds.toFixed(0)} s
+                    </div>
+                    <div style={{ fontSize: 13, marginBottom: 4 }}>
+                      <strong>{t("createVideo.generate.simpleConfirm.estimatedCost")}:</strong>{" "}
+                      {estimate.estimate.costUsd != null
+                        ? `US$ ${estimate.estimate.costUsd.toFixed(2).replace(".", ",")}`
+                        : t("createVideo.cost.notMeasured")}
+                    </div>
+                  </>
+                )}
+
+                {/* Resumo completo (avatar, traje, fundo, interpretação,
+                    expressividade, formato) — o MESMO componente já
+                    renderizado acima, derivado do MESMO corpo que vai no
+                    POST. Reaproveitado, não duplicado. */}
+                <GenerationSummary wizard={wizard} />
+
+                <div className="field" style={{ marginTop: 8 }}>
+                  <label>{t("createVideo.generate.simpleConfirm.correctionLabel")}</label>
+                  <textarea
+                    value={correctionNote}
+                    onChange={(e) => setCorrectionNote(e.target.value)}
+                    placeholder={t("createVideo.generate.simpleConfirm.correctionPlaceholder")}
+                    rows={2}
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+                  <button type="button" className="btn btn-outline" onClick={handleSimpleConfirmCorrect}>
+                    {t("createVideo.generate.simpleConfirm.correct")}
+                  </button>
+                  <button type="button" className="btn btn-primary" onClick={handleSimpleConfirmGenerate}>
+                    {t("createVideo.generate.simpleConfirm.confirm")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <>

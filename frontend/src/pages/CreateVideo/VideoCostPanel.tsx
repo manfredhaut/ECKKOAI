@@ -96,7 +96,9 @@ export function VideoCostPanel({
    * poder exigir confirmação acima do teto sem consultar a mesma rota duas
    * vezes nem reimplementar a comparação.
    */
-  onEstimate?: (info: Pick<CostResponse, "estimatedSeconds" | "requiresConfirmation" | "confirmAboveSeconds">) => void;
+  onEstimate?: (
+    info: Pick<CostResponse, "estimatedSeconds" | "requiresConfirmation" | "confirmAboveSeconds" | "estimate">,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const [cost, setCost] = useState<CostResponse | null>(null);
