@@ -68,7 +68,7 @@
  * │   zero.                                                                 │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
-import { MAX_SCRIPT_SECONDS } from "../video/scriptDuration.js";
+import { HEYGEN_MAX_SCRIPT_CHARS, estimateSecondsFromChars } from "../video/scriptDuration.js";
 
 /**
  * A medição, num objeto só. Mexer aqui muda todo custo exibido no produto —
@@ -232,14 +232,37 @@ export function estimateVideoCost(requestedSeconds: number, vendor: string): Cos
 export const HEYGEN_TETO_USD_ENV = "HEYGEN_TETO_USD";
 
 /**
- * DEFAULT DERIVADO, nunca digitado: o PIOR CASO que a régua de duração já
- * permite hoje — `MAX_SCRIPT_SECONDS` (o teto de recusa global, 180 s) ×
- * `USD_PER_BILLED_SECOND` (US$ 0,05/s, medido). Um vídeo dentro do teto de
- * duração NUNCA deveria bater neste teto de dólar — ele existe para o dia em
- * que a régua de duração for contornada (defeito, não uso normal), não para
- * apertar geração comum.
+ * DEFAULT DERIVADO, nunca digitado: o PIOR CASO que a régua de ROTEIRO já
+ * permite hoje.
+ *
+ * **F1, 22/08/2026 — mudou de qual régua deriva.** Até E1 (mesmo dia), este
+ * valor vinha de `MAX_SCRIPT_SECONDS` (o teto em segundos) × taxa. Depois de
+ * E1 elevar `MAX_SCRIPT_SECONDS` para 600 s, isso saltaria SOZINHO de
+ * US$ 9,00 para US$ 30,00 — só que 600 s não é mais o teto que de fato limita
+ * um roteiro aceito: `HEYGEN_MAX_SCRIPT_CHARS` (5.000, teto documentado pela
+ * HeyGen para o campo `script`, independente da duração) binda primeiro —
+ * 5.000 caracteres estimam ≈459 s, bem abaixo de 600. Um roteiro aceito
+ * NUNCA chega aos 600 s teóricos, então derivar deles inflava o teto para um
+ * cenário inalcançável, com margem maior do que qualquer decisão de produto
+ * pediu.
+ *
+ * Agora deriva do teto de CARACTERES — o que de fato limita um roteiro
+ * aceito hoje —, convertido em segundos pela MESMA régua de sempre
+ * (`estimateSecondsFromChars`, nunca uma segunda conta). Resultado:
+ * ≈US$ 22,95, perto do pior caso REAL (medido: US$ 22,95 exatos para um
+ * roteiro de 5.000 caracteres truncado a 459 s cobrados) — a folga que
+ * sobra é a fração de segundo entre a estimativa (459,017 s) e o segundo
+ * truncado que de fato seria cobrado (459 s), não mais os ~US$ 7 de sobra
+ * contra um cenário que a régua de caracteres já proíbe.
+ *
+ * Um vídeo dentro dos dois tetos de roteiro NUNCA deveria bater neste teto
+ * de dólar — ele existe para o dia em que AMBAS as réguas de roteiro forem
+ * contornadas (defeito, não uso normal), não para apertar geração comum.
  */
-export const DEFAULT_HEYGEN_TETO_USD = round(MAX_SCRIPT_SECONDS * USD_PER_BILLED_SECOND, 2);
+export const DEFAULT_HEYGEN_TETO_USD = round(
+  estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS) * USD_PER_BILLED_SECOND,
+  2,
+);
 
 /** O teto em vigor. Mesma regra de sempre: ausente ou inválido cai no default. */
 export function heygenSpendCapUsd(env: NodeJS.ProcessEnv = process.env): number {
