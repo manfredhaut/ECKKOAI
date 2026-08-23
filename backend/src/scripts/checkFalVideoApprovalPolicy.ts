@@ -329,6 +329,7 @@ function diarioEmMemoria(): DiarioDoPipeline {
     async gravarRequestId() {},
     async gravarRespostaCrua() {},
     async fecharEtapa() {},
+    async registrarGastoPrevisto() {},
   };
 }
 

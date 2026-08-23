@@ -257,6 +257,12 @@ async function correr(opcoes: { uploadQuebrado?: boolean; teto?: number }): Prom
     async fecharEtapa(_id: string, status: string, motivo?: string) {
       passos.push(`fechou:${status}${motivo ? `:${motivo}` : ""}`);
     },
+    // NO-OP de propósito, mesmo num diário que registra tudo o mais: `passos`
+    // é comparado como SEQUÊNCIA por esta guarda, e acrescentar um evento
+    // novo entre os existentes a faria reprovar por uma gravação que não tem
+    // nada a ver com o que ela mede. Quem mede o gasto é
+    // `checkFalGastoInstrumentadoPolicy.ts`.
+    async registrarGastoPrevisto() {},
   };
 
   const modoOriginal = process.env.PROVIDER_MODE;
@@ -318,6 +324,7 @@ async function despachou(vendor: string): Promise<{ alcancouPipeline: boolean; e
     async gravarRequestId() {},
     async gravarRespostaCrua() {},
     async fecharEtapa() {},
+    async registrarGastoPrevisto() {},
   };
 
   const modoOriginal = process.env.PROVIDER_MODE;

@@ -247,6 +247,7 @@ export function criarDiario(publicados: { rotulo: string; fileUrl: string }[]) {
       }
     },
     async fecharEtapa() {},
+    async registrarGastoPrevisto() {},
   };
 }
 

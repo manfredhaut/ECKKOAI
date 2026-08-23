@@ -15,6 +15,7 @@
  * ponteiro — exatamente o que este arquivo existe para impedir.
  */
 import { pool } from "../../db/pool.js";
+import { logEvent } from "../log/safeLog.js";
 import type { DiarioDoPipeline, EtapaDoPipeline } from "./falPipeline.js";
 
 export interface AbrirCorridaInput {
@@ -31,8 +32,57 @@ export interface AbrirCorridaInput {
   charsPerSecond: number;
 }
 
+/**
+ * Quanto este VÍDEO já custou, somando TODAS as suas corridas — migration 062.
+ *
+ * ┌─ O escopo que o teto de gasto não tem ───────────────────────────────────┐
+ * │ `autorizarGasto` (falPipeline.ts) freia por CORRIDA, e toda retomada     │
+ * │ começa zerada de propósito: somar o gasto passado ao teto da corrida     │
+ * │ recusaria a segunda metade por dinheiro que já saiu. O argumento está    │
+ * │ certo e não é isto que muda.                                            │
+ * │                                                                          │
+ * │ O que ele não cobre é o VÍDEO. Cada "Refazer" abre corrida nova, e não   │
+ * │ há limite de cliques: `/redo-video` re-paga `animar` a cada um           │
+ * │ (US$ 0,375 no Wan, ~US$ 6,93 no Seedance a 15 s), e cada corrida cabe    │
+ * │ sozinha no teto. Esta função é o número que faltava para enxergar isso.  │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * SÓ RESPONDE — não recusa nada. Instrumentação, por decisão explícita do
+ * operador (23/08): medir com dados reais antes de escolher o número de um
+ * freio. Quem vier ligar o freio compara este valor contra um teto por vídeo;
+ * enquanto isso, ele aparece no log de cada corrida nova (`abrirCorrida`).
+ *
+ * `numeric` do Postgres chega como STRING no driver — `Number(...)` explícito,
+ * porque somar strings aqui concatenaria em silêncio.
+ */
+export async function gastoAcumuladoDoVideoUsd(videoId: string): Promise<number> {
+  const { rows } = await pool.query<{ total: string | null }>(
+    "SELECT COALESCE(SUM(gasto_previsto_usd), 0) AS total FROM fal_pipeline_runs WHERE video_id = $1",
+    [videoId],
+  );
+  return Number(rows[0]?.total ?? 0);
+}
+
 /** Abre a corrida e devolve o id. As etapas penduram nele. */
 export async function abrirCorrida(input: AbrirCorridaInput): Promise<string> {
+  // ANTES do INSERT, e por isso o número é o das corridas ANTERIORES: lido
+  // depois, ele incluiria esta corrida (em zero, porque nada foi autorizado
+  // ainda) e o log passaria a somar uma parcela vazia — mesmo total, leitura
+  // pior. AQUI, e não nas quatro rotas que abrem corrida (`/approve`,
+  // `/recompose`, `/approve-video`, `/redo-video`), porque este é o único
+  // ponto por onde todas passam: instrumentação copiada em quatro call sites
+  // é instrumentação que some de um deles na próxima rodada.
+  //
+  // Vídeo sem id (a sonda `probeFalPipeline.ts`) não tem o que somar — e não
+  // é caso de erro, é o caso documentado em `videoId`.
+  if (input.videoId) {
+    logEvent("info", "fal_gasto_acumulado_do_video", {
+      videoId: input.videoId,
+      tenantId: input.tenantId,
+      gastoAcumuladoAnteriorUsd: Number((await gastoAcumuladoDoVideoUsd(input.videoId)).toFixed(4)),
+    });
+  }
+
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second)
      VALUES ($1, $2, $3, $4, $5, $6)
@@ -118,6 +168,13 @@ export function criarDiarioNoBanco(runId: string): DiarioDoPipeline {
       await pool.query(
         "UPDATE fal_pipeline_steps SET status = $2, failure_reason = $3, updated_at = now() WHERE id = $1",
         [stepId, status, motivo ?? null],
+      );
+    },
+
+    async registrarGastoPrevisto(acumuladoUsd: number): Promise<void> {
+      await pool.query(
+        "UPDATE fal_pipeline_runs SET gasto_previsto_usd = $2, updated_at = now() WHERE id = $1",
+        [runId, acumuladoUsd],
       );
     },
   };

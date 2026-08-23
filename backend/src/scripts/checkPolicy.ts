@@ -81,6 +81,7 @@ import { checkFalPipelinePolicy } from "./checkFalPipelinePolicy.js";
 import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js";
 import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
 import { checkFalVideoApprovalPolicy } from "./checkFalVideoApprovalPolicy.js";
+import { checkFalGastoInstrumentadoPolicy } from "./checkFalGastoInstrumentadoPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
@@ -769,6 +770,15 @@ async function main(): Promise<void> {
   const falVideoApproval = await checkFalVideoApprovalPolicy();
   falVideoApproval.failures.forEach((f) => failures.push(f));
   falVideoApproval.notes.forEach((n) => note(n));
+
+  // --- 24o-ter-bis. o gasto da corrida fica gravado (migration 062) -------
+  //
+  // Mesma vizinhança e o mesmo motivo: troca `globalThis.fetch` e
+  // `PROVIDER_MODE`, restaurando os dois no `finally`. Não toca `pool.query`
+  // — o diário desta prova é um array.
+  const falGastoInstrumentado = await checkFalGastoInstrumentadoPolicy();
+  falGastoInstrumentado.failures.forEach((f) => failures.push(f));
+  falGastoInstrumentado.notes.forEach((n) => note(n));
 
   // --- 24o-quater. a cena chega ao fornecedor (BLOCO B5) -----------------
   //

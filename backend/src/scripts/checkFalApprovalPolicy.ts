@@ -477,6 +477,7 @@ async function refazer(): Promise<{ submetidos: string[]; erro: string }> {
     async gravarRequestId() {},
     async gravarRespostaCrua() {},
     async fecharEtapa() {},
+    async registrarGastoPrevisto() {},
   };
 
   const modoOriginal = process.env.PROVIDER_MODE;

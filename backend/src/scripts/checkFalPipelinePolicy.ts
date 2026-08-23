@@ -305,6 +305,13 @@ async function correr(
     async fecharEtapa(stepId: string) {
       passos.push(`fechou:${stepId}`);
     },
+    // NO-OP mesmo neste diário que registra tudo: `passos` é comparado como
+    // SEQUÊNCIA, e um evento novo no meio faria esta guarda reprovar por uma
+    // gravação que não é o que ela mede. E ele PRECISA existir mesmo com o
+    // `as never` do call site: sem o método, `registrarGastoPrevisto` do
+    // orquestrador estoura em tempo de execução, que o cast esconde do `tsc`.
+    // Quem mede o gasto é `checkFalGastoInstrumentadoPolicy.ts`.
+    async registrarGastoPrevisto() {},
   };
 
   let erro: unknown = null;

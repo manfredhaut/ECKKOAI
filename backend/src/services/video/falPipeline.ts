@@ -503,6 +503,20 @@ export interface DiarioDoPipeline {
   /** O corpo BRUTO, antes de qualquer parsing. */
   gravarRespostaCrua(stepId: string, raw: string): Promise<void>;
   fecharEtapa(stepId: string, status: "completed" | "failed", motivo?: string): Promise<void>;
+  /**
+   * O ACUMULADO autorizado desta corrida, gravado a cada `autorizarGasto` —
+   * migration 062.
+   *
+   * Na CORRIDA, não na etapa: `autorizarGasto` roda ANTES de `abrirEtapa` (o
+   * porteiro do dinheiro é o primeiro a falar, e uma etapa recusada por teto
+   * nunca chega a existir), então não há stepId para pendurar o número. E é a
+   * corrida que soma por `video_id` — ver `gastoAcumuladoDoVideoUsd`.
+   *
+   * SOBRESCREVE, não incrementa: quem chama já passa o acumulado inteiro. Uma
+   * gravação perdida por falha de rede não desalinha o total — a próxima
+   * etapa regrava o acumulado correto.
+   */
+  registrarGastoPrevisto(acumuladoUsd: number): Promise<void>;
 }
 
 export class FalPipelineError extends Error {
@@ -918,6 +932,7 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
   let gastoPrevistoUsd = 0;
 
   gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, PRECOS_FAL.comporUsd, teto, "compor");
+  await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);
   const composicao = await etapaNaFal(input, "compor", 1, ENDPOINT_COMPOR, {
     // FASE 0 — a atenuação de pele vai SEMPRE, mesmo sem traje/cenário por
     // texto. Ver `comDefaultsDeComposicao`.
@@ -1119,6 +1134,7 @@ async function animarNarrarSincronizar(
   const custoAnimarUsd =
     tier === "premium" ? custoSeedanceUsd(duracaoEscolhida) : PRECOS_FAL.animarUsdPorSegundo * duracaoEscolhida;
   gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoAnimarUsd, teto, "animar");
+  await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);
 
   const corpoDeAnimar =
     tier === "premium"
@@ -1223,6 +1239,7 @@ async function narrarSincronizar(
     teto,
     "sincronizar",
   );
+  await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);
   const sincronia = await etapaNaFal(input, "sincronizar", 4, ENDPOINT_SINCRONIZAR, {
     video_url: String(videoMudoUrl),
     audio_url: audioUrl,
