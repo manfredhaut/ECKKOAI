@@ -115,7 +115,16 @@ export const MUTANTS: Mutant[] = [
     file: "backend/src/services/video/scriptDuration.ts",
     find: "export const HEYGEN_MAX_SCRIPT_CHARS: number = 5000;",
     replace: "export const HEYGEN_MAX_SCRIPT_CHARS: number = 50000;",
-    expect: "um roteiro de 6000 caracteres, acima do que a HeyGen documenta, foi aceito",
+    // ⚠️ I1, 22/08/2026: o `expect` antigo ("um roteiro de 6000 caracteres...
+    // foi aceito") descrevia um teste que a checagem NUNCA implementou dessa
+    // forma — o teste real de "roteiro acima do teto" (linha ~392) usa
+    // `HEYGEN_MAX_SCRIPT_CHARS + 1`, RELATIVO à própria constante, e por
+    // isso é tautológico contra uma constante inflada (as duas pontas leriam
+    // o mesmo valor errado e concordariam) — é exatamente por isso que a
+    // checagem do VALOR ABSOLUTO existe, linha ~379: `HEYGEN_MAX_SCRIPT_CHARS
+    // !== 5000`. Essa checagem SEMPRE disparou certo; só o texto de prova
+    // apontava para uma mensagem que não existe no arquivo.
+    expect: "roteiro: HEYGEN_MAX_SCRIPT_CHARS é 50000, esperado 5000",
   },
   {
     guard: "roteiro: o contador da tela lê a régua do servidor",
@@ -237,7 +246,12 @@ export const MUTANTS: Mutant[] = [
     file: "frontend/src/pages/CreateVideo/ScriptCounter.tsx",
     find: "  if (chars === 0 && targetDurationSeconds == null) return null;",
     replace: "  if (chars === 0) return null;",
-    expect: "o limite da duração-alvo não aparece mais com o roteiro vazio",
+    // ⚠️ I1, 22/08/2026: o `expect` antigo ("o limite da duração-alvo não
+    // aparece mais com o roteiro vazio") não é a mensagem que a checagem
+    // (item 9, "voltou a esconder o contador...") de fato produz — a
+    // checagem sempre disparou certo, só o texto de prova nunca foi
+    // transcrito da mensagem real.
+    expect: "voltou a esconder o contador com o roteiro vazio mesmo quando uma duração-alvo foi escolhida",
   },
   {
     guard: "roteiro: campo vazio + duração-alvo ainda CONSULTA o servidor pelo limite",
@@ -251,7 +265,10 @@ export const MUTANTS: Mutant[] = [
     file: "frontend/src/pages/CreateVideo/ScriptCounter.tsx",
     find: "    if (chars === 0 && targetDurationSeconds == null) {\n      setCost(null);\n      return;\n    }",
     replace: "    if (chars === 0) {\n      setCost(null);\n      return;\n    }",
-    expect: "a consulta ao servidor voltou a ser pulada com o roteiro vazio, mesmo com duração-alvo escolhida",
+    // ⚠️ I1, 22/08/2026: mesmo defeito do mutante anterior — o `expect`
+    // antigo não era a mensagem real (item 9, segundo `if`, "voltou a
+    // pular a consulta ao servidor..."). A checagem sempre disparou certo.
+    expect: "voltou a pular a consulta ao servidor sempre que o roteiro está vazio",
   },
   {
     guard: "roteiro: o campo customizado de 'Mais' existe no passo Roteiro",

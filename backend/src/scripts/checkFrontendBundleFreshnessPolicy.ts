@@ -112,7 +112,13 @@ export const MUTANTS: Mutant[] = [
     file: UP_SH_REL,
     find: 'ORIGIN="$ORIGIN" BASE_DOMAIN="$BASE_DOMAIN" node "$ROOT/tools/checkFrontendBundleFreshness.mjs" || failed=1',
     replace: "true",
-    expect: "checagem de frescor: tools/up.sh não chama mais checkFrontendBundleFreshness.mjs",
+    // ⚠️ I1, 22/08/2026: faltava o prefixo "tools/" antes do nome do script —
+    // a mensagem real (linha abaixo, G-4) inclui SCRIPT_REL por extenso
+    // ("tools/checkFrontendBundleFreshness.mjs"), e o `expect` sem o prefixo
+    // nunca casava como substring. A guarda SEMPRE reprovou pela razão certa
+    // (G-4 dispara certinho); só o texto de prova estava desalinhado, e o
+    // arnês classificou como INERTE por não achar a mensagem esperada.
+    expect: "checagem de frescor: tools/up.sh não chama mais tools/checkFrontendBundleFreshness.mjs",
   },
 ];
 
