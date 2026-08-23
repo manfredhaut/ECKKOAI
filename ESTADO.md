@@ -1368,14 +1368,24 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
-> **ATUALIZAÇÃO DE 23/08 (segunda sessão).** A última completa MEDIDA é a do
-> bloco I1: **358/358, zero INERTE/AMBÍGUO/ERRO**, log em
-> `_arnes-logs/mutants-i3-completa-2026-08-22-b.log`, md5
-> `b3461c14ac5a4666be6f3390c2d968eb` — ver §15. Hoje são **368 mutantes
-> declarados**, e o fecho desta sessão foi por passada **AFETADA** (64/64,
-> base `818ca10`), com uma completa lançada em background depois do commit
-> deste fechamento. **O texto abaixo, de 296/296 em `fc6f7d6`, é histórico
-> mais antigo ainda — não é o estado do arnês.**
+> **ESTA É A PASSADA COMPLETA VIGENTE — 23/08/2026 (segunda sessão).
+> 368/368, zero INERTE, zero AMBÍGUO, zero ERRO, zero FALHOU.** HEAD
+> `03aa59d`, árvore limpa antes e depois (`git status` vazio, e a reversão de
+> cada mutante conferida pelo próprio arnês). Log em
+> `_arnes-logs/mutants-gasto-completa-2026-08-23-a.log`, md5
+> `664cbe9d7361e572194fab1ac37022c4`, **idêntico** à segunda cópia gravada no
+> scratchpad da sessão (as duas cópias existem por causa do gotcha de 11/08:
+> log de passada em `/tmp` foi apagado por fora com o processo escrevendo
+> nele). **Zero ocorrências de "PASSADA FILTRADA"/"PULADO" no log** — é a
+> completa de verdade, sem filtro.
+>
+> Ela roda DEPOIS de `03aa59d`, então o único commit à frente dela é o que
+> escreve este parágrafo. Os 5 mutantes de `checkFalGastoInstrumentadoPolicy`
+> estão entre os 368 e reprovaram aqui também, não só na afetada.
+>
+> **O texto abaixo, de 296/296 em `fc6f7d6`, e a completa de 358/358 do I1
+> (§15) são HISTÓRICO** — ficam porque registram de onde o número veio, não
+> porque descrevem o arnês de hoje.
 
 ⚠️ **Esta é a última passada completa MEDIDA — HEAD `4c5b66c` (fim de
 22/08) já está 4 commits À FRENTE dela.** Por mudança de processo desta
@@ -1879,7 +1889,11 @@ segue idêntico e nenhuma corrida legítima muda de comportamento.
 **Arnês: 368 mutantes declarados** (eram 363). Passada **AFETADA**, base
 `818ca10`, 11 arquivos tocados → **64/64 com o comportamento esperado**, zero
 INERTE/AMBÍGUO/ERRO, árvore limpa em cada reversão. Os 5 novos entre eles,
-cada um nomeado no log. **304 mutantes NÃO foram exercitados** nesta passada.
+cada um nomeado no log.
+
+**E a passada COMPLETA fechou: 368/368, zero INERTE/AMBÍGUO/ERRO/FALHOU** —
+rodada depois de `03aa59d`, ponteiro e md5 na §5. Os 304 que a afetada tinha
+pulado foram exercitados nela.
 
 ### Onde retomar
 
