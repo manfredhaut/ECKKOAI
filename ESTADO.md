@@ -15,14 +15,21 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **22/08/2026** (mesma sessão que abriu em 21/08 — FASE 1+2, a
-correção de UX do cartão Simples, e as Fases A/B/C do multi-vendor de
-avatar). HEAD **`50324c6`**, árvore limpa. Ver §12 (Fase 1+2, 21/08), §13
-(cartão Simples + Fase A + Fase B, 22/08) e §14 (Fase C, 22/08) abaixo para
-o detalhe, e [PLANO-MESTRE-SEQUENCIAL.md](PLANO-MESTRE-SEQUENCIAL.md) para
-a versão voltada a troca de conta — os dois cobrem o mesmo bloco por
-ângulos diferentes; este arquivo é o operacional/gotchas, aquele é o
-resumo de handoff.
+Atualizado em **23/08/2026**. HEAD **`b00b744`**, árvore limpa. Dois commits
+nesta sessão: `b679ea2` (I1 — 4 guardas inertes eram texto de prova
+desalinhado) e `b00b744` (L1 — frescor do Vite vira healthcheck). Ver §15
+abaixo para o detalhe.
+
+> ⚠️ **TROCA DE CONTA: o gatilho é `RETOMAR-P7`.** Numa conta nova, digite
+> **RETOMAR-P7** — [RETOMAR-P7.md](RETOMAR-P7.md) traz o estado completo do
+> bloco P7 (vídeos longos na fal): o que está medido, o bloqueio da chave
+> inválida, e o próximo passo exato. Foi escrito para dispensar a releitura
+> da sessão anterior.
+
+A sessão anterior (22/08, HEAD `50324c6`) está em §12 (Fase 1+2, 21/08), §13
+(cartão Simples + Fases A e B) e §14 (Fase C), e em
+[PLANO-MESTRE-SEQUENCIAL.md](PLANO-MESTRE-SEQUENCIAL.md) — este arquivo é o
+operacional/gotchas, aquele é o resumo de handoff daquele bloco.
 
 ⚠️ **Arnês SEM passada completa desde `fc6f7d6` (296/296, 21/08).** Mudança
 de processo desta sessão (pedido do operador, depois de a completa abortar
@@ -1703,3 +1710,82 @@ próximo `git archive` a partir do HEAD.**
 `.gitattributes` (novo), `traefik/dynamic.prod.yml`, `traefik/traefik.prod.yml`,
 `ESTADO.md`. `backend/docker-entrypoint.sh` **não entra no commit** — nenhuma
 mudança de conteúdo foi necessária nele (já estava correto).
+
+---
+
+## 15 · Sessão de 23/08/2026 — guardas inertes, frescor do Vite, e o bloco P7
+
+**HEAD `b00b744`, árvore limpa. Nada gasto nesta sessão: US$ 0,00.**
+Troca de conta: gatilho **`RETOMAR-P7`** → [RETOMAR-P7.md](RETOMAR-P7.md).
+
+### I1 — as 4 guardas inertes eram `expect` desalinhado, não lógica quebrada
+
+A passada completa devolvera 4 INERTE/AMBÍGUO (posições 79, 249, 257, 258).
+**MEDIDO, investigando um a um:** nos quatro a checagem própria da guarda
+DISPAROU CERTO desde sempre; o que não batia era o campo `expect` do mutante
+contra a mensagem real (`output.includes(m.expect)`,
+`tools/run-mutants.mjs:382` — substring exata). Nenhuma lógica de guarda
+mudou. Commit `b679ea2`. **Passada completa seguinte: 358/358, zero
+inerte/ambíguo/erro** (`_arnes-logs/mutants-i3-completa-2026-08-22-b.log`,
+md5 `b3461c14ac5a4666be6f3390c2d968eb`).
+
+**X0 reconciliado:** `cb7d66f` = 342 mutantes exatos; os 4 até `1fb17cd` (346)
+vieram todos de `checkScriptLimitPolicy.ts` (12 → 16), commit do E1.
+
+### L1 — o bypass do diálogo aconteceu DUAS vezes, e o motivo era ALCANCE
+
+`checkFrontendBundleFreshness.mjs` existia e estava no `tools/up.sh`, e não
+impediu. **MEDIDO:** o ambiente sobe por ≥6 caminhos e só `up.sh` passa pela
+checagem — `docker compose restart <svc>` (o caso real, e o conserto que o
+próprio gotcha 2 do CLAUDE.md manda rodar), `up -d`, `start`, boot da
+máquina, botão do Docker Desktop.
+
+**Mecanismo real, MEDIDO:** `frontend/src` é bind mount, então o arquivo em
+disco DENTRO do container está sempre atual — com o bundle servido ainda
+pré-G3, o `grep` no `/app/src` do container já achava o G3. Quem estava velho
+era o **cache de transformação do Vite** (watcher não recebe eventos de FS
+através do bind mount no Windows). É isso que torna a checagem possível sem
+git e sem docker: **os dois lados da comparação estão dentro do container.**
+
+**Conserto:** `tools/viteServeFreshness.mjs` no **healthcheck do frontend** —
+roda a cada 10 s, independente do caminho de subida. Compara chaves de i18n
+**e** nomes declarados do arquivo de maior mtime (sem marcador a manter; os
+dois tipos importam, o G3 renomeou handlers E acrescentou chaves).
+Descartados, com motivo no cabeçalho do script: boot do backend (ordem de
+subida), middleware por request (custo + exige versão que o velho não tem),
+banner no frontend (**ovo e galinha — bundle velho não executa o banner
+novo**). 5 mutantes provados à mão + ponta a ponta no container real (disco
+com sinal a mais → exit 1 nomeando o sinal). Commit `b00b744`.
+**Limite escrito no script:** edição que não mude nome declarado nem chave de
+i18n passa despercebida.
+
+### Achados de leitura desta sessão — MEDIDOS, corrigem o CLAUDE.md
+
+- **`/v1/user/subscription` do ElevenLabs responde 200** (o CLAUDE.md registra
+  401 por falta de `user_read`, e lista como item ABERTO). A chave da
+  plataforma tem a permissão. **O item pode ser fechado.**
+- **`voice_limit: 10` MEDIDO** — o `DEFAULT_VOICE_SLOT_LIMIT = 10` deixou de
+  ser suposto. A GUARDA B está calibrada.
+- **9 de 10 slots de voz ocupados** (30 vozes = 21 `premade` + 9 `cloned`).
+- **Plano ElevenLabs: `starter`**, `can_use_professional_voice_cloning:
+  false` → **PVC indisponível**; exige Creator (+US$ 16/mês).
+- **`remove_background` FUNCIONA com Look selecionado** — fechado a custo
+  zero pelo vídeo histórico `5b3773da` (look `800e04f0` + fundo `#1B2A4A`):
+  os 4 cantos medem RGB(28,41,71) contra (27,42,74) pedido, fundo sólido
+  uniforme. **Alcance:** o look medido tem fundo de estúdio quase uniforme;
+  que funcione em look com CENÁRIO composto (neon hallway) segue
+  **NÃO VERIFICADO**.
+- **Chave de plataforma da HeyGen: `servedBy: ""`** — armazena e valida
+  apenas, zero chamadores em produção. É decisão registrada do bloco
+  CHAVES-2, não bug. Migrar exigiria mudar a ORDEM em `videos.ts:1231/1249`,
+  não só acrescentar um `if`.
+
+### ⚠️ BLOQUEIO ABERTO — a chave da fal está inválida
+
+**MEDIDO em 23/08:** `POST queue.fal.run/fal-ai/nano-banana-2/edit` com a
+chave do tenant `dev-c77a5b` → **401 `{"detail":"invalid key credentials"}`**.
+Formato correto (`uuid:hex`, 69 chars, 2 partes); chave de PLATAFORMA da fal
+**ausente**. **Nenhuma geração pela fal funciona hoje** — tiers Normal e
+Premium inertes na prática. Gasto da tentativa: **US$ 0,00** (401 é recusa
+antes de qualquer trabalho). **Ação do operador:** repor a chave, de
+preferência no painel de plataforma.
