@@ -543,15 +543,23 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 --oneline` fecha a diferença.)*
 
 ```
+043caf6  O gasto de cada corrida fica gravado: o teto freia a corrida, ninguém media o vídeo (P7-obstáculo-1)
+818ca10  Gatilho de troca de conta (RETOMAR-P7) + ESTADO.md do fechamento de 23/08
+b00b744  Frescor do Vite vira healthcheck: age por onde quer que o container suba (L1)
+b679ea2  4 guardas inertes eram texto de prova desalinhado, não lógica quebrada (I1)
 50324c6  checkTierVendorPolicy: mutante do 400 tier_vendor_unavailable saía AMBÍGUO
 de1258b  checkTierVendorPolicy/checkTierAvailabilityPolicy: expects divergiam da mensagem real
 ed4e634  Fase C: os 3 call sites de routes/videos.ts decidem vendor pelo tier_video
 d17ccc2  ESTADO.md + PLANO-MESTRE-SEQUENCIAL.md: fecho de sessão — Fases A/B do multi-vendor de avatar
-4c5b66c  checkAvatarMultiVendorPolicy: G-4 saía INERTE — a checagem casava com o comentário, não com o código
-5192168  Fase B: admin "Integrações por tenant" vira multi-seleção para Avatar
-20a4240  Migration 060: multi-vendor de avatar por tenant (Fase A)
-a03d6ab  GenerateStep: cartão "Simples" desabilitado para tenants sem credencial HeyGen
 ```
+
+⚠️ **QUINTA divergência, registrada em 23/08 (segunda sessão do dia).** A lista
+acima estava com topo em `50324c6`, **quatro commits atrás do HEAD real**: os
+dois da sessão de 23/08 (`b679ea2`, `b00b744`) e o do gatilho (`818ca10`)
+entraram sem que ela fosse tocada — a §15 daquela sessão descreveu o trabalho
+e deixou a âncora velha. É exatamente o modo de falha que o aviso abaixo já
+descrevia, acontecendo mais uma vez no arquivo que o descreve. **Confira
+`git log -3` antes de confiar nesta lista.**
 
 ⚠️ **QUARTA vez que esta lista divergiu do HEAD** — a lista anterior (topo em
 `bfd5364`, 13/08) sobreviveu intacta até esta reescrita em 21/08, oito
@@ -1360,6 +1368,15 @@ antes de tocar em qualquer coisa — `live` gasta dinheiro real.
 
 *(preenchido no último commit de cada sessão)*
 
+> **ATUALIZAÇÃO DE 23/08 (segunda sessão).** A última completa MEDIDA é a do
+> bloco I1: **358/358, zero INERTE/AMBÍGUO/ERRO**, log em
+> `_arnes-logs/mutants-i3-completa-2026-08-22-b.log`, md5
+> `b3461c14ac5a4666be6f3390c2d968eb` — ver §15. Hoje são **368 mutantes
+> declarados**, e o fecho desta sessão foi por passada **AFETADA** (64/64,
+> base `818ca10`), com uma completa lançada em background depois do commit
+> deste fechamento. **O texto abaixo, de 296/296 em `fc6f7d6`, é histórico
+> mais antigo ainda — não é o estado do arnês.**
+
 ⚠️ **Esta é a última passada completa MEDIDA — HEAD `4c5b66c` (fim de
 22/08) já está 4 commits À FRENTE dela.** Por mudança de processo desta
 sessão (§3, gotcha correlato no CLAUDE.md), a completa não roda mais a
@@ -1789,3 +1806,89 @@ Formato correto (`uuid:hex`, 69 chars, 2 partes); chave de PLATAFORMA da fal
 Premium inertes na prática. Gasto da tentativa: **US$ 0,00** (401 é recusa
 antes de qualquer trabalho). **Ação do operador:** repor a chave, de
 preferência no painel de plataforma.
+
+## 16 · Sessão de 23/08/2026 (segunda) — RETOMAR-P7 e a instrumentação do gasto
+
+**HEAD `043caf6` + o commit deste fechamento. Árvore limpa. Nada gasto:
+US$ 0,00, nenhuma chamada a fornecedor nenhum.** Desarme conferido no começo
+e depois do `restart backend`: `fixture len=0`, `healthy`.
+
+### O bloqueio da fal segue de pé — e foi MEDIDO sem tocar no fornecedor
+
+O RETOMAR-P7 §6 manda perguntar ao operador se a chave foi reposta. Não foi
+preciso: a resposta está no banco local, e sondar a fal com uma chave que
+pode ter voltado a valer custaria dinheiro num endpoint que gera imagem.
+
+- `platform_credentials` tem **UMA** linha: `elevenlabs` (last_four `f13d`,
+  validada 09/08). **Chave de plataforma da fal: ausente.**
+- `api_credentials` do tenant `dev-c77a5b`, `avatar`/`fal`: `updated_at`
+  **19/08/2026 16:48Z** — é a MESMA chave que devolveu 401 em 23/08.
+
+**P7.c continua bloqueado.** Não há segunda fonte de chave para contornar.
+
+### O obstáculo 1 era maior do que o RETOMAR-P7 registrava
+
+Ele descrevia um risco do multi-clipe que ainda não existe. **MEDIDO: já está
+aberto no produto de hoje.**
+
+| o quê | medido |
+|---|---|
+| coluna de custo em `fal_pipeline_runs` | **não existia** — `gastoPrevistoUsd` vivia na memória da invocação e num `logEvent` |
+| corridas por vídeo | **24 corridas para 7 vídeos**; `d450c86c` com **4**, outros três com 2 |
+| limite de cliques em "Refazer" | **nenhum**, nos dois botões |
+| custo de um clique em `/redo-video` | **US$ 0,375** (Wan) · **US$ 6,93** (Seedance 15 s) — re-paga `animar` |
+
+Dez cliques no Premium são **~US$ 69,33**, e as dez corridas passam pelo teto
+de US$ 10,00 **sem uma reclamação**: cada uma cabe sozinha. O freio existe e
+mede a coisa errada.
+
+⚠️ **O `gastoAcumuladoUsd: 0` NÃO foi mexido, e não deve ser.** É decisão
+declarada em três lugares (`runFalPipelineDaImagem`,
+`runFalPipelineDoVideoMudo`, `recompor`) e o argumento está CERTO no escopo
+dela: somar o gasto passado ao teto da CORRIDA recusaria a segunda metade por
+dinheiro que já saiu. O que faltava era o escopo do **VÍDEO**, que aquele
+argumento não cobre. Quem vier "consertar o zero" está desfazendo a coisa
+errada.
+
+### O que foi feito — `043caf6`, e SÓ INSTRUMENTA
+
+**Decisão explícita do operador (23/08): medir com dados reais antes de
+escolher o número de um freio.** Nenhum teto novo nasceu; o teto por corrida
+segue idêntico e nenhuma corrida legítima muda de comportamento.
+
+- **migration 062** — `fal_pipeline_runs.gasto_previsto_usd`, `numeric NOT
+  NULL DEFAULT 0`. As 24 corridas antigas entram em zero: subestima o passado
+  (rodaram sem instrumentação) e é exato do primeiro registro novo em diante.
+  NULL faria toda soma por vídeo virar NULL.
+- **`DiarioDoPipeline.registrarGastoPrevisto()`** nos 3 pontos onde
+  `autorizarGasto` libera etapa paga, **sempre antes da submissão**. Grava o
+  ACUMULADO, não o custo da etapa — sobrescreve, não incrementa, então uma
+  gravação perdida não desalinha o total.
+- **`gastoAcumuladoDoVideoUsd(videoId)`** soma por `video_id`; `abrirCorrida`
+  a lê **antes** do INSERT e a registra em `fal_gasto_acumulado_do_video`.
+  Ponto único de propósito — as 4 rotas que abrem corrida passam por ele, e
+  instrumentação copiada em 4 call sites some de um deles na próxima rodada.
+- **`checkFalGastoInstrumentadoPolicy.ts`** — 5 guardas, 5 mutantes. G-1/G-2/
+  G-3 medem por EXECUÇÃO (orquestrador real, `fetch` substituído); a ordem de
+  G-2 sai da intercalação **`gsgsgs`** de gravações e submissões numa lista
+  só. G-4/G-5 medem forma, porque `abrirCorrida` fala com o Postgres direto.
+- **6 diários em memória de 5 guardas** ganharam o método como no-op —
+  inclusive o de `checkFalPipelinePolicy.ts`, cujo `as never` no call site
+  esconderia do `tsc` um erro de tempo de execução.
+
+**Arnês: 368 mutantes declarados** (eram 363). Passada **AFETADA**, base
+`818ca10`, 11 arquivos tocados → **64/64 com o comportamento esperado**, zero
+INERTE/AMBÍGUO/ERRO, árvore limpa em cada reversão. Os 5 novos entre eles,
+cada um nomeado no log. **304 mutantes NÃO foram exercitados** nesta passada.
+
+### Onde retomar
+
+1. **A chave da fal.** Sem ela, P7.c não roda e os tiers Normal/Premium
+   seguem inertes. Nada disso se contorna daqui.
+2. **O freio por vídeo, quando houver dado.** A coluna agora responde
+   `SELECT SUM(gasto_previsto_usd) … GROUP BY video_id`. Os números
+   derivados na sessão, para quando o operador escolher: pior caso de um
+   vídeo completo de 15 s = **US$ 1,205** (Normal) / **US$ 7,76** (Premium);
+   orçamento apertado (3 refazeres de imagem + 1 de vídeo) = **US$ 1,82** /
+   **US$ 14,94**; folgado (3 + 3) = **US$ 2,57** / **US$ 28,80**.
+3. Os obstáculos 2, 3 e 4 do RETOMAR-P7 §4 seguem abertos e intocados.
