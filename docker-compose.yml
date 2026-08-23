@@ -244,14 +244,29 @@ services:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
       - ./frontend/public:/app/public
+      # Somente leitura, só para o healthcheck de frescor logo abaixo. Do
+      # mesmo jeito que o backend monta `/repo/...` só para o gate: o
+      # container não precisa de `tools/` para servir a aplicação, precisa
+      # para poder AFIRMAR que está servindo o código atual.
+      - ./tools:/app/tools:ro
     depends_on:
       - backend
     # Vite dev server. `start_period` folgado porque a primeira subida
     # compila as dependências antes de aceitar conexão.
+    #
+    # DUAS perguntas, não uma. "Responde 200" nunca foi o suficiente: no
+    # incidente de 22/08 (e de novo em 23/08) o Vite respondia 200 e servia
+    # um módulo de ANTES do último commit — `healthy` e errado ao mesmo
+    # tempo. A segunda pergunta compara o que ele SERVE com o que está em
+    # DISCO (bind mount), e é ela que fecha o flanco dos caminhos de subida
+    # que não passam por `tools/up.sh` (`restart`, `up -d`, boot da máquina,
+    # botão do Docker Desktop). Ver tools/viteServeFreshness.mjs.
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test:
+        - CMD-SHELL
+        - "node -e \"fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\" && node /app/tools/viteServeFreshness.mjs"
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 12
       start_period: 30s
     networks:

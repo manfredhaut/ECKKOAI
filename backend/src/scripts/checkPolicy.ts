@@ -45,6 +45,7 @@ import { checkBackupPolicy } from "./checkBackupPolicy.js";
 import { checkHeygenSpendCapPolicy } from "./checkHeygenSpendCapPolicy.js";
 import { checkSimpleConfirmPolicy } from "./checkSimpleConfirmPolicy.js";
 import { checkFrontendBundleFreshnessPolicy } from "./checkFrontendBundleFreshnessPolicy.js";
+import { checkViteServeFreshnessPolicy } from "./checkViteServeFreshnessPolicy.js";
 import { checkCostReferencePolicy } from "./checkCostReferencePolicy.js";
 import { checkSingleDomainPolicy } from "./checkSingleDomainPolicy.js";
 import { checkTenantOnboardingPolicy } from "./checkTenantOnboardingPolicy.js";
@@ -552,6 +553,12 @@ async function main(): Promise<void> {
   const bundleFreshnessResult = await checkFrontendBundleFreshnessPolicy(process.env.REPO_ROOT ?? "/repo");
   bundleFreshnessResult.failures.forEach((f) => failures.push(f));
   bundleFreshnessResult.notes.forEach((n) => note(n));
+
+  // --- 18h2. frescor do que o Vite SERVE: o healthcheck do frontend age
+  // independentemente de por onde o container subiu (L1)
+  const viteServeResult = await checkViteServeFreshnessPolicy(process.env.REPO_ROOT ?? "/repo");
+  viteServeResult.failures.forEach((f) => failures.push(f));
+  viteServeResult.notes.forEach((n) => note(n));
 
   // --- 18i. tabela de custo por duração: calculada de verdade, nunca fixa
   const costReferenceResult = checkCostReferencePolicy(process.env.REPO_ROOT ?? "/repo");
