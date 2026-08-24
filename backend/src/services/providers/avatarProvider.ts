@@ -11,7 +11,12 @@ import { processVoiceAudio } from "../audioProcessing.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { vendorSignal } from "./vendorTimeout.js";
 import { recordProviderUsage } from "../billing/usageTracking.js";
-import { custoVozUsd } from "../billing/providerCost.js";
+// De `voiceCost.js`, NUNCA de `providerCost.js`: aquele arquivo participa do
+// anel `providerCost → scriptDuration → voiceProvider → fixtureProvider →
+// avatarProvider`, e importá-lo daqui foi o que o fechou em 24/08 (R5). Este
+// é folha, sem importação nenhuma, e por construção não pode participar de
+// ciclo — ver o cabeçalho dele.
+import { custoVozUsd } from "../billing/voiceCost.js";
 import { contractMismatch, logVendorResponse, unexpectedShapeMessage } from "./vendorResponseLog.js";
 import {
   countWords,

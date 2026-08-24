@@ -71,32 +71,21 @@
 import { HEYGEN_MAX_SCRIPT_CHARS, estimateSecondsFromChars } from "../video/scriptDuration.js";
 
 /**
- * O custo da VOZ, por caractere sintetizado — R5, 24/08.
+ * O custo da VOZ vive em `voiceCost.ts` e é REEXPORTADO daqui — a doutrina de
+ * "todo número de dinheiro em providerCost.ts" continua valendo para quem LÊ.
  *
- * ⚠️ **NÃO É LIDO POR `costFor`, de propósito, e isso não é esquecimento.** O
- * cabeçalho deste arquivo declara que voz e roteiro devolvem AUSÊNCIA na tela
- * por nunca terem sido medidos, e essa decisão continua de pé para tudo que a
- * pessoa vê. Esta constante serve a UM consumidor: a atribuição de gasto
- * (`provider_usage.estimated_cost_usd`, migration 063), que grava o que a
- * régua AFIRMAVA para poder confrontá-la com a fatura depois. Ligá-la em
- * `costFor` mudaria a tela e é outra decisão, do operador.
- *
- * MEDIDO uma vez, em 05/08, no painel do fornecedor: um vídeo real sintetizou
- * 561 caracteres (87 + 474) e o painel debitou 280 créditos = **US$ 0,056** —
- * 0,5 crédito por caractere, US$ 0,0001 por caractere. Uma medição só, num
- * modelo só; o próprio CLAUDE.md registra que QUAL modelo produziu aquela
- * tarifa ficou encerrado como NÃO VERIFICADO.
+ * Ele saiu deste arquivo em 24/08 por um ciclo de importação medido: com a
+ * função declarada aqui, `avatarProvider.ts` precisava importar este módulo
+ * inteiro para usá-la, e isso fecha
+ * `providerCost → scriptDuration → voiceProvider → fixtureProvider →
+ * avatarProvider → providerCost`. Como este arquivo CHAMA
+ * `estimateSecondsFromChars` no topo (logo abaixo, em
+ * `DEFAULT_HEYGEN_TETO_USD`), o anel mata o processo com
+ * `Cannot access 'VOICE_SPEED' before initialization` — mas só quando a
+ * entrada é `falPipeline`, e por isso o gate não o via. O porquê por extenso
+ * está no cabeçalho de `voiceCost.ts`.
  */
-export const ELEVENLABS_VOICE_COST = {
-  usdPerCharacter: 0.0001,
-  measuredOn: "2026-08-05",
-  method: "561 caracteres sintetizados → 280 créditos → US$ 0,056 no painel do fornecedor",
-} as const;
-
-/** Ver `ELEVENLABS_VOICE_COST` — a multiplicação, para não repeti-la em call site. */
-export function custoVozUsd(caracteres: number): number {
-  return caracteres * ELEVENLABS_VOICE_COST.usdPerCharacter;
-}
+export { ELEVENLABS_VOICE_COST, custoVozUsd } from "./voiceCost.js";
 
 /**
  * A medição, num objeto só. Mexer aqui muda todo custo exibido no produto —
