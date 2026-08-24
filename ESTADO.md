@@ -2159,3 +2159,18 @@ Motivo medido: o operador gravou 4 chaves e as 4 ficaram com
    migrations. Nada disso foi feito nem dimensionado.
 4. **W2, W3 e V0 nunca chegaram a esta sessão** — o operador os menciona como
    já passados; não estão aqui e não foram reconstruídos de memória.
+
+### Arnês
+
+**385 mutantes declarados** (eram 380). Os 5 novos provados individualmente.
+Passada **AFETADA**, base `bcfc98d`, 16 arquivos tocados → **37/37, zero
+INERTE/AMBÍGUO/ERRO/FALHOU**, árvore limpa em cada reversão. 348 NÃO
+exercitados. Log em `_arnes-logs/mutants-w1-afetada-2026-08-24.log`.
+
+⚠️ **PENDENTE do W1 item 6, proposto e NÃO implementado:** gravar deveria
+disparar a validação onde há sonda. O desenho proposto é o `PUT` responder
+já com a chave gravada e disparar a validação em seguida, com a tela indo de
+`GRAVADA` para `VALIDADA`/`RECUSADA` sozinha — gravar e validar são coisas
+diferentes, e a gravação não pode falhar porque o fornecedor está lento. Sem
+isso, o caminho normal (gravar pelo painel) deixa quatro selos âmbar e
+ninguém sabe que faltava clicar.
