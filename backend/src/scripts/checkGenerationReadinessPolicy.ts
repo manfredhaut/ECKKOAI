@@ -235,6 +235,20 @@ export async function checkGenerationReadinessPolicy(repoRoot: string): Promise<
         ? { rows: [{ encrypted_key: encrypt("chave-de-verificacao"), vendor: "heygen" }], rowCount: 1 }
         : { rows: [], rowCount: 0 };
     }
+    if (/FROM platform_credentials/.test(sql)) {
+      // VAZIO SEMPRE, e é o cenário inteiro desta guarda — W1, 24/08.
+      //
+      // Desde a herança, "tenant sem credencial" só continua sendo um cenário
+      // de BLOQUEIO quando a plataforma também não cobre: com chave de
+      // plataforma gravada, o tenant zerado passa a alcançar o fornecedor, e
+      // é exatamente isso que o W1 veio fazer. Devolver vazio aqui é o que
+      // preserva o caso que ESTA guarda mede — os dois níveis ausentes, que é
+      // a única situação em que o botão deve mesmo ficar bloqueado.
+      //
+      // É, por acidente feliz, o caso (c) do W1: sem chave em nenhum dos dois
+      // níveis, a falha é EXPLÍCITA na tela e não silenciosa.
+      return { rows: [], rowCount: 0 };
+    }
     consultasDesconhecidas.push(sql.replace(/\s+/g, " ").slice(0, 90));
     return { rows: [], rowCount: 0 };
   };

@@ -18,7 +18,12 @@
       "indexed": "indexed",
       "error": "error",
       "connected": "connected",
-      "disconnected": "disconnected"
+      "disconnected": "disconnected",
+      "platform_key_ausente": "no key",
+      "platform_key_gravada": "stored · not validated",
+      "platform_key_gravada_sem_sonda": "stored · no probe",
+      "platform_key_validada": "validated",
+      "platform_key_recusada": "rejected"
     },
     "devAutofill": "Development mode: fields filled in automatically."
   },

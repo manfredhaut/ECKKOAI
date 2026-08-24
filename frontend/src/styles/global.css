@@ -1622,3 +1622,35 @@ th {
   margin: 8px 0 0;
   opacity: 0.85;
 }
+
+/* OS CINCO ESTADOS DA CHAVE DE PLATAFORMA — W1 item 6, 24/08.
+
+   VERDE é só `validada`, e essa é a regra inteira: até 24/08 o selo lia
+   `configured` (= "existe linha gravada") e pintava de verde quatro chaves
+   que o fornecedor nunca tinha visto. Ver `platformKeyState.ts`.
+
+   `gravada` e `gravada_sem_sonda` compartilham a cor de espera, e não a de
+   erro: nenhuma das duas é defeito. A primeira é uma pendência de clique, a
+   segunda não é pendência de nada — o que as separa é o texto, não a cor. */
+.status-pill.status-platform_key_validada {
+  color: var(--color-primary-text);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.status-pill.status-platform_key_gravada,
+.status-pill.status-platform_key_gravada_sem_sonda {
+  color: var(--color-primary-text);
+  background: color-mix(in srgb, var(--color-secondary) 35%, transparent);
+  border-color: var(--color-secondary);
+}
+
+.status-pill.status-platform_key_recusada {
+  color: var(--color-tertiary-text);
+  background: var(--color-tertiary);
+  border-color: var(--color-tertiary);
+}
+
+.status-pill.status-platform_key_ausente {
+  color: var(--color-text-muted);
+}

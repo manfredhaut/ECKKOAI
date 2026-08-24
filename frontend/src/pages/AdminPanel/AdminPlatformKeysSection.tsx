@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { PlatformCredentialValidation, PlatformCredentialView } from "../../types";
 import { Field } from "../../components/ui/Field";
+import { platformKeyState } from "./platformKeyState";
 import { StatusPill } from "../../components/ui/StatusPill";
 
 // Chaves da PLATAFORMA — as que a casa paga. Fica na mesma aba "APIs" que as
@@ -76,7 +77,11 @@ function PlatformKeyRow({
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
         <div className="card-title">{credential.label}</div>
-        <StatusPill status={credential.configured ? "connected" : "disconnected"} />
+        {/* W1 item 6 — cinco estados, e VERDE só quando o fornecedor
+            respondeu. Ver `platformKeyState`: `configured` sozinho significa
+            "existe linha gravada", e era isso que a tela chamava de
+            "conectado" — inclusive num cartão que não tem como ser validado. */}
+        <StatusPill status={`platform_key_${platformKeyState(credential)}`} />
       </div>
 
       <p className="text-muted" style={{ fontSize: 12, marginTop: -4, marginBottom: 4 }}>

@@ -68,11 +68,13 @@ export const PLATFORM_CREDENTIALS: Record<PlatformCredentialId, PlatformCredenti
     id: "google",
     envVar: "PLATFORM_GOOGLE_API_KEY",
     label: "Google (Gemini) — copiloto do cliente",
-    // Só o copiloto do tenant, apesar de CLAUDE.md dizer "roteiro e copiloto":
-    // conferido nesta rodada, `routes/scripts.ts` ainda lê a credencial BYOK
-    // do tenant direto, sem passar por `resolveTenantAiKey`. Corrigir o
-    // caminho de roteiro é mudança de comportamento, fora deste bloco.
-    servedBy: "copiloto do tenant (o roteiro ainda usa a credencial do cliente)",
+    // ⚠️ O ROTEIRO ENTROU — W1, 24/08. Este comentário dizia que
+    // `routes/scripts.ts` lia a BYOK do tenant direto e que corrigir isso era
+    // "mudança de comportamento, fora deste bloco". O bloco chegou: a
+    // decisão do operador é que a plataforma paga quando o tenant não tem
+    // chave própria, e a herança vive em `credentialLookup` — abaixo de
+    // TODOS os leitores, inclusive o de roteiro.
+    servedBy: "copiloto do tenant e geração de roteiro, quando o tenant não tem chave própria",
     validation: "gemini_list_models",
     readsBalance: false,
     balanceUnavailable:
@@ -97,6 +99,15 @@ export const PLATFORM_CREDENTIALS: Record<PlatformCredentialId, PlatformCredenti
     // Separada da de roteiro mesmo sendo o mesmo fornecedor: indexação é
     // consumo em lote com limite diário próprio, e dividir cota com o suporte
     // faria uma reindexação derrubar o copiloto.
+    //
+    // ⚠️ **CONTINUA SEM CONSUMIDOR, e o W1 não muda isso — de propósito.**
+    // O item 2 do W1 listava os quatro `servedBy: ""` juntos, mas este não é
+    // um problema de FIAÇÃO de chave: MEDIDO em 24/08, `generateEmbedding`
+    // (embeddingProvider.ts) devolve `Math.random()` e nunca consulta chave
+    // nenhuma; `resolveEmbeddingKey()` não tem um único chamador. Ligar este
+    // cartão exige implementar embeddings de verdade, não herdar uma chave.
+    // Escrever um `servedBy` aqui seria o painel afirmando um consumo que
+    // não existe.
     servedBy: "",
     validation: "gemini_list_models",
     readsBalance: false,
@@ -107,10 +118,13 @@ export const PLATFORM_CREDENTIALS: Record<PlatformCredentialId, PlatformCredenti
     id: "heygen",
     envVar: "PLATFORM_HEYGEN_API_KEY",
     label: "HeyGen — avatar e vídeo",
-    // Decisão do bloco CHAVES-2: armazenar e validar apenas. O caminho de
-    // geração continua lendo a credencial BYOK do tenant. Migrar isso muda
-    // quem paga a conta, e é outra decisão.
-    servedBy: "",
+    // ⚠️ DEIXOU DE SER "armazenar e validar apenas" — W1, 24/08. O bloco
+    // CHAVES-2 registrou que migrar "muda quem paga a conta, e é outra
+    // decisão"; o operador TOMOU essa decisão em 24/08: a plataforma paga
+    // quando o tenant não tem chave própria, e o tenant que tem continua
+    // pagando a dele. A herança vive em `credentialLookup`, abaixo de todos
+    // os leitores — nenhum call site precisou mudar.
+    servedBy: "geração de vídeo do nível Simples, quando o tenant não tem chave própria",
     validation: "heygen_quota",
     readsBalance: true,
     readEnv: () => config.platformHeygenApiKey,
@@ -119,7 +133,9 @@ export const PLATFORM_CREDENTIALS: Record<PlatformCredentialId, PlatformCredenti
     id: "elevenlabs",
     envVar: "PLATFORM_ELEVENLABS_API_KEY",
     label: "ElevenLabs — voz",
-    servedBy: "",
+    // W1, 24/08 — mesma herança do heygen. Cobre os dois caminhos de voz: a
+    // clonagem (que consome slot) e a síntese de cada geração.
+    servedBy: "clonagem e síntese de voz, quando o tenant não tem chave própria",
     validation: "elevenlabs_voices",
     readsBalance: false,
     // O endpoint de cota do ElevenLabs (/v1/user/subscription) exige a

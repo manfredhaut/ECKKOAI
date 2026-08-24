@@ -85,6 +85,7 @@ import { checkFalGastoInstrumentadoPolicy } from "./checkFalGastoInstrumentadoPo
 import { checkUsageAttributionPolicy } from "./checkUsageAttributionPolicy.js";
 import { checkVoiceRotationPolicy } from "./checkVoiceRotationPolicy.js";
 import { checkEnsaioSimuladoPolicy } from "./checkEnsaioSimuladoPolicy.js";
+import { checkPlatformInheritancePolicy } from "./checkPlatformInheritancePolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
@@ -804,6 +805,14 @@ async function main(): Promise<void> {
   const ensaioSimulado = await checkEnsaioSimuladoPolicy();
   ensaioSimulado.failures.forEach((f) => failures.push(f));
   ensaioSimulado.notes.forEach((n) => note(n));
+
+  // --- 24o-septies. o tenant zerado nasce funcionando (W1) ----------------
+  //
+  // Troca `pool.query` por um banco de mentira que responde às DUAS tabelas
+  // do caminho, e invalida o cache de chaves de plataforma nas duas pontas.
+  const platformInheritance = await checkPlatformInheritancePolicy();
+  platformInheritance.failures.forEach((f) => failures.push(f));
+  platformInheritance.notes.forEach((n) => note(n));
 
   // --- 24o-quater. a cena chega ao fornecedor (BLOCO B5) -----------------
   //

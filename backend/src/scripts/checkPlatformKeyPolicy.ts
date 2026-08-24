@@ -105,6 +105,15 @@ const PLAINTEXT_ALLOWED = [
   // É o terceiro leitor legítimo, e estava fora da lista sem que nada
   // acusasse.
   "backend/src/services/providers/platformKeys.ts",
+  // W1, 24/08 — o QUARTO leitor legítimo, e o mais importante deles: é aqui
+  // que a herança acontece. Um tenant sem chave própria passa a receber a da
+  // plataforma, e para isso `getCredential` precisa do valor em claro, do
+  // mesmo jeito que já entregava o valor decifrado da BYOK do tenant.
+  //
+  // Esta guarda ACUSOU a entrada na mesma passada em que ela nasceu, e é
+  // exatamente o que se espera dela: o conjunto de quem lê chave de
+  // plataforma em claro não cresce sem alguém escrever o motivo.
+  "backend/src/services/credentialLookup.ts",
 ];
 
 /**

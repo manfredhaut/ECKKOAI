@@ -18,7 +18,12 @@
       "indexed": "indexado",
       "error": "erro",
       "connected": "conectado",
-      "disconnected": "desconectado"
+      "disconnected": "desconectado",
+      "platform_key_ausente": "sem chave",
+      "platform_key_gravada": "gravada · não validada",
+      "platform_key_gravada_sem_sonda": "gravada · sem sonda",
+      "platform_key_validada": "validada",
+      "platform_key_recusada": "recusada"
     },
     "devAutofill": "Modo de desenvolvimento: campos preenchidos automaticamente."
   },

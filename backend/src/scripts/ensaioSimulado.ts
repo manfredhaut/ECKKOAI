@@ -39,6 +39,7 @@
 import { pathToFileURL } from "node:url";
 import { pool } from "../db/pool.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
+import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 import {
   PIPELINE_TETO_USD,
   PIPELINE_TETO_USD_PREMIUM,
@@ -226,41 +227,79 @@ export async function ensaiarFalhaParcial(): Promise<void> {
 }
 
 /**
- * O CAMINHO DO USUÁRIO NOVO — item 2 do R7, e o que ele mostra é uma recusa.
+ * O CAMINHO DO USUÁRIO NOVO — item 2 do R7, e o item 4 do W1.
  *
- * MEDIDO em 24/08: um tenant recém-criado nasce com três linhas em
- * `api_credentials` de vendor VAZIO e chave nula. `getCredentialForVendor`
- * não casa nenhum vendor, e a criação de vídeo responde 400
- * `tier_vendor_unavailable` — antes do débito, antes da linha.
+ * ⚠️ **Esta função MUDOU DE VEREDITO em 24/08.** Até o W1 ela imprimia quatro
+ * degraus e o ponto em que cada um PARAVA: tenant recém-criado nascia com
+ * três linhas de vendor VAZIO e chave nula, `getCredential` devolvia `null`,
+ * e a geração respondia 400 `tier_vendor_unavailable` — com as chaves de
+ * plataforma gravadas e nunca consultadas.
  *
- * ⚠️ E a chave de PLATAFORMA não resolve: `resolveTenantAvatarFalKey` recebe a
- * chave BYOK como parâmetro OBRIGATÓRIO e só é chamada DEPOIS de a credencial
- * do tenant já ter sido lida e confirmada. Ela substitui o VALOR da chave,
- * nunca a existência da linha.
+ * Agora ela MEDE em vez de descrever: chama `getCredential` e
+ * `getCredentialForVendor` de verdade, para um tenant real sem credencial
+ * própria, e imprime de onde cada chave veio. Um ensaio que afirma "nasce
+ * funcionando" com texto fixo continuaria afirmando isso no dia em que
+ * parasse de ser verdade.
  */
-async function ensaiarUsuarioNovo(): Promise<void> {
-  console.log(`\n${"=".repeat(78)}\n  USUÁRIO NOVO — do cadastro ao primeiro vídeo\n${"=".repeat(78)}`);
+export async function ensaiarUsuarioNovo(): Promise<void> {
+  console.log(`
+${"=".repeat(78)}
+  USUÁRIO NOVO — do cadastro ao primeiro vídeo
+${"=".repeat(78)}`);
 
-  const { rows } = await pool.query<{ slug: string; vendors: string | null }>(
-    `SELECT t.slug,
+  const { rows } = await pool.query<{ id: string; slug: string; vendors: string | null }>(
+    `SELECT t.id, t.slug,
             nullif(string_agg(nullif(c.vendor, ''), ','), '') AS vendors
        FROM tenants t LEFT JOIN api_credentials c ON c.tenant_id = t.id AND c.provider = 'avatar'
-      GROUP BY t.slug ORDER BY t.slug`,
+      GROUP BY t.id, t.slug ORDER BY t.slug`,
   );
   const zerados = rows.filter((r) => !r.vendors);
-  console.log(`  tenants sem NENHUM vendor de avatar: ${zerados.length} de ${rows.length}`);
-  if (zerados.length > 0) {
-    console.log(`  exemplos: ${zerados.slice(0, 4).map((z) => z.slug).join(", ")}`);
+  console.log(`  tenants sem NENHUM vendor de avatar próprio: ${zerados.length} de ${rows.length}`);
+
+  if (zerados.length === 0) {
+    console.log("  (nenhum tenant zerado neste banco — nada a medir)");
+    return;
   }
 
-  console.log("\n  degraus, e onde cada um para hoje:");
-  console.log("    1. criar tenant .......... OK — nasce com 3 linhas de vendor VAZIO e chave nula");
-  console.log("    2. treinar avatar ........ PRECISA de credencial de avatar (`provider=avatar`)");
-  console.log("    3. clonar a própria voz .. PRECISA de credencial de voz (`provider=voice`)");
-  console.log("    4. gerar vídeo ........... 400 `tier_vendor_unavailable` sem o vendor do nível escolhido");
+  // Um tenant REAL, sem credencial própria — não um id inventado. A herança
+  // lê `api_credentials` antes de cair na plataforma, e um id que não existe
+  // exercitaria só metade do caminho.
+  const cobaia = zerados[0];
+  console.log(`  medindo em: ${cobaia.slug}
+`);
+
+  const providers = ["avatar", "voice", "script"] as const;
+  let alcancados = 0;
+  for (const p of providers) {
+    const c = await getCredential(cobaia.id, p);
+    if (c) alcancados += 1;
+    console.log(
+      `    ${p.padEnd(6)} -> ${c ? `${c.vendor.padEnd(10)} via ${c.source}` : "SEM ACESSO (null)"}`,
+    );
+  }
+
+  const pares = [
+    ["avatar", "heygen"],
+    ["avatar", "fal"],
+    ["voice", "elevenlabs"],
+    ["script", "gemini"],
+    ["avatar", "did"],
+  ] as const;
+  console.log("\n    por vendor explícito (o que cada NÍVEL da tela exige):");
+  for (const [p, v] of pares) {
+    const c = await getCredentialForVendor(cobaia.id, p, v);
+    console.log(`      ${`${p}/${v}`.padEnd(20)} -> ${c ? `via ${c.source}` : "SEM ACESSO (null)"}`);
+  }
+
   console.log(
-    "\n  ⚠ a chave de PLATAFORMA não desbloqueia o degrau 4: ela substitui o VALOR da chave,\n" +
-      "    nunca a EXISTÊNCIA da linha do tenant. Um admin precisa preencher o vendor primeiro.",
+    `
+  ${alcancados === providers.length ? "✓" : "⚠"} o tenant zerado alcança ${alcancados} de ` +
+      `${providers.length} providers sem ter chave nenhuma.`,
+  );
+  console.log(
+    "    `avatar/did` responde null DE PROPÓSITO: não há chave de plataforma para ele, e falhar\n" +
+      "    fechado é o certo — herdar por acidente faria a plataforma pagar uma conta que ninguém\n" +
+      "    decidiu. Ver `HERANCA_DE_PLATAFORMA`.",
   );
 }
 
