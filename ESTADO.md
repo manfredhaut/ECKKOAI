@@ -542,16 +542,29 @@ arnês lançada; nenhuma chamada real a fornecedor.
 commit que atualiza este arquivo não caberia dentro dele. `git log -3
 --oneline` fecha a diferença.)*
 
+> **Esta lista é conferida por máquina desde 24/08 — `npm run estado`.** Ela
+> compara o penúltimo commit do repositório contra os hashes abaixo e acusa
+> ponteiro velho. Roda também no começo de toda passada do arnês. Ver §17.
+
 ```
+ca49361  ESTADO.md §5: a passada completa fechou 368/368 e vira a vigente
+03aa59d  ESTADO.md: §16 do fechamento, §1 reancorada na quinta divergência, §5 com o ponteiro certo
 043caf6  O gasto de cada corrida fica gravado: o teto freia a corrida, ninguém media o vídeo (P7-obstáculo-1)
 818ca10  Gatilho de troca de conta (RETOMAR-P7) + ESTADO.md do fechamento de 23/08
 b00b744  Frescor do Vite vira healthcheck: age por onde quer que o container suba (L1)
 b679ea2  4 guardas inertes eram texto de prova desalinhado, não lógica quebrada (I1)
 50324c6  checkTierVendorPolicy: mutante do 400 tier_vendor_unavailable saía AMBÍGUO
 de1258b  checkTierVendorPolicy/checkTierAvailabilityPolicy: expects divergiam da mensagem real
-ed4e634  Fase C: os 3 call sites de routes/videos.ts decidem vendor pelo tier_video
-d17ccc2  ESTADO.md + PLANO-MESTRE-SEQUENCIAL.md: fecho de sessão — Fases A/B do multi-vendor de avatar
 ```
+
+⚠️ **SEXTA divergência — e a mais reveladora, porque foi a conferência nova que
+a pegou, minutos depois de a quinta ter sido corrigida à mão.** Em 23/08 esta
+lista foi reancorada com topo em `043caf6`; o MESMO fechamento escreveu mais
+dois commits depois (`03aa59d`, `ca49361`) e a lista voltou a mentir na mesma
+sessão que a consertou. É a prova de que o problema nunca foi desatenção de
+uma sessão específica: **o commit de fechamento é estruturalmente o último a
+ser escrito e o primeiro a ser esquecido.** Foi por isso que a §17 parou de
+pedir atenção e passou a medir.
 
 ⚠️ **QUINTA divergência, registrada em 23/08 (segunda sessão do dia).** A lista
 acima estava com topo em `50324c6`, **quatro commits atrás do HEAD real**: os

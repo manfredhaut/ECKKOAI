@@ -7,6 +7,7 @@
     "set-key": "node tools/set-key.mjs",
     "backup-db": "node tools/backup-db.mjs",
     "smoke": "bash tools/smoke-demo.sh",
+    "estado": "node tools/estadoAnchor.mjs",
     "check": "docker compose exec -T backend npm run check",
     "check:mutants": "node tools/run-mutants.mjs",
     "down": "docker compose down",

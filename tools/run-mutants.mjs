@@ -281,6 +281,31 @@ async function main() {
     }
   }
 
+  // A ÂNCORA DO ESTADO.md, antes de qualquer mutação — R8, 24/08.
+  //
+  // AQUI porque o alcance é o melhor disponível: toda rodada termina numa
+  // passada do arnês, e ele já roda no host com git à mão (o container não vê
+  // nem `.git` nem `ESTADO.md` — MEDIDO). Não é a "abertura da sessão" que o
+  // pedido descrevia, e `npm run estado` existe para isso; mas um aviso que
+  // depende de alguém lembrar de rodar um comando é o mesmo mecanismo que já
+  // falhou seis vezes. Este pega antes do commit de fechamento, que é onde o
+  // conserto acontece de qualquer jeito.
+  //
+  // AVISA, NUNCA ABORTA: a âncora velha não invalida mutante nenhum, e matar
+  // uma passada de 2 h por causa de um parágrafo desatualizado trocaria um
+  // problema de prosa por um de trabalho perdido.
+  try {
+    const { conferirAncora, relatarAncora } = await import(
+      pathToFileURL(path.join(repoRoot, "tools", "estadoAnchor.mjs")).href
+    );
+    const ancora = conferirAncora();
+    if (ancora.desfecho !== "fresca") {
+      console.error(`\n⚠ ${relatarAncora(ancora)}\n`);
+    }
+  } catch (err) {
+    console.error(`\n? âncora do ESTADO.md: NÃO CONFERIDA — ${String(err).slice(0, 160)}\n`);
+  }
+
   const sujoAntes = treeStatus();
   if (sujoAntes) {
     console.error(
