@@ -11,6 +11,7 @@ import { processVoiceAudio } from "../audioProcessing.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { vendorSignal } from "./vendorTimeout.js";
 import { recordProviderUsage } from "../billing/usageTracking.js";
+import { custoVozUsd } from "../billing/providerCost.js";
 import { contractMismatch, logVendorResponse, unexpectedShapeMessage } from "./vendorResponseLog.js";
 import {
   countWords,
@@ -131,6 +132,17 @@ export interface GenerateVideoInput {
   elevenLabsApiKey: string | null;
   voiceId: string | null;
   tenantId: string;
+  /**
+   * A linha de `videos` que esta geração serve — R5, 24/08.
+   *
+   * Opcional porque o provider é exercitado sem banco pelas guardas, e porque
+   * a sonda de contrato não tem vídeo nenhum. Nos call sites de produto a
+   * linha JÁ EXISTE quando `generateVideo` é chamada (o INSERT e o débito vêm
+   * antes), então eles sempre têm o id — e sem passá-lo o consumo de VOZ fica
+   * órfão, que é o estado medido de todas as 12 linhas de `voice/elevenlabs`
+   * anteriores a esta rodada.
+   */
+  videoId?: string | null;
   audioTreatmentEnabled: boolean;
   audioTreatmentTargetLufs: number;
   /**
@@ -323,6 +335,17 @@ export type PollResult =
     }
   | { status: "error"; errorMessage: string };
 
+/**
+ * A rota do fornecedor que a síntese usa, para `provider_usage.endpoint_id`.
+ *
+ * SEM o `{voice_id}` final que a URL real carrega
+ * ([voiceProvider.ts:357](../voiceProvider.ts)): o que a coluna responde é
+ * "qual rota", e uma coluna com um id de voz embutido não agrupa — cada voz
+ * viraria um endpoint diferente na hora de somar. É a mesma forma que o
+ * `endpointCatalog.ts` já usa para esta rota.
+ */
+const ELEVENLABS_TTS_ENDPOINT = "/v1/text-to-speech";
+
 interface SynthesizedAudio {
   buffer: Buffer;
   durationSeconds: number | null;
@@ -338,10 +361,23 @@ async function requireAudio(input: GenerateVideoInput): Promise<SynthesizedAudio
   const synthesized = await synthesizeSpeech(input.elevenLabsApiKey, input.voiceId, input.script);
   await recordProviderUsage({
     tenantId: input.tenantId,
+    // R5, 24/08 — MEDIDO: as 12 linhas de `voice/elevenlabs` desta tabela
+    // estavam TODAS sem `video_id`, porque `GenerateVideoInput` não carregava
+    // o id. O consumo de voz existia sem nenhuma ponte com o vídeo que o
+    // causou, e é o consumo que roda mais vezes por vídeo (uma síntese por
+    // clique em Gerar, mais uma por retomada).
+    videoId: input.videoId ?? null,
     provider: "voice",
     vendor: "elevenlabs",
     unitType: "characters",
     unitCount: input.script.length,
+    endpointId: ELEVENLABS_TTS_ENDPOINT,
+    // A voz não passa por `resolvePlatformKey`: a chave vem sempre da
+    // credencial do tenant (`voiceCredential` em routes/videos.ts). Declarado,
+    // e não deixado em `null`, porque "não sei" e "é do tenant" são respostas
+    // diferentes para a pergunta de quem paga a conta.
+    keySource: "tenant_byok",
+    estimatedCostUsd: custoVozUsd(input.script.length),
   });
 
   // Único ponto do sistema onde a duração REAL do que vai ser falado é

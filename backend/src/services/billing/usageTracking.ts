@@ -7,6 +7,17 @@ export type MeteredUnitType = "seconds" | "characters" | "tokens_in" | "tokens_o
 /** Ver DurationSource em avatarProvider.ts — mesmo vocabulário, sem acoplar. */
 export type UnitSource = "vendor_response" | "tts_timestamps" | "requested";
 
+/**
+ * De qual chave saiu a chamada — migration 063.
+ *
+ * `platform`: credencial da plataforma (`platform_credentials`), a mesma para
+ * todos os tenants; a fatura é NOSSA. `tenant_byok`: credencial do próprio
+ * tenant (`api_credentials`); a fatura é dele. Hoje só a `fal` tem chave de
+ * plataforma servindo geração (`servedBy` em platformCredentials.ts), mas o
+ * campo não pergunta o vendor — se a HeyGen migrar amanhã, ele já responde.
+ */
+export type KeySource = "platform" | "tenant_byok";
+
 export interface RecordUsageInput {
   tenantId: string;
   videoId?: string | null;
@@ -47,6 +58,27 @@ export interface RecordUsageInput {
    * anterior ao aceite.
    */
   providerJobId?: string | null;
+  /**
+   * A rota do FORNECEDOR que produziu este consumo — migration 063.
+   *
+   * Sem ela, chamadas de preços muito diferentes entram na tabela como a mesma
+   * coisa: `fal-ai/nano-banana-2/edit` custa US$ 0,08 por imagem e
+   * `wan/v2.6/image-to-video/flash` cobra por segundo. Foi por não haver esta
+   * coluna que a reconciliação de 24/08 teve de cruzar `fal_pipeline_steps`
+   * com o painel do fornecedor à mão.
+   */
+  endpointId?: string | null;
+  /** Ver `KeySource`. `null` quando o caminho não resolve chave de plataforma. */
+  keySource?: KeySource | null;
+  /**
+   * O custo que a RÉGUA previa quando esta chamada saiu — nunca o cobrado.
+   *
+   * Nenhum destes fornecedores expõe custo por chamada, então não existe
+   * número real para gravar. O que se guarda é o que nós afirmávamos, para que
+   * a próxima reconciliação com a fatura seja uma consulta e não uma escavação
+   * — ver o comentário por extenso na migration 063.
+   */
+  estimatedCostUsd?: number | null;
 }
 
 /**
@@ -90,6 +122,16 @@ export interface RecordFailedUsageInput {
   resolution?: string | null;
   /** Ver `RecordUsageInput.providerJobId`. Preenchido quando o job chegou a existir. */
   providerJobId?: string | null;
+  /** Ver `RecordUsageInput.endpointId`. Numa falha ele é MAIS útil, não menos:
+   * é o que distingue "a rota recusou o corpo" de "a rota não existe". */
+  endpointId?: string | null;
+  /** Ver `KeySource`. Numa falha responde de quem era a chave que foi recusada. */
+  keySource?: KeySource | null;
+  /**
+   * O que TERIA custado. Fica ao lado de `requestedUnitCount`, pelo mesmo
+   * motivo: sem ele não há como somar o gasto EVITADO por uma recusa.
+   */
+  estimatedCostUsd?: number | null;
 }
 
 /**
@@ -126,8 +168,9 @@ async function writeUsage(input: WriteUsageInput): Promise<void> {
       `INSERT INTO provider_usage
          (tenant_id, video_id, provider, vendor, unit_type, unit_count,
           requested_unit_count, unit_source, aspect_ratio, resolution, provider_engine,
-          outcome, failure_reason, provider_job_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          outcome, failure_reason, provider_job_id,
+          endpoint_id, key_source, estimated_cost_usd)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
       [
         input.tenantId,
         input.videoId ?? null,
@@ -143,6 +186,9 @@ async function writeUsage(input: WriteUsageInput): Promise<void> {
         input.outcome,
         input.failureReason,
         input.providerJobId ?? null,
+        input.endpointId ?? null,
+        input.keySource ?? null,
+        input.estimatedCostUsd ?? null,
       ],
     );
   } catch (err) {

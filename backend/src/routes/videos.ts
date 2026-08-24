@@ -15,12 +15,13 @@ import { getCredential, getCredentialForVendor } from "../services/credentialLoo
 import { resolveTenantAvatarFalKey } from "../services/providers/platformKeys.js";
 import { assertLookUsavel, LookInvalidoError, providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 import { createNotification } from "../services/notifications.js";
-import { recordFailedProviderUsage, recordProviderUsage } from "../services/billing/usageTracking.js";
+import { recordFailedProviderUsage, recordProviderUsage, type KeySource } from "../services/billing/usageTracking.js";
 import {
   assertHeygenSpendBudget,
   costBasisNote,
   costDifference,
   costFor,
+  custoConhecidoUsd,
   estimateVideoCost,
   HeygenSpendCapExceededError,
 } from "../services/billing/providerCost.js";
@@ -80,6 +81,7 @@ import {
   escolherDuracao,
   isVideoTier,
   maxReachableSecondsForTier,
+  ENDPOINT_SINCRONIZAR,
   PRECOS_FAL,
   runFalPipelineDaImagem,
   runFalPipelineDoVideoMudo,
@@ -189,6 +191,23 @@ async function encerrarComMotivo(input: {
   return { encerrado: true, estornado };
 }
 
+/**
+ * A rota do fornecedor que CRIA o vídeo, por vendor — para
+ * `provider_usage.endpoint_id` (R5, migration 063).
+ *
+ * Só o caminho de vendor direto (uma chamada, um job, um polling) cabe aqui. O
+ * caminho da FAL não: ele é uma corrida de três etapas pagas em endpoints
+ * diferentes, e o registro por etapa já existe em `fal_pipeline_steps`, com
+ * `endpoint_id` próprio. Devolver um único endpoint para `fal` seria escolher
+ * um dos três e chamá-lo de "o" endpoint — por isso devolve `null` e a coluna
+ * fica honestamente vazia, com o detalhe vivendo onde ele é exato.
+ */
+function endpointDeCriacaoPara(vendor: AvatarVendor): string | null {
+  if (vendor === "heygen") return "/v3/videos";
+  if (vendor === "did") return "/talks";
+  return null;
+}
+
 function pollJob(
   videoId: string,
   tenantId: string,
@@ -198,6 +217,13 @@ function pollJob(
   durationSeconds: number,
   format: VideoFormat,
   engine: string | null,
+  // R5, 24/08 — a PROCEDÊNCIA do gasto, os dois no fim e opcionais de
+  // propósito: `pollJob` já tem oito parâmetros posicionais, e um chamador que
+  // esqueça de passar estes grava `null` (= "não sei") em vez de errado. Um
+  // default mentiroso aqui seria pior que a ausência, porque a coluna existe
+  // justamente para responder de quem é a fatura.
+  keySource?: KeySource | null,
+  endpointId?: string | null,
 ): void {
   let attempts = 0;
   const interval = setInterval(async () => {
@@ -336,6 +362,16 @@ function pollJob(
           // contra a fatura sem depender do join com `videos` — que é
           // `ON DELETE SET NULL` e já deixou 15 linhas órfãs (medido em 08/08).
           providerJobId: jobId,
+          // R5 — de qual chave saiu, e por qual rota. Com uma chave de
+          // plataforma servindo todos os tenants, o painel do fornecedor
+          // mostra um total e nada sobre quem pediu; estas duas colunas são a
+          // única resposta que sobra.
+          keySource: keySource ?? null,
+          endpointId: endpointId ?? null,
+          // O que a RÉGUA previa. Para vendor sem medição própria `costFor`
+          // devolve ausência, e aqui a ausência vira `null` — nunca zero, que
+          // se somaria como se a chamada fosse de graça.
+          estimatedCostUsd: custoConhecidoUsd(measured.count, vendor),
         });
       } else if (result.status === "error") {
         clearInterval(interval);
@@ -435,8 +471,14 @@ export async function rearmVideoPolling(linha: VideoEmVoo): Promise<void> {
   // fal: chave da plataforma primeiro, BYOK do tenant como retaguarda — ver
   // `resolveTenantAvatarFalKey`. O vendor continua vindo da linha/credencial,
   // como sempre; só a origem da CHAVE muda.
-  const apiKey =
-    vendorDoJob === "fal" ? (await resolveTenantAvatarFalKey(credential.apiKey)).apiKey : credential.apiKey;
+  // R5 — a resolução devolve `source`, e até esta rodada ele era descartado
+  // (`.apiKey` direto). É ele que responde se o gasto cai na fatura da
+  // plataforma ou na do tenant, e era a única testemunha disso no processo.
+  const resolvida =
+    vendorDoJob === "fal"
+      ? await resolveTenantAvatarFalKey(credential.apiKey)
+      : { apiKey: credential.apiKey, source: "tenant_byok" as const };
+  const apiKey = resolvida.apiKey;
   pollJob(
     linha.id,
     linha.tenant_id,
@@ -446,6 +488,8 @@ export async function rearmVideoPolling(linha: VideoEmVoo): Promise<void> {
     linha.duration_seconds,
     resolveVideoFormat(linha.publish_platform),
     linha.provider_engine,
+    resolvida.source,
+    endpointDeCriacaoPara(vendorDoJob),
   );
 }
 
@@ -1246,9 +1290,15 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     // fal: chave da plataforma primeiro, BYOK do tenant como retaguarda — ver
     // `resolveTenantAvatarFalKey`. `avatarCredential.vendor` não muda; só a
     // CHAVE que os usos seguintes de `avatarCredential.apiKey` leem muda.
-    if (avatarCredential.vendor === "fal") {
-      avatarCredential.apiKey = (await resolveTenantAvatarFalKey(avatarCredential.apiKey)).apiKey;
-    }
+    //
+    // R5 — o `source` deixou de ser descartado: é ele que diz se este gasto
+    // cai na fatura da plataforma ou na do tenant, e com uma chave única
+    // servindo todos os tenants essa é a única testemunha que sobra.
+    const chaveDoAvatar =
+      avatarCredential.vendor === "fal"
+        ? await resolveTenantAvatarFalKey(avatarCredential.apiKey)
+        : { apiKey: avatarCredential.apiKey, source: "tenant_byok" as const };
+    avatarCredential.apiKey = chaveDoAvatar.apiKey;
 
     // -----------------------------------------------------------------------
     // O PORTEIRO DO VENDOR — antes da linha, antes do débito, antes de tudo.
@@ -1543,6 +1593,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         elevenLabsApiKey: voiceCredential?.apiKey ?? null,
         voiceId: avatar.voice_id,
         tenantId: req.tenantId,
+        // R5 — a ponte que faltava entre o consumo de VOZ e o vídeo que o
+        // causou. A linha já existe aqui (o INSERT e o débito acontecem
+        // acima), então o id sempre está disponível neste call site.
+        videoId: video.id,
         audioTreatmentEnabled: avatar.audio_treatment_enabled,
         audioTreatmentTargetLufs: Number(avatar.audio_treatment_target_lufs),
         format,
@@ -1668,6 +1722,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         duration_seconds,
         format,
         engine ?? null,
+        chaveDoAvatar.source,
+        endpointDeCriacaoPara(avatarCredential.vendor as AvatarVendor),
       );
     } catch (err) {
       if (falRunId) {
@@ -1848,6 +1904,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     avatar: Avatar;
     apiKeyFal: string;
     apiKeyElevenLabs: string;
+    /** R5 — de qual chave saiu `apiKeyFal`. Ver `KeySource`. */
+    keySourceFal: KeySource;
   } | null> {
     const { rows } = await pool.query<VideoRow>(
       "SELECT * FROM videos WHERE id = $1 AND tenant_id = $2",
@@ -1897,12 +1955,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     }
     // fal: chave da plataforma primeiro, BYOK do tenant como retaguarda — ver
     // `resolveTenantAvatarFalKey`. O vendor já foi confirmado "fal" acima.
-    const apiKeyFal = (await resolveTenantAvatarFalKey(avatarCredential.apiKey)).apiKey;
+    const chaveFal = await resolveTenantAvatarFalKey(avatarCredential.apiKey);
     return {
       video,
       avatar,
-      apiKeyFal,
+      apiKeyFal: chaveFal.apiKey,
       apiKeyElevenLabs: voiceCredential.apiKey,
+      keySourceFal: chaveFal.source,
     };
   }
 
@@ -2311,7 +2370,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, "awaiting_approval_video", reply);
       if (!carga) return reply;
-      const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
+      const { video, avatar, apiKeyFal, apiKeyElevenLabs, keySourceFal } = carga;
 
       const videoMudoAprovado = video.fal_muted_video_url;
       if (!videoMudoAprovado) {
@@ -2430,6 +2489,18 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           // sincronia, não a animação: `animar` foi pago numa corrida
           // ANTERIOR e seu ponteiro já está em `video.provider_job_id`.
           providerJobId: corrida.requestIds.sincronizar,
+          // R5 — o endpoint é o da SINCRONIA, coerente com o `providerJobId`
+          // logo acima: os dois têm de falar da MESMA etapa, senão a linha
+          // cruza o job de uma com a rota de outra. As três etapas da corrida
+          // continuam detalhadas em `fal_pipeline_steps`, cada uma com o seu.
+          endpointId: ENDPOINT_SINCRONIZAR,
+          keySource: keySourceFal,
+          // `null` aqui não é omissão: `costFor` devolve ausência para `fal`
+          // (nenhuma medição própria), e a régua desta corrida vive em
+          // `fal_pipeline_runs.gasto_previsto_usd` (migration 062), somada por
+          // etapa. Repetir um número derivado de outro lugar criaria a segunda
+          // verdade sobre dinheiro que a guarda de custo existe para impedir.
+          estimatedCostUsd: null,
         });
 
         await createNotification(req.tenantId, "video_ready", "Your video is ready.");

@@ -82,6 +82,7 @@ import { checkFalGenerationPathPolicy } from "./checkFalGenerationPathPolicy.js"
 import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
 import { checkFalVideoApprovalPolicy } from "./checkFalVideoApprovalPolicy.js";
 import { checkFalGastoInstrumentadoPolicy } from "./checkFalGastoInstrumentadoPolicy.js";
+import { checkUsageAttributionPolicy } from "./checkUsageAttributionPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
@@ -779,6 +780,13 @@ async function main(): Promise<void> {
   const falGastoInstrumentado = await checkFalGastoInstrumentadoPolicy();
   falGastoInstrumentado.failures.forEach((f) => failures.push(f));
   falGastoInstrumentado.notes.forEach((n) => note(n));
+
+  // --- 24o-ter-ter. de quem é o gasto (R5, migration 063) -----------------
+  //
+  // Sem rede e sem banco: lê arquivo e chama uma função pura.
+  const usageAttribution = await checkUsageAttributionPolicy();
+  usageAttribution.failures.forEach((f) => failures.push(f));
+  usageAttribution.notes.forEach((n) => note(n));
 
   // --- 24o-quater. a cena chega ao fornecedor (BLOCO B5) -----------------
   //

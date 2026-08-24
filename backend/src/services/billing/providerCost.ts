@@ -71,6 +71,34 @@
 import { HEYGEN_MAX_SCRIPT_CHARS, estimateSecondsFromChars } from "../video/scriptDuration.js";
 
 /**
+ * O custo da VOZ, por caractere sintetizado — R5, 24/08.
+ *
+ * ⚠️ **NÃO É LIDO POR `costFor`, de propósito, e isso não é esquecimento.** O
+ * cabeçalho deste arquivo declara que voz e roteiro devolvem AUSÊNCIA na tela
+ * por nunca terem sido medidos, e essa decisão continua de pé para tudo que a
+ * pessoa vê. Esta constante serve a UM consumidor: a atribuição de gasto
+ * (`provider_usage.estimated_cost_usd`, migration 063), que grava o que a
+ * régua AFIRMAVA para poder confrontá-la com a fatura depois. Ligá-la em
+ * `costFor` mudaria a tela e é outra decisão, do operador.
+ *
+ * MEDIDO uma vez, em 05/08, no painel do fornecedor: um vídeo real sintetizou
+ * 561 caracteres (87 + 474) e o painel debitou 280 créditos = **US$ 0,056** —
+ * 0,5 crédito por caractere, US$ 0,0001 por caractere. Uma medição só, num
+ * modelo só; o próprio CLAUDE.md registra que QUAL modelo produziu aquela
+ * tarifa ficou encerrado como NÃO VERIFICADO.
+ */
+export const ELEVENLABS_VOICE_COST = {
+  usdPerCharacter: 0.0001,
+  measuredOn: "2026-08-05",
+  method: "561 caracteres sintetizados → 280 créditos → US$ 0,056 no painel do fornecedor",
+} as const;
+
+/** Ver `ELEVENLABS_VOICE_COST` — a multiplicação, para não repeti-la em call site. */
+export function custoVozUsd(caracteres: number): number {
+  return caracteres * ELEVENLABS_VOICE_COST.usdPerCharacter;
+}
+
+/**
  * A medição, num objeto só. Mexer aqui muda todo custo exibido no produto —
  * que é exatamente a propriedade desejada.
  *
@@ -203,6 +231,23 @@ export function costFor(input: {
  */
 export function estimateVideoCost(requestedSeconds: number, vendor: string): Cost {
   return costFor({ provider: "avatar", vendor, unitType: "seconds", unitCount: requestedSeconds });
+}
+
+/**
+ * O custo em dólar quando ele é CONHECIDO, e `null` quando não é — R5, 24/08.
+ *
+ * Existe para quem grava, não para quem mostra: `provider_usage
+ * .estimated_cost_usd` (migration 063) precisa de um número ou de nada, e a
+ * distinção entre `CostKnown` e `CostUnknown` não cabe numa coluna `numeric`.
+ *
+ * **`null`, jamais `0`.** Zero se soma como se a chamada tivesse sido de
+ * graça, e o vendor `fal` — que hoje é justamente o que mais gasta — devolve
+ * `known: false` em toda consulta. Um `?? 0` aqui produziria relatórios de
+ * atribuição em que o caminho mais caro do produto aparece como gratuito.
+ */
+export function custoConhecidoUsd(segundos: number, vendor: string): number | null {
+  const c = estimateVideoCost(segundos, vendor);
+  return c.known ? c.usd : null;
 }
 
 /**
