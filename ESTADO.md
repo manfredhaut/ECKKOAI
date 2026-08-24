@@ -547,14 +547,14 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 > ponteiro velho. Roda também no começo de toda passada do arnês. Ver §17.
 
 ```
+3a8c377  A guarda do ensaio saiu INERTE no primeiro mutante — alcance, não lógica
+ef4dd5d  O ensaio: os caminhos do produto ponta a ponta, com zero chamada paga (R7)
+5e5e041  O R5 fechou um ciclo de importação que só quebra por fora do gate
+8991dce  Slot de voz rotativo: apagar, reclonar e o teto que deixou de ser palpite (R6)
+eeef85b  De quem é o gasto: atribuição de consumo quando a chave é única (R5)
+1a2c273  A âncora do ESTADO.md passa a ser conferida por máquina (R8)
 ca49361  ESTADO.md §5: a passada completa fechou 368/368 e vira a vigente
 03aa59d  ESTADO.md: §16 do fechamento, §1 reancorada na quinta divergência, §5 com o ponteiro certo
-043caf6  O gasto de cada corrida fica gravado: o teto freia a corrida, ninguém media o vídeo (P7-obstáculo-1)
-818ca10  Gatilho de troca de conta (RETOMAR-P7) + ESTADO.md do fechamento de 23/08
-b00b744  Frescor do Vite vira healthcheck: age por onde quer que o container suba (L1)
-b679ea2  4 guardas inertes eram texto de prova desalinhado, não lógica quebrada (I1)
-50324c6  checkTierVendorPolicy: mutante do 400 tier_vendor_unavailable saía AMBÍGUO
-de1258b  checkTierVendorPolicy/checkTierAvailabilityPolicy: expects divergiam da mensagem real
 ```
 
 ⚠️ **SEXTA divergência — e a mais reveladora, porque foi a conferência nova que
@@ -1919,3 +1919,120 @@ pulado foram exercitados nela.
    orçamento apertado (3 refazeres de imagem + 1 de vídeo) = **US$ 1,82** /
    **US$ 14,94**; folgado (3 + 3) = **US$ 2,57** / **US$ 28,80**.
 3. Os obstáculos 2, 3 e 4 do RETOMAR-P7 §4 seguem abertos e intocados.
+
+## 17 · Sessão de 24/08/2026 — R0–R8: leitura, atribuição, voz e ensaio
+
+**Nada gasto: US$ 0,00.** Nenhuma chamada paga; três GETs não tarifados
+(inventário de vozes, assinatura do ElevenLabs, docs públicas). `fixture
+len=0` conferido na abertura e depois de cada `restart`.
+
+### ⚠️ R4 PARADO por decisão do operador — leia antes de retomar
+
+O gatilho de parada do R1.5 disparou: **a régua diverge da cobrança nos três
+motores, em direções diferentes**, e o operador foi conferir o painel da fal
+por chamada/data. **Não construa o teto em dinheiro antes dessa resposta.**
+
+| etapa | nossas chamadas | régua diz | painel cobra | veredito |
+|---|---|---|---|---|
+| compor | 13 | US$ 1,04 | **US$ 1,04** | **EXATO ao centavo — agora MEDIDO** |
+| animar (Wan) | 7 (80 s completos) | US$ 2,00 | US$ 1,00 | **SUPERESTIMA 2×** (tarifa real ≈ 0,0125/s) |
+| sincronizar | 2 | US$ 0,69 | US$ 3,20 | **SUBESTIMA 4,6×** — ou o painel tem teste manual |
+| animar (Seedance) | 1 | US$ 6,93 | **linha ausente** | sem contraparte nenhuma |
+
+**O achado que importa:** `autorizarGasto` autoriza usando a MESMA régua que
+pode estar 4,6× baixa. Ele calcula o sync a 0,05/s, vê US$ 0,45 e libera sob
+o teto de US$ 2,00 — **o teto nunca foi confrontado com dinheiro real**.
+Nunca barrou nada porque nunca soube o preço.
+
+⚠️ E `estimateVideoCost` devolve **`known: false`** para `fal`. A fórmula que
+o R4.2 pedia (`estimateVideoCost(nível, duração) × 3`) **não é aplicável hoje
+aos dois níveis que precisam do freio**.
+
+**US$ 5,03 do painel são de endpoints que o produto NUNCA chamou** — kling
+ai-avatar (1,51), wan reference-to-video/flash (2,13), wan image-to-video sem
+`/flash` (1,00), seedance v1.5 pro (0,39). Zero ocorrências no repositório
+inteiro: são testes manuais do operador.
+
+**Namespace — a hipótese do operador está REFUTADA, com data.** As três
+linhas `fal-ai/wan/*` de US$ 0,00 **não são o 401 de 19/08**: são os **404**
+de 13–14/08, do id com prefixo errado (`Path /v2.6/reference-to-video/flash
+not found`, ENDPOINTS-3). O diário confirma: 1 etapa com esse `endpoint_id`,
+14/08, presa em `running`. O 401 nem chega a registrar endpoint.
+
+### R0 — as 24 corridas: o limite de 3 refações está LIVRE
+
+**Não são etapas** (cada corrida tem as suas em `fal_pipeline_steps`) — são
+INVOCAÇÕES de rota. **Máximo de refações no histórico: 1**, no `d450c86c`
+(dois `animar` a 13 s de distância = aprovação + um Refazer). **Zero refações
+de imagem.** O limite de 3 não barra nada já ocorrido.
+
+⚠️ Obstáculo para implementá-lo: **`fal_pipeline_runs` não registra QUAL rota
+a abriu.** Contar refações hoje exige inferir pelo conjunto de etapas.
+
+### R2 — custo de refação
+
+| nível | refazer imagem | refazer vídeo | base |
+|---|---|---|---|
+| **Direto** (HeyGen) | **não existe** | **não existe** — refazer é criar outro | MEDIDO |
+| **Cena Composta** (Wan) | US$ 0,08 | US$ 0,375 (15 s) | compor MEDIDO · animar DECLARADO |
+| **Premium** (Seedance) | US$ 0,08 | **US$ 6,93** | DOCUMENTADO, nunca medido |
+
+O Direto é regeração completa e chamada única: `videoTierParaPipeline` mostra
+que `"simples"` nunca alcança `falPipeline.ts`, e o fluxo vai de `queued` a
+`ready` sem aprovação.
+
+### R3 — vozes, usuário novo, vínculo
+
+- **9 vozes próprias, 1 em uso.** `voice_limit: 10`, `voice_slots_used: 9`,
+  `tier: starter` — MEDIDO. **8 liberáveis.** Cinco se chamam "TESTE REAL
+  15:40 01/08".
+- ⚠️ **Um avatar já é ÓRFÃO:** "Mário" → `wAd9MJ2I…`, ausente do inventário.
+- **O usuário zerado NÃO funciona hoje.** Tenant novo nasce com 3 linhas de
+  vendor VAZIO; a geração responde 400 `tier_vendor_unavailable`. **A chave
+  de plataforma não resolve:** `resolveTenantAvatarFalKey` recebe a BYOK como
+  parâmetro OBRIGATÓRIO e roda DEPOIS de a credencial do tenant ter sido
+  lida. Ela substitui o VALOR, nunca a EXISTÊNCIA da linha.
+- **HeyGen no painel de plataforma não muda nada:** `servedBy: ""`. Só a
+  `fal` é consumida de verdade.
+- **Etiqueta no fornecedor:** fal **não tem** (só `hint`, `priority`, headers
+  da plataforma) · HeyGen **tem `callback_id`** e não enviamos · ElevenLabs
+  `labels` é "map from string to string" mas a doc restringe a
+  language/accent/gender/age — chave livre **NÃO VERIFICADO**.
+
+### R5, R6, R7, R8 — entregues e provados
+
+- **R8** `tools/estadoAnchor.mjs` — no HOST, porque o container **não vê
+  `.git` nem `ESTADO.md`** (MEDIDO: `ls /repo` dá backend, frontend, tools,
+  docker-compose.yml, package.json). `npm run estado` + começo de toda
+  passada do arnês (avisa, nunca aborta). **Pegou a SEXTA divergência no
+  primeiro tiro**, minutos depois de a quinta ter sido corrigida à mão.
+- **R5** migration 063 — `endpoint_id`, `key_source`, `estimated_cost_usd` em
+  `provider_usage`. Buracos MEDIDOS que fecha: das 12 linhas de
+  `voice/elevenlabs`, **zero** tinham `video_id`; os dois pontos que resolviam
+  a chave da fal descartavam o `source`.
+- **R6** migration 064 `voice_clone_samples` + `DELETE /voice/voices/:id`
+  (confirmação = o id digitado de volta; recusa voz em uso; não apaga a
+  amostra em cascata) + `POST /avatars/:id/voice-reclone` (clona → reaponta)
+  + `GET /voice/voices` + `remove_background_noise` explícito. **O teto
+  deixou de ser palpite.**
+- **R7** `ensaioSimulado.ts` — dois níveis, falha parcial e usuário novo, com
+  **zero rede medida**. Item 4 PARCIAL: o custo na tela depende da régua.
+
+### Dois defeitos que esta sessão criou e consertou
+
+1. **Ciclo de importação (`5e5e041`).** O R5 fez `avatarProvider` importar
+   `providerCost`, fechando o anel com `scriptDuration`/`voiceProvider`.
+   Como `providerCost` chama `estimateSecondsFromChars` no topo do módulo, a
+   entrada por `falPipeline` morria com `Cannot access 'VOICE_SPEED' before
+   initialization`. **O gate não pegava** (entra por `checkPolicy`, ordem
+   diferente); quem descobriu foi o ensaio. Conserto: `billing/voiceCost.ts`,
+   módulo FOLHA sem importação nenhuma.
+2. **Guarda INERTE (`3a8c377`).** O mutante do ensaio punha um `fetch` no
+   `main()`, que a guarda não importa. Alcance, não lógica — mesmo padrão do
+   I1. Conserto: segunda perna por forma, no arquivo inteiro.
+
+### Arnês
+
+**380 mutantes declarados** (eram 368). Os 12 novos provados individualmente.
+Passada **AFETADA** ao fim desta rodada; a completa fica para quando o
+operador pedir — ela está verde em `ca49361` e leva ~2 h.
