@@ -207,9 +207,21 @@ export const MUTANTS: Mutant[] = [
     kind: "esperto",
     // Nada quebra hoje. O dano aparece na quinta voz homônima, quando alguém
     // precisa apagar uma e não tem como saber qual.
+    //
+    // ⚠️ CONTEXTO acrescentado em 24/08 (R6): a rota de RECLONAGEM
+    // (`/avatars/:id/voice-reclone`) chama `voiceNameWithTimestamp` com a
+    // mesma linha, e o `find` de uma linha só passou a casar DUAS vezes — a
+    // conferência de cadastro acusou na mesma passada em que a rota nasceu. A
+    // linha seguinte (`fileBuffer: normalizada.buffer`) só existe na clonagem
+    // original: a reclonagem parte dos bytes guardados, não do upload. É por
+    // isso que ela desempata sem ambiguidade, e é o conserto que a própria
+    // mensagem da conferência manda fazer — dar contexto ao find, nunca
+    // apagar a linha nova do produto.
     file: "backend/src/routes/voice.ts",
-    find: "          name: voiceNameWithTimestamp(avatar.name, new Date()),",
-    replace: "          name: avatar.name,",
+    find:
+      "          name: voiceNameWithTimestamp(avatar.name, new Date()),\n" +
+      "          fileBuffer: normalizada.buffer,",
+    replace: "          name: avatar.name,\n          fileBuffer: normalizada.buffer,",
     expect: "voltou a clonar sem carimbo no nome",
   },
   {

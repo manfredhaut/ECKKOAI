@@ -195,6 +195,42 @@ export function voiceSlotLimit(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 /**
+ * O TETO EFETIVO: o que o FORNECEDOR diz, quando ele diz — R6.5, 24/08.
+ *
+ * ┌─ A ordem de precedência, e por que ela é esta ───────────────────────────┐
+ * │ 1. `ELEVENLABS_VOICE_SLOTS` (ambiente), quando declarada. Um operador    │
+ * │    que fixou um teto MENOR que o do plano está se protegendo de propósito│
+ * │    — deixar a leitura do fornecedor sobrepor isso desfaria o freio dele  │
+ * │    sem aviso, e num recurso irreversível.                                │
+ * │ 2. `voice_limit` lido de `/v1/user/subscription` (MEDIDO em 24/08: 200,  │
+ * │    `voice_limit: 10`). É o número real da conta.                         │
+ * │ 3. `DEFAULT_VOICE_SLOT_LIMIT`, se a leitura não veio.                    │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * `lido` = `null` significa "não consegui perguntar", nunca "sem limite". A
+ * ausência cai no default — falhar FECHADO, a mesma escolha declarada em
+ * `DEFAULT_VOICE_SLOT_LIMIT`: recusar cedo demais não custa slot, recusar
+ * tarde demais custa.
+ *
+ * Devolve também a PROCEDÊNCIA, e não só o número: a tela precisa poder dizer
+ * "10 slots (o teto da sua conta)" em vez de "10 slots (o que a gente
+ * chutou)", e um número sem origem foi exatamente o que sustentou meses de
+ * suposição sobre este teto.
+ */
+export type VoiceSlotLimitSource = "env" | "vendor" | "default";
+
+export function effectiveVoiceSlotLimit(
+  lido: number | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): { limit: number; source: VoiceSlotLimitSource } {
+  if (env.ELEVENLABS_VOICE_SLOTS) return { limit: voiceSlotLimit(env), source: "env" };
+  if (typeof lido === "number" && Number.isFinite(lido) && lido > 0) {
+    return { limit: Math.floor(lido), source: "vendor" };
+  }
+  return { limit: DEFAULT_VOICE_SLOT_LIMIT, source: "default" };
+}
+
+/**
  * GUARDA B (contagem) — quais vozes do inventário OCUPAM um slot da conta.
  *
  * DEFEITO MEDIDO em 04/08, e é a razão desta função existir: `GET /v1/voices`

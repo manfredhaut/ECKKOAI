@@ -83,6 +83,7 @@ import { checkFalApprovalPolicy } from "./checkFalApprovalPolicy.js";
 import { checkFalVideoApprovalPolicy } from "./checkFalVideoApprovalPolicy.js";
 import { checkFalGastoInstrumentadoPolicy } from "./checkFalGastoInstrumentadoPolicy.js";
 import { checkUsageAttributionPolicy } from "./checkUsageAttributionPolicy.js";
+import { checkVoiceRotationPolicy } from "./checkVoiceRotationPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
@@ -787,6 +788,13 @@ async function main(): Promise<void> {
   const usageAttribution = await checkUsageAttributionPolicy();
   usageAttribution.failures.forEach((f) => failures.push(f));
   usageAttribution.notes.forEach((n) => note(n));
+
+  // --- 24o-quinquies. o slot de voz rotativo (R6) -------------------------
+  //
+  // Sem rede e sem banco: lê arquivo e chama duas funções puras.
+  const voiceRotation = await checkVoiceRotationPolicy();
+  voiceRotation.failures.forEach((f) => failures.push(f));
+  voiceRotation.notes.forEach((n) => note(n));
 
   // --- 24o-quater. a cena chega ao fornecedor (BLOCO B5) -----------------
   //

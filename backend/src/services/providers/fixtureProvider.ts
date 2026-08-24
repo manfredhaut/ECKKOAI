@@ -23,7 +23,13 @@ import { saveUpload } from "../storage.js";
 import type { AvatarProviderStatus, GenerateVideoInput, GenerateVideoResult, PollResult, TrainAvatarResult } from "./avatarProvider.js";
 import { buildHeygenVideoPayload } from "./avatarProvider.js";
 import type { AvatarLook, CreatedAvatarLook } from "./avatarProvider.js";
-import type { CloneVoiceResult, SynthesizedSpeech, VoiceInventory } from "./voiceProvider.js";
+import type {
+  CloneVoiceResult,
+  SynthesizedSpeech,
+  VoiceInventory,
+  VoiceListing,
+  VoiceSubscription,
+} from "./voiceProvider.js";
 import { HEYGEN_ASPECT_RATIOS, type AspectRatio } from "./videoFormat.js";
 import { selectEngine } from "./videoEngine.js";
 import { logEvent } from "../log/safeLog.js";
@@ -453,6 +459,46 @@ export function listVoicesFixture(): VoiceInventory {
   // com 25 contra 4. Aqui os três números discordam de propósito, para que
   // qualquer código que confunda um com o outro fique visível sem rede.
   return { total: 21, owned: 1, cloned: 1 };
+}
+
+/**
+ * A assinatura simulada — R6.5, 24/08.
+ *
+ * `voiceLimit: 10` bate com `DEFAULT_VOICE_SLOT_LIMIT`, e `voiceSlotsUsed: 1`
+ * bate com o `owned` de `listVoicesFixture` acima: em fixture as duas
+ * contagens CONCORDAM, porque um desacordo simulado treinaria o código a
+ * tratar divergência como normal. A divergência de verdade (25 contra 4, em
+ * 04/08) é caso de produção, e é a guarda de slots que a cobre.
+ *
+ * `tier: "starter"` e PVC desligado: é o plano REAL da conta, medido em
+ * 24/08. Simular um plano melhor do que se tem faria a tela oferecer
+ * clonagem profissional num caminho que responde 4xx em produção.
+ */
+/**
+ * As vozes simuladas — R6, 24/08.
+ *
+ * Os NÚMEROS batem com `listVoicesFixture` acima (owned 1, total 21): uma
+ * fixture que discordasse da outra faria a tela de limpeza e a guarda de
+ * slots contarem coisas diferentes em fixture, e o desacordo pareceria
+ * defeito de produto quando é defeito de fixture.
+ *
+ * As DUAS homônimas são de propósito. É o caso real da conta (cinco vozes
+ * chamadas "TESTE REAL 15:40 01/08", medido em 24/08), e é o único caso em
+ * que escolher voz pelo NOME quebra — se a fixture só tivesse nomes únicos,
+ * um código que confundisse nome com id passaria em fixture e falharia na
+ * conta real.
+ */
+export function listVoiceDetailsFixture(): VoiceListing[] {
+  return [
+    { voiceId: "fixture-voice-em-uso", name: "Avatar da fixture", category: "cloned" },
+    { voiceId: "fixture-voice-homonima-a", name: "TESTE REAL 15:40 01/08", category: "cloned" },
+    { voiceId: "fixture-voice-homonima-b", name: "TESTE REAL 15:40 01/08", category: "cloned" },
+    { voiceId: "fixture-voice-biblioteca", name: "Rachel", category: "premade" },
+  ];
+}
+
+export function readVoiceSubscriptionFixture(): VoiceSubscription {
+  return { voiceLimit: 10, voiceSlotsUsed: 1, tier: "starter", canUseProfessionalVoiceCloning: false };
 }
 
 export async function synthesizeSpeechFixture(): Promise<SynthesizedSpeech> {

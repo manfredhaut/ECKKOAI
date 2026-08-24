@@ -32,11 +32,18 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
 import type { Avatar } from "../types.js";
-import type { VoiceInventory } from "../services/providers/voiceProvider.js";
-import { cloneVoice, listVoices, synthesizeSpeech } from "../services/providers/voiceProvider.js";
+import type { VoiceInventory, VoiceListing } from "../services/providers/voiceProvider.js";
+import {
+  cloneVoice,
+  deleteVoice,
+  listVoiceDetails,
+  listVoices,
+  readVoiceSubscription,
+  synthesizeSpeech,
+} from "../services/providers/voiceProvider.js";
 import { getCredential } from "../services/credentialLookup.js";
 import { takeUpload } from "../services/uploadLimits.js";
-import { saveUpload } from "../services/storage.js";
+import { readUpload, saveUpload } from "../services/storage.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
@@ -50,9 +57,12 @@ import {
   checkSampleDuration,
   checkSampleFormat,
   checkVoiceReplacement,
+  PREMADE_VOICE_CATEGORY,
   checkVoiceSlots,
+  effectiveVoiceSlotLimit,
   voiceIdForLog,
   voiceSlotLimit,
+  type VoiceSlotLimitSource,
 } from "../services/voice/voiceSample.js";
 import {
   normalizeVoiceSample,
@@ -88,15 +98,25 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
     // causa de um número informativo.
     //
     // O `used` é MEDIDO no fornecedor (`countOwnedVoices` exclui a biblioteca
-    // `premade`); o `limit` é DECLARADO por nós e continua sem confirmação —
-    // `/v1/user/subscription` responde 401 sem `user_read`. A tela escreve essa
-    // ressalva ao lado do número; ver `slotsDeclaredNote`.
-    let voiceSlots: { used: number; limit: number } | null = null;
+    // `premade`).
+    //
+    // ⚠️ **O `limit` DEIXOU DE SER DECLARADO — R6.5, 24/08.** Este comentário
+    // dizia que `/v1/user/subscription` respondia 401 sem `user_read` e que
+    // por isso o teto era palpite nosso. MEDIDO em 24/08: **HTTP 200**,
+    // `voice_limit: 10`. Agora a fonte é o fornecedor, com o ambiente vencendo
+    // (um teto menor fixado à mão é proteção deliberada) e o default como
+    // retaguarda — ver `effectiveVoiceSlotLimit`. A `source` sobe junto para
+    // que a tela pare de dar a ressalva de "declarado" a um número medido.
+    let voiceSlots: { used: number; limit: number; source: VoiceSlotLimitSource } | null = null;
     try {
       const cred = await getCredential(req.tenantId, "voice");
       if (cred) {
         const inventario = await listVoices(cred.apiKey);
-        voiceSlots = { used: inventario.owned, limit: voiceSlotLimit() };
+        // Leitura, não tarifada, e NUNCA lança: devolve `null` quando não
+        // consegue perguntar, e aí o teto cai no default.
+        const assinatura = await readVoiceSubscription(cred.apiKey);
+        const teto = effectiveVoiceSlotLimit(assinatura?.voiceLimit);
+        voiceSlots = { used: inventario.owned, limit: teto.limit, source: teto.source };
       }
     } catch (err) {
       logEvent("info", "voice_slots_unavailable", {
@@ -148,6 +168,15 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         ?.confirm_avatar_name;
       const confirmAvatarName =
         typeof campoConfirmNome?.value === "string" ? campoConfirmNome.value : null;
+
+      // R6.4 — limpeza de ruído, OPÇÃO da pessoa. Mesmo parsing de `replace`
+      // (só "true" liga), e pelo mesmo motivo: um valor ambíguo não pode virar
+      // "sim" por descuido. Aqui o "sim" errado não custa dinheiro, custa
+      // TIMBRE — a limpeza é destrutiva e pode piorar uma gravação já limpa,
+      // e a voz resultante é a que o cliente vai ouvir em todo vídeo.
+      const campoRuido = (file.fields as Record<string, { value?: unknown } | undefined>)
+        ?.remove_background_noise;
+      const removerRuido = String(campoRuido?.value ?? "") === "true";
 
       const { rows: avatarRows } = await pool.query<Avatar>(
         "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
@@ -309,6 +338,8 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
           fileBuffer: normalizada.buffer,
           filename: normalizada.filename,
           mimeType: normalizada.mimeType,
+          // R6.4 — escolha da pessoa, default `false`. Ver `removerRuido`.
+          removeBackgroundNoise: removerRuido,
         }));
       } catch (err) {
         if (err instanceof LiveBudgetExhaustedError) {
@@ -336,6 +367,37 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
           // exatamente o que ele existe para preservar. Ver voiceIdForLog().
           previousVoiceId: voiceIdForLog(avatar.voice_id),
           newVoiceId: voiceIdForLog(voiceId),
+        });
+      }
+
+      // --- 6b. a AMOSTRA fica amarrada à voz — R6.1, migration 064 --------
+      //
+      // ANTES do UPDATE de propósito. Os dois arquivos já estavam salvos no
+      // storage desde o HIGIENE-1; o que nunca existiu era o vínculo, e sem
+      // ele "reclonar a partir da amostra guardada" não tem alvo. Se esta
+      // escrita falhasse DEPOIS do UPDATE, o avatar já estaria apontando para
+      // uma voz cuja origem ninguém sabe qual é — exatamente o estado que a
+      // tabela existe para não deixar acontecer.
+      //
+      // Não derruba a resposta se falhar: o slot já foi consumido e a voz já
+      // existe. Um 5xx aqui faria a tela dizer "falhou" sobre uma clonagem
+      // que aconteceu, e o reflexo de quem lê isso é clonar de novo — o mesmo
+      // defeito de 09/08 que o bloco da prévia (logo abaixo) já evita.
+      try {
+        await pool.query(
+          `INSERT INTO voice_clone_samples
+             (tenant_id, avatar_id, voice_id, original_url, normalized_url, duration_seconds, remove_background_noise)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [req.tenantId, avatar.id, voiceId, sampleUrl, normalizedUrl, duracao, removerRuido],
+        );
+      } catch (err) {
+        logEvent("error", "voice_clone_sample_not_linked", {
+          avatarId: avatar.id,
+          voiceId: voiceIdForLog(voiceId),
+          consequence:
+            "a voz existe e o slot foi consumido, mas a amostra não ficou amarrada a ela — reclonar " +
+            "esta voz depois de apagá-la não será possível por este caminho",
+          detail: err instanceof Error ? err.message : String(err),
         });
       }
 
@@ -403,6 +465,307 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         // player, que é indistinguível de uma tela quebrada.
         preview,
         preview_error: previewError,
+      });
+    },
+  );
+
+  /**
+   * AS VOZES DA CONTA, com quem aponta para cada uma — R6, 24/08.
+   *
+   * É a tela da limpeza: sem ela, decidir o que apagar exige o painel do
+   * fornecedor, onde CINCO vozes se chamam "TESTE REAL 15:40 01/08" e nada
+   * diz qual está em uso (medido em 24/08 — 9 vozes próprias, das quais 1 é
+   * apontada por avatar). Escolher pelo nome ali é escolher no escuro.
+   *
+   * `em_uso` sai do NOSSO banco, `nome`/`categoria` saem do fornecedor, e
+   * `tem_amostra` diz se dá para reclonar depois de apagar. Os três juntos
+   * são o que transforma "apagar" numa decisão informada.
+   */
+  app.get("/voice/voices", { preHandler: requireActiveTenant }, async (req, reply) => {
+    const cred = await getCredential(req.tenantId, "voice");
+    if (!cred) {
+      return reply.code(409).send({
+        error: "voice_credential_missing",
+        message: "Conecte o ElevenLabs em Configurações antes de administrar vozes.",
+      });
+    }
+
+    let inventario: VoiceListing[];
+    try {
+      inventario = await listVoiceDetails(cred.apiKey);
+    } catch (err) {
+      const { failure, message } = toClientVendorError("voice", "voice.listVoiceDetails", err);
+      return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
+    }
+
+    // DO TENANT, sempre — nunca a conta inteira. A chave do ElevenLabs hoje é
+    // do tenant, mas o dia em que ela virar de plataforma (como a da fal já é)
+    // esta rota passaria a listar vozes de outros clientes se o filtro não
+    // estivesse aqui desde o começo.
+    const { rows: usadas } = await pool.query<{ voice_id: string; name: string }>(
+      "SELECT voice_id, name FROM avatars WHERE tenant_id = $1 AND voice_id IS NOT NULL AND voice_id <> ''",
+      [req.tenantId],
+    );
+    const { rows: comAmostra } = await pool.query<{ voice_id: string }>(
+      "SELECT DISTINCT voice_id FROM voice_clone_samples WHERE tenant_id = $1",
+      [req.tenantId],
+    );
+    const usoPorVoz = new Map(usadas.map((u) => [u.voice_id, u.name]));
+    const amostras = new Set(comAmostra.map((a) => a.voice_id));
+
+    const assinatura = await readVoiceSubscription(cred.apiKey);
+    const teto = effectiveVoiceSlotLimit(assinatura?.voiceLimit);
+    const proprias = inventario.filter((v) => v.category !== PREMADE_VOICE_CATEGORY);
+
+    return reply.send({
+      voices: proprias.map((v) => ({
+        voice_id: v.voiceId,
+        name: v.name,
+        category: v.category,
+        avatar_em_uso: usoPorVoz.get(v.voiceId) ?? null,
+        tem_amostra_guardada: amostras.has(v.voiceId),
+      })),
+      voice_slots: { used: proprias.length, limit: teto.limit, source: teto.source },
+      // ⚠️ AVATAR ÓRFÃO: aponta para voz que não existe mais na conta. MEDIDO
+      // em 24/08 — o avatar "Mário" aponta para `wAd9MJ2I…`, ausente do
+      // inventário. A geração dele falha fechada e de graça, mas falha, e até
+      // esta rota nada no produto dizia isso.
+      avatares_orfaos: usadas
+        .filter((u) => !inventario.some((v) => v.voiceId === u.voice_id))
+        .map((u) => ({ avatar: u.name, voice_id: voiceIdForLog(u.voice_id) })),
+    });
+  });
+
+  /**
+   * APAGA uma voz clonada — R6.2. NUNCA automática, NUNCA em cascata.
+   *
+   * ┌─ As duas recusas, e por que elas são do servidor e não da tela ─────────┐
+   * │ 1. SEM CONFIRMAÇÃO EXPLÍCITA, recusa. E a confirmação não é um booleano │
+   * │    `confirm: true` — é o `voice_id` DIGITADO de volta. Um booleano é    │
+   * │    satisfeito por um clique errado e por qualquer cliente automatizado; │
+   * │    repetir o id exige ter lido QUAL voz está sendo apagada, que é a     │
+   * │    única coisa que erra numa conta com cinco vozes homônimas.           │
+   * │ 2. VOZ EM USO, recusa. Apagar uma voz que um avatar aponta cria o       │
+   * │    avatar órfão — e ele não é hipotético: existe um hoje. A saída é     │
+   * │    reclonar/reapontar primeiro, e a mensagem diz isso.                  │
+   * └─────────────────────────────────────────────────────────────────────────┘
+   *
+   * A ordem é a propriedade: as duas recusas acontecem ANTES do DELETE. Apagar
+   * e depois descobrir que estava em uso não tem desfazer — no IVC o
+   * fornecedor não guarda a amostra, e só existe volta se NÓS guardamos.
+   */
+  app.delete<{ Params: { voiceId: string }; Body: { confirm_voice_id?: string } }>(
+    "/voice/voices/:voiceId",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const voiceId = req.params.voiceId;
+
+      if (req.body?.confirm_voice_id !== voiceId) {
+        return reply.code(400).send({
+          error: "voice_delete_unconfirmed",
+          message:
+            "Apagar uma voz é irreversível do lado do fornecedor. Para confirmar, repita o id da voz " +
+            "no campo `confirm_voice_id`. Nada foi apagado.",
+        });
+      }
+
+      const { rows: apontam } = await pool.query<{ name: string }>(
+        "SELECT name FROM avatars WHERE tenant_id = $1 AND voice_id = $2",
+        [req.tenantId, voiceId],
+      );
+      if (apontam.length > 0) {
+        return reply.code(409).send({
+          error: "voice_in_use",
+          message:
+            `Esta voz está em uso por ${apontam.map((a) => `"${a.name}"`).join(", ")}. Apagá-la deixaria ` +
+            "o avatar apontando para uma voz que não existe, e a geração dele passaria a falhar. " +
+            "Grave uma voz nova para esse avatar primeiro. Nada foi apagado.",
+        });
+      }
+
+      const cred = await getCredential(req.tenantId, "voice");
+      if (!cred) {
+        return reply.code(409).send({
+          error: "voice_credential_missing",
+          message: "Conecte o ElevenLabs em Configurações. Nada foi apagado.",
+        });
+      }
+
+      const { rows: amostra } = await pool.query<{ id: string }>(
+        "SELECT id FROM voice_clone_samples WHERE tenant_id = $1 AND voice_id = $2 LIMIT 1",
+        [req.tenantId, voiceId],
+      );
+
+      try {
+        await deleteVoice(cred.apiKey, voiceId);
+      } catch (err) {
+        const { failure, message } = toClientVendorError("voice", "voice.deleteVoice", err);
+        return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
+      }
+
+      // A LINHA DA AMOSTRA NÃO É APAGADA JUNTO, e isso é o desenho inteiro do
+      // slot rotativo: é ela que permite reclonar esta mesma voz depois. Apagar
+      // em cascata transformaria a limpeza de slot numa perda definitiva do
+      // áudio — o fornecedor não devolve a amostra no IVC.
+      logEvent("info", "voice_deleted", {
+        tenantId: req.tenantId,
+        voiceId: voiceIdForLog(voiceId),
+        temAmostraGuardada: amostra.length > 0,
+        consequence:
+          amostra.length > 0
+            ? "slot liberado; a amostra continua guardada e permite reclonar esta voz"
+            : "slot liberado; NÃO há amostra guardada — esta voz não pode ser recriada por este produto",
+      });
+
+      return reply.send({
+        voice_id: voiceId,
+        deleted: true,
+        pode_reclonar: amostra.length > 0,
+      });
+    },
+  );
+
+  /**
+   * RECLONA a partir da amostra guardada e REAPONTA o avatar — R6.3.
+   *
+   * ┌─ A ordem, que é a única coisa que importa aqui ──────────────────────────┐
+   * │ clonar → REAPONTAR → responder. Nunca o inverso, e nunca "apagar a       │
+   * │ antiga" no meio. Se o reapontamento falhar, o avatar continua apontando  │
+   * │ para a voz ANTIGA, que ainda existe — estado ruim (um slot a mais        │
+   * │ ocupado) mas íntegro. Apagar antes, ou reapontar antes de ter o id novo, │
+   * │ produz o avatar órfão que o R6.6 existe para impedir.                    │
+   * │                                                                          │
+   * │ E ela NÃO apaga a voz anterior, nem oferece: são duas decisões, e juntá- │
+   * │ las faria um clique em "reclonar" destruir a voz que a pessoa ainda      │
+   * │ pode querer comparar com a nova.                                         │
+   * └──────────────────────────────────────────────────────────────────────────┘
+   *
+   * ⚠️ Que a reclonagem REPRODUZA a voz original é DEDUZIDO, não medido: o
+   * operador conferiu na doc que o IVC não treina modelo, então partir dos
+   * mesmos áudios TENDE ao mesmo resultado. Nenhuma comparação real foi feita.
+   * A resposta diz isso à tela em `reproducao_verificada: false`.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/avatars/:id/voice-reclone",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const { rows: avatarRows } = await pool.query<Avatar>(
+        "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
+        [req.params.id, req.tenantId],
+      );
+      const avatar = avatarRows[0];
+      if (!avatar) return reply.code(404).send({ error: "avatar_not_found" });
+
+      // A amostra MAIS RECENTE deste avatar. `created_at DESC` porque a tabela
+      // é histórico: um avatar reclonado várias vezes tem várias linhas, e a
+      // última é a que corresponde à voz que está em uso.
+      const { rows: amostras } = await pool.query<{
+        normalized_url: string;
+        remove_background_noise: boolean;
+      }>(
+        `SELECT normalized_url, remove_background_noise FROM voice_clone_samples
+          WHERE tenant_id = $1 AND avatar_id = $2 ORDER BY created_at DESC LIMIT 1`,
+        [req.tenantId, avatar.id],
+      );
+      const amostra = amostras[0];
+      if (!amostra) {
+        return reply.code(409).send({
+          error: "voice_sample_not_stored",
+          message:
+            "Não há amostra guardada para este avatar — a voz dele foi clonada antes de o produto passar " +
+            "a guardar os áudios de origem. Para trocar a voz, grave uma nova. Nada foi cobrado.",
+        });
+      }
+
+      const cred = await getCredential(req.tenantId, "voice");
+      if (!cred) {
+        return reply.code(409).send({
+          error: "voice_credential_missing",
+          message: "Conecte o ElevenLabs em Configurações. Nada foi cobrado.",
+        });
+      }
+
+      // GUARDA B, a mesma da clonagem normal: reclonar consome um slot novo,
+      // porque a voz antiga NÃO é apagada aqui. Pular esta conferência faria a
+      // reclonagem ser o único caminho do produto que estoura o teto de slots.
+      let inventario: VoiceInventory;
+      try {
+        inventario = await listVoices(cred.apiKey);
+      } catch (err) {
+        const { failure, message } = toClientVendorError("voice", "voice.listVoices", err);
+        return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
+      }
+      const assinatura = await readVoiceSubscription(cred.apiKey);
+      const teto = effectiveVoiceSlotLimit(assinatura?.voiceLimit);
+      const slots = checkVoiceSlots({ used: inventario.owned, limit: teto.limit });
+      if (!slots.ok) {
+        return reply.code(409).send({
+          error: slots.code,
+          message:
+            `${slots.message} A reclonagem não apaga a voz antiga, então ela precisa de um slot livre — ` +
+            "apague uma voz sem uso primeiro.",
+        });
+      }
+
+      let bytes: Buffer;
+      try {
+        bytes = await readUpload(amostra.normalized_url);
+      } catch (err) {
+        return reply.code(409).send({
+          error: "voice_sample_unreadable",
+          message:
+            "A amostra guardada não pôde ser lida do armazenamento, então não há de que reclonar. " +
+            "Grave uma voz nova. Nada foi cobrado.",
+        });
+      }
+
+      let voiceId: string;
+      try {
+        ({ voiceId } = await cloneVoice({
+          apiKey: cred.apiKey,
+          name: voiceNameWithTimestamp(avatar.name, new Date()),
+          fileBuffer: bytes,
+          filename: "voice-sample.wav",
+          mimeType: "audio/wav",
+          // A MESMA escolha da clonagem original: reclonar com o valor
+          // diferente produziria outra voz, e o ponto desta rota é reproduzir.
+          removeBackgroundNoise: amostra.remove_background_noise,
+        }));
+      } catch (err) {
+        if (err instanceof LiveBudgetExhaustedError) {
+          return reply.code(429).send({ error: "live_budget_exhausted", message: err.message });
+        }
+        const { failure, message } = toClientVendorError("voice", "voice.cloneVoice", err);
+        return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
+      }
+
+      // O REAPONTAMENTO, imediatamente depois do clone e antes de qualquer
+      // outra coisa que possa falhar. Ver o cabeçalho desta rota.
+      const { rows: updated } = await pool.query<Avatar>(
+        "UPDATE avatars SET voice_id = $3 WHERE id = $1 AND tenant_id = $2 RETURNING *",
+        [avatar.id, req.tenantId, voiceId],
+      );
+
+      await pool.query(
+        `INSERT INTO voice_clone_samples
+           (tenant_id, avatar_id, voice_id, original_url, normalized_url, duration_seconds, remove_background_noise)
+         VALUES ($1, $2, $3, $4, $5, NULL, $6)`,
+        [req.tenantId, avatar.id, voiceId, amostra.normalized_url, amostra.normalized_url, amostra.remove_background_noise],
+      );
+
+      logEvent("info", "voice_recloned", {
+        avatarId: avatar.id,
+        previousVoiceId: voiceIdForLog(avatar.voice_id ?? ""),
+        newVoiceId: voiceIdForLog(voiceId),
+        consequence: "o avatar aponta para a voz nova; a antiga continua na conta e ocupa slot",
+      });
+
+      return reply.code(201).send({
+        avatar: updated[0],
+        voice_id: voiceId,
+        voz_anterior_continua_na_conta: true,
+        // Ver o aviso no cabeçalho: DEDUZIDO da doc, nunca comparado de fato.
+        reproducao_verificada: false,
       });
     },
   );

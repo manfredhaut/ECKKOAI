@@ -8,13 +8,17 @@ import { logVendorBinaryResponse, logVendorResponse } from "./vendorResponseLog.
 import {
   checkVoiceConnectionFixture,
   cloneVoiceFixture,
+  listVoiceDetailsFixture,
   listVoicesFixture,
+  readVoiceSubscriptionFixture,
   synthesizeSpeechFixture,
 } from "./fixtureProvider.js";
 import { countOwnedVoices } from "../voice/voiceSample.js";
 import { logEvent } from "../log/safeLog.js";
 const ELEVENLABS_ADD_VOICE_URL = "https://api.elevenlabs.io/v1/voices/add";
 const ELEVENLABS_VOICES_URL = "https://api.elevenlabs.io/v1/voices";
+/** O TETO da conta — ver `readVoiceSubscription`. Leitura, não tarifado. */
+const ELEVENLABS_SUBSCRIPTION_URL = "https://api.elevenlabs.io/v1/user/subscription";
 
 export class VoiceProviderError extends Error {}
 
@@ -51,6 +55,20 @@ export interface CloneVoiceInput {
   fileBuffer: Buffer;
   filename: string;
   mimeType: string;
+  /**
+   * Pede ao fornecedor que limpe ruído de fundo da amostra antes de treinar —
+   * R6, 24/08.
+   *
+   * OPÇÃO, e o default é `false` de propósito: a limpeza é destrutiva e o
+   * próprio fornecedor documenta que ela pode PIORAR o resultado quando a
+   * gravação já é limpa (o algoritmo tira junto parte do timbre). Quem grava
+   * num ambiente silencioso não deve pagar por um processamento que só tem a
+   * perder — e quem grava na rua precisa poder ligá-lo sem regravar.
+   *
+   * A escolha é da pessoa, com o aviso na tela; o código não adivinha o
+   * ambiente dela a partir de nada.
+   */
+  removeBackgroundNoise?: boolean;
 }
 
 export interface CloneVoiceResult {
@@ -70,6 +88,13 @@ export async function cloneVoice(input: CloneVoiceInput): Promise<CloneVoiceResu
     const form = new FormData();
     form.set("name", input.name);
     form.set("files", new Blob([new Uint8Array(input.fileBuffer)], { type: input.mimeType }), input.filename);
+    // SEMPRE explícito, os dois valores — nunca omitido quando é `false`.
+    // Omitir deixa o default do fornecedor decidir, e um default que muda do
+    // lado dele mudaria o timbre de toda clonagem nova sem uma linha de
+    // diferença deste lado. É a mesma doutrina de `DEFAULTS_NUNCA_HERDADOS`
+    // no pipeline da fal, pelo mesmo motivo: o que não se declara, alguém
+    // declara por você.
+    form.set("remove_background_noise", input.removeBackgroundNoise ? "true" : "false");
 
     let res: Response;
     try {
@@ -115,9 +140,14 @@ export interface VoiceInventory {
  *
  * `GET /v1/voices` é leitura e NÃO é tarifado — é o mesmo endpoint que o teste
  * de credencial e o probe do painel já usam. O que ele NÃO traz é o TETO da
- * conta: `voice_limit` vive em `/v1/user/subscription`, que responde 401 com
- * esta chave por falta da permissão `user_read` (medido no LIVE-3). Por isso o
- * teto entra por ambiente e só o usado é medido — ver voiceSample.ts.
+ * conta, que vive em `/v1/user/subscription` — ver `readVoiceSubscription`.
+ *
+ * ⚠️ **O 401 registrado aqui até 23/08 NÃO VALE MAIS.** Aquele comentário dizia
+ * que `/v1/user/subscription` respondia 401 por falta da permissão `user_read`
+ * (medido no LIVE-3) e que por isso o teto tinha de vir por ambiente. **MEDIDO
+ * em 24/08 com a chave em uso: HTTP 200**, `{"tier":"starter","voice_limit":10,
+ * "voice_slots_used":9,...}`. A chave ganhou a permissão em algum momento entre
+ * as duas medições. O teto deixou de ser palpite.
  */
 export async function listVoices(apiKey: string): Promise<VoiceInventory> {
   if (isFixtureMode()) return listVoicesFixture();
@@ -156,6 +186,159 @@ export async function listVoices(apiKey: string): Promise<VoiceInventory> {
     owned: countOwnedVoices(data.voices),
     cloned: data.voices.filter((v) => v?.category === "cloned").length,
   };
+}
+
+export interface VoiceListing {
+  voiceId: string;
+  name: string;
+  category: string;
+}
+
+/**
+ * As vozes da conta COM nome e categoria — R6, 24/08.
+ *
+ * Irmã de `listVoices`, que devolve só CONTAGENS. As duas existem porque
+ * servem a perguntas diferentes: a guarda de slots precisa de um número (e um
+ * número é tudo o que ela deve poder ver, para não haver tentação de decidir
+ * por nome), e a tela de limpeza precisa saber QUAL voz é qual.
+ *
+ * Sem isto, escolher o que apagar significa ler o painel do fornecedor — onde
+ * CINCO vozes se chamam "TESTE REAL 15:40 01/08" e nada distingue a que está
+ * em uso (medido em 24/08). O nome não identifica voz nenhuma nesta conta; só
+ * o `voice_id` identifica, e é por isso que ele vem em toda linha.
+ */
+export async function listVoiceDetails(apiKey: string): Promise<VoiceListing[]> {
+  if (isFixtureMode()) return listVoiceDetailsFixture();
+  let res: Response;
+  try {
+    res = await fetch(ELEVENLABS_VOICES_URL, {
+      method: "GET",
+      headers: { "xi-api-key": apiKey },
+      signal: vendorSignal(),
+    });
+  } catch (err) {
+    logProviderNetworkError("voiceProvider.listVoiceDetails", err);
+    throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
+  }
+  const data = (await readVoiceJson(res, "elevenlabs.listVoiceDetails")) as {
+    voices?: { voice_id?: string; name?: string; category?: string }[];
+  };
+  // Mesma postura de `listVoices`: forma inesperada LANÇA, nunca vira lista
+  // vazia. Uma lista vazia aqui apareceria na tela como "você não tem vozes",
+  // e o reflexo de quem lê isso é clonar de novo.
+  if (!Array.isArray(data.voices)) {
+    throw new VoiceProviderError(
+      `elevenlabs.listVoiceDetails: esperado data.voices como lista, recebido ${JSON.stringify(
+        Object.keys(data ?? {}),
+      )}`,
+    );
+  }
+  return data.voices
+    .filter((v): v is { voice_id: string; name?: string; category?: string } => typeof v?.voice_id === "string")
+    .map((v) => ({
+      voiceId: v.voice_id,
+      // Nome ausente vira o próprio id, e não "sem nome": o id é o que
+      // identifica de verdade, e um rótulo genérico repetido em várias linhas
+      // recriaria exatamente o problema das cinco homônimas.
+      name: typeof v.name === "string" && v.name.trim() ? v.name : v.voice_id,
+      category: typeof v.category === "string" ? v.category : "desconhecida",
+    }));
+}
+
+export interface VoiceSubscription {
+  /** O TETO de vozes próprias da conta, dito pelo fornecedor. */
+  voiceLimit: number | null;
+  /** Quantos slots ELE considera usados — a contagem do outro lado. */
+  voiceSlotsUsed: number | null;
+  tier: string | null;
+  /** PVC (clonagem profissional) exige plano Creator; `starter` não tem. */
+  canUseProfessionalVoiceCloning: boolean | null;
+}
+
+/**
+ * O TETO de slots, LIDO do fornecedor — R6.5, 24/08.
+ *
+ * `GET /v1/user/subscription`, leitura, não tarifado. Substitui o
+ * `DEFAULT_VOICE_SLOT_LIMIT = 10` como FONTE; a constante continua existindo
+ * como retaguarda, porque uma leitura que falha não pode virar "sem limite".
+ *
+ * ⚠️ **NUNCA LANÇA, e devolve `null` em vez de número quando não sabe.** Esta
+ * função é consultada no caminho de uma clonagem que a pessoa está esperando;
+ * derrubá-lo porque um endpoint de leitura oscilou seria trocar um número
+ * melhor por um fluxo pior. Quem chama decide o que fazer com o `null` — e a
+ * decisão registrada é cair no teto por ambiente, que é o comportamento de
+ * sempre.
+ *
+ * O que ele traz e é DIFERENTE do nosso `listVoices`: `voice_slots_used` é a
+ * contagem DELES. Ter as duas lado a lado é o que permitiria pegar uma
+ * divergência de contagem — foi uma divergência dessas (25 contra 4) que
+ * recusou uma clonagem legítima em 04/08.
+ */
+export async function readVoiceSubscription(apiKey: string): Promise<VoiceSubscription | null> {
+  if (isFixtureMode()) return readVoiceSubscriptionFixture();
+  try {
+    const res = await fetch(ELEVENLABS_SUBSCRIPTION_URL, {
+      method: "GET",
+      headers: { "xi-api-key": apiKey },
+      signal: vendorSignal(),
+    });
+    const rawBody = await res.text();
+    logVendorResponse({ context: "elevenlabs.readVoiceSubscription", vendor: "ElevenLabs", status: res.status, res, rawBody });
+    if (!res.ok) return null;
+    const data = JSON.parse(rawBody) as Record<string, unknown>;
+    return {
+      voiceLimit: typeof data.voice_limit === "number" ? data.voice_limit : null,
+      voiceSlotsUsed: typeof data.voice_slots_used === "number" ? data.voice_slots_used : null,
+      tier: typeof data.tier === "string" ? data.tier : null,
+      canUseProfessionalVoiceCloning:
+        typeof data.can_use_professional_voice_cloning === "boolean"
+          ? data.can_use_professional_voice_cloning
+          : null,
+    };
+  } catch (err) {
+    logProviderNetworkError("voiceProvider.readVoiceSubscription", err);
+    return null;
+  }
+}
+
+/**
+ * APAGA uma voz clonada na conta do fornecedor — R6.2, 24/08.
+ *
+ * ┌─ Irreversível dos dois lados, e é por isso que ela não decide nada ──────┐
+ * │ Apagar libera o slot e destrói a voz: o fornecedor não guarda o áudio de │
+ * │ origem no IVC (só no PVC, que exige Creator e está fora), então          │
+ * │ "desfazer" só existe se NÓS tivermos guardado a amostra — que é o que a  │
+ * │ tabela `voice_clone_samples` (migration 064) passou a fazer.             │
+ * │                                                                          │
+ * │ Esta função NÃO confere se alguém aponta para a voz, NÃO pede            │
+ * │ confirmação e NÃO escolhe o que apagar. Ela executa. Toda a decisão vive │
+ * │ na rota, onde é observável — e a guarda mede exatamente isso: que a rota │
+ * │ recusa sem confirmação explícita e recusa voz em uso.                    │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * FORA de `withLiveBudget`, e de propósito: o teto de gerações existe para
+ * limitar o que GASTA. Apagar não gasta — libera. Contá-lo ali faria uma
+ * limpeza consumir a cota que a clonagem seguinte precisa, que é o oposto do
+ * que a limpeza serve para fazer.
+ */
+export async function deleteVoice(apiKey: string, voiceId: string): Promise<void> {
+  if (isFixtureMode()) return;
+  let res: Response;
+  try {
+    res = await fetch(`${ELEVENLABS_VOICES_URL}/${encodeURIComponent(voiceId)}`, {
+      method: "DELETE",
+      headers: { "xi-api-key": apiKey },
+      signal: vendorSignal(),
+    });
+  } catch (err) {
+    logProviderNetworkError("voiceProvider.deleteVoice", err);
+    throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
+  }
+  const rawBody = await res.text();
+  logVendorResponse({ context: "elevenlabs.deleteVoice", vendor: "ElevenLabs", status: res.status, res, rawBody });
+  if (!res.ok) {
+    throw new VoiceProviderError(`ElevenLabs API error (${res.status}): ${rawBody}`);
+  }
 }
 
 // Cheap authenticated call used by POST /credentials/voice/test — lists the
