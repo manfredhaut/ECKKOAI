@@ -547,14 +547,14 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 > ponteiro velho. Roda também no começo de toda passada do arnês. Ver §17.
 
 ```
+58aaec2  B0, V0, W2 e W3: backlog versionado, arnês 3x mais rápido, preços em tabela, teto de refações
+86d98cf  ESTADO.md 1: reancorada, oitava vez, e a conferencia pegou as duas
 543a821  ESTADO.md 18: a afetada do W1 fechou 37/37
 b974136  ESTADO.md: 18 do W0/W1 e a 1 reancorada
 f0203e3  O mutante do par sem cobertura colidia com o proprio find
 0472f14  Id de plataforma desconhecido devolvia TypeError, nao null
 3f46659  Usuário novo nasce funcionando: herança de chave de plataforma (W1)
 bcfc98d  ESTADO.md: a afetada fechou 136/136, e a §1 reancorada pela última vez nesta sessão
-136e16c  O expect do mutante do carimbo ficou desalinhado da mensagem reescrita
-689c1a4  A guarda do carimbo do nome saiu INERTE — presença não é pareamento
 ```
 
 ⚠️ **A conferência do R8 acusou a §1 mais DUAS vezes em 24/08** — sempre no
@@ -2180,3 +2180,63 @@ já com a chave gravada e disparar a validação em seguida, com a tela indo de
 diferentes, e a gravação não pode falhar porque o fornecedor está lento. Sem
 isso, o caminho normal (gravar pelo painel) deixa quatro selos âmbar e
 ninguém sabe que faltava clicar.
+
+## 19 · Sessão de 24/08/2026 (terceira parte) — B0, V0, W2, W3
+
+**US$ 0,00.** Um commit (`58aaec2`), dez rascunhos squashed em ramo próprio.
+Passada **AFETADA**: **89/89**, zero INERTE/AMBÍGUO/ERRO — e ela rodou **em
+paralelo, ancorada em `58aaec2`**, que é o V0 se pagando na primeira vez que
+foi usado para valer. Log em
+`_arnes-logs/mutants-b0v0w2w3-afetada-2026-08-24.log`.
+
+**394 mutantes declarados** (eram 385). Os 9 novos provados individualmente,
+mais **6 `find` regenerados** que as mudanças desta rodada invalidaram — a
+conferência de cadastro pegou os seis no gate, em segundos.
+
+### O que mudou no processo de trabalho
+
+- **`BACKLOG.md`** é o segundo arquivo lido na abertura. `npm run estado`
+  confere os DOIS ponteiros. O plano deixou de morar no chat.
+- **O arnês roda em PARALELO por default**, 6 workers, cada um num
+  `git worktree`. `--serial` é a retaguarda. **~135 min → ~40 min.**
+- **Editar o repositório durante uma passada deixou de ser proibido** — o
+  gotcha 4 do ESTADO.md (que mandava não mexer na árvore) **não vale mais
+  para o modo paralelo**: a passada roda contra um COMMIT.
+
+### Os números medidos, para não serem remedidos
+
+| N workers | tempo | vazão |
+|---|---|---|
+| 1 | 16,4 s | 0,061 gates/s |
+| 4 | 28,0 s | 0,143 |
+| **6** | **37,8 s** | **0,159** ← ótimo |
+| 10 | 66,6 s | 0,150 |
+
+A vazão **cai** depois de 6: o `tsc` satura a CPU. "Um por núcleo" (12)
+seria pior. Serial × paralelo num subconjunto real: 76,7 s → 37,3 s, com os
+**vereditos idênticos**.
+
+### Três erros meus que as provas pegaram
+
+1. **A checagem do V0 contradizia o V0.** A primeira versão ABORTAVA quando
+   o repositório principal mudava durante a passada — exatamente o que o
+   bloco veio permitir. Provei editando `falPipeline.ts` com a passada em
+   curso: 5/5 `ok` (a passada É íntegra) e a checagem abortou mesmo assim.
+   Virou aviso; o isolamento se prova por construção.
+2. **Multipliquei um total de período pela duração.** US$ 1,00 (total do
+   Wan) × 5 s = US$ 5,00 — número sem sentido que barrava toda geração no
+   teto de US$ 2,00. **Um agregado não tem unidade.** Agora ele alerta e não
+   entra na conta.
+3. **Reportei uma passada como lançada quando ela tinha morrido.** `| head -8`
+   fechou o pipe, o arnês morreu por SIGPIPE e o `exit 0` era do `head`. Virou
+   guarda (`SIGPIPE não é sucesso`) e regra escrita.
+
+### O que segue aberto
+
+1. **A régua** — o custo POR CHAMADA do Request History. É o que troca
+   AGREGADO por unitário em `provider_prices` e destrava o teto do R4.2.
+2. **O Premium sem prova** — teste mínimo de **US$ 2,3112**, precedido de um
+   fusível de US$ 0,00. Ver BACKLOG.
+3. **O botão de Refazer não desabilita na tela** — o servidor recusa a 4ª com
+   409 e devolve `{feitas, limite}`; a tela ainda não consome.
+4. **Produção 46+ commits atrás.** Fila, por decisão do operador.
