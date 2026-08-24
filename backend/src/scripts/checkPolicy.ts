@@ -84,6 +84,7 @@ import { checkFalVideoApprovalPolicy } from "./checkFalVideoApprovalPolicy.js";
 import { checkFalGastoInstrumentadoPolicy } from "./checkFalGastoInstrumentadoPolicy.js";
 import { checkUsageAttributionPolicy } from "./checkUsageAttributionPolicy.js";
 import { checkVoiceRotationPolicy } from "./checkVoiceRotationPolicy.js";
+import { checkEnsaioSimuladoPolicy } from "./checkEnsaioSimuladoPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
@@ -795,6 +796,14 @@ async function main(): Promise<void> {
   const voiceRotation = await checkVoiceRotationPolicy();
   voiceRotation.failures.forEach((f) => failures.push(f));
   voiceRotation.notes.forEach((n) => note(n));
+
+  // --- 24o-sexies. o ensaio não gasta (R7) --------------------------------
+  //
+  // Troca `globalThis.fetch` e `PROVIDER_MODE`, restaurando os dois no
+  // `finally`, e silencia `console.log` enquanto o ensaio roda.
+  const ensaioSimulado = await checkEnsaioSimuladoPolicy();
+  ensaioSimulado.failures.forEach((f) => failures.push(f));
+  ensaioSimulado.notes.forEach((n) => note(n));
 
   // --- 24o-quater. a cena chega ao fornecedor (BLOCO B5) -----------------
   //
