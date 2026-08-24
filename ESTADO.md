@@ -547,15 +547,21 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 > ponteiro velho. Roda também no começo de toda passada do arnês. Ver §17.
 
 ```
+543a821  ESTADO.md 18: a afetada do W1 fechou 37/37
+b974136  ESTADO.md: 18 do W0/W1 e a 1 reancorada
 f0203e3  O mutante do par sem cobertura colidia com o proprio find
 0472f14  Id de plataforma desconhecido devolvia TypeError, nao null
 3f46659  Usuário novo nasce funcionando: herança de chave de plataforma (W1)
 bcfc98d  ESTADO.md: a afetada fechou 136/136, e a §1 reancorada pela última vez nesta sessão
 136e16c  O expect do mutante do carimbo ficou desalinhado da mensagem reescrita
 689c1a4  A guarda do carimbo do nome saiu INERTE — presença não é pareamento
-a466711  ESTADO.md: §17 da sessão de 24/08 e a §1 reancorada (sétima vez, agora por máquina)
-3a8c377  A guarda do ensaio saiu INERTE no primeiro mutante — alcance, não lógica
 ```
+
+⚠️ **A conferência do R8 acusou a §1 mais DUAS vezes em 24/08** — sempre no
+mesmo ponto: o fechamento escreve o commit do ESTADO.md, e o commit SEGUINTE
+(o ponteiro do arnês) já a desancora. Não é desatenção: é estrutural, e é o
+que a ferramenta existe para pegar. As duas foram corrigidas antes de a
+sessão fechar, e nenhuma delas dependeu de alguém notar.
 
 ⚠️ **SEXTA divergência — e a mais reveladora, porque foi a conferência nova que
 a pegou, minutos depois de a quinta ter sido corrigida à mão.** Em 23/08 esta
