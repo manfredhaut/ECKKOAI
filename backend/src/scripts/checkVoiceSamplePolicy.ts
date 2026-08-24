@@ -1297,10 +1297,32 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
         "é conhecido, e descobri-lo com uma recusa custaria o slot já consumido.",
     );
   }
-  if (!/name:\s*voiceNameWithTimestamp\(/.test(rotaCode)) {
+  // TODA chamada a `cloneVoice` carimba, e não "existe ao menos uma que
+  // carimba".
+  //
+  // ⚠️ MEDIDO em 24/08, e a guarda saiu INERTE na passada: a checagem era
+  // `!/name:\s*voiceNameWithTimestamp\(/.test(rotaCode)` — um teste de
+  // PRESENÇA sobre o arquivo inteiro. Enquanto houve um único chamador, ela
+  // era exata. O R6 acrescentou a rota de RECLONAGEM, que também clona, e a
+  // presença passou a ser satisfeita por qualquer uma das duas: mutar a
+  // ORIGINAL deixava a da reclonagem no arquivo, o regex casava, e a guarda
+  // dizia verde sobre a clonagem sem carimbo.
+  //
+  // O pareamento conserta pela raiz e é mais forte que o original: um
+  // chamador NOVO que esqueça o carimbo passa a reprovar sozinho, sem
+  // ninguém precisar lembrar de atualizar esta guarda.
+  const clonagens = (rotaCode.match(/await cloneVoice\(\{/g) ?? []).length;
+  const carimbadas = (rotaCode.match(/name:\s*voiceNameWithTimestamp\(/g) ?? []).length;
+  if (clonagens === 0) {
     failures.push(
-      `voz: ${relVoiceRoute} voltou a clonar sem carimbo no nome. Foi assim que cinco vozes homônimas ` +
-        "apareceram na conta, impossíveis de distinguir no painel do fornecedor.",
+      `voz: não achei nenhuma chamada a \`cloneVoice({\` em ${relVoiceRoute} — a âncora desta guarda ` +
+        "sumiu, e ela não pode opinar sobre um trecho que não encontrou.",
+    );
+  } else if (carimbadas !== clonagens) {
+    failures.push(
+      `voz: ${relVoiceRoute} tem ${clonagens} chamada(s) a cloneVoice e apenas ${carimbadas} com nome ` +
+        "carimbado — alguma voltou a clonar sem carimbo. Foi assim que cinco vozes homônimas apareceram " +
+        "na conta, impossíveis de distinguir no painel do fornecedor.",
     );
   }
 
