@@ -100,26 +100,27 @@ export const MUTANTS: Mutant[] = [
     guard: "par sem cobertura falha FECHADO",
     name: "um par sem chave de plataforma passa a herdar por nome",
     kind: "esperto",
-    // O id do `replace` é `heygen` — um id que EXISTE — e a escolha é o que
-    // torna este mutante uma prova da POLÍTICA e não do cadastro. A primeira
-    // versão usava o próprio nome do vendor, e com `avatar/did` isso produzia
-    // um id inexistente: o processo estourava em `readEnv` antes de a guarda
-    // opinar, e o desfecho saía AMBÍGUO. O estouro era um defeito de verdade
-    // (consertado no mesmo commit, em `resolveUncached`), mas medir o crash
-    // não é medir a regra.
+    // ⚠️ O ALVO É A ENTRADA DO MAPA, e não a função que o lê — 24/08.
     //
-    // ESPERTO: derivar o id pelo nome do vendor parece a simplificação óbvia
-    // — e três dos cinco pares quebram a regra. O pior deles é
-    // `script/anthropic`, que tem uma chave de nome parecido (`copilot`)
-    // servindo o SUPORTE: o roteiro do cliente passaria a consumir a cota do
-    // copiloto público sem uma linha de código dizendo isso.
+    // A primeira versão mutava `plataformaQueCobre`, e o desfecho saía
+    // AMBÍGUO por AUTO-COLISÃO: aquela é a mesma linha que o `find` deste
+    // mutante procura, então com o mutante aplicado a conferência de cadastro
+    // acusava "0x no alvo" e a reprovação da guarda ficava encoberta pela
+    // dela. Mesmo padrão que fez `frontendStampFetch.ts` ser extraído de
+    // `checkImageFreshnessPolicy.ts`.
+    //
+    // Mutar a ENTRADA testa a mesma propriedade e não toca no texto que o
+    // registro procura: `avatar/did` deixa de ser a ausência deliberada e
+    // passa a herdar a chave do heygen — a plataforma pagando por um vendor
+    // que ninguém decidiu cobrir, e que o produto sequer despacha hoje.
+    //
+    // ESPERTO: derivar cobertura por semelhança de nome parece a
+    // simplificação óbvia, e três dos cinco pares quebram essa regra. O pior
+    // é `script/anthropic`, cuja chave parecida (`copilot`) serve o SUPORTE:
+    // o roteiro do cliente passaria a consumir a cota do copiloto público.
     file: MAPA,
-    find: "  return HERANCA_DE_PLATAFORMA[`${provider}/${vendor}`] ?? null;",
-    replace:
-      "  return (\n" +
-      "    HERANCA_DE_PLATAFORMA[`${provider}/${vendor}`] ??\n" +
-      "    ({ id: vendor, precedencia: \"byok_vence\" } as Cobertura)\n" +
-      "  );",
+    find: '  "avatar/did": null,',
+    replace: '  "avatar/did": { id: "heygen", precedencia: "byok_vence" },',
     expect: "herança: par sem cobertura não falhou fechado",
   },
   {
