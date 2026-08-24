@@ -547,15 +547,14 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 > ponteiro velho. Roda também no começo de toda passada do arnês. Ver §17.
 
 ```
+f0203e3  O mutante do par sem cobertura colidia com o proprio find
+0472f14  Id de plataforma desconhecido devolvia TypeError, nao null
+3f46659  Usuário novo nasce funcionando: herança de chave de plataforma (W1)
+bcfc98d  ESTADO.md: a afetada fechou 136/136, e a §1 reancorada pela última vez nesta sessão
 136e16c  O expect do mutante do carimbo ficou desalinhado da mensagem reescrita
 689c1a4  A guarda do carimbo do nome saiu INERTE — presença não é pareamento
 a466711  ESTADO.md: §17 da sessão de 24/08 e a §1 reancorada (sétima vez, agora por máquina)
 3a8c377  A guarda do ensaio saiu INERTE no primeiro mutante — alcance, não lógica
-ef4dd5d  O ensaio: os caminhos do produto ponta a ponta, com zero chamada paga (R7)
-5e5e041  O R5 fechou um ciclo de importação que só quebra por fora do gate
-8991dce  Slot de voz rotativo: apagar, reclonar e o teto que deixou de ser palpite (R6)
-eeef85b  De quem é o gasto: atribuição de consumo quando a chave é única (R5)
-1a2c273  A âncora do ESTADO.md passa a ser conferida por máquina (R8)
 ```
 
 ⚠️ **SEXTA divergência — e a mais reveladora, porque foi a conferência nova que
@@ -2070,3 +2069,93 @@ Ela devolveu **1 INERTE**, e a causa era minha, encadeada a partir do R6:
 
 Dois defeitos da mesma causa, e cada camada pegou um — é o argumento de por
 que a afetada fecha rodada.
+
+## 18 · Sessão de 24/08/2026 (segunda parte) — W0 e W1
+
+**US$ 0,00.** Nenhuma chamada paga; três leituras públicas (`/__image-stamp`,
+`/api/health`, docs) e o banco local. `fixture len=0` o tempo todo.
+
+### ⚠️ W0 — DOIS AMBIENTES, e as medições da §17 são do LOCAL
+
+O operador comparou dois painéis e o quadro mudou. **Tudo o que a §17 mede é
+`docker compose` desta máquina.**
+
+| pergunta | resposta MEDIDA |
+|---|---|
+| bancos diferentes? | **sim** — a §8 registra produção com 18 tenants; o local tem **34** |
+| commit em produção | **entre 14/08 e 21/08**, ≥ **46 commits** atrás do HEAD |
+| migrations pendentes | **7 certas** (058–064) + 5 prováveis (053–057) |
+| P7.c destravado? | **só no local.** Em produção nem existe o mecanismo |
+
+**Como o commit de produção foi medido, sem SSH** (a memória proíbe, e o
+operador é o único com acesso à VPS) — dois sinais independentes:
+- `GET eckkoai.com/__image-stamp` = `a086dd81e3a98377`. **Piso:** imagem de
+  14/08 14:50 (`7ca81b1`) ou depois.
+- **O cartão da fal não aparece** no painel de produção. Ele nasceu em
+  `2a04b4a` (21/08 10:31). **Teto:** produção é anterior a ele.
+
+⚠️ **O carimbo NÃO serve para versionar, e isso é limitação da nossa
+instrumentação.** Ele cobre 4 arquivos (`package.json`, `tsconfig.json`,
+`vite.config.ts`, `Dockerfile` do frontend) que não mudam desde 14/08:
+rodando o cálculo dele contra os últimos 200 commits, **75 produzem o mesmo
+hash, inclusive o HEAD**. Ele existe para pegar imagem velha, não para dizer
+qual código roda. E `/api/health` devolve só `{"status":"ok"}` — não há
+endpoint de versão em lugar nenhum. **Dívida registrada.**
+
+### W1 — o tenant zerado nasce funcionando
+
+**MEDIDO: 23 de 34 tenants** não tinham vendor de avatar próprio. A chave de
+plataforma substituía o VALOR de uma linha existente e nunca cobria a
+ausência dela — então tenant novo (três linhas de vendor VAZIO, chave nula)
+recebia `null` e a geração respondia 400, com as chaves gravadas ali do lado.
+
+Decisão do operador, fechando o CHAVES-2: **a plataforma paga quando o tenant
+não tem chave própria; quem tem continua pagando a dele.**
+
+- `platformInheritance.ts` — mapa `(provider, vendor)` → chave, com a
+  **precedência como campo**. Mapa explícito porque 3 dos 5 pares quebram a
+  regra do nome; o pior é `script/anthropic`, cuja chave parecida (`copilot`)
+  serve o SUPORTE.
+- A herança entra em `credentialLookup`, **abaixo de todos os leitores** —
+  nenhum call site mudou. `ResolvedCredential` ganha `source`, que alimenta
+  `provider_usage.key_source` (R5): os dois blocos se encontram.
+- `vendorHerdavel`: quem nunca escolheu recebe o primeiro vendor COBERTO, não
+  o `defaultVendor` — sem isso `script` ficava de fora (o default é
+  `anthropic`, que é `null` de propósito).
+
+⚠️ **DIVERGÊNCIA DE PRECEDÊNCIA, declarada e PENDENTE de decisão.** A fal faz
+`plataforma_vence` desde 21/08 — o oposto da regra do W1. Não é descuido: a
+BYOK do `dev-c77a5b` é a chave que deu **401 em 19/08**, e alinhá-la à regra
+geral **re-bloquearia o P7.c**. Por isso a precedência é um campo: mudar é
+editar uma palavra. **Qual das duas a fal deve seguir é decisão do operador.**
+
+**`servedBy`:** heygen, elevenlabs e google deixam de dizer "ainda sem
+consumidor". O **embedding NÃO muda**, com motivo medido: `generateEmbedding`
+devolve `Math.random()` e nunca consulta chave; `resolveEmbeddingKey()` não
+tem um chamador. Ligá-lo exige implementar embeddings, não herdar chave.
+
+**Selo (item 6):** cinco estados, verde só quando o fornecedor respondeu.
+Motivo medido: o operador gravou 4 chaves e as 4 ficaram com
+`last_validated_at` NULL — a validação só roda por clique — e a tela dizia
+"conectado" nas quatro.
+
+### Três defeitos que a rodada revelou
+
+1. **Duas guardas existentes acusaram a mudança na passada em que ela nasceu,
+   e as duas estavam certas:** `PLAINTEXT_ALLOWED` (quem lê chave de
+   plataforma em claro precisa de motivo escrito) e o duplo de banco da
+   prontidão. O segundo virou, por acidente feliz, o caso (c) do W1.
+2. **`resolvePlatformKey` estourava com id desconhecido** (`0472f14`) — o
+   tipo dizia que era inalcançável, mas o id chega de um MAPA. Agora falha
+   fechado.
+3. **Mutante em auto-colisão** (`f0203e3`) — mutava a mesma linha que o
+   próprio `find` procura, e o AMBÍGUO encobria uma reprovação correta.
+
+### Onde retomar
+
+1. **A régua (R1) segue esperando o painel da fal** — trava o R4.2.
+2. **A precedência da fal** — decisão pendente, descrita acima.
+3. **O deploy**, se a apresentação for em `eckkoai.com`: 46+ commits e 7–12
+   migrations. Nada disso foi feito nem dimensionado.
+4. **W2, W3 e V0 nunca chegaram a esta sessão** — o operador os menciona como
+   já passados; não estão aqui e não foram reconstruídos de memória.
