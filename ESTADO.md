@@ -547,14 +547,15 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 > ponteiro velho. Roda também no começo de toda passada do arnês. Ver §17.
 
 ```
+136e16c  O expect do mutante do carimbo ficou desalinhado da mensagem reescrita
+689c1a4  A guarda do carimbo do nome saiu INERTE — presença não é pareamento
+a466711  ESTADO.md: §17 da sessão de 24/08 e a §1 reancorada (sétima vez, agora por máquina)
 3a8c377  A guarda do ensaio saiu INERTE no primeiro mutante — alcance, não lógica
 ef4dd5d  O ensaio: os caminhos do produto ponta a ponta, com zero chamada paga (R7)
 5e5e041  O R5 fechou um ciclo de importação que só quebra por fora do gate
 8991dce  Slot de voz rotativo: apagar, reclonar e o teto que deixou de ser palpite (R6)
 eeef85b  De quem é o gasto: atribuição de consumo quando a chave é única (R5)
 1a2c273  A âncora do ESTADO.md passa a ser conferida por máquina (R8)
-ca49361  ESTADO.md §5: a passada completa fechou 368/368 e vira a vigente
-03aa59d  ESTADO.md: §16 do fechamento, §1 reancorada na quinta divergência, §5 com o ponteiro certo
 ```
 
 ⚠️ **SEXTA divergência — e a mais reveladora, porque foi a conferência nova que
@@ -2034,5 +2035,38 @@ que `"simples"` nunca alcança `falPipeline.ts`, e o fluxo vai de `queued` a
 ### Arnês
 
 **380 mutantes declarados** (eram 368). Os 12 novos provados individualmente.
-Passada **AFETADA** ao fim desta rodada; a completa fica para quando o
-operador pedir — ela está verde em `ca49361` e leva ~2 h.
+
+**Passada AFETADA, base `ca49361`: 136/136, zero INERTE/AMBÍGUO/ERRO/FALHOU**
+— 22 arquivos tocados, 244 mutantes NÃO exercitados. Log em
+`_arnes-logs/mutants-r0r8-afetada-2026-08-24.log` (segunda cópia no
+scratchpad da sessão, pelo gotcha de 11/08). Árvore limpa em cada reversão. A COMPLETA fica
+para quando o operador pedir — está verde em `ca49361` e leva ~2 h.
+
+⚠️ **A primeira tentativa desta passada NÃO RODOU, e o erro foi de invocação
+minha:** `node tools/run-mutants.mjs … | tee arquivo | head -8`. O `head`
+fechou o pipe depois de 11 linhas, o arnês morreu por SIGPIPE, e o `exit 0`
+que voltou era do `head`. **Um verde que não existia.** Nunca canalize a
+saída do arnês para um comando que fecha o pipe cedo — redirecione para
+arquivo e leia depois.
+
+### E a passada pagou por si, pela segunda vez em dois dias
+
+Ela devolveu **1 INERTE**, e a causa era minha, encadeada a partir do R6:
+
+1. A rota de reclonagem virou o SEGUNDO chamador de
+   `voiceNameWithTimestamp`. **O gate pegou o primeiro efeito na hora:** o
+   `find` do mutante passou a casar 2×. Consertado com contexto único.
+2. **A passada pegou o segundo, que o gate não vê:** a GUARDA checava
+   PRESENÇA da função no arquivo inteiro. Com dois chamadores, mutar a
+   clonagem original deixava a da reclonagem no arquivo, o regex casava, e a
+   guarda dizia verde sobre uma clonagem sem carimbo. Consertado por
+   PAREAMENTO (`cloneVoice({` conta N, `name: voiceNameWithTimestamp(` conta
+   M, M === N) — mais forte que o original: chamador novo sem carimbo
+   reprova sozinho.
+3. Isso reescreveu a mensagem da guarda e o mutante saiu **AMBÍGUO**: o
+   `expect` ficou na frase antiga. **Mesmo defeito do bloco I1 de 23/08.**
+   Regra que sai daqui: **reescrever a mensagem de uma guarda obriga a reler
+   o `expect` do mutante dela.**
+
+Dois defeitos da mesma causa, e cada camada pegou um — é o argumento de por
+que a afetada fecha rodada.
