@@ -18,6 +18,48 @@ import { pool } from "../../db/pool.js";
 import { logEvent } from "../log/safeLog.js";
 import type { DiarioDoPipeline, EtapaDoPipeline } from "./falPipeline.js";
 
+/**
+ * Quem abriu a corrida — migration 066, W3.1.
+ *
+ * As duas últimas contam para o LIMITE DE REFAÇÕES; as três primeiras são o
+ * caminho normal de um vídeo (criar, aprovar a imagem, aprovar o vídeo mudo)
+ * e não consomem nada do limite.
+ */
+export type OrigemDaCorrida =
+  | "criacao"
+  | "aprovacao"
+  | "aprovacao_video"
+  | "refazer_imagem"
+  | "refazer_video";
+
+/** As que contam como refação. Ver `contarRefacoes`. */
+export const ORIGENS_DE_REFACAO: OrigemDaCorrida[] = ["refazer_imagem", "refazer_video"];
+
+/**
+ * O TETO de refações por vídeo — W3.1, decisão do operador (24/08).
+ *
+ * TRÊS, e o número não barra nada já ocorrido: o R0 mediu o histórico inteiro
+ * e o máximo de refações num único vídeo é **1** (o `d450c86c`, um clique em
+ * "Refazer" 13 s depois da aprovação). O limite existe para o caso que ainda
+ * não aconteceu — o clique repetido, que no Premium custa US$ 2,31 cada.
+ */
+export const MAX_REFACOES_POR_VIDEO = 3;
+
+/**
+ * Quantas refações este vídeo já teve.
+ *
+ * Corridas com `origem` NULL (anteriores à migration 066) NÃO contam — não há
+ * como saber o que foram, e inventar seria fabricar dado. Isso SUBESTIMA o
+ * histórico e dá margem a mais, nunca a menos.
+ */
+export async function contarRefacoes(videoId: string): Promise<number> {
+  const { rows } = await pool.query<{ n: string }>(
+    "SELECT count(*) AS n FROM fal_pipeline_runs WHERE video_id = $1 AND origem = ANY($2)",
+    [videoId, ORIGENS_DE_REFACAO],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 export interface AbrirCorridaInput {
   tenantId: string;
   /**
@@ -30,6 +72,12 @@ export interface AbrirCorridaInput {
   script: string;
   targetSeconds: number;
   charsPerSecond: number;
+  /**
+   * Quem está abrindo — migration 066. Opcional só porque a sonda
+   * (`probeFalPipeline.ts`) não é nenhuma das cinco; os call sites de produto
+   * passam sempre, e a guarda cobra isso.
+   */
+  origem?: OrigemDaCorrida;
 }
 
 /**
@@ -84,10 +132,18 @@ export async function abrirCorrida(input: AbrirCorridaInput): Promise<string> {
   }
 
   const { rows } = await pool.query<{ id: string }>(
-    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id`,
-    [input.tenantId, input.videoId ?? null, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],
+    [
+      input.tenantId,
+      input.videoId ?? null,
+      input.script,
+      input.targetSeconds,
+      input.script.length,
+      input.charsPerSecond,
+      input.origem ?? null,
+    ],
   );
   return rows[0].id;
 }

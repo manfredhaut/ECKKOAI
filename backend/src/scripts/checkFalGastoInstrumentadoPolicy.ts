@@ -78,9 +78,9 @@ export const MUTANTS: Mutant[] = [
     kind: "obvio",
     file: PIPELINE,
     find:
-      '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, PRECOS_FAL.comporUsd, teto, "compor");\n' +
+      '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, "compor");\n' +
       "  await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);\n",
-    replace: '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, PRECOS_FAL.comporUsd, teto, "compor");\n',
+    replace: '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, "compor");\n',
     expect: "gasto instrumentado: a corrida gravou 2 vez(es) o gasto, esperado 3",
   },
   {

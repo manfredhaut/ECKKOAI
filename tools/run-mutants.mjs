@@ -31,9 +31,12 @@
  * arnês inteiro fechando.
  */
 import { execFileSync, execSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import os from "node:os";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { rodarGateEm, rodarGateEmAsync } from "./gateRunner.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -188,10 +191,17 @@ function collectMutants() {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
-/** Aplica a mutação em disco. Devolve o conteúdo original para o finally. */
-function applyMutation(mutant) {
+/**
+ * Aplica a mutação em disco. Devolve o conteúdo original para o finally.
+ *
+ * `arvore` é a raiz onde escrever — V0, 24/08. No modo paralelo cada worker
+ * tem a SUA cópia (um `git worktree`), e é por isso que dois mutantes podem
+ * rodar ao mesmo tempo sem um ler a mutação do outro. Default: o repositório
+ * principal, que é o comportamento serial de sempre.
+ */
+function applyMutation(mutant, arvore = repoRoot) {
   if (!mutant.file) return null;
-  const full = path.join(repoRoot, mutant.file);
+  const full = path.join(arvore, mutant.file);
   const original = readFileSync(full, "utf8");
 
   // Fins de linha: neste repositório o git entrega o working copy em CRLF
@@ -260,6 +270,163 @@ function avisoDeFiltro(selecionados, total, filtros) {
   ].join("\n");
 }
 
+/**
+ * O NÚMERO DE WORKERS — 6, e o número é MEDIDO, não escolhido.
+ *
+ * Vazão de gates por segundo, 24/08, 12 núcleos: N=1 -> 0,061; N=4 -> 0,143;
+ * N=6 -> 0,159; N=10 -> 0,150. Ela SOBE até 6 e CAI depois — o `tsc` satura a
+ * CPU, e mais containers passam a competir em vez de somar. "Um por núcleo"
+ * seria 12 e ficaria PIOR que 6.
+ */
+const WORKERS_PADRAO = 6;
+
+/**
+ * As cópias da árvore, uma por worker — V0, 24/08.
+ *
+ * ┌─ Por que `git worktree`, e o que ele compra ─────────────────────────────┐
+ * │ 1. PARALELISMO. Dois mutantes no mesmo arquivo não podem coexistir; em   │
+ * │    cópias separadas, podem. Medido: criar cinco custa 0,86 s.            │
+ * │ 2. IMUNIDADE A EDIÇÃO. A passada roda contra um COMMIT, não contra o     │
+ * │    diretório de trabalho — editar o principal enquanto ela corre não a   │
+ * │    contamina. Era a segunda coisa que o V0 pedia, e sai junto da         │
+ * │    primeira.                                                             │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Ancora no HEAD quando a árvore está limpa. Com a árvore SUJA,
+ * `git stash create` produz um objeto de commit com o estado atual **sem
+ * tocar no índice nem no diretório de trabalho** — é o commit temporário que
+ * o V0 pede, e ele não perturba quem está editando.
+ */
+function prepararArvores(quantos) {
+  const sujo = treeStatus();
+  let ancora;
+  if (sujo) {
+    ancora = sh("git stash create").trim();
+    if (!ancora) {
+      throw new Error(
+        "a árvore está suja mas `git stash create` não produziu commit — sem ponto de ancoragem não " +
+          "há como isolar a passada das edições em curso.",
+      );
+    }
+    console.log(`  árvore suja: ancorando num commit temporário (${ancora.slice(0, 7)}), sem tocar no seu trabalho.`);
+  } else {
+    ancora = sh("git rev-parse HEAD").trim();
+  }
+
+  const base = mkdtempSync(path.join(os.tmpdir(), "arnes-"));
+  const arvores = [];
+  for (let i = 0; i < quantos; i++) {
+    const dir = path.join(base, `wt${i}`);
+    execFileSync("git", ["worktree", "add", "-q", "--detach", dir, ancora], {
+      cwd: repoRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    arvores.push(dir);
+  }
+  return { arvores, base, ancora };
+}
+
+/**
+ * Remove as cópias. Best-effort de propósito: uma passada que TERMINOU não
+ * pode falhar na limpeza — o resultado já está impresso, e um erro aqui
+ * mandaria procurar defeito onde não há.
+ */
+function limparArvores(arvores) {
+  for (const dir of arvores) {
+    try {
+      execFileSync("git", ["worktree", "remove", "--force", dir], {
+        cwd: repoRoot,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      /* `git worktree prune` da próxima passada recolhe o que sobrar */
+    }
+  }
+}
+
+/**
+ * O POOL: N workers consumindo a mesma fila.
+ *
+ * Cada worker tem a SUA árvore e nunca toca na de outro — é isso que torna a
+ * paralelização correta, e não apenas rápida. A ordem de CONCLUSÃO varia (o
+ * log sai fora de ordem, com o índice em cada linha para orientar), mas os
+ * VEREDITOS não dependem de ordem: `classificar` é pura, e cada mutante é
+ * decidido só pelo que o gate dele devolveu.
+ *
+ * NÃO confere `git status` entre mutantes, ao contrário do serial. Não é
+ * descuido: a reversão do serial protege a árvore de TRABALHO, onde um
+ * resíduo contaminaria o mutante seguinte. Aqui a árvore é descartável — o
+ * resíduo morre com ela. O que ainda precisa ser conferido é a árvore
+ * PRINCIPAL, e ela é conferida uma vez no fim.
+ */
+async function rodarEmParalelo(mutantes, arvores, aoConcluir) {
+  const fila = mutantes.map((m, i) => ({ m, i }));
+  let proximo = 0;
+
+  async function worker(arvore) {
+    for (;;) {
+      const meu = proximo < fila.length ? fila[proximo++] : null;
+      if (!meu) return;
+      const { m, i } = meu;
+      let restore = null;
+      try {
+        restore = applyMutation(m, arvore);
+        const { code, output } = await rodarGateEmAsync(arvore, m.env ?? {});
+        aoConcluir(m, i, classificar(m, code, output));
+      } catch (err) {
+        aoConcluir(m, i, { ok: false, erro: true, rotuloCurto: "ERRO", sufixo: "", motivo: err.message });
+      } finally {
+        if (restore) writeFileSync(restore.full, restore.original, "utf8");
+      }
+    }
+  }
+
+  await Promise.all(arvores.map((a) => worker(a)));
+}
+
+/**
+ * O VEREDITO de um mutante, a partir do que o gate devolveu.
+ *
+ * Extraída porque os DOIS modos (serial e paralelo) precisam classificar
+ * exatamente igual — e "exatamente igual" é a propriedade que o paralelo
+ * inteiro depende. Duas cópias divergiriam no dia em que alguém acrescentasse
+ * um caso a uma delas, e a divergência apareceria como "o paralelo discorda do
+ * serial" num mutante qualquer, longe da causa.
+ */
+function classificar(m, code, output) {
+  if (m.expectGreen) {
+    // Contraponto: este mutante DEVE manter o verde. Uma guarda que reprova
+    // qualquer coisa passaria em todos os outros casos sem distinguir nada.
+    if (code === 0 && output.includes(m.expect)) {
+      return { ok: true, rotuloCurto: "ok", sufixo: "  (contraponto: seguiu verde, como deve)" };
+    }
+    return {
+      ok: false,
+      rotuloCurto: "FALHOU",
+      sufixo: "  (contraponto quebrado)",
+      motivo:
+        code !== 0
+          ? `o gate reprovou (${code}) quando deveria passar`
+          : `saída não contém ${JSON.stringify(m.expect)}`,
+    };
+  }
+  if (code === 0) {
+    return { ok: false, rotuloCurto: "INERTE", sufixo: "", motivo: "o gate passou VERDE com o defeito aplicado" };
+  }
+  if (!output.includes(m.expect)) {
+    // Reprovou, mas por outro motivo — tipicamente o tsc. Não conta: a guarda
+    // não opinou, e dar isso como sucesso é o mesmo autoengano que o arnês
+    // existe para desfazer.
+    return {
+      ok: false,
+      rotuloCurto: "AMBÍGUO",
+      sufixo: "",
+      motivo: `reprovou (${code}), mas sem a mensagem da guarda — ${JSON.stringify(m.expect)}`,
+    };
+  }
+  return { ok: true, rotuloCurto: "ok", sufixo: "" };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const apenasListar = argv.includes("--list");
@@ -272,6 +439,14 @@ async function main() {
   // Sem nenhum filtro, a passada é COMPLETA — o default não muda, e o
   // subconjunto é sempre um ato explícito na invocação.
   const afetada = argv.includes("--affected");
+  // V0 — o paralelo é o DEFAULT, e `--serial` é a retaguarda. Inverter isso
+  // (paralelo por opção) deixaria o ganho de 3,3x dependendo de alguém
+  // lembrar de pedi-lo, que é o mesmo mecanismo que fez a âncora do ESTADO.md
+  // envelhecer seis vezes.
+  const serial = argv.includes("--serial");
+  const jobs = argv.includes("--jobs")
+    ? Math.max(1, Number(argv[argv.indexOf("--jobs") + 1]) || WORKERS_PADRAO)
+    : WORKERS_PADRAO;
   const base = argv.includes("--base") ? argv[argv.indexOf("--base") + 1] : "HEAD~1";
 
   const filtros = [];
@@ -307,7 +482,14 @@ async function main() {
   }
 
   const sujoAntes = treeStatus();
-  if (sujoAntes) {
+  // SÓ no serial. Ali o mutante é escrito na árvore de TRABALHO, e sem partir
+  // de um estado limpo não há como distinguir uma reversão falha das edições
+  // de quem está trabalhando.
+  //
+  // No paralelo o mutante nunca toca esta árvore: cada worker escreve na
+  // cópia dele, ancorada num commit. Abortar aqui recusaria exatamente o caso
+  // que o V0 veio permitir — editar enquanto a passada corre.
+  if (sujoAntes && serial) {
     console.error(
       "ABORTADO: a árvore de trabalho já está suja antes de começar.\n" +
         "O arnês precisa distinguir uma reversão falha das suas próprias edições, e com a árvore\n" +
@@ -377,66 +559,89 @@ async function main() {
   }
 
   console.log(`Arnês de mutação: ${mutantes.length} mutante(s).`);
-  console.log("Cada um é aplicado, o gate roda, e a reversão é conferida com git status.\n");
+  console.log(
+    serial
+      ? "Cada um é aplicado, o gate roda, e a reversão é conferida com git status."
+      : `Modo PARALELO: ${jobs} worker(s), cada um numa cópia própria da árvore (git worktree). ` +
+          "Editar o repositório principal durante a passada NÃO a contamina — ela roda contra um commit.",
+  );
 
   const inertes = [];
   const erros = [];
   let ok = 0;
-
-  for (const [i, m] of mutantes.entries()) {
+  const registrar = (m, i, v) => {
     const rotulo = `${i + 1}/${mutantes.length} [${m.kind}] ${m.guard} :: ${m.name}`;
-    let restore = null;
+    if (v.ok) ok += 1;
+    else (v.erro ? erros : inertes).push({ ...m, motivo: v.motivo });
+    console.log(`  ${v.rotuloCurto.padEnd(7)} ${rotulo}${v.sufixo}`);
+  };
 
-    try {
-      restore = applyMutation(m);
-      const { code, output } = runGate(m.env ?? {});
-
-      if (m.expectGreen) {
-        // Contraponto: este mutante DEVE manter o verde. Uma guarda que reprova
-        // qualquer coisa passaria em todos os outros casos sem distinguir nada.
-        if (code === 0 && output.includes(m.expect)) {
-          ok += 1;
-          console.log(`  ok      ${rotulo}  (contraponto: seguiu verde, como deve)`);
-        } else {
-          inertes.push({ ...m, motivo: code !== 0 ? `o gate reprovou (${code}) quando deveria passar` : `saída não contém ${JSON.stringify(m.expect)}` });
-          console.log(`  FALHOU  ${rotulo}  (contraponto quebrado)`);
-        }
-      } else if (code === 0) {
-        inertes.push({ ...m, motivo: "o gate passou VERDE com o defeito aplicado" });
-        console.log(`  INERTE  ${rotulo}`);
-      } else if (!output.includes(m.expect)) {
-        // Reprovou, mas por outro motivo — tipicamente o tsc. Não conta: a
-        // guarda não opinou, e dar isso como sucesso é o mesmo autoengano que
-        // o arnês existe para desfazer.
-        inertes.push({ ...m, motivo: `reprovou (${code}), mas sem a mensagem da guarda — ${JSON.stringify(m.expect)}` });
-        console.log(`  AMBÍGUO ${rotulo}`);
-      } else {
-        ok += 1;
-        console.log(`  ok      ${rotulo}`);
+  if (serial) {
+    for (const [i, m] of mutantes.entries()) {
+      const rotulo = `${i + 1}/${mutantes.length} [${m.kind}] ${m.guard} :: ${m.name}`;
+      let restore = null;
+      try {
+        restore = applyMutation(m);
+        const { code, output } = runGate(m.env ?? {});
+        registrar(m, i, classificar(m, code, output));
+      } catch (err) {
+        erros.push({ ...m, motivo: err.message });
+        console.log(`  ERRO    ${rotulo}` + String.fromCharCode(10) + `          ${err.message.split(String.fromCharCode(10))[0]}`);
+      } finally {
+        if (restore) writeFileSync(restore.full, restore.original, "utf8");
       }
-    } catch (err) {
-      erros.push({ ...m, motivo: err.message });
-      console.log(`  ERRO    ${rotulo}\n          ${err.message.split("\n")[0]}`);
-    } finally {
-      // Reversão garantida. Acontece mesmo se o gate explodir, mesmo se a
-      // aplicação falhar no meio.
-      if (restore) writeFileSync(restore.full, restore.original, "utf8");
-    }
 
-    // Guardrail não negociável: a árvore tem de voltar limpa ANTES do próximo
-    // mutante. Seguir com a árvore suja empilharia defeitos e faria os
-    // resultados seguintes não significarem nada.
-    const sujo = treeStatus();
-    if (sujo) {
-      console.error(
-        `\nABORTADO NO MUTANTE ${i + 1}: a reversão falhou e a árvore ficou suja.\n` +
-          "Nenhum outro mutante será aplicado. Restaure à mão antes de qualquer coisa:\n\n" +
-          sujo +
-          "\n\n  git checkout -- <arquivos acima>\n",
+      // Guardrail não negociável do SERIAL: a árvore tem de voltar limpa
+      // ANTES do próximo mutante. Seguir suja empilharia defeitos e faria os
+      // resultados seguintes não significarem nada.
+      const sujo = treeStatus();
+      if (sujo) {
+        console.error(
+          `ABORTADO NO MUTANTE ${i + 1}: a reversão falhou e a árvore ficou suja. ` +
+            "Nenhum outro mutante será aplicado. Restaure à mão antes de qualquer coisa:" +
+            String.fromCharCode(10) + sujo,
+        );
+        process.exit(3);
+      }
+    }
+  } else {
+    const { arvores, ancora } = prepararArvores(Math.min(jobs, mutantes.length));
+    console.log(`  ancorado em ${ancora.slice(0, 7)}; ${arvores.length} cópia(s) criada(s).`);
+    const antes = treeStatus();
+    try {
+      await rodarEmParalelo(mutantes, arvores, registrar);
+    } finally {
+      limparArvores(arvores);
+    }
+    // ⚠️ A ÁRVORE PRINCIPAL PODE TER MUDADO, E ISSO NÃO É ERRO — 24/08.
+    //
+    // A primeira versão desta checagem ABORTAVA quando o principal mudava
+    // durante a passada. Provei-a editando `falPipeline.ts` com a passada em
+    // curso: os cinco mutantes deram `ok` (a passada É íntegra, que era o
+    // ponto) e a checagem abortou mesmo assim, chamando de "não confiáveis"
+    // vereditos corretos. Ela contradizia exatamente o que o V0 pediu —
+    // "para eu editar enquanto a passada corre".
+    //
+    // O isolamento não se prova observando o principal: prova-se por
+    // CONSTRUÇÃO. `applyMutation(m, arvore)` escreve em
+    // `path.join(arvore, arquivo)`, e `arvore` é sempre um worktree em
+    // `os.tmpdir()` — nenhum caminho do repositório aparece ali. É isso que
+    // `checkGateRunnerPolicy` mede, e é a garantia certa.
+    //
+    // Sobra um AVISO, informativo: quem lê o log meses depois merece saber
+    // que o diretório de trabalho mudou no meio, para não procurar nos
+    // vereditos uma diferença que veio do teclado de alguém.
+    const depois = treeStatus();
+    if (depois !== antes) {
+      console.log(
+        String.fromCharCode(10) +
+          "  (nota: a árvore de trabalho mudou durante a passada — esperado se você editou. " +
+          "Os vereditos acima não dependem dela: cada worker roda contra uma cópia ancorada " +
+          `em ${ancora.slice(0, 7)}.)`,
       );
-      process.exit(3);
     }
   }
+
 
   console.log("\n" + "-".repeat(70));
   if (erros.length > 0) {

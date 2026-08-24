@@ -213,29 +213,8 @@ export const MUTANTS: Mutant[] = [
     name: "o call site de /approve deixa de passar videoId",
     kind: "obvio",
     file: ROTA_DE_VIDEOS,
-    find:
-      "      const runId = await abrirCorrida({\n" +
-      "        tenantId: req.tenantId,\n" +
-      "        videoId: video.id,\n" +
-      "        script: video.script,\n" +
-      "        // Descritivo — ver o comentário equivalente no call site de criação.\n" +
-      "        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n" +
-      "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
-      "      });\n" +
-      "\n" +
-      "      try {\n" +
-      "        const r = await aprovarEAnimar({",
-    replace:
-      "      const runId = await abrirCorrida({\n" +
-      "        tenantId: req.tenantId,\n" +
-      "        script: video.script,\n" +
-      "        // Descritivo — ver o comentário equivalente no call site de criação.\n" +
-      "        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n" +
-      "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
-      "      });\n" +
-      "\n" +
-      "      try {\n" +
-      "        const r = await aprovarEAnimar({",
+    find: "      const runId = await abrirCorrida({\n        tenantId: req.tenantId,\n        videoId: video.id,\n        script: video.script,\n        // Descritivo — ver o comentário equivalente no call site de criação.\n        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n        origem: \"aprovacao\",\n      });\n",
+    replace: "      const runId = await abrirCorrida({\n        tenantId: req.tenantId,\n        script: video.script,\n        // Descritivo — ver o comentário equivalente no call site de criação.\n        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n        origem: \"aprovacao\",\n      });\n",
     expect: "aprovação: o call site de /approve não passa videoId a abrirCorrida",
   },
   {
@@ -243,29 +222,8 @@ export const MUTANTS: Mutant[] = [
     name: "o call site de /recompose deixa de passar videoId",
     kind: "obvio",
     file: ROTA_DE_VIDEOS,
-    find:
-      "      const runId = await abrirCorrida({\n" +
-      "        tenantId: req.tenantId,\n" +
-      "        videoId: video.id,\n" +
-      "        script: video.script,\n" +
-      "        // Descritivo — ver o comentário equivalente no call site de criação.\n" +
-      "        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n" +
-      "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
-      "      });\n" +
-      "\n" +
-      "      try {\n" +
-      "        const corrida = await recompor({",
-    replace:
-      "      const runId = await abrirCorrida({\n" +
-      "        tenantId: req.tenantId,\n" +
-      "        script: video.script,\n" +
-      "        // Descritivo — ver o comentário equivalente no call site de criação.\n" +
-      "        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n" +
-      "        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n" +
-      "      });\n" +
-      "\n" +
-      "      try {\n" +
-      "        const corrida = await recompor({",
+    find: "      const runId = await abrirCorrida({\n        tenantId: req.tenantId,\n        videoId: video.id,\n        script: video.script,\n        // Descritivo — ver o comentário equivalente no call site de criação.\n        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n        origem: \"refazer_imagem\",\n      });\n",
+    replace: "      const runId = await abrirCorrida({\n        tenantId: req.tenantId,\n        script: video.script,\n        // Descritivo — ver o comentário equivalente no call site de criação.\n        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,\n        charsPerSecond: PIPELINE_CHARS_PER_SECOND,\n        origem: \"refazer_imagem\",\n      });\n",
     expect: "aprovação: o call site de /recompose não passa videoId a abrirCorrida",
   },
   {
@@ -293,16 +251,8 @@ export const MUTANTS: Mutant[] = [
     name: "o INSERT deixa de listar a coluna video_id",
     kind: "obvio",
     file: DIARIO_DO_PIPELINE,
-    find:
-      "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second)\n" +
-      "     VALUES ($1, $2, $3, $4, $5, $6)\n" +
-      "     RETURNING id`,\n" +
-      "    [input.tenantId, input.videoId ?? null, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],",
-    replace:
-      "    `INSERT INTO fal_pipeline_runs (tenant_id, script, target_seconds, script_chars, chars_per_second)\n" +
-      "     VALUES ($1, $2, $3, $4, $5)\n" +
-      "     RETURNING id`,\n" +
-      "    [input.tenantId, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],",
+    find: "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem)\n     VALUES ($1, $2, $3, $4, $5, $6, $7)\n     RETURNING id`,\n    [\n      input.tenantId,\n      input.videoId ?? null,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n    ],",
+    replace: "    `INSERT INTO fal_pipeline_runs (tenant_id, script, target_seconds, script_chars, chars_per_second, origem)\n     VALUES ($1, $2, $3, $4, $5, $6)\n     RETURNING id`,\n    [\n      input.tenantId,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n    ],",
     expect: "aprovação: o INSERT de `fal_pipeline_runs` não menciona a coluna `video_id`",
   },
   {
@@ -315,9 +265,8 @@ export const MUTANTS: Mutant[] = [
     // conferisse "a coluna existe no texto do SQL" passaria com a coluna
     // presente e sempre vazia, que é o pior caso: parece resolvido e não está.
     file: DIARIO_DO_PIPELINE,
-    find:
-      "    [input.tenantId, input.videoId ?? null, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],",
-    replace: "    [input.tenantId, null, input.script, input.targetSeconds, input.script.length, input.charsPerSecond],",
+    find: "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem)\n     VALUES ($1, $2, $3, $4, $5, $6, $7)\n     RETURNING id`,\n    [\n      input.tenantId,\n      input.videoId ?? null,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n    ],",
+    replace: "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem)\n     VALUES ($1, $2, $3, $4, $5, $6, $7)\n     RETURNING id`,\n    [\n      input.tenantId,\n      null,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n    ],",
     expect: "aprovação: o INSERT de `fal_pipeline_runs` cita `video_id` no texto, mas o valor enviado não é o",
   },
 ];

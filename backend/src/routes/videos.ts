@@ -90,7 +90,14 @@ import {
   type EntradaDeComposicao,
   type VideoTier,
 } from "../services/video/falPipeline.js";
-import { abrirCorrida, criarDiarioNoBanco, fecharCorrida, requestIdDaEtapa } from "../services/video/falPipelineJournal.js";
+import {
+  MAX_REFACOES_POR_VIDEO,
+  abrirCorrida,
+  contarRefacoes,
+  criarDiarioNoBanco,
+  fecharCorrida,
+  requestIdDaEtapa,
+} from "../services/video/falPipelineJournal.js";
 import { aprovarEAnimar, recompor } from "../services/video/falApproval.js";
 import { materializeFalFixtureImage } from "../services/providers/fixtureProvider.js";
 
@@ -1569,6 +1576,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           // corrida abre e fecha `failed` logo em seguida.
           targetSeconds: escolherDuracao(script.length) ?? PIPELINE_DURACAO_MAXIMA,
           charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+          origem: "criacao",
         })
       : null;
     if (falRunId) {
@@ -2065,6 +2073,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // Descritivo — ver o comentário equivalente no call site de criação.
         targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+        origem: "aprovacao",
       });
 
       try {
@@ -2255,6 +2264,41 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /**
+   * O TETO DE REFAÇÕES — W3.1, 24/08.
+   *
+   * ┌─ Por que os dois botões dividem o MESMO limite ─────────────────────────┐
+   * │ "Refazer a imagem" custa US$ 0,08 e "Refazer o vídeo" custa US$ 0,375   │
+   * │ no Wan e US$ 2,31 no Seedance — preços muito diferentes. Ainda assim o  │
+   * │ limite é um só, por vídeo, porque o que ele protege não é o preço de um │
+   * │ clique: é o vídeo virar um poço sem fundo. Dois contadores separados    │
+   * │ deixariam 3 + 3 = seis refações, e no Premium isso é quase US$ 7 só de  │
+   * │ animação repetida.                                                      │
+   * │                                                                          │
+   * │ A recusa vem ANTES de `abrirCorrida` e antes de qualquer chamada paga:  │
+   * │ custa zero e não deixa corrida órfã.                                     │
+   * └──────────────────────────────────────────────────────────────────────────┘
+   */
+  async function refacoesEsgotadas(videoId: string, reply: FastifyReply): Promise<boolean> {
+    const jaFeitas = await contarRefacoes(videoId);
+    if (jaFeitas < MAX_REFACOES_POR_VIDEO) return false;
+    logEvent("info", "refacoes_esgotadas", {
+      context: "videos.refazer",
+      videoId,
+      jaFeitas,
+      limite: MAX_REFACOES_POR_VIDEO,
+      consequence: "recusado antes de abrir corrida; nenhuma etapa paga foi disparada",
+    });
+    reply.code(409).send({
+      error: "refacoes_esgotadas",
+      message:
+        `Este vídeo já foi refeito ${jaFeitas} vez(es), o limite é ${MAX_REFACOES_POR_VIDEO}. Cada ` +
+        "refação paga o fornecedor de novo. Aprove o que está aí ou comece um vídeo novo. Nada foi cobrado.",
+      refacoes: { feitas: jaFeitas, limite: MAX_REFACOES_POR_VIDEO },
+    });
+    return true;
+  }
+
   app.post<{ Params: { id: string }; Body: { feedback?: string | null } }>(
     "/videos/:id/recompose",
     { preHandler: requireActiveTenant },
@@ -2262,6 +2306,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, "awaiting_approval", reply);
       if (!carga) return reply;
       const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
+      if (await refacoesEsgotadas(video.id, reply)) return reply;
       // SÓ CAPTURA E PERSISTE — ver o comentário da migration 061. Vazio vira
       // `null`, nunca string vazia: mesma regra de `corpoDaGeracao` no
       // frontend, aplicada aqui porque este corpo não passa por ele.
@@ -2285,6 +2330,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // Descritivo — ver o comentário equivalente no call site de criação.
         targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+        origem: "refazer_imagem",
       });
 
       try {
@@ -2388,6 +2434,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         script: video.script,
         targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+        origem: "aprovacao_video",
       });
 
       try {
@@ -2560,6 +2607,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       const carga = await carregarCorridaAprovavel(req.tenantId, req.params.id, "awaiting_approval_video", reply);
       if (!carga) return reply;
       const { video, avatar, apiKeyFal, apiKeyElevenLabs } = carga;
+      if (await refacoesEsgotadas(video.id, reply)) return reply;
       // SÓ CAPTURA E PERSISTE — mesma regra de `/recompose`, ver migration 061.
       const refazerFeedback = req.body?.feedback?.trim() || null;
 
@@ -2581,6 +2629,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         script: video.script,
         targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+        origem: "refazer_video",
       });
 
       try {

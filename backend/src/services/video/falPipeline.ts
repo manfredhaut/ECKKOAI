@@ -33,6 +33,7 @@ import { falPoll, falResult, falSubmit, falUpload } from "../providers/falClient
 import { synthesizeSpeech } from "../providers/voiceProvider.js";
 import { logEvent } from "../log/safeLog.js";
 import { PIPELINE_TETO_USD, PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd } from "../billing/providerCost.js";
+import { custoDe } from "../billing/providerPrices.js";
 import { HEYGEN_MAX_SCRIPT_CHARS, estimateSecondsFromChars } from "./scriptDuration.js";
 import type { AspectRatio } from "../providers/videoFormat.js";
 import type { AvatarVendor } from "../providers/vendorCatalog.js";
@@ -793,6 +794,62 @@ export async function aguardarConclusao(
  * exatamente a resposta que se precisa ler para descobrir o que mudou.
  */
 /**
+ * O CUSTO DESTA ETAPA, com a TABELA vencendo a régua do código — W2, 24/08.
+ *
+ * ┌─ Desconhecido é CARO: a inversão que o W2 instala ───────────────────────┐
+ * │ Antes, ausência de preço era tratada como se fosse barato: `costFor`     │
+ * │ devolvia `known:false` para a fal e o teto autorizava com a régua        │
+ * │ interna. Foi assim que uma chamada de sync-lipsync de US$ 3,20 passou    │
+ * │ por um teto de US$ 2,00 calculando US$ 0,45.                             │
+ * │                                                                          │
+ * │ Agora há três casos, e nenhum devolve zero:                              │
+ * │                                                                          │
+ * │  1. PREÇO UNITÁRIO na tabela → é ele que vale. Editável sem deploy, que  │
+ * │     é o ponto inteiro do W2.                                             │
+ * │  2. PREÇO AGREGADO (total de período) → vale o MAIOR entre ele e a       │
+ * │     régua. Conservador de propósito: um total não diz o preço de UMA     │
+ * │     chamada, e escolher o menor reintroduziria o defeito com outro       │
+ * │     número. Nesta rodada os três preços semeados são agregados, então é  │
+ * │     este o caminho que o produto percorre hoje.                          │
+ * │  3. FORA DA TABELA → lança. Endpoint sem preço não é autorizado sozinho, │
+ * │     e no pipeline não há a quem perguntar: a recusa acontece ANTES da    │
+ * │     submissão e custa zero.                                              │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+async function custoDaEtapa(
+  endpointId: string,
+  quantidade: number,
+  peloCodigo: number,
+  etapa: EtapaDoPipeline,
+): Promise<number> {
+  const v = await custoDe(endpointId, quantidade);
+
+  if (v.usd === null) {
+    throw new FalPipelineError(
+      `CUSTO DESCONHECIDO: a etapa "${etapa}" usaria \`${endpointId}\`, que não tem preço em ` +
+        "`provider_prices`. Endpoint sem preço NÃO é autorizado sozinho — foi tratar ausência de preço " +
+        "como \"barato\" que deixou uma chamada de US$ 3,20 passar por um teto de US$ 2,00. Nada foi " +
+        "pedido ao fornecedor. Cadastre o preço no painel e repita.",
+    );
+  }
+
+  if (v.autorizavel) return v.usd;
+
+  // AGREGADO: alerta e NÃO entra na conta. Ver o caso 2 acima.
+  logEvent("warn", "preco_agregado_nao_autoriza", {
+    etapa,
+    endpointId,
+    usadoNoCalculo: Number(peloCodigo.toFixed(4)),
+    totalDoPeriodoNaTabela: Number(v.preco?.usd.toFixed(4) ?? 0),
+    medidoEm: v.preco?.medidoEm ?? null,
+    consequence:
+      "o cálculo seguiu pela régua do código; o total do período fica ao lado para comparação. " +
+      "Cadastre o custo POR CHAMADA para que o teto passe a usar o número do fornecedor.",
+  });
+  return peloCodigo;
+}
+
+/**
  * O PORTEIRO do teto. Roda ANTES de cada submissão paga, nunca depois.
  *
  * Depois da submissão o dinheiro já saiu: um teto conferido no fim é um
@@ -931,7 +988,8 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
   const teto = input.tetoDeGastoUsd ?? PIPELINE_TETO_USD;
   let gastoPrevistoUsd = 0;
 
-  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, PRECOS_FAL.comporUsd, teto, "compor");
+  const custoComporUsd = await custoDaEtapa(ENDPOINT_COMPOR, 1, PRECOS_FAL.comporUsd, "compor");
+  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, "compor");
   await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);
   const composicao = await etapaNaFal(input, "compor", 1, ENDPOINT_COMPOR, {
     // FASE 0 — a atenuação de pele vai SEMPRE, mesmo sem traje/cenário por
@@ -1131,8 +1189,14 @@ async function animarNarrarSincronizar(
   // O CUSTO e o ENDPOINT dependem do tier — ver `enderecoAnimarParaTier` e
   // `custoSeedanceUsd`. "normal" (Wan) é tarifado por segundo; "premium"
   // (Seedance) é tarifado por CLIPE, pela fórmula de tokens.
-  const custoAnimarUsd =
+  const custoAnimarPeloCodigo =
     tier === "premium" ? custoSeedanceUsd(duracaoEscolhida) : PRECOS_FAL.animarUsdPorSegundo * duracaoEscolhida;
+  const custoAnimarUsd = await custoDaEtapa(
+    enderecoAnimarParaTier(tier),
+    duracaoEscolhida,
+    custoAnimarPeloCodigo,
+    "animar",
+  );
   gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoAnimarUsd, teto, "animar");
   await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);
 
@@ -1233,12 +1297,14 @@ async function narrarSincronizar(
   // medição falha, a estimativa pela régua entra no lugar — e para o TETO ela
   // tem de ser a MAIOR das duas, senão o freio afrouxa justamente no caso em
   // que se sabe menos.
-  gastoPrevistoUsd = autorizarGasto(
-    gastoPrevistoUsd,
-    PRECOS_FAL.sincronizarUsdPorSegundoDeAudio * Math.max(fala.durationSeconds ?? 0, segundosEstimados),
-    teto,
+  const segundosDeAudio = Math.max(fala.durationSeconds ?? 0, segundosEstimados);
+  const custoSincronizarUsd = await custoDaEtapa(
+    ENDPOINT_SINCRONIZAR,
+    segundosDeAudio,
+    PRECOS_FAL.sincronizarUsdPorSegundoDeAudio * segundosDeAudio,
     "sincronizar",
   );
+  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoSincronizarUsd, teto, "sincronizar");
   await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);
   const sincronia = await etapaNaFal(input, "sincronizar", 4, ENDPOINT_SINCRONIZAR, {
     video_url: String(videoMudoUrl),

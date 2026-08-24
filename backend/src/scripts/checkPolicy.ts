@@ -86,6 +86,9 @@ import { checkUsageAttributionPolicy } from "./checkUsageAttributionPolicy.js";
 import { checkVoiceRotationPolicy } from "./checkVoiceRotationPolicy.js";
 import { checkEnsaioSimuladoPolicy } from "./checkEnsaioSimuladoPolicy.js";
 import { checkPlatformInheritancePolicy } from "./checkPlatformInheritancePolicy.js";
+import { checkGateRunnerPolicy } from "./checkGateRunnerPolicy.js";
+import { checkProviderPricesPolicy } from "./checkProviderPricesPolicy.js";
+import { checkRefacoesPolicy } from "./checkRefacoesPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
@@ -813,6 +816,26 @@ async function main(): Promise<void> {
   const platformInheritance = await checkPlatformInheritancePolicy();
   platformInheritance.failures.forEach((f) => failures.push(f));
   platformInheritance.notes.forEach((n) => note(n));
+
+  // --- 24o-octies. o arnês paralelo não escreve no repositório (V0) -------
+  //
+  // Só leitura de arquivo: o pool vive no host e o gate não o alcança.
+  const gateRunner = await checkGateRunnerPolicy();
+  gateRunner.failures.forEach((f) => failures.push(f));
+  gateRunner.notes.forEach((n) => note(n));
+
+  // --- 24o-nonies. preço é dado, não código (W2, migration 065) ----------
+  //
+  // Troca `pool.query` por uma tabela de mentira e invalida o cache nas duas
+  // pontas. Sem rede.
+  const providerPrices = await checkProviderPricesPolicy();
+  providerPrices.failures.forEach((f) => failures.push(f));
+  providerPrices.notes.forEach((n) => note(n));
+
+  // --- 24o-decies. teto de refações e falha parcial visível (W3) ---------
+  const refacoes = await checkRefacoesPolicy();
+  refacoes.failures.forEach((f) => failures.push(f));
+  refacoes.notes.forEach((n) => note(n));
 
   // --- 24o-quater. a cena chega ao fornecedor (BLOCO B5) -----------------
   //

@@ -53,6 +53,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ESTADO = "ESTADO.md";
+const BACKLOG = "BACKLOG.md";
+
+/**
+ * O comentário que o BACKLOG.md carrega no topo — B0, 24/08.
+ *
+ * Um HASH e não uma data: data envelhece sozinha e não diz contra o quê. O
+ * hash amarra a revisão a um ponto do histórico, e é comparável com a MESMA
+ * lista da §1 que esta ferramenta já lê.
+ */
+const MARCA_DE_REVISAO = /<!--\s*revisado-em:\s*([0-9a-f]{7,40})\s*-->/;
 
 /** Marca o começo da §1 — o cabeçalho, não uma frase que o cite. */
 const CABECALHO_SECAO_1 = "## 1 · Onde o repositório está";
@@ -111,6 +121,61 @@ function casa(hashDaLista, hashCompleto) {
   return hashCompleto.startsWith(hashDaLista) || hashDaLista.startsWith(hashCompleto);
 }
 
+/**
+ * O BACKLOG.md acompanhou o último FECHAMENTO? — B0, 24/08.
+ *
+ * ┌─ Por que o critério é a §1, e não uma contagem de commits ───────────────┐
+ * │ Um backlog não precisa mudar a cada commit — mudaria por ruído. O que    │
+ * │ ele não pode é ficar para trás de uma SESSÃO inteira, porque é aí que os │
+ * │ itens saem de `FILA` para `FEITO` e novos entram.                        │
+ * │                                                                          │
+ * │ E "uma sessão" já tem um marcador neste repositório: a lista de commits  │
+ * │ da §1 do ESTADO.md, reescrita a cada fechamento. Se o `revisado-em` do   │
+ * │ backlog ainda está DENTRO dessa janela, ele acompanhou; se ficou para    │
+ * │ trás dela, passou um fechamento inteiro sem ser olhado. Reusar a janela  │
+ * │ existente evita inventar um limiar arbitrário — e evita que dois números │
+ * │ diferentes passem a discordar sobre o que é "velho".                     │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * NÃO opina sobre o CONTEÚDO. Um backlog revisado no commit certo e cheio de
+ * mentira passa aqui — isto mede frescor de ponteiro, que é o que dá para
+ * medir por máquina.
+ */
+export function conferirBacklog(hashesDaSecao1, head, penultimo) {
+  let texto;
+  try {
+    texto = readFileSync(path.join(repoRoot, BACKLOG), "utf-8").replace(/\r\n/g, "\n");
+  } catch {
+    return { desfecho: "ausente" };
+  }
+
+  const m = MARCA_DE_REVISAO.exec(texto);
+  if (!m) {
+    return { desfecho: "sem_marca" };
+  }
+  const revisadoEm = m[1];
+
+  // A janela da §1 OU as duas pontas do histórico. As pontas entram pela
+  // mesma razão que a âncora principal as aceita: o commit que ATUALIZA um
+  // arquivo não cabe dentro dele, então revisar o backlog no fechamento e
+  // apontar para o próprio commit do fechamento é o caso CERTO — e sem esta
+  // linha ele era acusado de defasado com distância zero, que é o veredito
+  // mais absurdo possível.
+  const referencias = [...hashesDaSecao1, head, penultimo].filter(Boolean);
+  const dentroDaJanela = referencias.some(
+    (h) => h.startsWith(revisadoEm) || revisadoEm.startsWith(h),
+  );
+  if (dentroDaJanela) return { desfecho: "fresco", revisadoEm };
+
+  let distancia = null;
+  try {
+    distancia = Number(git("rev-list", "--count", `${revisadoEm}..HEAD`));
+  } catch {
+    distancia = null;
+  }
+  return { desfecho: "defasado", revisadoEm, distancia };
+}
+
 export function conferirAncora() {
   let texto;
   try {
@@ -134,9 +199,11 @@ export function conferirAncora() {
   // O HEAD conta como fresco também: uma sessão pode conferir a âncora ANTES
   // de escrever o commit de fechamento, e nesse instante o topo da lista é o
   // próprio HEAD. Aceitar os dois evita um alarme que some sozinho.
+  const backlog = conferirBacklog(hashes, head, penultimo);
+
   const alvo = hashes.find((h) => casa(h, penultimo) || casa(h, head));
   if (alvo) {
-    return { desfecho: "fresca", topo: hashes[0], head: head.slice(0, 7), casouCom: alvo };
+    return { desfecho: "fresca", topo: hashes[0], head: head.slice(0, 7), casouCom: alvo, backlog };
   }
 
   // A DISTÂNCIA, medida — é ela que diz se isto é um deslize de uma sessão ou
@@ -157,7 +224,29 @@ export function conferirAncora() {
     penultimo: penultimo.slice(0, 7),
     distancia,
     listados: hashes.length,
+    backlog,
   };
+}
+
+/** Uma linha sobre o BACKLOG, ou `null` quando não há o que dizer. */
+export function relatarBacklog(b) {
+  if (!b) return null;
+  if (b.desfecho === "fresco") return null;
+  if (b.desfecho === "ausente") {
+    return `BACKLOG.md: AUSENTE — o plano voltou a existir só no chat, e chat não sobrevive a troca de conta.`;
+  }
+  if (b.desfecho === "sem_marca") {
+    return "BACKLOG.md: sem a marca `<!-- revisado-em: <hash> -->` no topo — sem ela não há como saber se ele acompanhou o último fechamento.";
+  }
+  const quantos =
+    b.distancia === null
+      ? "distância desconhecida (o hash não existe mais neste histórico)"
+      : `${b.distancia} commit(s) atrás do HEAD`;
+  return (
+    `BACKLOG.md: DEFASADO — revisado em ${b.revisadoEm}, ${quantos}, e esse commit já saiu da janela ` +
+    "da §1. Passou um fechamento inteiro sem ser olhado: itens FEITOS continuam em FILA e o que entrou " +
+    "não está lá."
+  );
 }
 
 /** Uma linha por caso, para quem chama de dentro de outro processo. */
@@ -188,9 +277,19 @@ export function relatarAncora(r) {
 function main() {
   const r = conferirAncora();
   const linha = relatarAncora(r);
+  const doBacklog = relatarBacklog(r.backlog);
 
   if (r.desfecho === "fresca") {
     console.log(`✓ ${linha}`);
+    if (doBacklog) {
+      // O backlog NÃO derruba o exit code quando a âncora está fresca: são
+      // dois ponteiros com donos diferentes, e reprovar o comando inteiro
+      // por causa do segundo faria o primeiro parar de ser confiável como
+      // sinal. Avisa alto e deixa passar.
+      console.error(`⚠ ${doBacklog}`);
+      process.exit(0);
+    }
+    console.log("✓ BACKLOG.md: acompanhou o último fechamento.");
     process.exit(0);
   }
   if (r.desfecho === "indeterminado") {
@@ -198,6 +297,7 @@ function main() {
     process.exit(2);
   }
   console.error(`⚠ ${linha}`);
+  if (doBacklog) console.error(`⚠ ${doBacklog}`);
   console.error(
     "\nConserto: reescreva o bloco de commits da §1 com `git log --oneline -8`, e registre a\n" +
       "divergência em vez de corrigi-la em silêncio — as cinco anteriores só viraram padrão\n" +

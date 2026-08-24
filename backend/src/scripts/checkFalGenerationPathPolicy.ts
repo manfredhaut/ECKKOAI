@@ -132,21 +132,13 @@ export const MUTANTS: Mutant[] = [
     // primeiro quando as duas pontas falham — e é aí que uma falha de upload
     // deixa de custar zero e passa a acontecer com a corrida já autorizada.
     file: "backend/src/services/video/falPipeline.ts",
-    find:
-      "  const urlsDasEntradas = await publicarEntradas(input);\n" +
-      "\n" +
-      "  // --- 1. COMPOR -----------------------------------------------------------\n" +
-      "  const teto = input.tetoDeGastoUsd ?? PIPELINE_TETO_USD;\n" +
-      "  let gastoPrevistoUsd = 0;\n" +
-      "\n" +
-      '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, PRECOS_FAL.comporUsd, teto, "compor");',
-    replace:
-      "  const teto = input.tetoDeGastoUsd ?? PIPELINE_TETO_USD;\n" +
-      "  let gastoPrevistoUsd = 0;\n" +
-      '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, PRECOS_FAL.comporUsd, teto, "compor");\n' +
-      "\n" +
-      "  // --- 1. COMPOR -----------------------------------------------------------\n" +
-      "  const urlsDasEntradas = await publicarEntradas(input);",
+    // ⚠️ find/replace REGENERADOS no W2 (24/08): o custo de `compor`
+    // deixou de ser `PRECOS_FAL.comporUsd` direto e passa por
+    // `custoDaEtapa`, que consulta `provider_prices`. A PROPRIEDADE medida
+    // é a mesma — publicar (que não custa) vem antes do primeiro
+    // autorizarGasto, que é o freio da primeira etapa paga.
+    find: "  const urlsDasEntradas = await publicarEntradas(input);\n\n  // --- 1. COMPOR -----------------------------------------------------------\n  const teto = input.tetoDeGastoUsd ?? PIPELINE_TETO_USD;\n  let gastoPrevistoUsd = 0;\n\n  const custoComporUsd = await custoDaEtapa(ENDPOINT_COMPOR, 1, PRECOS_FAL.comporUsd, \"compor\");\n  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, \"compor\");",
+    replace: "  // --- 1. COMPOR -----------------------------------------------------------\n  const teto = input.tetoDeGastoUsd ?? PIPELINE_TETO_USD;\n  let gastoPrevistoUsd = 0;\n  const custoComporUsd = await custoDaEtapa(ENDPOINT_COMPOR, 1, PRECOS_FAL.comporUsd, \"compor\");\n  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, \"compor\");\n\n  const urlsDasEntradas = await publicarEntradas(input);",
     expect: "a autorização de gasto aconteceu ANTES da publicação das entradas",
   },
   {

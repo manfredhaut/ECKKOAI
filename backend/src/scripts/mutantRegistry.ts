@@ -71,6 +71,9 @@ import { MUTANTS as usageAttributionMutants } from "./checkUsageAttributionPolic
 import { MUTANTS as voiceRotationMutants } from "./checkVoiceRotationPolicy.js";
 import { MUTANTS as ensaioSimuladoMutants } from "./checkEnsaioSimuladoPolicy.js";
 import { MUTANTS as platformInheritanceMutants } from "./checkPlatformInheritancePolicy.js";
+import { MUTANTS as gateRunnerMutants } from "./checkGateRunnerPolicy.js";
+import { MUTANTS as providerPricesMutants } from "./checkProviderPricesPolicy.js";
+import { MUTANTS as refacoesMutants } from "./checkRefacoesPolicy.js";
 import { MUTANTS as falSceneWiringMutants } from "./checkFalSceneWiringPolicy.js";
 import { MUTANTS as falFase0DefaultsMutants } from "./checkFalFase0DefaultsPolicy.js";
 import { MUTANTS as falTierMutants } from "./checkFalTierPolicy.js";
@@ -154,6 +157,9 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkVoiceRotationPolicy.ts", voiceRotationMutants),
   ...de("backend/src/scripts/checkEnsaioSimuladoPolicy.ts", ensaioSimuladoMutants),
   ...de("backend/src/scripts/checkPlatformInheritancePolicy.ts", platformInheritanceMutants),
+  ...de("backend/src/scripts/checkGateRunnerPolicy.ts", gateRunnerMutants),
+  ...de("backend/src/scripts/checkProviderPricesPolicy.ts", providerPricesMutants),
+  ...de("backend/src/scripts/checkRefacoesPolicy.ts", refacoesMutants),
   ...de("backend/src/scripts/checkFalSceneWiringPolicy.ts", falSceneWiringMutants),
   ...de("backend/src/scripts/checkFalFase0DefaultsPolicy.ts", falFase0DefaultsMutants),
   ...de("backend/src/scripts/checkFalTierPolicy.ts", falTierMutants),
