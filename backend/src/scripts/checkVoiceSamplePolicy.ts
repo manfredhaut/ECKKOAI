@@ -222,7 +222,12 @@ export const MUTANTS: Mutant[] = [
       "          name: voiceNameWithTimestamp(avatar.name, new Date()),\n" +
       "          fileBuffer: normalizada.buffer,",
     replace: "          name: avatar.name,\n          fileBuffer: normalizada.buffer,",
-    expect: "voltou a clonar sem carimbo no nome",
+    // TRANSCRITO da mensagem real, não parafraseado — a mensagem mudou junto
+    // com o conserto do pareamento (24/08), e um `expect` da frase ANTIGA faz
+    // o mutante sair AMBÍGUO: a guarda reprova certo e o arnês não reconhece
+    // a reprovação como dela. Foi exatamente o defeito do bloco I1 (23/08),
+    // nos quatro mutantes daquela passada.
+    expect: "alguma voltou a clonar sem carimbo",
   },
   {
     guard: "voz: o nome da voz distingue uma clonagem da outra",
