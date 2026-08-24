@@ -64,7 +64,7 @@ export const MUTANTS: Mutant[] = [
     replace:
       '  await fetch("https://api.elevenlabs.io/v1/voices").catch(() => {});\n' +
       '  console.log("ENSAIO SIMULADO — nenhuma chamada paga. PROVIDER_MODE=fixture confirmado.");',
-    expect: "ensaio: houve requisição de rede",
+    expect: "ensaio: o arquivo do ensaio contém chamada de rede em código",
   },
 ];
 
@@ -135,6 +135,39 @@ export async function checkEnsaioSimuladoPolicy(): Promise<EnsaioSimuladoCheckRe
     notes.push(
       "    ensaio: os dois níveis e a falha parcial rodam ponta a ponta com ZERO requisições de rede",
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // G-1b — a mesma invariante por FORMA, no arquivo INTEIRO
+  //
+  // A execução acima é a prova forte, e ela tem um alcance exato: só os
+  // caminhos que esta guarda IMPORTA. MEDIDO em 24/08 — o primeiro mutante
+  // desta guarda saiu INERTE por causa disso: ele punha um `fetch` dentro do
+  // `main()`, que a guarda não importa (o `main` chama `pool.end()`, fatal
+  // dentro do gate), e a execução seguia contando zero com o `fetch` ali no
+  // arquivo.
+  //
+  // Esta perna cobre o que a outra não alcança: `main`, `ensaiarUsuarioNovo`,
+  // e qualquer função futura. É mais fraca (lê texto) e mais ampla — as duas
+  // juntas é que respondem "o ensaio não fala com fornecedor".
+  const fonteInteira = lerDaRaiz(ENSAIO);
+  const chamadasDeRede = fonteInteira
+    .split("\n")
+    .map((l, i) => ({ linha: l, n: i + 1 }))
+    // Ignora comentário: o cabeçalho deste arquivo e do ensaio FALAM de
+    // `fetch` para explicar por que ele não existe, e casar a explicação
+    // seria reprovar a documentação da própria invariante.
+    .filter(({ linha }) => !/^\s*(\*|\/\/)/.test(linha))
+    .filter(({ linha }) => /\bfetch\s*\(/.test(linha));
+  if (chamadasDeRede.length > 0) {
+    failures.push(
+      `ensaio: o arquivo do ensaio contém chamada de rede em código — linha(s) ` +
+        `${chamadasDeRede.map((c) => c.n).join(", ")}. A execução desta guarda só alcança os caminhos que ` +
+        "ela importa (`main` fica de fora, porque encerra o pool); esta conferência cobre o arquivo " +
+        "inteiro. O ensaio é o único caminho do produto que se pode rodar sem conferir nada antes.",
+    );
+  } else {
+    notes.push("    ensaio: nenhuma chamada de rede no arquivo inteiro, inclusive nos caminhos que a execução não alcança");
   }
 
   // -------------------------------------------------------------------------
