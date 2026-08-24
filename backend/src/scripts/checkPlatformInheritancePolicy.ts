@@ -100,6 +100,14 @@ export const MUTANTS: Mutant[] = [
     guard: "par sem cobertura falha FECHADO",
     name: "um par sem chave de plataforma passa a herdar por nome",
     kind: "esperto",
+    // O id do `replace` é `heygen` — um id que EXISTE — e a escolha é o que
+    // torna este mutante uma prova da POLÍTICA e não do cadastro. A primeira
+    // versão usava o próprio nome do vendor, e com `avatar/did` isso produzia
+    // um id inexistente: o processo estourava em `readEnv` antes de a guarda
+    // opinar, e o desfecho saía AMBÍGUO. O estouro era um defeito de verdade
+    // (consertado no mesmo commit, em `resolveUncached`), mas medir o crash
+    // não é medir a regra.
+    //
     // ESPERTO: derivar o id pelo nome do vendor parece a simplificação óbvia
     // — e três dos cinco pares quebram a regra. O pior deles é
     // `script/anthropic`, que tem uma chave de nome parecido (`copilot`)

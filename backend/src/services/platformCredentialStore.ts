@@ -128,7 +128,22 @@ export async function resolvePlatformKey(id: PlatformCredentialId): Promise<Reso
 }
 
 async function resolveUncached(id: PlatformCredentialId): Promise<ResolvedPlatformKey | null> {
-  const fromEnv = PLATFORM_CREDENTIALS[id].readEnv();
+  // ID DESCONHECIDO devolve `null`, e não um TypeError — achado de 24/08,
+  // durante a prova dos mutantes do W1.
+  //
+  // O tipo já diz `PlatformCredentialId`, então em teoria isto é
+  // inalcançável. Na prática o id chega de um MAPA
+  // (`HERANCA_DE_PLATAFORMA`), e um par acrescentado ali com um id que
+  // ninguém cadastrou em `PLATFORM_CREDENTIALS` fazia
+  // `PLATFORM_CREDENTIALS[id].readEnv()` estourar com "Cannot read properties
+  // of undefined" — derrubando a REQUISIÇÃO inteira, no meio da resolução de
+  // credencial, por um erro de cadastro.
+  //
+  // Falhar FECHADO aqui é a mesma escolha de toda a herança: sem chave, sem
+  // acesso — nunca um estouro no caminho de quem só queria gerar um vídeo.
+  const def = PLATFORM_CREDENTIALS[id];
+  if (!def) return null;
+  const fromEnv = def.readEnv();
 
   if (config.platformKeysForceEnv) {
     if (fromEnv) return { value: fromEnv, source: "env" };
