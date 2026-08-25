@@ -1,5 +1,14 @@
 Always respond in Brazilian Portuguese.
 
+> ## ⚠️ PONTO DE RETOMADA CORRENTE — digite `RETOMAR-CENARIO-TRAJE`
+>
+> Sessão de 25/08/2026 fechou com uma tarefa PARADA a meio caminho:
+> [RETOMAR-CENARIO-TRAJE.md](RETOMAR-CENARIO-TRAJE.md) tem o estado
+> completo, a decisão de produto (cenário/traje são por VÍDEO, coletados
+> no passo Cena — não no avatar), o bloqueio (3 guardas amarram os campos
+> ao passo 1 hoje) e a primeira ação da próxima sessão. Leia-o antes de
+> continuar qualquer trabalho no wizard de criação de vídeo.
+
 > # 🚦 ABERTURA DE SESSÃO — antes de tudo, o healthcheck do frontend
 >
 > **ABERTURA DE SESSÃO: rodar o healthcheck do frontend ANTES de qualquer
