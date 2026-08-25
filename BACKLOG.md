@@ -36,6 +36,30 @@ implementado.
 
 ---
 
+## ⭐ PRÓXIMA PRIORIDADE
+
+| item | estado | o que o desbloqueia |
+|---|---|---|
+| **O custo POR CHAMADA do Request History da fal** — o operador traz o CSV (Usage → Export CSV) na próxima sessão | `FILA` | **acima de produção e do botão de Refazer, por decisão do operador (24/08).** É a peça que mais destrava: troca `unitario=false` (AGREGADO) por `true` em `provider_prices`, e com isso `custoDe` passa a AUTORIZAR pelo número do fornecedor em vez de pela régua do código. É o que resolve o **teto do R4.2**, hoje `PARADO`. Sem ela, os três preços do painel só alertam |
+
+**O que fazer quando o CSV chegar:** um `UPDATE` por endpoint em
+`provider_prices` — `usd` (o custo de UMA chamada), `unitario = true`,
+`medido_em` e `nota` com a procedência. Nenhuma migration, nenhum deploy: a
+tabela foi feita para receber isto. Depois disso, `custoDaEtapa` passa a usar
+o preço do fornecedor e o teto do R4.2 pode ser calibrado.
+
+## ⚠️ ACHADO NO W4 — bloqueia a demo do usuário novo
+
+| item | estado | o que o desbloqueia |
+|---|---|---|
+| **Os cartões de NÍVEL ficam desabilitados para tenant zerado** — a tela lê `GET /credentials` (as linhas DO TENANT) e testa `vendor === "heygen"` / `=== "fal"`. Um tenant novo tem `vendor` VAZIO nas três linhas, então `podeEscolherSimples` e `podeEscolherFal` são ambos `false` e **os três cartões nascem travados** | `FILA` | o W1 consertou o SERVIDOR (que agora herda a chave de plataforma) e a TELA ficou para trás. O conserto é a tela perguntar pelo mesmo critério do servidor — o predicado precisa considerar a herança, não só a linha do tenant |
+
+**Medido em 24/08** (`admin-3`, e mais 22 tenants no mesmo estado): as três
+linhas de `api_credentials` têm `vendor = ''`. O servidor gera; a tela não
+deixa escolher o nível. É o defeito que o W4 existe para achar — só aparece
+percorrendo a tela, e não há guarda que o pegue porque os dois lados estão
+"certos" isoladamente.
+
 ## PARADO ESPERANDO DECISÃO
 
 | item | estado | o que o desbloqueia |
@@ -98,7 +122,8 @@ no Wan. O Seedance é **18,5×** mais caro por segundo.
 | **Formatos 16:9, 4:5 e 1:1 nunca testados** | `FILA` | um tiro pago por formato |
 | **fal: existem Wan 2.7 e 3.0? qual o teto de duração de cada um?** Se algum passar de 15 s, o multi-clipe morre antes de nascer | `FILA` | **só depois do simulado.** É LEITURA do painel, custo zero |
 | ~~Contar refações exige saber qual rota abriu~~ | `FEITO` | migration 066 acrescentou `origem`; os 5 call sites declaram |
-| **A tela ainda não desabilita o botão de Refazer** — o servidor recusa com 409 `refacoes_esgotadas` e devolve `{feitas, limite}`, mas o botão continua clicável até o clique | `FILA` | consumir `refacoes` na tela do passo Gerar |
+| **Editar arquivo por script converte LF→CRLF no Windows** — `io.open` em modo texto traduz `
+` para `os.linesep`. O índice fica LF, mas o GATE lê o working copy pelo bind mount, e guardas de recorte multi-linha quebram com sintoma que parece defeito de lógica (aconteceu 24/08, no `GenerateStep.tsx`) | `FILA` | uma guarda de EOL no working copy, ou usar `newline=""` sempre. O `.gitattributes` já declara `eol=lf` e não impede isto |
 
 ---
 
