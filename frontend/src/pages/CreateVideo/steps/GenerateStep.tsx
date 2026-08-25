@@ -2,25 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
-import type { Credential, GenerationReadiness, Video } from "../../../types";
+import type { GenerationReadiness, Video } from "../../../types";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import type { AssetDefaults, WizardState } from "../types";
 import { VideoPlayer } from "../../../features/VideoPlayer";
 import { VideoCostPanel } from "../VideoCostPanel";
 import { GenerationSummary } from "../GenerationSummary";
-
-/** Espelho de `formatConfidenceForTier` (`backend/src/services/providers/videoFormat.ts`). */
-type FormatConfidenceLevel = "vendor_response" | "documentation" | "unverified";
-
-/** Resposta de `GET /video-format-support?tier=…`. */
-interface FormatSupport {
-  vendor: string | null;
-  supported: boolean;
-  evidence: string;
-  reason: string;
-  /** `null` sem `?tier=` — nunca o caso aqui, que sempre manda o tier. */
-  perPlatformConfidence: Record<string, FormatConfidenceLevel> | null;
-}
 
 /**
  * O corpo de `POST /videos`, montado num lugar só.
@@ -120,29 +107,14 @@ const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   error: 100,
 };
 
-/**
- * Os TRÊS níveis — BLOCO A. Nomes de plataforma nunca aparecem aqui, só nos
- * comentários do código: o rótulo, a faixa de custo e a chave de tradução.
- * A faixa é a mesma da tabela decidida na sessão do sistema de tiers (30 s de
- * referência); custo REAL varia com a duração escolhida pelo roteiro.
- */
-const TIER_OPTIONS: { value: "simples" | "normal" | "premium"; range: string }[] = [
-  { value: "simples", range: "US$ 0,50–2,00" },
-  { value: "normal", range: "US$ 1,50–3,00" },
-  { value: "premium", range: "US$ 14,19" },
-];
-
 export function GenerateStep({
   wizard,
   onCaptionsChange,
-  onTierVideoChange,
   defaults,
 }: {
   wizard: WizardState;
   /** Mesma forma dos outros passos: o estado mora na página, o passo avisa. */
   onCaptionsChange: (captions: boolean) => void;
-  /** Mesmo padrão de `onCaptionsChange` — BLOCO A. */
-  onTierVideoChange: (tierVideo: "simples" | "normal" | "premium") => void;
   /** Cenário e traje do passo 1. Ver `corpoDaGeracao`. */
   defaults?: AssetDefaults;
 }) {
@@ -205,135 +177,6 @@ export function GenerateStep({
   }, [wizard.avatarId, wizard.script, wizard.motionPrompt, wizard.targetDurationSeconds, reloadKey]);
 
   const blockers = readiness?.blockers ?? [];
-
-  /**
-   * FASE C (multi-vendor de avatar) — "Simples" exige heygen; "Normal" e
-   * "Premium" exigem fal (`vendorRequiredByTier`, `falPipeline.ts`). Um
-   * tenant pode ter as duas credenciais, uma só, ou nenhuma — desde a Fase A
-   * (migration 060) `GET /credentials` devolve uma linha POR VENDOR de
-   * avatar, não mais uma só.
-   *
-   * Antes da Fase C, o vendor era decidido inteiramente pela credencial
-   * default do tenant e `tier_video` só escolhia o motor DENTRO do pipeline
-   * da fal — daí um tenant fal-only ver "Simples" produzir o mesmo vídeo do
-   * "Normal", sem aviso (o defeito que abriu esta linha de trabalho, ver
-   * `checkTierAvailabilityPolicy.ts`). Agora o servidor recusa a geração
-   * quando o vendor exigido pelo tier não está conectado
-   * (`tier_vendor_unavailable`) — os dois predicados abaixo existem para a
-   * TELA nunca oferecer essa recusa como escolha clicável, nos dois
-   * sentidos (Simples sem heygen, ou Normal/Premium sem fal).
-   *
-   * `[]` enquanto não se sabe (`credentials === null`) — mesmo padrão de
-   * `readiness` acima: os cartões nascem DESABILITADOS (nunca clicáveis
-   * antes da resposta chegar), porque habilitar por otimismo aqui
-   * reproduziria a mesma lacuna que este bloco existe para fechar. Nunca
-   * mostra o nome do fornecedor — só o fato de o nível estar disponível ou
-   * não.
-   */
-  const [credentials, setCredentials] = useState<Credential[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<Credential[]>("/credentials")
-      .then((r) => {
-        if (!cancelled) setCredentials(r);
-      })
-      .catch(() => {
-        // Falha ao consultar cai no lado seguro: sem saber o vendor, os
-        // níveis ficam indisponíveis — o inverso arriscaria oferecer um
-        // nível sem efeito de novo, que é exatamente a lacuna original.
-        if (!cancelled) setCredentials([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  /**
-   * A DISPONIBILIDADE vem do SERVIDOR — W4, 24/08.
-   *
-   * ┌─ O que estava errado, e por quê ─────────────────────────────────────────┐
-   * │ Estes dois predicados liam `GET /credentials` e testavam                 │
-   * │ `vendor === "heygen"` / `=== "fal"` nas linhas DO TENANT. Enquanto a     │
-   * │ credencial do tenant era a única fonte, era exato.                       │
-   * │                                                                          │
-   * │ O W1 mudou a fonte: sem chave própria, o tenant HERDA a da plataforma e  │
-   * │ o servidor gera. Mas a linha do tenant continua com `vendor` VAZIO —     │
-   * │ então os dois davam `false` e **os três cartões nasciam travados** num   │
-   * │ tenant que o servidor atende. 23 de 34 tenants estavam assim.            │
-   * │                                                                          │
-   * │ Agora a resposta vem de `/videos/tier-availability`, que responde pela   │
-   * │ MESMA cadeia que a criação usa para recusar. A tela parou de reimplementar│
-   * │ a regra e passou a perguntá-la.                                          │
-   * └──────────────────────────────────────────────────────────────────────────┘
-   *
-   * `null` enquanto não se sabe — mesmo padrão de `credentials` acima: os
-   * cartões nascem DESABILITADOS até a resposta chegar, porque habilitar por
-   * otimismo é o que produz o clique que o servidor recusa.
-   */
-  const [tiersDisponiveis, setTiersDisponiveis] = useState<Record<string, boolean> | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<Record<string, boolean>>("/videos/tier-availability")
-      .then((r) => {
-        if (!cancelled) setTiersDisponiveis(r);
-      })
-      .catch(() => {
-        // Falha de leitura NÃO libera os cartões: sem saber, o servidor é quem
-        // recusa, e um cartão habilitado por erro de rede vira um clique que
-        // volta 400.
-        if (!cancelled) setTiersDisponiveis({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  const podeEscolherSimples = tiersDisponiveis?.simples === true;
-  const podeEscolherFal = tiersDisponiveis?.normal === true || tiersDisponiveis?.premium === true;
-
-  // Se o tier selecionado deixou de estar disponível (ou nunca esteve, e o
-  // wizard nasceu com "normal" por padrão — `CreateVideoPage.tsx`), o
-  // próprio wizard troca para um nível que a conta REALMENTE tem, assim que
-  // as credenciais chegam. Nunca silencioso: o botão destacado na tela muda
-  // junto, então quem olha vê exatamente o que vai ser gerado. Sem os dois
-  // vendors, não há para onde trocar — a recusa vira `no_avatar_credential`
-  // em `readiness`, que já bloqueia o botão "Gerar".
-  useEffect(() => {
-    if (credentials === null) return;
-    const atualDisponivel = wizard.tierVideo === "simples" ? podeEscolherSimples : podeEscolherFal;
-    if (atualDisponivel) return;
-    if (podeEscolherFal) onTierVideoChange("normal");
-    else if (podeEscolherSimples) onTierVideoChange("simples");
-  }, [credentials, podeEscolherSimples, podeEscolherFal, wizard.tierVideo, onTierVideoChange]);
-
-  /**
-   * A CONFIANÇA do formato escolhido no passo Cena, NO TIER escolhido aqui.
-   *
-   * Achado da verificação anterior a este bloco: `/video-format-support`
-   * calculava o aviso sobre a credencial DEFAULT do tenant, não sobre o
-   * vendor que o tier realmente vai usar — em uma conta com os dois vendors
-   * configurados, o aviso podia estar certo por acidente ou errado por
-   * acidente, sem relação com a escolha real. Agora a rota recebe `?tier=`
-   * (Fase C: `vendorRequiredByTier` + `getCredentialForVendor`, nunca a
-   * default) e devolve confiança POR DESTINO — refeito a cada troca de tier,
-   * porque é exatamente o que muda a resposta.
-   */
-  const [formatSupport, setFormatSupport] = useState<FormatSupport | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<FormatSupport>(`/video-format-support?tier=${wizard.tierVideo}`)
-      .then((r) => {
-        if (!cancelled) setFormatSupport(r);
-      })
-      .catch(() => {
-        if (!cancelled) setFormatSupport(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [wizard.tierVideo]);
-  const confiancaDoFormato = formatSupport?.perPlatformConfidence?.[wizard.publishPlatform] ?? null;
 
   /**
    * CONFIRMAÇÃO EXPLÍCITA para roteiro longo.
@@ -568,64 +411,6 @@ export function GenerateStep({
               respondeu 200, e a ausência só apareceu no vídeo pronto. O resumo
               é derivado do MESMO objeto que vai no POST. */}
           <GenerationSummary wizard={wizard} />
-
-          {/* O NÍVEL — BLOCO A. Três cartões, sem nome de plataforma nenhum:
-              o que a pessoa escolhe é um preço e uma qualidade, não um
-              fornecedor. Antes da legenda porque é o campo que mais muda o
-              custo mostrado no painel logo abaixo. */}
-          <fieldset className="tier-choice" style={{ border: 0, padding: 0, margin: "12px 0 0" }}>
-            <legend style={{ fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 6 }}>
-              {t("createVideo.generate.tierLabel")}
-            </legend>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {TIER_OPTIONS.map((opt) => {
-                // "simples" exige heygen; "normal"/"premium" exigem fal —
-                // Fase C. Os dois sentidos importam: um tenant fal-only não
-                // vê "Simples" clicável, e um heygen-only não vê
-                // "Normal"/"Premium" clicáveis.
-                const indisponivel = opt.value === "simples" ? !podeEscolherSimples : !podeEscolherFal;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={wizard.tierVideo === opt.value ? "btn btn-primary" : "btn btn-outline"}
-                    aria-pressed={wizard.tierVideo === opt.value}
-                    onClick={() => onTierVideoChange(opt.value)}
-                    disabled={indisponivel}
-                    style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 120 }}
-                  >
-                    <span>{t(`createVideo.generate.tier.${opt.value}`)}</span>
-                    <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>{opt.range}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-              {t(`createVideo.generate.tierHint.${wizard.tierVideo}`)}
-            </p>
-            {(!podeEscolherSimples || !podeEscolherFal) && (
-              <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
-                {t("createVideo.generate.tierUnavailable")}
-              </p>
-            )}
-            {/* A confiança do FORMATO (escolhido no passo Cena) NESTE tier —
-                nunca bloqueia a escolha, só informa o que sustenta a
-                afirmação de que ele funciona. Ver o comentário de
-                `formatSupport` acima. */}
-            {confiancaDoFormato && (
-              <p
-                className="text-muted"
-                style={{
-                  fontSize: 12,
-                  marginTop: 4,
-                  marginBottom: 0,
-                  color: confiancaDoFormato === "unverified" ? "var(--color-danger, #b42318)" : undefined,
-                }}
-              >
-                {t(`createVideo.generate.formatConfidence.${confiancaDoFormato}`)}
-              </p>
-            )}
-          </fieldset>
 
           {/* LEGENDA — a escolha fica ANTES do botão, junto do resumo, porque é
               o último campo que muda o corpo enviado. Depois do clique não há

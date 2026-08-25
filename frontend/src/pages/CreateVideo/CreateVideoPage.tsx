@@ -189,13 +189,14 @@ export function CreateVideoPage() {
           onAvatarLookChange={(avatarLookId) => setWizard((w) => ({ ...w, avatarLookId }))}
           publishPlatform={wizard.publishPlatform}
           onPublishPlatformChange={(publishPlatform) => setWizard((w) => ({ ...w, publishPlatform }))}
+          tierVideo={wizard.tierVideo}
+          onTierVideoChange={(tierVideo) => setWizard((w) => ({ ...w, tierVideo }))}
         />
       )}
       {step === 3 && (
         <GenerateStep
           wizard={wizard}
           onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))}
-          onTierVideoChange={(tierVideo) => setWizard((w) => ({ ...w, tierVideo }))}
           // O passo 1 coleta cenário e traje; é aqui que eles atravessam até o
           // corpo de `POST /videos`. Antes desta linha o bloco do passo 1 era o
           // último resto de coleta que não ia a lugar nenhum.

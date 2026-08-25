@@ -56,7 +56,7 @@ import { VIDEO_TIERS, vendorRequiredByTier } from "../services/video/falPipeline
 const LOOKUP = "backend/src/services/credentialLookup.ts";
 const MAPA = "backend/src/services/platformInheritance.ts";
 const ESTADO_DO_SELO = "frontend/src/pages/AdminPanel/platformKeyState.ts";
-const PASSO_GERAR = "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx";
+const PASSO_CENA = "frontend/src/pages/CreateVideo/steps/SceneStep.tsx";
 const CARTAO = "frontend/src/pages/AdminPanel/AdminPlatformKeysSection.tsx";
 const CSS = "frontend/src/styles/global.css";
 const LOCALES = ["frontend/src/locales/pt-BR.json", "frontend/src/locales/en.json"];
@@ -175,7 +175,11 @@ export const MUTANTS: Mutant[] = [
     // o ENDPOINT deixa o predicado intacto — a guarda de tier segue verde — e
     // ataca exatamente o que esta guarda mede: de ONDE a tela tira a
     // disponibilidade.
-    file: PASSO_GERAR,
+    //
+    // Movido de GenerateStep.tsx para SceneStep.tsx em 25/08, junto com os
+    // cartões de tier — a propriedade (perguntar ao servidor, não
+    // reimplementar) não mudou, só o arquivo onde a chamada mora.
+    file: PASSO_CENA,
     find: '      .get<Record<string, boolean>>("/videos/tier-availability")',
     replace: '      .get<Record<string, boolean>>("/credentials")',
     // TRANSCRITO: o mutante deixa a rota nova no arquivo (o `useEffect`
@@ -493,8 +497,8 @@ export async function checkPlatformInheritancePolicy(): Promise<PlatformInherita
   // trocou o endpoint por `/credentials` e a guarda seguiu verde (INERTE,
   // medido em 24/08). É o mesmo defeito que a `checkVendorLogPolicy` teve:
   // casar a menção em vez do uso.
-  const passoGerar = lerDaRaiz(PASSO_GERAR);
-  if (!passoGerar.includes('.get<Record<string, boolean>>("/videos/tier-availability")')) {
+  const passoCena = lerDaRaiz(PASSO_CENA);
+  if (!passoCena.includes('.get<Record<string, boolean>>("/videos/tier-availability")')) {
     failures.push(
       "níveis: a tela decide a disponibilidade pelas linhas do tenant — parou de perguntar a " +
         "`/videos/tier-availability` e voltou a reimplementar a regra. Enquanto a credencial do tenant " +

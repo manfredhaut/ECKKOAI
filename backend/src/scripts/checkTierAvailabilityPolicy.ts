@@ -27,7 +27,7 @@
  * nascendo em `tierVideo: "normal"` por padrão (`CreateVideoPage.tsx`), bateria
  * nessa recusa ao clicar em "Gerar" sem nunca ter tocado no seletor de nível.
  *
- * `GenerateStep.tsx` passa a consultar `GET /credentials` (que desde a Fase A
+ * `SceneStep.tsx` (movido de `GenerateStep.tsx` em 25/08) passa a consultar `GET /credentials` (que desde a Fase A
  * devolve uma linha POR VENDOR de avatar, não mais uma só) e desabilita CADA
  * cartão cujo vendor exigido a conta não tem — "Simples" sem heygen, ou
  * "Normal"/"Premium" sem fal —, com uma legenda que NUNCA nomeia o fornecedor.
@@ -63,7 +63,7 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import type { Mutant } from "./mutants.js";
 
-const ARQUIVO_DA_TELA = "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx";
+const ARQUIVO_DA_TELA = "frontend/src/pages/CreateVideo/steps/SceneStep.tsx";
 
 export const MUTANTS: Mutant[] = [
   {
@@ -111,8 +111,8 @@ export const MUTANTS: Mutant[] = [
     // deveria) e "Normal"/"Premium" habilitados (a lacuna original, na
     // direção nova).
     file: ARQUIVO_DA_TELA,
-    find: '                const indisponivel = opt.value === "simples" ? !podeEscolherSimples : !podeEscolherFal;',
-    replace: '                const indisponivel = opt.value !== "simples" ? !podeEscolherSimples : !podeEscolherFal;',
+    find: '            const indisponivel = opt.value === "simples" ? !podeEscolherSimples : !podeEscolherFal;',
+    replace: '            const indisponivel = opt.value !== "simples" ? !podeEscolherSimples : !podeEscolherFal;',
     expect: "tier: o ternário de indisponibilidade por tier deu o veredito errado",
   },
   {
@@ -120,7 +120,7 @@ export const MUTANTS: Mutant[] = [
     name: "o disabled some do botão do cartão",
     kind: "obvio",
     file: ARQUIVO_DA_TELA,
-    find: "                    disabled={indisponivel}\n",
+    find: "                disabled={indisponivel}\n",
     replace: "",
     expect: "um cartão continua clicável mesmo indisponível",
   },
@@ -134,11 +134,11 @@ export const MUTANTS: Mutant[] = [
     // bug, carregamento ou decisão de produto.
     file: ARQUIVO_DA_TELA,
     find:
-      "            {(!podeEscolherSimples || !podeEscolherFal) && (\n" +
-      "              <p className=\"text-muted\" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>\n" +
-      "                {t(\"createVideo.generate.tierUnavailable\")}\n" +
-      "              </p>\n" +
-      "            )}\n",
+      "        {(!podeEscolherSimples || !podeEscolherFal) && (\n" +
+      "          <p className=\"text-muted\" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>\n" +
+      "            {t(\"createVideo.generate.tierUnavailable\")}\n" +
+      "          </p>\n" +
+      "        )}\n",
     replace: "",
     expect: "a legenda de indisponibilidade não aparece",
   },
@@ -152,8 +152,8 @@ export const MUTANTS: Mutant[] = [
     // vê os cartões cinzas SEM NENHUMA explicação, porque a condição da
     // legenda nem olha `podeEscolherFal`.
     file: ARQUIVO_DA_TELA,
-    find: "            {(!podeEscolherSimples || !podeEscolherFal) && (",
-    replace: "            {!podeEscolherSimples && (",
+    find: "        {(!podeEscolherSimples || !podeEscolherFal) && (",
+    replace: "        {!podeEscolherSimples && (",
     expect: "tier: a condição da legenda não cobre os dois sentidos",
   },
 ];

@@ -5,7 +5,20 @@ import { MAX_IMAGE_BYTES, formatBytes } from "../../../uploadLimits";
 import { Field } from "../../../components/ui/Field";
 import { PublishStep } from "./PublishStep";
 import type { SceneBackground, WizardState } from "../types";
-import type { AvatarLooksResponse } from "../../../types";
+import type { Avatar, AvatarLooksResponse, Credential } from "../../../types";
+
+/** Espelho de `formatConfidenceForTier` (`backend/src/services/providers/videoFormat.ts`). */
+type FormatConfidenceLevel = "vendor_response" | "documentation" | "unverified";
+
+/** Resposta de `GET /video-format-support?tier=…`. */
+interface FormatSupport {
+  vendor: string | null;
+  supported: boolean;
+  evidence: string;
+  reason: string;
+  /** `null` sem `?tier=` — nunca o caso aqui, que sempre manda o tier. */
+  perPlatformConfidence: Record<string, FormatConfidenceLevel> | null;
+}
 
 /**
  * O passo CENA: fundo, interpretação, traje e formato.
@@ -25,6 +38,18 @@ import type { AvatarLooksResponse } from "../../../types";
  */
 
 const EXPRESSIVENESS = ["low", "medium", "high"] as const;
+
+/**
+ * Os TRÊS níveis — BLOCO A. Nomes de plataforma nunca aparecem aqui, só nos
+ * comentários do código: o rótulo, a faixa de custo e a chave de tradução.
+ * A faixa é a mesma da tabela decidida na sessão do sistema de tiers (30 s de
+ * referência); custo REAL varia com a duração escolhida pelo roteiro.
+ */
+const TIER_OPTIONS: { value: "simples" | "normal" | "premium"; range: string }[] = [
+  { value: "simples", range: "US$ 0,50–2,00" },
+  { value: "normal", range: "US$ 1,50–3,00" },
+  { value: "premium", range: "US$ 14,19" },
+];
 
 /**
  * Teto do texto de interpretação.
@@ -56,6 +81,8 @@ export function SceneStep({
   onAvatarLookChange,
   publishPlatform,
   onPublishPlatformChange,
+  tierVideo,
+  onTierVideoChange,
 }: {
   avatarId: string | null;
   background: SceneBackground | null;
@@ -68,10 +95,127 @@ export function SceneStep({
   onAvatarLookChange: (value: string | null) => void;
   publishPlatform: string;
   onPublishPlatformChange: (value: string) => void;
+  /** Mesmo padrão de `onCaptionsChange` — BLOCO A. Movido de GenerateStep.tsx: o nível é escolhido AQUI, na Cena, antes do resumo final. */
+  tierVideo: WizardState["tierVideo"];
+  onTierVideoChange: (tierVideo: WizardState["tierVideo"]) => void;
 }) {
   const { t } = useTranslation();
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [looks, setLooks] = useState<LooksResponse | null>(null);
+
+  /**
+   * FASE C (multi-vendor de avatar) — "Simples" exige heygen; "Normal" e
+   * "Premium" exigem fal (`vendorRequiredByTier`, `falPipeline.ts`). Bloco
+   * movido de `GenerateStep.tsx` junto com os cartões — ver o comentário
+   * completo no histórico do commit que fez a mudança.
+   *
+   * `[]` enquanto não se sabe (`credentials === null`) — os cartões nascem
+   * DESABILITADOS até a resposta chegar.
+   */
+  const [credentials, setCredentials] = useState<Credential[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Credential[]>("/credentials")
+      .then((r) => {
+        if (!cancelled) setCredentials(r);
+      })
+      .catch(() => {
+        if (!cancelled) setCredentials([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * A DISPONIBILIDADE vem do SERVIDOR — W4, 24/08. `null` enquanto não se
+   * sabe: os cartões nascem DESABILITADOS até a resposta chegar, porque
+   * habilitar por otimismo é o que produz o clique que o servidor recusa.
+   */
+  const [tiersDisponiveis, setTiersDisponiveis] = useState<Record<string, boolean> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Record<string, boolean>>("/videos/tier-availability")
+      .then((r) => {
+        if (!cancelled) setTiersDisponiveis(r);
+      })
+      .catch(() => {
+        if (!cancelled) setTiersDisponiveis({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const podeEscolherSimples = tiersDisponiveis?.simples === true;
+  const podeEscolherFal = tiersDisponiveis?.normal === true || tiersDisponiveis?.premium === true;
+
+  // Se o tier selecionado deixou de estar disponível (ou nunca esteve, e o
+  // wizard nasceu com "normal" por padrão — `CreateVideoPage.tsx`), o
+  // próprio wizard troca para um nível que a conta REALMENTE tem, assim que
+  // as credenciais chegam. Nunca silencioso: o botão destacado na tela muda
+  // junto, então quem olha vê exatamente o que vai ser gerado.
+  useEffect(() => {
+    if (credentials === null) return;
+    const atualDisponivel = tierVideo === "simples" ? podeEscolherSimples : podeEscolherFal;
+    if (atualDisponivel) return;
+    if (podeEscolherFal) onTierVideoChange("normal");
+    else if (podeEscolherSimples) onTierVideoChange("simples");
+  }, [credentials, podeEscolherSimples, podeEscolherFal, tierVideo, onTierVideoChange]);
+
+  /**
+   * A CONFIANÇA do formato escolhido nesta mesma tela, NO TIER escolhido
+   * aqui do lado. Refeita a cada troca de tier, porque é exatamente o que
+   * muda a resposta (`?tier=`, Fase C).
+   */
+  const [formatSupport, setFormatSupport] = useState<FormatSupport | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<FormatSupport>(`/video-format-support?tier=${tierVideo}`)
+      .then((r) => {
+        if (!cancelled) setFormatSupport(r);
+      })
+      .catch(() => {
+        if (!cancelled) setFormatSupport(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tierVideo]);
+  const confiancaDoFormato = formatSupport?.perPlatformConfidence?.[publishPlatform] ?? null;
+
+  /**
+   * AVATAR DESTE VÍDEO — bloco independente do Passo 1, EM PREPARAÇÃO.
+   *
+   * Não lê nem escreve `AvatarSetupStep.tsx`/`wizard.avatarId`: estado,
+   * fonte de dados e handlers são próprios deste bloco. A lista de avatares
+   * reaproveita a MESMA fonte que o Passo 1 usa (`GET /avatars`) — mas em
+   * leitura própria, não o componente. A seleção (Simples) e o upload
+   * (Normal/Premium) não persistem e não entram no corpo de `POST /videos`:
+   * não há hoje, em nenhum dos dois caminhos (HeyGen ou fal), uma segunda
+   * forma de resolver "qual avatar" fora do Passo 1 — ver a investigação
+   * registrada no ponto de retomada desta linha de trabalho. Sem guarda
+   * nova de propósito: sem destino real, não há o que a guarda testasse.
+   */
+  const [avatarsDoVideo, setAvatarsDoVideo] = useState<Avatar[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Avatar[]>("/avatars")
+      .then((r) => {
+        if (!cancelled) setAvatarsDoVideo(r);
+      })
+      .catch(() => {
+        if (!cancelled) setAvatarsDoVideo([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const [avatarDesteVideoId, setAvatarDesteVideoId] = useState<string | null>(null);
+  const [personagemImagemNome, setPersonagemImagemNome] = useState<string | null>(null);
 
   useEffect(() => {
     if (!avatarId) {
@@ -129,6 +273,94 @@ export function SceneStep({
   return (
     <div className="card">
       <div className="card-title">{t("createVideo.scene.title")}</div>
+
+      {/* O NÍVEL — BLOCO A, movido de GenerateStep.tsx para a Cena: o
+          usuário escolhe o tipo de vídeo antes do resto da tela, porque é
+          o campo que mais muda o custo e o bloco "avatar deste vídeo" logo
+          abaixo depende dele. Três cartões, sem nome de plataforma nenhum. */}
+      <fieldset className="tier-choice" style={{ border: 0, padding: 0, margin: "0 0 12px" }}>
+        <legend style={{ fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 6 }}>
+          {t("createVideo.generate.tierLabel")}
+        </legend>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {TIER_OPTIONS.map((opt) => {
+            // "simples" exige heygen; "normal"/"premium" exigem fal —
+            // Fase C. Os dois sentidos importam: um tenant fal-only não
+            // vê "Simples" clicável, e um heygen-only não vê
+            // "Normal"/"Premium" clicáveis.
+            const indisponivel = opt.value === "simples" ? !podeEscolherSimples : !podeEscolherFal;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                className={tierVideo === opt.value ? "btn btn-primary" : "btn btn-outline"}
+                aria-pressed={tierVideo === opt.value}
+                onClick={() => onTierVideoChange(opt.value)}
+                disabled={indisponivel}
+                style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 120 }}
+              >
+                <span>{t(`createVideo.generate.tier.${opt.value}`)}</span>
+                <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>{opt.range}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+          {t(`createVideo.generate.tierHint.${tierVideo}`)}
+        </p>
+        {(!podeEscolherSimples || !podeEscolherFal) && (
+          <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+            {t("createVideo.generate.tierUnavailable")}
+          </p>
+        )}
+        {/* A confiança do FORMATO (escolhido logo abaixo) NESTE tier —
+            nunca bloqueia a escolha, só informa o que sustenta a afirmação
+            de que ele funciona. */}
+        {confiancaDoFormato && (
+          <p
+            className="text-muted"
+            style={{
+              fontSize: 12,
+              marginTop: 4,
+              marginBottom: 0,
+              color: confiancaDoFormato === "unverified" ? "var(--color-danger, #b42318)" : undefined,
+            }}
+          >
+            {t(`createVideo.generate.formatConfidence.${confiancaDoFormato}`)}
+          </p>
+        )}
+      </fieldset>
+
+      {/* ------------------------------------------- AVATAR DESTE VÍDEO */}
+      <Field label={t("createVideo.scene.videoAvatarLabel")} help={t("createVideo.scene.videoAvatarHelp")}>
+        {tierVideo === "simples" ? (
+          <select
+            value={avatarDesteVideoId ?? ""}
+            onChange={(e) => setAvatarDesteVideoId(e.target.value || null)}
+          >
+            <option value="">{t("createVideo.scene.videoAvatarDefault")}</option>
+            {avatarsDoVideo.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setPersonagemImagemNome(e.target.files?.[0]?.name ?? null)}
+          />
+        )}
+        {personagemImagemNome && tierVideo !== "simples" && (
+          <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+            {personagemImagemNome}
+          </p>
+        )}
+        <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+          {t("createVideo.scene.videoAvatarPreparing")}
+        </p>
+      </Field>
 
       {/* ---------------------------------------------------------- FUNDO */}
       <Field label={t("createVideo.scene.backgroundLabel")} help={t("createVideo.scene.backgroundHelp")}>

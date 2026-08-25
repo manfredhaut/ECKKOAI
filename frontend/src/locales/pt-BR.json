@@ -812,7 +812,11 @@
       "lookLabel": "Traje",
       "lookHelp": "Qual visual do avatar entra neste vídeo.",
       "lookDefault": "Traje padrão do avatar",
-      "lookSingle": "Este avatar tem um traje só. Trajes são criados no avatar, não no vídeo — cada novo traje é uma variação salva junto dele."
+      "lookSingle": "Este avatar tem um traje só. Trajes são criados no avatar, não no vídeo — cada novo traje é uma variação salva junto dele.",
+      "videoAvatarLabel": "Avatar deste vídeo",
+      "videoAvatarHelp": "Independente do avatar escolhido no Passo 1. No nível Simples, escolha entre os avatares existentes; em Normal/Premium, envie uma imagem do personagem.",
+      "videoAvatarDefault": "Nenhum selecionado",
+      "videoAvatarPreparing": "Em preparação: esta escolha ainda não entra no vídeo gerado."
     }
   },
   "knowledge": {

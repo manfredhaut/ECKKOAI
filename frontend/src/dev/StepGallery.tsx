@@ -319,10 +319,12 @@ function StepUnderGlass({
           onAvatarLookChange={noop}
           publishPlatform={state === "vazio" ? DEFAULT_PUBLISH_PLATFORM : "reels_tiktok"}
           onPublishPlatformChange={noop}
+          tierVideo={wizard.tierVideo}
+          onTierVideoChange={noop}
         />
       );
     case "passo4-gerar":
-      return <GenerateStep wizard={wizard} onCaptionsChange={noop} onTierVideoChange={noop} />;
+      return <GenerateStep wizard={wizard} onCaptionsChange={noop} />;
     case "tela-conteudo":
       return <ContentPage />;
     case "tela-painel-admin":

@@ -812,7 +812,11 @@
       "lookLabel": "Outfit",
       "lookHelp": "Which look of the avatar goes into this video.",
       "lookDefault": "Avatar default look",
-      "lookSingle": "This avatar has a single look. Looks are created on the avatar, not on the video — each new outfit is a variation saved with it."
+      "lookSingle": "This avatar has a single look. Looks are created on the avatar, not on the video — each new outfit is a variation saved with it.",
+      "videoAvatarLabel": "This video's avatar",
+      "videoAvatarHelp": "Independent of the avatar chosen in Step 1. On the Simple tier, pick from your existing avatars; on Normal/Premium, upload an image of the character.",
+      "videoAvatarDefault": "None selected",
+      "videoAvatarPreparing": "In preparation: this choice doesn't affect the generated video yet."
     }
   },
   "knowledge": {
