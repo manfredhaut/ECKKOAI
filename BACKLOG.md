@@ -1,4 +1,4 @@
-<!-- revisado-em: 86d98cf -->
+<!-- revisado-em: 141ca3f -->
 # BACKLOG — o plano, versionado
 
 > **Leia junto com o [ESTADO.md](ESTADO.md), na abertura de toda sessão.**
@@ -59,6 +59,39 @@ linhas de `api_credentials` têm `vendor = ''`. O servidor gera; a tela não
 deixa escolher o nível. É o defeito que o W4 existe para achar — só aparece
 percorrendo a tela, e não há guarda que o pegue porque os dois lados estão
 "certos" isoladamente.
+
+## 🔎 ACHADOS DO PERCURSO ASSISTIDO PELA TELA (24–25/08) — A1 a A6
+
+**Modo:** o OPERADOR clica, o assistente rastreia o log. **Nenhum destes foi
+consertado**, por ordem explícita: o operador manda consertar tudo de uma vez
+no fim do percurso, e aí sai UM commit. Origem completa, com a causa medida de
+cada um: [RETOMAR-TESTE.md](RETOMAR-TESTE.md).
+
+⚠️ **Todo o percurso 1–4 foi feito com BUNDLE VELHO** — o healthcheck do
+frontend acusa `frescor do Vite` desde 23/08 (1300 falhas consecutivas na
+abertura de 25/08, container `Up 35 hours (unhealthy)`, `RestartCount=0`). O
+módulo servido de `GenerateStep.tsx` é anterior ao conserto do W4.1. Só A1
+depende disso; os outros cinco são independentes do bundle.
+
+| item | gravidade | o quê | causa | estado |
+|---|---|---|---|---|
+| **A1** | 🔴 | cartões **Normal e Premium cinzas** no passo 4, tenant `passada-zerada`, com a rota devolvendo `{"simples":true,"normal":true,"premium":true}` | **MEDIDA: bundle velho.** O navegador executa o predicado anterior (`/credentials` + `vendor === "heygen"`); o conserto do W4.1 está no disco e correto. É o mesmo defeito da seção "ACHADO NO W4" acima, já consertado em `bc38394` | `RECONFERIR APÓS RESTART` — se continuar cinza, é defeito novo e investiga-se do zero |
+| **A2** | 🔴 | a mensagem diz *"**Um** dos níveis acima ainda não está disponível para esta conta"* com **dois** bloqueados | **MEDIDA por leitura de `GenerateStep.tsx`:** `{(!podeEscolherSimples \|\| !podeEscolherFal) && <p>tierUnavailable</p>}` — texto fixo que não conta. A hipótese de que o motivo fosse o teto de 15 s está **REFUTADA**: não há checagem de duração nenhuma; o motivo é credencial/disponibilidade, e *"para esta conta"* está certo | `FILA` — defeito real, **independente do bundle** |
+| **A3** | 🔴 | Premium precifica **US$ 14,19 para 28,5 s** num nível cujo teto é **15 s** | **NÃO investigado.** Precifica duração que aquele nível não entrega; deveria mostrar o limite, não um valor | `FILA` — independente do bundle |
+| **A4** | 🟡 | passo 3: o campo **Interpretação** trunca em **600/600** no meio da palavra (`"…Leg"`), **sem aviso nenhum** | não investigado | `FILA` |
+| **A5** | 🟡 | **traje/cenário aparecem em quatro lugares** — passo 1: "Adicionar traje" (Look), "Cenário padrão", "Traje deste vídeo"; passo 3: "Fundo" + dropdown "Traje". Contradiz a decisão de **pacote visual único**, e a própria tela do passo 3 admite que *"Fundo por vídeo não está disponível"* | não investigado | `FILA` — **pedido do operador: levantar só o MAPA** de qual campo alimenta o quê e o que é redundante. **Não redesenhar** |
+| **A6** | 🟢 | passo 2: o campo **"Gerar com IA"** é pequeno e corta o texto digitado | não investigado | `FILA` |
+
+**O que o log registrou nos passos 1–4: nenhum erro, nenhum 4xx/5xx.** Quatro
+eventos — `voice_sample_rejected` ×2 (`reason: voice_exists`, recusa correta e
+de graça), `voice_sample_normalized` (8.447.054 B, `pcm_s16le`, mono, 24 kHz,
+`input == output`), `voice_id_replaced`, e `script_duration` (40 palavras →
+17,1 s estimados, alvo 30 s, `attempts: 2`, `truncated: false`).
+
+**Falta percorrer:** o clique em **Gerar** · **Refazer** (primeira prova humana
+do teto de 3 refações do W3) · **Galeria**.
+
+---
 
 ## PARADO ESPERANDO DECISÃO
 
