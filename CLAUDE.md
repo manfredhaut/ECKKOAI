@@ -1,28 +1,46 @@
 Always respond in Brazilian Portuguese.
 
-> ## ⚠️ PONTO DE RETOMADA CORRENTE — Cena ganhou 3 blocos decorativos, ligação funcional NÃO decidida
+> ## ⚠️ PONTO DE RETOMADA CORRENTE — Cena ganhou 3 rodadas, ligação funcional NÃO decidida
 >
 > [RETOMAR-CENARIO-TRAJE.md](RETOMAR-CENARIO-TRAJE.md) é HISTÓRICO — a
-> análise das 3 guardas que ele registrava já foi feita, e o plano
-> original (mover os campos JÁ LIGADOS de `AvatarSetupStep.tsx` para a
-> Cena) foi trocado no caminho por outro, mais conservador: `SceneStep.tsx`
-> ganhou, em três rodadas (25/08), "Avatar deste vídeo", "Cenário" e
-> "Traje" como blocos NOVOS e INDEPENDENTES — upload/seletor + "Gerar via
-> IA" (área de texto), estado local, rotulados "Em preparação", sem
-> persistir e sem entrar em `corpoDaGeracao`. Os campos ANTIGOS que
-> alimentam a composição da fal de verdade (`defaults.scenario/outfit`,
-> coletados em `AvatarSetupStep.tsx`) **não foram tocados** e continuam
-> sendo os únicos com efeito real hoje.
+> análise das 3 guardas que ele registrava já foi feita, e **MOVER-
+> CENARIO-TRAJE (mover os campos JÁ LIGADOS de `AvatarSetupStep.tsx` para
+> a Cena) foi ABANDONADO no caminho e não deve ser reaberto.** No lugar
+> entrou um plano mais conservador, em três rodadas (25/08), todas em
+> `SceneStep.tsx`:
 >
-> **Fundo** (`background.type/value`) e o dropdown **Traje**
-> (`avatar_look_id`, o LOOK pago da HeyGen) **saíram da Cena** — decisão
-> de produto: são configuração do AVATAR, não do vídeo. Confirmado por
-> leitura de `buildHeygenVideoPayload`/`providerAvatarIdParaGeracao` que
-> nenhum dos dois é obrigatório no payload do tier Simples antes de
-> remover.
+> 1. Os cartões de nível (Simples/Normal/Premium) saíram do passo Gerar
+>    (`GenerateStep.tsx`) e passaram a ser escolhidos AQUI, na Cena — o
+>    estado (`wizard.tierVideo`) continua em `CreateVideoPage.tsx`, só
+>    quem renderiza mudou. Nasceu junto o bloco "Avatar deste vídeo":
+>    Simples lista avatares reais (`GET /avatars`), Normal/Premium é
+>    upload de imagem — os dois decorativos.
+> 2. "Cenário" e "Traje" entraram como blocos NOVOS e INDEPENDENTES,
+>    mesmo padrão do "Avatar deste vídeo": upload OU "Gerar via IA" (área
+>    de texto), estado local, rotulados "Em preparação", sem persistir e
+>    sem entrar em `corpoDaGeracao`.
+> 3. **Fundo** (`background.type/value`) e o dropdown **Traje**
+>    (`avatar_look_id`, o LOOK pago da HeyGen) **saíram da Cena** —
+>    decisão de produto: são configuração do AVATAR, não do vídeo.
+>    Confirmado por leitura de
+>    `buildHeygenVideoPayload`/`providerAvatarIdParaGeracao` que nenhum
+>    dos dois é obrigatório no payload do tier Simples antes de remover.
 >
-> **Ligação funcional dos 3 blocos novos está AGUARDANDO o operador
-> decidir**, depois de ver na tela — não implementar sem essa decisão.
+> Os campos ANTIGOS que alimentam a composição da fal de verdade
+> (`defaults.scenario/outfit`, coletados em `AvatarSetupStep.tsx`) **não
+> foram tocados** e continuam sendo os únicos com efeito real hoje.
+>
+> **Decisão confirmada nesta linha de trabalho: HeyGen atende SÓ o tier
+> Simples — Normal e Premium usam o outro caminho (fal).** Qualquer
+> ligação futura dos 3 blocos decorativos tem de respeitar essa divisão
+> (ex.: upload de cenário/traje só faz sentido ir para a composição da
+> fal, nunca para o payload da HeyGen).
+>
+> **Ligação funcional dos 3 blocos DECORATIVOS — "Avatar deste vídeo",
+> "Cenário" e "Traje" — está AGUARDANDO o operador decidir**, depois de
+> ver na tela; não implementar sem essa decisão. Os cartões de nível
+> (item 1 acima) NÃO são decorativos — já são o seletor real de
+> `wizard.tierVideo`, só mudaram de lugar.
 
 > # 🚦 ABERTURA DE SESSÃO — antes de tudo, o healthcheck do frontend
 >
