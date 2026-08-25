@@ -48,15 +48,15 @@ implementado.
 tabela foi feita para receber isto. Depois disso, `custoDaEtapa` passa a usar
 o preço do fornecedor e o teto do R4.2 pode ser calibrado.
 
-## ⚠️ ACHADO NO W4 — bloqueia a demo do usuário novo
+## ✅ ACHADO NO W4 — CONSERTADO NO DISCO em `bc38394`, a confirmar NA TELA
 
 | item | estado | o que o desbloqueia |
 |---|---|---|
-| **Os cartões de NÍVEL ficam desabilitados para tenant zerado** — a tela lê `GET /credentials` (as linhas DO TENANT) e testa `vendor === "heygen"` / `=== "fal"`. Um tenant novo tem `vendor` VAZIO nas três linhas, então `podeEscolherSimples` e `podeEscolherFal` são ambos `false` e **os três cartões nascem travados** | `FILA` | o W1 consertou o SERVIDOR (que agora herda a chave de plataforma) e a TELA ficou para trás. O conserto é a tela perguntar pelo mesmo critério do servidor — o predicado precisa considerar a herança, não só a linha do tenant |
+| **Os cartões de NÍVEL ficam desabilitados para tenant zerado** — a tela lê `GET /credentials` (as linhas DO TENANT) e testa `vendor === "heygen"` / `=== "fal"`. Um tenant novo tem `vendor` VAZIO nas três linhas, então `podeEscolherSimples` e `podeEscolherFal` são ambos `false` e **os três cartões nascem travados** | `FEITO NO DISCO — NÃO CONFIRMADO NA TELA` (rótulo corrigido no F0, 25/08: estava `FILA` embora `bc38394` já o tivesse consertado em 24/08 às 21:58) | o W1 consertou o SERVIDOR (que herda a chave de plataforma) e a TELA ficou para trás. **O conserto saiu como previsto:** a tela parou de reimplementar a regra e passou a perguntá-la — `GET /videos/tier-availability`, que responde pela MESMA cadeia (`vendorRequiredByTier` + `getCredentialForVendor`) que a criação usa para RECUSAR, e nunca devolve o nome do fornecedor. **O que falta é só a confirmação humana na tela** — que é o A1, e que só agora pode acontecer, porque até o F0 o navegador servia o bundle anterior a este commit |
 
 **Medido em 24/08** (`admin-3`, e mais 22 tenants no mesmo estado): as três
 linhas de `api_credentials` têm `vendor = ''`. O servidor gera; a tela não
-deixa escolher o nível. É o defeito que o W4 existe para achar — só aparece
+deixa escolher o nível. **Resíduo notado no F0, sem gravidade e NÃO consertado:** o `useEffect` que troca o tier indisponível ainda guarda por `credentials === null` ([GenerateStep.tsx:302](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:302)) enquanto os predicados já vêm de `tiersDisponiveis` — se `/credentials` responder primeiro, o efeito roda com os dois predicados `false` e **não faz nada**, e roda de novo quando a disponibilidade chega (está nas deps). Resultado idêntico; a guarda é que ficou ancorada na variável de antes. É o defeito que o W4 existe para achar — só aparece
 percorrendo a tela, e não há guarda que o pegue porque os dois lados estão
 "certos" isoladamente.
 
@@ -67,20 +67,36 @@ consertado**, por ordem explícita: o operador manda consertar tudo de uma vez
 no fim do percurso, e aí sai UM commit. Origem completa, com a causa medida de
 cada um: [RETOMAR-TESTE.md](RETOMAR-TESTE.md).
 
-⚠️ **Todo o percurso 1–4 foi feito com BUNDLE VELHO** — o healthcheck do
-frontend acusa `frescor do Vite` desde 23/08 (1300 falhas consecutivas na
-abertura de 25/08, container `Up 35 hours (unhealthy)`, `RestartCount=0`). O
-módulo servido de `GenerateStep.tsx` é anterior ao conserto do W4.1. Só A1
-depende disso; os outros cinco são independentes do bundle.
+## ⛔ TODOS OS SEIS ESTÃO `INVALIDADO — MEDIDO SOBRE BUNDLE VELHO`
+
+**Nenhum destes tem status hoje.** O percurso 1–4 inteiro foi medido com o
+container servindo um `GenerateStep.tsx` anterior a dois commits (W3.1b e
+W4.1): `Up 35 hours (unhealthy)`, **1300 sondas seguidas** acusando `frescor
+do Vite`, `RestartCount=0`. Observação feita sobre código que não é o do disco
+não vale como observação — vale como pergunta.
+
+Isso **não** quer dizer que os seis sejam falsos. Quer dizer que cada um
+precisa cair numa de duas caixas, e a tabela já faz isso onde houve leitura:
+
+- **o bundle PODE explicar** — comportamento decidido em tempo de execução por
+  código que mudou (A1);
+- **o bundle NÃO explica** — texto ou constante idêntica no disco e no bundle
+  velho (A2, A3). Estes são defeitos de **hoje**, e reconferir é formalidade,
+  não investigação.
+
+**O ambiente foi destravado no F0** (25/08, commit desta rodada):
+`server.watch.usePolling` no `vite.config.ts` — o watcher do Vite não enxerga
+bind mount no Windows, e sem polling o `restart` conserta até a próxima edição
+e volta a divergir calado.
 
 | item | gravidade | o quê | causa | estado |
 |---|---|---|---|---|
-| **A1** | 🔴 | cartões **Normal e Premium cinzas** no passo 4, tenant `passada-zerada`, com a rota devolvendo `{"simples":true,"normal":true,"premium":true}` | **MEDIDA: bundle velho.** O navegador executa o predicado anterior (`/credentials` + `vendor === "heygen"`); o conserto do W4.1 está no disco e correto. É o mesmo defeito da seção "ACHADO NO W4" acima, já consertado em `bc38394` | `RECONFERIR APÓS RESTART` — se continuar cinza, é defeito novo e investiga-se do zero |
-| **A2** | 🔴 | a mensagem diz *"**Um** dos níveis acima ainda não está disponível para esta conta"* com **dois** bloqueados | **MEDIDA por leitura de `GenerateStep.tsx`:** `{(!podeEscolherSimples \|\| !podeEscolherFal) && <p>tierUnavailable</p>}` — texto fixo que não conta. A hipótese de que o motivo fosse o teto de 15 s está **REFUTADA**: não há checagem de duração nenhuma; o motivo é credencial/disponibilidade, e *"para esta conta"* está certo | `FILA` — defeito real, **independente do bundle** |
-| **A3** | 🔴 | Premium precifica **US$ 14,19 para 28,5 s** num nível cujo teto é **15 s** | **NÃO investigado.** Precifica duração que aquele nível não entrega; deveria mostrar o limite, não um valor | `FILA` — independente do bundle |
-| **A4** | 🟡 | passo 3: o campo **Interpretação** trunca em **600/600** no meio da palavra (`"…Leg"`), **sem aviso nenhum** | não investigado | `FILA` |
-| **A5** | 🟡 | **traje/cenário aparecem em quatro lugares** — passo 1: "Adicionar traje" (Look), "Cenário padrão", "Traje deste vídeo"; passo 3: "Fundo" + dropdown "Traje". Contradiz a decisão de **pacote visual único**, e a própria tela do passo 3 admite que *"Fundo por vídeo não está disponível"* | não investigado | `FILA` — **pedido do operador: levantar só o MAPA** de qual campo alimenta o quê e o que é redundante. **Não redesenhar** |
-| **A6** | 🟢 | passo 2: o campo **"Gerar com IA"** é pequeno e corta o texto digitado | não investigado | `FILA` |
+| **A1** | 🔴 | cartões **Normal e Premium cinzas** no passo 4, tenant `passada-zerada`, com a rota devolvendo `{"simples":true,"normal":true,"premium":true}` | **MEDIDA: bundle velho.** O navegador executava o predicado anterior (`/credentials` + `vendor === "heygen"`); o conserto do W4.1 está no disco e correto. Mesmo defeito da seção "ACHADO NO W4" abaixo, consertado em `bc38394` | `INVALIDADO — MEDIDO SOBRE BUNDLE VELHO`. **O bundle PODE explicar por inteiro.** Reconferir: os três cartões devem nascer habilitados. Se continuar cinza, é defeito novo e investiga-se do zero |
+| **A2** | 🔴 | a mensagem diz *"**Um** dos níveis acima ainda não está disponível para esta conta"* com **dois** bloqueados | **MEDIDA por leitura de `GenerateStep.tsx`:** `{(!podeEscolherSimples \|\| !podeEscolherFal) && <p>tierUnavailable</p>}` — texto fixo que não conta. A hipótese de que o motivo fosse o teto de 15 s está **REFUTADA**: não há checagem de duração nenhuma; o motivo é credencial/disponibilidade, e *"para esta conta"* está certo | `INVALIDADO — MEDIDO SOBRE BUNDLE VELHO`, mas **o bundle NÃO explica**: a frase é literal e não conta em versão nenhuma. Ela some da tela quando os três cartões destravarem — o defeito continua armado para o próximo tenant de um vendor só |
+| **A3** | 🔴 | Premium precifica **US$ 14,19 para 28,5 s** num nível cujo teto é **15 s** | **ORIGEM MEDIDA (F0, 25/08) — é FRONTEND e é LITERAL, não cálculo:** [`GenerateStep.tsx:132`](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:132), `{ value: "premium", range: "US$ 14,19" }` dentro de `TIER_OPTIONS`. O comentário logo acima declara a régua: *"A faixa é a mesma da tabela decidida na sessão do sistema de tiers (**30 s de referência**)"*. Entrou em `c066168` (BLOCO A) e **nunca foi tocada desde** (`git log -S "14,19"` devolve esse único commit). O teto de 15 s é do SERVIDOR: `PIPELINE_DURACAO_MAXIMA` ([falPipeline.ts:60](backend/src/services/video/falPipeline.ts:60)), porque `duration` é enum `"5"\|"10"\|"15"` no fornecedor e **este pipeline não emenda clipes** | `INVALIDADO — MEDIDO SOBRE BUNDLE VELHO` na forma, **mas o bundle NÃO explica nada**: a string é idêntica no disco e no bundle velho. **Defeito real HOJE.** E são DOIS, não um: (1) a faixa é ancorada em **30 s** num nível que anima no máximo **15 s** — cita o dobro do que entrega; (2) ela é constante, não reage ao roteiro, então os "28,5 s" da tela e os "US$ 14,19" do cartão vêm de duas fontes que não se falam |
+| **A4** | 🟡 | passo 3: o campo **Interpretação** trunca em **600/600** no meio da palavra (`"…Leg"`), **sem aviso nenhum** | não investigado | `INVALIDADO — MEDIDO SOBRE BUNDLE VELHO`, a reconferir |
+| **A5** | 🟡 | **traje/cenário aparecem em quatro lugares** — passo 1: "Adicionar traje" (Look), "Cenário padrão", "Traje deste vídeo"; passo 3: "Fundo" + dropdown "Traje". Contradiz a decisão de **pacote visual único**, e a própria tela do passo 3 admite que *"Fundo por vídeo não está disponível"* | não investigado | `INVALIDADO — MEDIDO SOBRE BUNDLE VELHO`, a reconferir. **Pedido do operador: levantar só o MAPA** de qual campo alimenta o quê e o que é redundante. **Não redesenhar** |
+| **A6** | 🟢 | passo 2: o campo **"Gerar com IA"** é pequeno e corta o texto digitado | não investigado | `INVALIDADO — MEDIDO SOBRE BUNDLE VELHO`, a reconferir |
 
 **O que o log registrou nos passos 1–4: nenhum erro, nenhum 4xx/5xx.** Quatro
 eventos — `voice_sample_rejected` ×2 (`reason: voice_exists`, recusa correta e

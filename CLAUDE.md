@@ -1,5 +1,29 @@
 Always respond in Brazilian Portuguese.
 
+> # 🚦 ABERTURA DE SESSÃO — antes de tudo, o healthcheck do frontend
+>
+> **ABERTURA DE SESSÃO: rodar o healthcheck do frontend ANTES de qualquer
+> outra ação e antes de qualquer medição de tela. Se unhealthy, avisar o
+> operador imediatamente e não medir tela até estar healthy. Em 23–25/08 o
+> container passou 35 h unhealthy dizendo a causa exata (bundle servido ≠
+> disco) e 4 passos foram medidos sobre código velho.**
+>
+> ```bash
+> docker inspect twinai-frontend-1 --format "{{.State.Health.Status}} | falhas={{.State.Health.FailingStreak}}"
+> ```
+>
+> Falhou, leia a sonda inteira — ela diz a causa e o comando:
+> `docker inspect twinai-frontend-1 --format "{{range .State.Health.Log}}{{.Output}}{{end}}"`.
+>
+> **Esta regra mora AQUI, no topo, e não no BACKLOG**, de propósito: é a
+> camada que sobrevive a troca de conta. A tarefa que devia ter escrito os
+> achados A1–A6 no BACKLOG **sumiu junto com o contexto** e a sessão seguinte
+> recebeu uma lista que não existia — instrução que precisa valer sempre não
+> pode morar onde o contexto a leva embora.
+>
+> **Conferir a rota (backend) e declarar "verificado na tela" é o mesmo erro
+> com outra roupa** — foi exatamente o que aconteceu em 24/08.
+
 > **⚠️ NOTA — VITE-PROD-3, 14/08/2026.** HEAD antes desta nota: `7f46725`.
 > Quatro commits nesta rodada, em sequência: `10166df` (Dockerfile 3 estágios
 > base/build/serve + nginx.conf novo + docker-compose.prod.yml), `7ca81b1`

@@ -119,5 +119,22 @@ export default defineConfig({
     hmr: {
       clientPort: traefikHttpPort,
     },
+    // Polling, não inotify. O código vem de um bind mount do Windows, e
+    // eventos de sistema de arquivos do host NÃO atravessam essa fronteira:
+    // o watcher do Vite fica cego para edições e segue servindo o módulo
+    // que carregou na subida — 200 e errado ao mesmo tempo.
+    //
+    // Isto NÃO é otimização: em 23–25/08 o container passou 35 h
+    // `unhealthy` (1300 sondas seguidas) servindo um GenerateStep.tsx
+    // anterior a dois commits, e quatro passos de um percurso pela tela
+    // foram medidos sobre código velho. `restart` conserta até a PRÓXIMA
+    // edição e volta a divergir em silêncio; o polling fecha a causa.
+    //
+    // O custo é uma varredura a cada 300 ms — irrelevante nesta árvore, e
+    // pago só em desenvolvimento: produção é build + nginx, sem watcher.
+    watch: {
+      usePolling: true,
+      interval: 300,
+    },
   },
 });
