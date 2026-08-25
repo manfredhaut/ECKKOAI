@@ -80,8 +80,18 @@ export const MUTANTS: Mutant[] = [
     // seria heygen). O defeito só aparece pedindo tier "normal"/"premium" —
     // a tabela mostraria preços de heygen para um vídeo que sairia pela fal.
     file: ROTA_DE_VIDEOS,
-    find: "    const vendor = vendorRequiredByTier(tier);",
-    replace: '    const vendor = "heygen";',
+    // ⚠️ CONTEXTO acrescentado no W4 (24/08): a rota nova
+    // `/videos/tier-availability` usa a MESMA linha (ela consulta a mesma
+    // cadeia de propósito), e o find de uma linha só passou a casar 2x. A
+    // linha seguinte — o comentário do teto de duração — só existe nesta
+    // rota, e é ela que desempata. Contexto ao find, nunca apagar a linha
+    // nova do produto.
+    find:
+      "    const vendor = vendorRequiredByTier(tier);\n" +
+      "    // F2, 22/08/2026: teto de duração REAL deste tier",
+    replace:
+      '    const vendor = "heygen";\n' +
+      "    // F2, 22/08/2026: teto de duração REAL deste tier",
     expect: "a tabela de custo ignorou o tier pedido e sempre respondeu como heygen",
   },
 ];

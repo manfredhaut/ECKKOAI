@@ -248,8 +248,48 @@ export function GenerateStep({
       cancelled = true;
     };
   }, []);
-  const podeEscolherSimples = (credentials ?? []).some((c) => c.provider === "avatar" && c.vendor === "heygen");
-  const podeEscolherFal = (credentials ?? []).some((c) => c.provider === "avatar" && c.vendor === "fal");
+  /**
+   * A DISPONIBILIDADE vem do SERVIDOR — W4, 24/08.
+   *
+   * ┌─ O que estava errado, e por quê ─────────────────────────────────────────┐
+   * │ Estes dois predicados liam `GET /credentials` e testavam                 │
+   * │ `vendor === "heygen"` / `=== "fal"` nas linhas DO TENANT. Enquanto a     │
+   * │ credencial do tenant era a única fonte, era exato.                       │
+   * │                                                                          │
+   * │ O W1 mudou a fonte: sem chave própria, o tenant HERDA a da plataforma e  │
+   * │ o servidor gera. Mas a linha do tenant continua com `vendor` VAZIO —     │
+   * │ então os dois davam `false` e **os três cartões nasciam travados** num   │
+   * │ tenant que o servidor atende. 23 de 34 tenants estavam assim.            │
+   * │                                                                          │
+   * │ Agora a resposta vem de `/videos/tier-availability`, que responde pela   │
+   * │ MESMA cadeia que a criação usa para recusar. A tela parou de reimplementar│
+   * │ a regra e passou a perguntá-la.                                          │
+   * └──────────────────────────────────────────────────────────────────────────┘
+   *
+   * `null` enquanto não se sabe — mesmo padrão de `credentials` acima: os
+   * cartões nascem DESABILITADOS até a resposta chegar, porque habilitar por
+   * otimismo é o que produz o clique que o servidor recusa.
+   */
+  const [tiersDisponiveis, setTiersDisponiveis] = useState<Record<string, boolean> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Record<string, boolean>>("/videos/tier-availability")
+      .then((r) => {
+        if (!cancelled) setTiersDisponiveis(r);
+      })
+      .catch(() => {
+        // Falha de leitura NÃO libera os cartões: sem saber, o servidor é quem
+        // recusa, e um cartão habilitado por erro de rede vira um clique que
+        // volta 400.
+        if (!cancelled) setTiersDisponiveis({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const podeEscolherSimples = tiersDisponiveis?.simples === true;
+  const podeEscolherFal = tiersDisponiveis?.normal === true || tiersDisponiveis?.premium === true;
 
   // Se o tier selecionado deixou de estar disponível (ou nunca esteve, e o
   // wizard nasceu com "normal" por padrão — `CreateVideoPage.tsx`), o

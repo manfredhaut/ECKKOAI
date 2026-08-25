@@ -83,6 +83,7 @@ import {
   maxReachableSecondsForTier,
   ENDPOINT_SINCRONIZAR,
   PRECOS_FAL,
+  VIDEO_TIERS,
   runFalPipelineDaImagem,
   runFalPipelineDoVideoMudo,
   videoTierParaPipeline,
@@ -851,6 +852,43 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       });
     },
   );
+
+  /**
+   * QUAIS NÍVEIS ESTE TENANT PODE ESCOLHER — W4, 24/08.
+   *
+   * ┌─ Por que a tela não pode decidir isto sozinha ───────────────────────────┐
+   * │ Até aqui o passo Gerar lia `GET /credentials` e testava                  │
+   * │ `vendor === "heygen"` / `=== "fal"` nas linhas DO TENANT. Enquanto       │
+   * │ credencial de tenant era a única fonte, isso era exato.                  │
+   * │                                                                          │
+   * │ O W1 mudou a fonte: um tenant sem chave própria passou a HERDAR a da     │
+   * │ plataforma, e o servidor gera. Só que a linha do tenant continua com     │
+   * │ `vendor` VAZIO — então os dois predicados da tela davam `false` e **os   │
+   * │ três cartões nasciam travados** num tenant que o servidor atende. 23 de  │
+   * │ 34 tenants deste banco estavam nesse estado. O servidor foi consertado   │
+   * │ e a tela ficou para trás.                                                │
+   * │                                                                          │
+   * │ Esta rota fecha o buraco pela raiz: ela responde usando a MESMA cadeia   │
+   * │ que a criação usa para RECUSAR — `vendorRequiredByTier` mais             │
+   * │ `getCredentialForVendor`, que já herda. Não há como as duas divergirem   │
+   * │ sem que alguém mude a cadeia, e aí mudam juntas.                         │
+   * └──────────────────────────────────────────────────────────────────────────┘
+   *
+   * NUNCA devolve o nome do fornecedor — só se o nível está disponível. O que
+   * o cliente escolhe é "Simples/Normal/Premium"; qual vendor está por trás é
+   * decisão nossa, e vazá-la aqui a transformaria em promessa.
+   */
+  app.get("/videos/tier-availability", async (req) => {
+    const disponibilidade: Record<string, boolean> = {};
+    for (const tier of VIDEO_TIERS) {
+      const vendor = vendorRequiredByTier(tier);
+      // A MESMA chamada da rota de criação (`videos.ts`, FASE C). Ela já
+      // consulta a herança, então um tenant zerado com chave de plataforma
+      // gravada responde `true` aqui exatamente como gera lá.
+      disponibilidade[tier] = (await getCredentialForVendor(req.tenantId, "avatar", vendor)) !== null;
+    }
+    return disponibilidade;
+  });
 
   app.get("/videos", async (req) => {
     const { rows } = await pool.query<VideoRow>(

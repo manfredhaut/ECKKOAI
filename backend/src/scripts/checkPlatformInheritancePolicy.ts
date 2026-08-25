@@ -23,6 +23,9 @@
  *  G-4  a divergência de precedência da fal é DECLARADA no mapa, não
  *       escondida: `avatar/fal` é `plataforma_vence` e os demais são
  *       `byok_vence`.
+ *  G-6  o tenant ZERADO vê os TRÊS níveis disponíveis — é a mesma cadeia que
+ *       a criação usa para recusar (`vendorRequiredByTier` +
+ *       `getCredentialForVendor`), e a tela pergunta em vez de reimplementar.
  *  G-5  `source` vem preenchido em TODA credencial resolvida — é ele que
  *       alimenta `provider_usage.key_source` (migration 063, R5).
  *
@@ -48,10 +51,12 @@ import { encrypt } from "../services/crypto.js";
 import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 import { invalidatePlatformKeyCache } from "../services/platformCredentialStore.js";
 import { HERANCA_DE_PLATAFORMA, plataformaQueCobre } from "../services/platformInheritance.js";
+import { VIDEO_TIERS, vendorRequiredByTier } from "../services/video/falPipeline.js";
 
 const LOOKUP = "backend/src/services/credentialLookup.ts";
 const MAPA = "backend/src/services/platformInheritance.ts";
 const ESTADO_DO_SELO = "frontend/src/pages/AdminPanel/platformKeyState.ts";
+const PASSO_GERAR = "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx";
 const CARTAO = "frontend/src/pages/AdminPanel/AdminPlatformKeysSection.tsx";
 const CSS = "frontend/src/styles/global.css";
 const LOCALES = ["frontend/src/locales/pt-BR.json", "frontend/src/locales/en.json"];
@@ -152,6 +157,33 @@ export const MUTANTS: Mutant[] = [
     replace: '        <StatusPill status={credential.configured ? "connected" : "disconnected"} />',
     expect: "selo: o cartão não deriva o estado de platformKeyState",
   },
+  {
+    guard: "a tela pergunta a disponibilidade ao servidor",
+    name: "o passo Gerar volta a decidir o nível pelas linhas do tenant",
+    kind: "esperto",
+    // ESPERTO: era o código CERTO até o W1 — ler `/credentials` e testar o
+    // vendor era exato enquanto a credencial do tenant era a única fonte. Com
+    // a herança, a linha do tenant continua com `vendor` VAZIO e os dois
+    // predicados dão `false`: os três cartões nascem travados num tenant que
+    // o servidor atende. MEDIDO em 24/08 — 23 de 34 tenants nesse estado, e o
+    // servidor gerando normalmente. O defeito não aparece em nenhum dos dois
+    // lados isoladamente, e nenhuma guarda de servidor o pegaria.
+    // ⚠️ MIRA A FONTE, não o predicado — 24/08. Mutar o predicado colide com
+    // `checkTierAvailabilityPolicy`, que o AVALIA com `tiersDisponiveis`
+    // injetado: a troca produz `ReferenceError: credentials is not defined` e
+    // aquela guarda grita primeiro, deixando esta sem prova (AMBÍGUO). Mutar
+    // o ENDPOINT deixa o predicado intacto — a guarda de tier segue verde — e
+    // ataca exatamente o que esta guarda mede: de ONDE a tela tira a
+    // disponibilidade.
+    file: PASSO_GERAR,
+    find: '      .get<Record<string, boolean>>("/videos/tier-availability")',
+    replace: '      .get<Record<string, boolean>>("/credentials")',
+    // TRANSCRITO: o mutante deixa a rota nova no arquivo (o `useEffect`
+    // continua lá) e só troca o PREDICADO, então quem dispara é a segunda
+    // condição da guarda — a que pega o predicado antigo decidindo — e não a
+    // primeira, que cobre a rota ter sumido.
+    expect: "níveis: a tela decide a disponibilidade pelas linhas do tenant",
+  },
 ];
 
 export interface PlatformInheritanceCheckResult {
@@ -231,6 +263,36 @@ function lerDaRaiz(relativo: string): string {
 export async function checkPlatformInheritancePolicy(): Promise<PlatformInheritanceCheckResult> {
   const failures: string[] = [];
   const notes: string[] = [];
+
+  // G-6 — o tenant ZERADO vê os três níveis. Mesma cadeia da criação.
+  const niveisDoZerado = await comBancoDeMentira(async () => {
+    const r: Record<string, string | null> = {};
+    for (const tier of VIDEO_TIERS) {
+      const c = await getCredentialForVendor(TENANT_ZERADO, "avatar", vendorRequiredByTier(tier));
+      r[tier] = c?.source ?? null;
+    }
+    return r;
+  });
+
+  const travados = Object.entries(niveisDoZerado).filter(([, origem]) => origem === null);
+  if (travados.length > 0) {
+    failures.push(
+      `níveis: o tenant zerado não alcança ${travados.map(([t]) => t).join(", ")} — os cartões desses ` +
+        "níveis nascem TRAVADOS na tela, num tenant que o servidor atende pela herança. Era o estado de " +
+        "23 dos 34 tenants deste banco antes do W4, e o defeito não aparece em nenhum dos dois lados " +
+        "isoladamente: o servidor gera, a tela não deixa escolher.",
+    );
+  } else if (Object.values(niveisDoZerado).some((o) => o !== "platform")) {
+    failures.push(
+      `níveis: o CONTROLE falhou — o tenant zerado alcançou os três níveis, mas nem todos pela ` +
+        `plataforma: ${JSON.stringify(niveisDoZerado)}. Ele não tem chave própria; qualquer outra origem ` +
+        "significa que a guarda está lendo um estado que não é o que ela montou.",
+    );
+  } else {
+    notes.push(
+      `    níveis: tenant zerado vê os ${VIDEO_TIERS.length} níveis disponíveis, todos via plataforma`,
+    );
+  }
 
   const medido = await comBancoDeMentira(async () => ({
     zeradoAvatar: await getCredential(TENANT_ZERADO, "avatar"),
@@ -419,6 +481,28 @@ export async function checkPlatformInheritancePolicy(): Promise<PlatformInherita
     );
   } else {
     notes.push("    selo: os 5 estados têm rótulo nos dois idiomas e cor própria no CSS");
+  }
+
+  // -------------------------------------------------------------------------
+  // A TELA pergunta a disponibilidade, não a reimplementa — W4
+  // -------------------------------------------------------------------------
+  //
+  // Casa a CHAMADA, não a string solta: a primeira versão procurava
+  // `"/videos/tier-availability"` em qualquer lugar do arquivo, e o
+  // COMENTÁRIO que explica a rota bastava para satisfazê-la — o mutante
+  // trocou o endpoint por `/credentials` e a guarda seguiu verde (INERTE,
+  // medido em 24/08). É o mesmo defeito que a `checkVendorLogPolicy` teve:
+  // casar a menção em vez do uso.
+  const passoGerar = lerDaRaiz(PASSO_GERAR);
+  if (!passoGerar.includes('.get<Record<string, boolean>>("/videos/tier-availability")')) {
+    failures.push(
+      "níveis: a tela decide a disponibilidade pelas linhas do tenant — parou de perguntar a " +
+        "`/videos/tier-availability` e voltou a reimplementar a regra. Enquanto a credencial do tenant " +
+        "era a única fonte isso era exato; com a herança do W1 a linha fica com `vendor` VAZIO, e os " +
+        "três cartões travam num tenant que o servidor atende (23 de 34, medido em 24/08).",
+    );
+  } else {
+    notes.push("    níveis: a tela lê `/videos/tier-availability`, a mesma cadeia que a criação usa para recusar");
   }
 
   return { failures, notes };

@@ -77,9 +77,9 @@ export const MUTANTS: Mutant[] = [
     // calcula.
     file: ARQUIVO_DA_TELA,
     find:
-      '  const podeEscolherSimples = (credentials ?? []).some((c) => c.provider === "avatar" && c.vendor === "heygen");',
+      '  const podeEscolherSimples = tiersDisponiveis?.simples === true;',
     replace:
-      '  const podeEscolherSimples = (credentials ?? []).some((c) => c.provider === "avatar" && c.vendor !== "heygen");',
+      '  const podeEscolherSimples = tiersDisponiveis?.simples !== true;',
     expect: "tier: o predicado de disponibilidade do Simples deu o veredito errado",
   },
   {
@@ -93,9 +93,9 @@ export const MUTANTS: Mutant[] = [
     // tenant fal-de-verdade veria os dois cartões DESABILITADOS.
     file: ARQUIVO_DA_TELA,
     find:
-      '  const podeEscolherFal = (credentials ?? []).some((c) => c.provider === "avatar" && c.vendor === "fal");',
+      '  const podeEscolherFal = tiersDisponiveis?.normal === true || tiersDisponiveis?.premium === true;',
     replace:
-      '  const podeEscolherFal = (credentials ?? []).some((c) => c.provider === "avatar" && c.vendor !== "fal");',
+      '  const podeEscolherFal = tiersDisponiveis?.normal !== true && tiersDisponiveis?.premium !== true;',
     expect: "tier: o predicado de disponibilidade do Normal/Premium deu o veredito errado",
   },
   {
@@ -164,25 +164,61 @@ export interface TierAvailabilityResult {
 }
 
 /** As combinações de credenciais de avatar que a conta pode ter. */
+/**
+ * Os casos, em termos da FONTE NOVA — W4, 24/08.
+ *
+ * ┌─ Por que estes casos mudaram de forma ───────────────────────────────────┐
+ * │ Até o W4 a tela DECIDIA a disponibilidade a partir das linhas de         │
+ * │ `/credentials`, e esta guarda avaliava aquele predicado com credenciais  │
+ * │ sintéticas. A decisão saiu da tela: ela agora PERGUNTA a                 │
+ * │ `/videos/tier-availability`, que responde pela mesma cadeia que a        │
+ * │ criação usa para recusar.                                                │
+ * │                                                                          │
+ * │ A propriedade que esta guarda mede continua sendo a mesma — "a tela não  │
+ * │ oferece como clicável um nível que o servidor recusa" — mas a entrada    │
+ * │ que a produz mudou, e por isso os casos são de disponibilidade e não de  │
+ * │ credencial. Quem exercita a cadeia do SERVIDOR contra os casos de        │
+ * │ credencial é `checkPlatformInheritancePolicy` (G-6), que também prova o  │
+ * │ tenant ZERADO vendo os três níveis — o defeito que este bloco veio       │
+ * │ consertar.                                                               │
+ * │                                                                          │
+ * │ `null` (ainda carregando) continua sendo o primeiro caso, e continua     │
+ * │ dando FALSE nos dois: habilitar por otimismo antes da resposta é o que   │
+ * │ produz o clique que o servidor recusa.                                   │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
 const CASOS_CREDENCIAIS: ReadonlyArray<{
   rotulo: string;
-  credentials: { provider: string; vendor: string }[] | null;
+  tiersDisponiveis: Record<string, boolean> | null;
   simplesEsperado: boolean;
   falEsperado: boolean;
 }> = [
-  { rotulo: "sem credenciais (ainda carregando, ou nenhuma conectada)", credentials: [], simplesEsperado: false, falEsperado: false },
-  { rotulo: "só heygen (o caso histórico)", credentials: [{ provider: "avatar", vendor: "heygen" }], simplesEsperado: true, falEsperado: false },
-  { rotulo: "só fal (o caso MEDIDO, dev-c77a5b8a)", credentials: [{ provider: "avatar", vendor: "fal" }], simplesEsperado: false, falEsperado: true },
+  { rotulo: "ainda carregando (resposta não chegou)", tiersDisponiveis: null, simplesEsperado: false, falEsperado: false },
+  { rotulo: "nenhum nível disponível", tiersDisponiveis: {}, simplesEsperado: false, falEsperado: false },
   {
-    rotulo: "heygen E fal (Fase B — os dois configurados)",
-    credentials: [
-      { provider: "avatar", vendor: "heygen" },
-      { provider: "avatar", vendor: "fal" },
-    ],
+    rotulo: "só o Simples (conta com heygen e sem fal)",
+    tiersDisponiveis: { simples: true, normal: false, premium: false },
+    simplesEsperado: true,
+    falEsperado: false,
+  },
+  {
+    rotulo: "só Normal/Premium (o caso MEDIDO, dev-c77a5b8a antes da herança)",
+    tiersDisponiveis: { simples: false, normal: true, premium: true },
+    simplesEsperado: false,
+    falEsperado: true,
+  },
+  {
+    rotulo: "TENANT ZERADO com herança: os três disponíveis",
+    tiersDisponiveis: { simples: true, normal: true, premium: true },
     simplesEsperado: true,
     falEsperado: true,
   },
-  { rotulo: "só did (vendor sem tier próprio)", credentials: [{ provider: "avatar", vendor: "did" }], simplesEsperado: false, falEsperado: false },
+  {
+    rotulo: "só o Premium (normal indisponível, premium sim)",
+    tiersDisponiveis: { simples: false, normal: false, premium: true },
+    simplesEsperado: false,
+    falEsperado: true,
+  },
 ];
 
 /** Os 3 tiers × as 4 combinações de disponibilidade, para o ternário `indisponivel`. */
@@ -219,10 +255,10 @@ function avaliarPredicadoDeCredenciais(
     return;
   }
   const expressao = casado[1].trim();
-  let avaliar: (credentials: { provider: string; vendor: string }[] | null) => unknown;
+  let avaliar: (tiersDisponiveis: Record<string, boolean> | null) => unknown;
   try {
     // eslint-disable-next-line no-new-func
-    avaliar = new Function("credentials", `return (${expressao});`) as typeof avaliar;
+    avaliar = new Function("tiersDisponiveis", `return (${expressao});`) as typeof avaliar;
   } catch (err) {
     failures.push(
       `${rotuloGuarda}: o predicado \`${expressao}\` não é uma expressão avaliável (${String(err)}). Esta ` +
@@ -236,7 +272,7 @@ function avaliarPredicadoDeCredenciais(
   for (const caso of CASOS_CREDENCIAIS) {
     let obtido: unknown;
     try {
-      obtido = avaliar(caso.credentials);
+      obtido = avaliar(caso.tiersDisponiveis);
     } catch (err) {
       failures.push(`${rotuloGuarda}: avaliar o caso "${caso.rotulo}" levantou ${String(err)}.`);
       algumaFalha = true;
