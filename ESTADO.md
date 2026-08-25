@@ -547,14 +547,14 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 > ponteiro velho. Roda também no começo de toda passada do arnês. Ver §17.
 
 ```
+bc38394  Os cartoes de nivel destravam para tenant zerado (W4.1)
+e2c9179  BACKLOG: proxima prioridade (CSV da fal) e o achado do W4
+413fe4a  O botao de Refazer desabilita na tela ao esgotar o limite (W3.1b)
+1890730  ESTADO.md 19: B0/V0/W2/W3 e a afetada 89/89 em paralelo
 58aaec2  B0, V0, W2 e W3: backlog versionado, arnês 3x mais rápido, preços em tabela, teto de refações
 86d98cf  ESTADO.md 1: reancorada, oitava vez, e a conferencia pegou as duas
 543a821  ESTADO.md 18: a afetada do W1 fechou 37/37
 b974136  ESTADO.md: 18 do W0/W1 e a 1 reancorada
-f0203e3  O mutante do par sem cobertura colidia com o proprio find
-0472f14  Id de plataforma desconhecido devolvia TypeError, nao null
-3f46659  Usuário novo nasce funcionando: herança de chave de plataforma (W1)
-bcfc98d  ESTADO.md: a afetada fechou 136/136, e a §1 reancorada pela última vez nesta sessão
 ```
 
 ⚠️ **A conferência do R8 acusou a §1 mais DUAS vezes em 24/08** — sempre no
@@ -2240,3 +2240,67 @@ seria pior. Serial × paralelo num subconjunto real: 76,7 s → 37,3 s, com os
 3. **O botão de Refazer não desabilita na tela** — o servidor recusa a 4ª com
    409 e devolve `{feitas, limite}`; a tela ainda não consome.
 4. **Produção 46+ commits atrás.** Fila, por decisão do operador.
+
+## 20 · Sessão de 24/08/2026 (quarta parte) — o botão de Refazer e o W4
+
+**US$ 0,00.** **396 mutantes** (eram 394).
+
+### O botão de Refazer desabilita (W3.1b)
+
+Os dois botões travam **assim que a 3ª refação é registrada** (`>=`, não
+`>`), com o motivo em texto. A leitura entrega `refacoes: {feitas, limite}`;
+ausência NÃO trava — o servidor continua sendo o freio real.
+
+### Os cartões de nível destravaram (W4.1) — um defeito que o W1 criou
+
+**MEDIDO: 23 de 34 tenants tinham os TRÊS cartões travados enquanto o
+servidor gerava normalmente.** A tela lia `GET /credentials` e testava
+`vendor === "heygen"` / `=== "fal"` nas linhas DO TENANT — exato até o W1, e
+errado depois dele: com a herança, a linha fica com `vendor` VAZIO.
+
+**O W1 consertou o servidor e a tela ficou para trás.** O defeito não aparece
+em nenhum dos dois lados isoladamente, e nenhuma guarda de servidor o pegaria.
+
+`GET /videos/tier-availability` responde pela MESMA cadeia que a criação usa
+para RECUSAR (`vendorRequiredByTier` + `getCredentialForVendor`). A tela
+parou de reimplementar a regra e passou a perguntá-la. Nunca devolve o nome
+do fornecedor.
+
+**VERIFICADO NA TELA**, com um tenant criado do zero pelo cadastro real
+(`passada-zerada`) e sessão real no navegador:
+`{"simples":true,"normal":true,"premium":true}`.
+
+### A passada pela tela, e o limite dela
+
+Percorridos cadastro → verificação de e-mail → login → painel → passo 1.
+Nada quebrou: conta criada, e-mail confirmado, 500 créditos, avatar listado
+com os selos certos, "Avançar" travado com o motivo escrito.
+
+⚠️ **A automação de navegador NÃO consegue clicar nos controles do React
+deste projeto** — cliques não disparam `onClick`/submit. MEDIDO: o login
+falhou pelo botão e ENTROU por `form.requestSubmit()` com os mesmos valores,
+e o backend responde 200 para as mesmas credenciais. **Não é defeito do
+produto e não deve ser lido como tal.** Os passos 2 a 4 não foram
+percorridos por clique; o que importava neles foi medido pela rota.
+
+**Um falso positivo descartado:** o cartão do avatar mostrou "voz ainda não
+configurada" ao lado do selo "Voz clonada". O texto depende de
+`reference_video_url`, que o INSERT manual desta passada não preencheu — com
+o campo completo passou a dizer "3/3 fotos · voz pronta". **Não é defeito.**
+
+### Conta de teste deixada pronta
+
+`passada-zerada@exemplo.invalido` / tenant `passada-zerada`, ativa, com
+avatar pronto e 500 créditos — para clicar sem precisar cadastrar.
+
+### Três erros meus nesta parte, todos pegos pelas provas
+
+1. **Edição por script converteu 7 arquivos de LF para CRLF.** O índice fica
+   LF, mas o GATE lê o working copy pelo bind mount, e duas guardas de
+   recorte multi-linha quebraram com sintoma que parecia defeito de lógica.
+   Registrado na FILA do BACKLOG.
+2. **O mutante do W4 colidia com `checkTierAvailabilityPolicy`** (que AVALIA
+   o predicado da tela) e saiu AMBÍGUO. Passou a mirar a FONTE — o endpoint.
+3. **A guarda casava o COMENTÁRIO em vez da chamada:** o mutante trocou o
+   endpoint por `/credentials` e ela seguiu verde (INERTE). Agora casa a
+   chamada inteira. Mesmo defeito histórico da `checkVendorLogPolicy`.
