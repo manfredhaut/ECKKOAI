@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
-import { MAX_IMAGE_BYTES, formatBytes } from "../../../uploadLimits";
 import { Field } from "../../../components/ui/Field";
 import { PublishStep } from "./PublishStep";
-import type { SceneBackground, WizardState } from "../types";
-import type { Avatar, AvatarLooksResponse, Credential } from "../../../types";
+import type { WizardState } from "../types";
+import type { Avatar, Credential } from "../../../types";
 
 /** Espelho de `formatConfidenceForTier` (`backend/src/services/providers/videoFormat.ts`). */
 type FormatConfidenceLevel = "vendor_response" | "documentation" | "unverified";
@@ -21,19 +20,22 @@ interface FormatSupport {
 }
 
 /**
- * O passo CENA: fundo, interpretação, traje e formato.
+ * O passo CENA: nível do vídeo, avatar/cenário/traje deste vídeo,
+ * interpretação e formato.
  *
- * Substitui o passo 3 antigo, que coletava cenário e traje como imagens, os
- * gravava no banco e nunca os mandava a lugar nenhum — o call site de
- * `generateVideo()` simplesmente não os passava. Ele também tinha um seletor de
- * avatar redundante com o passo 1, que some aqui.
+ * "Fundo" (background.type) e o dropdown "Traje" (avatar_look_id, o LOOK
+ * pago do HeyGen) saíram em 25/08 — são conceitos de CONFIGURAÇÃO DO
+ * AVATAR (Passo 1), não do vídeo, e nenhum dos dois é obrigatório no
+ * payload do tier Simples (`buildHeygenVideoPayload`,
+ * `providerAvatarIdParaGeracao`, confirmado por leitura antes da remoção).
+ * "Avatar deste vídeo", "Cenário" e "Traje" (novos) são blocos EM
+ * PREPARAÇÃO, independentes do Passo 1, sem persistência e sem entrar no
+ * corpo de `POST /videos` — decisão registrada, aguardando o operador
+ * decidir a ligação funcional depois de ver na tela.
  *
- * Cada controle desta tela existe porque o FORNECEDOR tem campo para ele, e
- * nenhum existe além disso:
+ * O que continua indo ao fornecedor:
  *
- *   fundo          →  background.type "color" | "image"   (não há vídeo)
  *   interpretação  →  motion_prompt + expressiveness
- *   traje          →  qual look entra em avatar_id
  *   formato        →  aspect_ratio + resolution
  */
 
@@ -61,38 +63,20 @@ const TIER_OPTIONS: { value: "simples" | "normal" | "premium"; range: string }[]
  */
 const MOTION_PROMPT_MAX = 600;
 
-/**
- * O contrato mora em `types.ts`, compartilhado com o passo 1 — que é quem CRIA
- * traje. Manter uma cópia local aqui faria as duas telas discordarem sobre o
- * que é escolhível na primeira vez que o contrato mudasse, e foi o que
- * aconteceu quando o passo 1 passou a devolver `pendentes`.
- */
-type LooksResponse = AvatarLooksResponse;
-
 export function SceneStep({
-  avatarId,
-  background,
-  onBackgroundChange,
   motionPrompt,
   onMotionPromptChange,
   expressiveness,
   onExpressivenessChange,
-  avatarLookId,
-  onAvatarLookChange,
   publishPlatform,
   onPublishPlatformChange,
   tierVideo,
   onTierVideoChange,
 }: {
-  avatarId: string | null;
-  background: SceneBackground | null;
-  onBackgroundChange: (value: SceneBackground | null) => void;
   motionPrompt: string;
   onMotionPromptChange: (value: string) => void;
   expressiveness: WizardState["expressiveness"];
   onExpressivenessChange: (value: WizardState["expressiveness"]) => void;
-  avatarLookId: string | null;
-  onAvatarLookChange: (value: string | null) => void;
   publishPlatform: string;
   onPublishPlatformChange: (value: string) => void;
   /** Mesmo padrão de `onCaptionsChange` — BLOCO A. Movido de GenerateStep.tsx: o nível é escolhido AQUI, na Cena, antes do resumo final. */
@@ -100,8 +84,6 @@ export function SceneStep({
   onTierVideoChange: (tierVideo: WizardState["tierVideo"]) => void;
 }) {
   const { t } = useTranslation();
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [looks, setLooks] = useState<LooksResponse | null>(null);
 
   /**
    * FASE C (multi-vendor de avatar) — "Simples" exige heygen; "Normal" e
@@ -217,58 +199,16 @@ export function SceneStep({
   const [avatarDesteVideoId, setAvatarDesteVideoId] = useState<string | null>(null);
   const [personagemImagemNome, setPersonagemImagemNome] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!avatarId) {
-      setLooks(null);
-      return;
-    }
-    let cancelled = false;
-    api
-      .get<LooksResponse>(`/avatars/${avatarId}/looks`)
-      .then((r) => {
-        if (!cancelled) setLooks(r);
-      })
-      // Falha de leitura vira "um look só", que é o mesmo estado de quem não
-      // tem trajes: o passo inteiro não pode travar pelo controle menos
-      // importante dele.
-      .catch(() => {
-        if (!cancelled)
-          setLooks({ looks: [], pendentes: [], canChoose: false, simulated: false, lookCost: { units: 0, usd: 0 } });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [avatarId]);
-
-  async function handleImageUpload(file: File) {
-    setUploadError(null);
-    // Validação LOCAL antes de qualquer rede: tipo e tamanho. O servidor
-    // continua sendo quem recusa de verdade (ele confere os bytes), mas
-    // mandar 40 MB para receber um 413 gasta a banda de quem está numa
-    // conexão ruim, que é justamente quem menos pode pagar por isso.
-    if (!file.type.startsWith("image/")) {
-      setUploadError(t("createVideo.scene.backgroundNotImage"));
-      return;
-    }
-    if (file.size > MAX_IMAGE_BYTES) {
-      setUploadError(
-        t("createVideo.avatarSetup.imageTooLarge", {
-          size: formatBytes(file.size),
-          max: formatBytes(MAX_IMAGE_BYTES),
-        }),
-      );
-      return;
-    }
-    try {
-      const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
-      onBackgroundChange({ type: "image", value: url });
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : t("errors.generic"));
-    }
-  }
-
-  const listaLooks = looks?.looks ?? [];
-  const podeEscolherLook = looks?.canChoose === true;
+  /**
+   * CENÁRIO e TRAJE deste vídeo — mesmo padrão do bloco "Avatar deste
+   * vídeo" acima: estado local, próprio, sem persistência e sem entrar em
+   * `corpoDaGeracao`. Upload OU descrição por texto — os dois convivem, não
+   * são mutuamente exclusivos, porque nenhum dos dois faz nada ainda.
+   */
+  const [cenarioImagemNome, setCenarioImagemNome] = useState<string | null>(null);
+  const [cenarioPrompt, setCenarioPrompt] = useState("");
+  const [trajeImagemNome, setTrajeImagemNome] = useState<string | null>(null);
+  const [trajePrompt, setTrajePrompt] = useState("");
 
   return (
     <div className="card">
@@ -362,69 +302,59 @@ export function SceneStep({
         </p>
       </Field>
 
-      {/* ---------------------------------------------------------- FUNDO */}
-      <Field label={t("createVideo.scene.backgroundLabel")} help={t("createVideo.scene.backgroundHelp")}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <button
-            type="button"
-            className={`chip${background === null ? " selected" : ""}`}
-            onClick={() => onBackgroundChange(null)}
-          >
-            {t("createVideo.scene.backgroundNone")}
-          </button>
-          <button
-            type="button"
-            className={`chip${background?.type === "color" ? " selected" : ""}`}
-            onClick={() => onBackgroundChange({ type: "color", value: background?.type === "color" ? background.value : "#1B2A4A" })}
-          >
-            {t("createVideo.scene.backgroundColor")}
-          </button>
-          <label className={`chip${background?.type === "image" ? " selected" : ""}`}>
-            {t("createVideo.scene.backgroundImage")}
-            <input
-              type="file"
-              accept="image/*"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handleImageUpload(file);
-              }}
-            />
-          </label>
-        </div>
-
-        {background?.type === "color" && (
-          <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
-            <input
-              type="color"
-              value={background.value}
-              onChange={(e) => onBackgroundChange({ type: "color", value: e.target.value })}
-              aria-label={t("createVideo.scene.backgroundColor")}
-            />
-            <code style={{ fontSize: 13 }}>{background.value}</code>
-          </div>
-        )}
-
-        {/* PRÉVIA do que foi escolhido. Um fundo escolhido e não mostrado é
-            indistinguível de nenhum fundo — e foi assim que a escolha anterior
-            passou semanas sem que ninguém notasse que ela não chegava. */}
-        {background?.type === "image" && (
-          <div style={{ marginTop: 10 }}>
-            <img
-              src={background.value}
-              alt={t("createVideo.scene.backgroundPreview")}
-              style={{ maxWidth: 220, borderRadius: "var(--radius-card)", display: "block" }}
-            />
-          </div>
-        )}
-
-        {uploadError && (
-          <p className="alert-error" style={{ fontSize: 13, marginTop: 8 }}>
-            {uploadError}
+      {/* -------------------------------------------------------- CENÁRIO */}
+      <Field label={t("createVideo.scene.scenarioLabel")} help={t("createVideo.scene.scenarioHelp")}>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => setCenarioImagemNome(e.target.files?.[0]?.name ?? null)}
+        />
+        {cenarioImagemNome && (
+          <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+            {cenarioImagemNome}
           </p>
         )}
+        <div style={{ marginTop: 10 }}>
+          <label className="text-muted" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
+            {t("createVideo.scene.scenarioPromptLabel")}
+          </label>
+          <textarea
+            rows={3}
+            value={cenarioPrompt}
+            placeholder={t("createVideo.scene.scenarioPromptPlaceholder")}
+            onChange={(e) => setCenarioPrompt(e.target.value)}
+          />
+        </div>
         <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
-          {t("createVideo.scene.backgroundNoVideo")}
+          {t("createVideo.scene.scenarioPreparing")}
+        </p>
+      </Field>
+
+      {/* ---------------------------------------------------------- TRAJE */}
+      <Field label={t("createVideo.scene.outfitLabel")} help={t("createVideo.scene.outfitHelp")}>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => setTrajeImagemNome(e.target.files?.[0]?.name ?? null)}
+        />
+        {trajeImagemNome && (
+          <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+            {trajeImagemNome}
+          </p>
+        )}
+        <div style={{ marginTop: 10 }}>
+          <label className="text-muted" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
+            {t("createVideo.scene.outfitPromptLabel")}
+          </label>
+          <textarea
+            rows={3}
+            value={trajePrompt}
+            placeholder={t("createVideo.scene.outfitPromptPlaceholder")}
+            onChange={(e) => setTrajePrompt(e.target.value)}
+          />
+        </div>
+        <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+          {t("createVideo.scene.outfitPreparing")}
         </p>
       </Field>
 
@@ -473,27 +403,6 @@ export function SceneStep({
             </button>
           ))}
         </div>
-      </Field>
-
-      {/* ---------------------------------------------------------- TRAJE */}
-      <Field label={t("createVideo.scene.lookLabel")} help={t("createVideo.scene.lookHelp")}>
-        <select
-          value={avatarLookId ?? ""}
-          disabled={!podeEscolherLook}
-          onChange={(e) => onAvatarLookChange(e.target.value || null)}
-        >
-          <option value="">{t("createVideo.scene.lookDefault")}</option>
-          {listaLooks.map((look) => (
-            <option key={look.id} value={look.id}>
-              {look.name}
-            </option>
-          ))}
-        </select>
-        {!podeEscolherLook && (
-          <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-            {t("createVideo.scene.lookSingle")}
-          </p>
-        )}
       </Field>
 
       {/* -------------------------------------------------------- FORMATO */}

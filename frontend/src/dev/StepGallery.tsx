@@ -308,15 +308,10 @@ function StepUnderGlass({
       return (
         <SceneStep
           key={`scene-${vendorHonors}`}
-          avatarId={state === "vazio" ? null : "gallery-avatar-1"}
-          background={wizard.background}
-          onBackgroundChange={noop}
           motionPrompt={wizard.motionPrompt}
           onMotionPromptChange={noop}
           expressiveness={wizard.expressiveness}
           onExpressivenessChange={noop}
-          avatarLookId={wizard.avatarLookId}
-          onAvatarLookChange={noop}
           publishPlatform={state === "vazio" ? DEFAULT_PUBLISH_PLATFORM : "reels_tiktok"}
           onPublishPlatformChange={noop}
           tierVideo={wizard.tierVideo}

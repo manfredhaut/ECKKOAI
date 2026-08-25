@@ -1,13 +1,28 @@
 Always respond in Brazilian Portuguese.
 
-> ## ⚠️ PONTO DE RETOMADA CORRENTE — digite `RETOMAR-CENARIO-TRAJE`
+> ## ⚠️ PONTO DE RETOMADA CORRENTE — Cena ganhou 3 blocos decorativos, ligação funcional NÃO decidida
 >
-> Sessão de 25/08/2026 fechou com uma tarefa PARADA a meio caminho:
-> [RETOMAR-CENARIO-TRAJE.md](RETOMAR-CENARIO-TRAJE.md) tem o estado
-> completo, a decisão de produto (cenário/traje são por VÍDEO, coletados
-> no passo Cena — não no avatar), o bloqueio (3 guardas amarram os campos
-> ao passo 1 hoje) e a primeira ação da próxima sessão. Leia-o antes de
-> continuar qualquer trabalho no wizard de criação de vídeo.
+> [RETOMAR-CENARIO-TRAJE.md](RETOMAR-CENARIO-TRAJE.md) é HISTÓRICO — a
+> análise das 3 guardas que ele registrava já foi feita, e o plano
+> original (mover os campos JÁ LIGADOS de `AvatarSetupStep.tsx` para a
+> Cena) foi trocado no caminho por outro, mais conservador: `SceneStep.tsx`
+> ganhou, em três rodadas (25/08), "Avatar deste vídeo", "Cenário" e
+> "Traje" como blocos NOVOS e INDEPENDENTES — upload/seletor + "Gerar via
+> IA" (área de texto), estado local, rotulados "Em preparação", sem
+> persistir e sem entrar em `corpoDaGeracao`. Os campos ANTIGOS que
+> alimentam a composição da fal de verdade (`defaults.scenario/outfit`,
+> coletados em `AvatarSetupStep.tsx`) **não foram tocados** e continuam
+> sendo os únicos com efeito real hoje.
+>
+> **Fundo** (`background.type/value`) e o dropdown **Traje**
+> (`avatar_look_id`, o LOOK pago da HeyGen) **saíram da Cena** — decisão
+> de produto: são configuração do AVATAR, não do vídeo. Confirmado por
+> leitura de `buildHeygenVideoPayload`/`providerAvatarIdParaGeracao` que
+> nenhum dos dois é obrigatório no payload do tier Simples antes de
+> remover.
+>
+> **Ligação funcional dos 3 blocos novos está AGUARDANDO o operador
+> decidir**, depois de ver na tela — não implementar sem essa decisão.
 
 > # 🚦 ABERTURA DE SESSÃO — antes de tudo, o healthcheck do frontend
 >

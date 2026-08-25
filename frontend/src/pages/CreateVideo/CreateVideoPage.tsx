@@ -178,15 +178,10 @@ export function CreateVideoPage() {
       )}
       {step === 2 && (
         <SceneStep
-          avatarId={wizard.avatarId}
-          background={wizard.background}
-          onBackgroundChange={(background) => setWizard((w) => ({ ...w, background }))}
           motionPrompt={wizard.motionPrompt}
           onMotionPromptChange={(motionPrompt) => setWizard((w) => ({ ...w, motionPrompt }))}
           expressiveness={wizard.expressiveness}
           onExpressivenessChange={(expressiveness) => setWizard((w) => ({ ...w, expressiveness }))}
-          avatarLookId={wizard.avatarLookId}
-          onAvatarLookChange={(avatarLookId) => setWizard((w) => ({ ...w, avatarLookId }))}
           publishPlatform={wizard.publishPlatform}
           onPublishPlatformChange={(publishPlatform) => setWizard((w) => ({ ...w, publishPlatform }))}
           tierVideo={wizard.tierVideo}
