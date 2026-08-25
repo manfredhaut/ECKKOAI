@@ -24,6 +24,9 @@
  *       não conta como refação, e o limite passa a ter um furo silencioso.
  *  G-4  a recusa por teto de gasto DIZ que as etapas anteriores já foram
  *       pagas e que o trabalho é recuperável — nunca um "falhou" seco.
+ *  G-5  a TELA desabilita os dois botões de Refazer assim que a 3ª refação é
+ *       REGISTRADA — sem esperar o clique da 4ª. E a leitura entrega a
+ *       contagem, senão a tela não teria como saber antes de tentar.
  *
  * G-1 e G-2 medem por EXECUÇÃO (contagem real com `pool.query` substituído);
  * G-3 e G-4 medem FORMA — o primeiro porque os call sites vivem em handlers
@@ -42,6 +45,8 @@ import {
 } from "../services/video/falPipelineJournal.js";
 
 const ROTA = "backend/src/routes/videos.ts";
+const TELA = "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx";
+const LOCALES = ["frontend/src/locales/pt-BR.json", "frontend/src/locales/en.json"];
 const DIARIO = "backend/src/services/video/falPipelineJournal.ts";
 const PIPELINE = "backend/src/services/video/falPipeline.ts";
 
@@ -90,6 +95,37 @@ export const MUTANTS: Mutant[] = [
     find: '        "Nada foi pedido ao fornecedor nesta etapa. As etapas anteriores JA foram pagas e os request_id " +\n        "delas estao gravados: o resultado parcial e recuperavel e nao deve ser refeito.",',
     replace: '        "Nada foi pedido ao fornecedor nesta etapa.",',
     expect: "refações: a recusa por teto não diz que as etapas anteriores foram pagas",
+  },
+  {
+    guard: "a tela desabilita o Refazer ao esgotar o limite",
+    name: "o botão volta a ficar clicável e a recusa só chega no clique",
+    kind: "esperto",
+    // ESPERTO: o servidor CONTINUA recusando com 409, então nenhum dinheiro
+    // sai e um teste de "o limite funciona?" seguiria verde. O que se perde é
+    // a previsibilidade da tela: nesta etapa o clique é a única coisa que a
+    // pessoa pode fazer, e um botão que parece disponível e responde "não"
+    // ensina que o produto é imprevisível. É a mesma regra de
+    // `generationReadiness` — a tela desabilita pelo MESMO critério do
+    // servidor.
+    file: TELA,
+    find: "  const refacoesEsgotadas = refacoesLimite !== null && refacoesFeitas >= refacoesLimite;",
+    replace: "  const refacoesEsgotadas = false;",
+    expect: "refações: a tela não deriva o esgotamento da contagem",
+  },
+  {
+    guard: "a leitura entrega a contagem de refações",
+    name: "a leitura de vídeo para de trazer as refações",
+    kind: "esperto",
+    // ESPERTO: a tela continua com a lógica de desabilitar, o servidor
+    // continua recusando, e nada quebra — `refacoes` fica `undefined` e a
+    // tela trata ausência como "não sei" (falhar fechado ali esconderia o
+    // botão por um campo faltando). O efeito é o botão nunca desabilitar, e
+    // a recusa voltar a chegar só no clique. O defeito reaparece inteiro,
+    // por um caminho que não passa pela tela.
+    file: ROTA,
+    find: "    return comRefacoes(rows);",
+    replace: "    return rows.map(withDeliveredSeconds);",
+    expect: "refações: a listagem de vídeos não entrega a contagem",
   },
 ];
 
@@ -225,6 +261,64 @@ export async function checkRefacoesPolicy(): Promise<RefacoesCheckResult> {
     notes.push(
       "    refações: a recusa por teto diz que as anteriores já foram pagas e que o parcial é recuperável",
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // G-5 — a tela desabilita ao REGISTRAR a 3ª, não no clique da 4ª
+  // -------------------------------------------------------------------------
+  const tela = lerDaRaiz(TELA);
+
+  if (!/refacoesFeitas >= refacoesLimite/.test(tela)) {
+    failures.push(
+      "refações: a tela não deriva o esgotamento da contagem — o botão de Refazer deixaria de " +
+        "desabilitar, e a recusa voltaria a chegar só no clique. Nesta etapa o clique é a única ação " +
+        "disponível: um botão que parece pronto e responde \"não\" ensina que o produto é imprevisível.",
+    );
+  } else if (/refacoesFeitas > refacoesLimite/.test(tela)) {
+    failures.push(
+      "refações: a tela usa `>` e não `>=` — o botão só travaria na QUARTA refação registrada, ou seja, " +
+        "depois de a quarta já ter sido paga. O limite é 3: com 3 feitas, o botão tem de estar travado.",
+    );
+  } else {
+    const desabilitados = (tela.match(/disabled=\{busy \|\| refacoesEsgotadas\}/g) ?? []).length;
+    if (desabilitados < 2) {
+      failures.push(
+        `refações: só ${desabilitados} dos 2 botões de Refazer olham o limite na tela. O que não olha ` +
+          "continua clicável — e é o par (imagem e vídeo) que divide o MESMO contador.",
+      );
+    } else {
+      notes.push(
+        `    refações: os 2 botões de Refazer desabilitam assim que a ${MAX_REFACOES_POR_VIDEO}ª é registrada (>=, não >)`,
+      );
+    }
+  }
+
+  // A leitura precisa ENTREGAR a contagem, senão a tela não tem o que ler.
+  if (!rota.includes("comRefacoes(rows)")) {
+    failures.push(
+      "refações: a listagem de vídeos não entrega a contagem — `refacoes` chegaria `undefined`, a tela " +
+        "trataria como \"não sei\" (que é o certo: falhar fechado ali esconderia o botão por um campo " +
+        "faltando) e o botão nunca desabilitaria. O defeito reaparece inteiro sem passar pela tela.",
+    );
+  } else {
+    notes.push("    refações: a leitura de vídeos entrega `refacoes: {feitas, limite}` para a tela");
+  }
+
+  for (const arquivo of LOCALES) {
+    let texto = "";
+    try {
+      texto = lerDaRaiz(arquivo);
+    } catch {
+      failures.push(`refações: não consegui ler ${arquivo}.`);
+      continue;
+    }
+    if (!texto.includes("refacoesEsgotadas")) {
+      failures.push(
+        `refações: ${arquivo} não tem a chave \`createVideo.generate.refacoesEsgotadas\` — o motivo do ` +
+          "botão travado apareceria como a chave de tradução crua, e um botão desabilitado sem motivo " +
+          "legível é pior que um botão que recusa.",
+      );
+    }
   }
 
   return { failures, notes };

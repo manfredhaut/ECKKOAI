@@ -94,6 +94,7 @@ import {
   MAX_REFACOES_POR_VIDEO,
   abrirCorrida,
   contarRefacoes,
+  contarRefacoesEmLote,
   criarDiarioNoBanco,
   fecharCorrida,
   requestIdDaEtapa,
@@ -600,6 +601,40 @@ export function withDeliveredSeconds(row: VideoRow) {
   };
 }
 
+/**
+ * Enriquece as linhas com a contagem de REFAÇÕES — W3.1b, 24/08.
+ *
+ * ┌─ Por que a tela precisa disto, e não só do 409 ──────────────────────────┐
+ * │ O servidor já recusa a 4ª refação com `refacoes_esgotadas`. Mas uma      │
+ * │ recusa só chega DEPOIS do clique — e o clique, na tela de aprovação, é   │
+ * │ a única coisa que a pessoa pode fazer ali. Um botão que parece           │
+ * │ disponível e responde "não" ensina que o produto é imprevisível, e o     │
+ * │ projeto já tem a regra: a tela desabilita pelo MESMO critério que o      │
+ * │ servidor usa para recusar (é o desenho de `generationReadiness`).        │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * `feitas` vem do banco; `limite` vem da constante. Os dois viajam juntos
+ * para que a tela possa escrever "3 de 3" sem ter uma segunda cópia do teto —
+ * duas cópias de um limite divergem no dia em que uma delas muda.
+ */
+async function comRefacoes(linhas: VideoRow[]) {
+  // Recebe a linha CRUA e serializa aqui dentro: `withDeliveredSeconds`
+  // devolve o objeto já filtrado pelo véu, e o tipo dele não expõe `id` (o
+  // espalhamento de `semCamposVelados` é `Record<string, unknown>`). Ler o id
+  // da linha original evita um `as` e mantém o véu intacto.
+  const porVideo = await contarRefacoesEmLote(linhas.map((l) => l.id));
+  return linhas.map((l) => ({
+    ...withDeliveredSeconds(l),
+    refacoes: {
+      // Ausência é ZERO: o `GROUP BY` não devolve linha para vídeo sem
+      // refação, e tratar ausência como desconhecido faria a tela desabilitar
+      // o botão de todo vídeo novo.
+      feitas: porVideo.get(l.id) ?? 0,
+      limite: MAX_REFACOES_POR_VIDEO,
+    },
+  }));
+}
+
 export async function videoRoutes(app: FastifyInstance): Promise<void> {
   /**
    * O provedor conectado a ESTE tenant honra a proporção escolhida?
@@ -822,7 +857,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       `${SELECT_VIDEO_WITH_DELIVERED} WHERE v.tenant_id = $1 ORDER BY v.created_at DESC`,
       [req.tenantId],
     );
-    return rows.map(withDeliveredSeconds);
+    return comRefacoes(rows);
   });
 
   /**
@@ -1007,7 +1042,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       [req.params.id, req.tenantId],
     );
     if (!rows[0]) return reply.code(404).send({ error: "Video not found" });
-    return withDeliveredSeconds(rows[0]);
+    return (await comRefacoes([rows[0]]))[0];
   });
 
   // Proxies the vendor's output_url through our own server instead of

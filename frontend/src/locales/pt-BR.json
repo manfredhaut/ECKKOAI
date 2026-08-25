@@ -744,7 +744,8 @@
         "intro": "Este nível compõe a imagem antes de animar — a composição custa um valor FIXO, cobrado já na primeira etapa. Animar e narrar+sincronizar vêm depois, e cada uma delas pede sua própria aprovação antes de gastar.",
         "composeCost": "Custo da composição",
         "animationNote": "Depois de compor, você vê a imagem e aprova (ou pede para refazer) antes de animar — e o vídeo mudo antes de narrar e sincronizar. Nada disso é cobrado agora."
-      }
+      },
+      "refacoesEsgotadas": "Você já refez este vídeo {{feitas}} de {{limite}} vezes. Cada refação paga o fornecedor de novo — aprove o que está aí ou comece um vídeo novo."
     },
     "blocked": {
       "selectAvatar": "Selecione um avatar acima para continuar.",

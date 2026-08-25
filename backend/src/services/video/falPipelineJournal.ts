@@ -60,6 +60,28 @@ export async function contarRefacoes(videoId: string): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
+/**
+ * Refações de VÁRIOS vídeos numa consulta — W3.1b, 24/08.
+ *
+ * A tela precisa saber a contagem ANTES do clique, para desabilitar o botão;
+ * e a Biblioteca lista dezenas de vídeos de uma vez. Uma consulta por linha
+ * daria N+1 num caminho que hoje faz uma só — por isso o lote.
+ *
+ * Vídeo sem nenhuma refação NÃO volta no resultado (o `GROUP BY` não inventa
+ * linha), e quem lê deve tratar ausência como zero. É o que `refacoesDe` faz.
+ */
+export async function contarRefacoesEmLote(videoIds: string[]): Promise<Map<string, number>> {
+  if (videoIds.length === 0) return new Map();
+  const { rows } = await pool.query<{ video_id: string; n: string }>(
+    `SELECT video_id, count(*) AS n
+       FROM fal_pipeline_runs
+      WHERE video_id = ANY($1) AND origem = ANY($2)
+      GROUP BY video_id`,
+    [videoIds, ORIGENS_DE_REFACAO],
+  );
+  return new Map(rows.map((r) => [r.video_id, Number(r.n)]));
+}
+
 export interface AbrirCorridaInput {
   tenantId: string;
   /**

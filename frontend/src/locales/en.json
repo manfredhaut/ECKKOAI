@@ -744,7 +744,8 @@
         "intro": "This tier composes the image before animating it — composition has a FIXED cost, charged at that first step. Animating and narrating+syncing come after, and each of them asks for its own approval before spending.",
         "composeCost": "Composition cost",
         "animationNote": "After composing, you'll see the image and approve it (or ask for a redo) before animating — and the muted video before narrating and syncing. None of that is charged yet."
-      }
+      },
+      "refacoesEsgotadas": "You have already redone this video {{feitas}} of {{limite}} times. Each redo pays the provider again — approve what you have or start a new video."
     },
     "blocked": {
       "selectAvatar": "Select an avatar above to continue.",

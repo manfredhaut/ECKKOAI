@@ -396,6 +396,31 @@ export function GenerateStep({
   const [redoingVideo, setRedoingVideo] = useState(false);
   const busy = approving || recomposing || approvingVideo || redoingVideo;
 
+  /**
+   * O LIMITE DE REFAÇÕES, na tela — W3.1b, 24/08.
+   *
+   * ┌─ Por que desabilitar, e não só deixar o 409 chegar ─────────────────────┐
+   * │ O servidor já recusa a 4ª com `refacoes_esgotadas`. Mas a recusa chega  │
+   * │ DEPOIS do clique, e nesta tela o clique é a única coisa que a pessoa    │
+   * │ pode fazer. Um botão que parece disponível e responde "não" ensina que  │
+   * │ o produto é imprevisível — e este projeto já tem a regra: a tela        │
+   * │ desabilita pelo MESMO critério que o servidor usa para recusar.         │
+   * │                                                                          │
+   * │ `feitas` chega do servidor a cada leitura, então o botão trava assim    │
+   * │ que a 3ª refação é REGISTRADA — não no clique da 4ª.                    │
+   * └──────────────────────────────────────────────────────────────────────────┘
+   *
+   * Ausência de `refacoes` (linha antiga, resposta de uma rota que ainda não
+   * enriquece) NÃO trava o botão: falhar fechado aqui esconderia a ação por
+   * causa de um campo faltando, e o servidor continua sendo o freio real.
+   */
+  const refacoesFeitas = video?.refacoes?.feitas ?? 0;
+  const refacoesLimite = video?.refacoes?.limite ?? null;
+  const refacoesEsgotadas = refacoesLimite !== null && refacoesFeitas >= refacoesLimite;
+  const motivoRefacoes = refacoesEsgotadas
+    ? t("createVideo.generate.refacoesEsgotadas", { feitas: refacoesFeitas, limite: refacoesLimite })
+    : undefined;
+
   // O CAMPO LIVRE do "Refazer" — um estado por TELA (imagem e vídeo mudo),
   // não um só: as duas nunca aparecem juntas para o mesmo vídeo (o status só
   // permite uma de cada vez), mas manter dois evita que o texto digitado numa
@@ -866,10 +891,20 @@ export function GenerateStep({
                 >
                   {approving ? t("createVideo.generate.approving") : t("createVideo.generate.approve")}
                 </button>
-                <button className="btn btn-outline" onClick={() => void handleRecompose()} disabled={busy}>
+                <button
+                  className="btn btn-outline"
+                  onClick={() => void handleRecompose()}
+                  disabled={busy || refacoesEsgotadas}
+                  title={motivoRefacoes}
+                >
                   {recomposing ? t("createVideo.generate.recomposing") : t("createVideo.generate.recompose")}
                 </button>
               </div>
+              {refacoesEsgotadas && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+                  {motivoRefacoes}
+                </p>
+              )}
               {/* Os dois preços, lado a lado, na hora da decisão. Escondê-los
                   aqui repetiria o defeito que o painel de custo veio corrigir um
                   passo antes: informar o preço depois da compra. */}
@@ -913,10 +948,20 @@ export function GenerateStep({
                 >
                   {approvingVideo ? t("createVideo.generate.approvingVideo") : t("createVideo.generate.approveVideo")}
                 </button>
-                <button className="btn btn-outline" onClick={() => void handleRedoVideo()} disabled={busy}>
+                <button
+                  className="btn btn-outline"
+                  onClick={() => void handleRedoVideo()}
+                  disabled={busy || refacoesEsgotadas}
+                  title={motivoRefacoes}
+                >
                   {redoingVideo ? t("createVideo.generate.redoingVideo") : t("createVideo.generate.redoVideo")}
                 </button>
               </div>
+              {refacoesEsgotadas && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+                  {motivoRefacoes}
+                </p>
+              )}
               <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
                 {t("createVideo.generate.approveVideoCost")}
               </p>

@@ -101,6 +101,15 @@ export interface Video {
    */
   aspect_ratio: string | null;
   created_at: string;
+  /**
+   * Quantas refações este vídeo já teve, e o teto — W3.1b, 24/08.
+   *
+   * Opcional porque nem toda resposta o traz: as rotas de leitura
+   * (`GET /videos` e `GET /videos/:id`) enriquecem, e as de ação devolvem a
+   * linha crua. A tela trata ausência como "não sei" e NÃO desabilita — o
+   * servidor continua sendo o freio real (409 `refacoes_esgotadas`).
+   */
+  refacoes?: { feitas: number; limite: number };
 }
 
 /** Resposta de `GET /dashboard-summary` — saldo de crédito e custo do mês. */
