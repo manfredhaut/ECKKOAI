@@ -27,6 +27,12 @@
  *       ordem errada, um vídeo que TENTA sobrescrever o padrão do avatar
  *       seria ignorado — pior que não ter fallback nenhum, porque pareceria
  *       funcionar.
+ *  G-5  A tela do avatar EXISTENTE relê `scenario`/`scenario_prompt`/
+ *       `outfit`/`outfit_prompt` do avatar selecionado e preenche
+ *       `defaults` — item (a) da Seção 6 (25/08): o PUT de G-2/G-3 já
+ *       gravava, mas a tela abria os campos vazios até alguém editar de
+ *       novo. Sem isto, "Concluir configuração" prova persistência que a
+ *       PRÓPRIA tela que a gravou não consegue mostrar de volta.
  *
  * Custo: ZERO. Nenhuma rede, nenhum banco — leitura de arquivo.
  */
@@ -79,6 +85,32 @@ export const MUTANTS: Mutant[] = [
     find: "    const scenarioParaGerar = scenario || avatar.scenario || null;",
     replace: "    const scenarioParaGerar = avatar.scenario || scenario || null;",
     expect: "a ORDEM inverteu (o padrão do avatar passaria a vencer o valor que o próprio vídeo manda)",
+  },
+  {
+    guard: "passo 1: tela do avatar existente relê cenário/traje padrão do banco ao selecionar",
+    name: "a tela para de reler cenário/traje padrão ao reabrir o avatar",
+    kind: "esperto",
+    // ESPERTO: a persistência (G-1/G-2/G-3) continua funcionando de ponta a
+    // ponta — o PUT grava certinho. Só o `useEffect` que RELÊ o avatar
+    // selecionado e preenche `defaults` some. A tela continua abrindo sem
+    // erro nenhum, só que sempre com os campos de Cenário/Traje vazios,
+    // contradizendo o que o banco já tem — exatamente o bug do item (a).
+    file: PASSO1,
+    find:
+      "  useEffect(() => {\n" +
+      "    if (!selectedAvatar) return;\n" +
+      "    onDefaultsChange({\n" +
+      "      ...defaults,\n" +
+      "      scenario: selectedAvatar.scenario || \"\",\n" +
+      "      scenarioName: \"\",\n" +
+      "      scenarioPrompt: selectedAvatar.scenario_prompt || \"\",\n" +
+      "      outfit: selectedAvatar.outfit || \"\",\n" +
+      "      outfitPrompt: selectedAvatar.outfit_prompt || \"\",\n" +
+      "    });\n" +
+      "    // eslint-disable-next-line react-hooks/exhaustive-deps\n" +
+      "  }, [selectedAvatar?.id]);\n",
+    replace: "",
+    expect: "avatar-defaults: a tela não relê mais o cenário/traje padrão salvo ao selecionar um avatar existente",
   },
 ];
 
@@ -197,11 +229,46 @@ export function checkAvatarSceneDefaultsPolicy(repoRoot: string): AvatarSceneDef
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // G-5 — a tela do avatar existente relê o padrão salvo ao selecionar.
+  // ---------------------------------------------------------------------------
+  const inicioReread = passo1.indexOf("CENÁRIO/TRAJE PADRÃO — relê o que está salvo no avatar");
+  if (inicioReread < 0) {
+    failures.push(
+      `avatar-defaults: não achei o bloco "CENÁRIO/TRAJE PADRÃO — relê o que está salvo no avatar" em ` +
+        `${PASSO1}. Sem ele, a tela do avatar existente não recarrega o padrão persistido ao selecionar, ` +
+        "e os campos de Cenário/Traje abrem vazios mesmo com valor salvo no banco — item (a) da Seção 6.",
+    );
+  } else {
+    const corpoReread = passo1.slice(inicioReread, inicioReread + 1600);
+    for (const [campoDefaults, campoAvatar] of [
+      ["scenario: selectedAvatar.scenario", "scenario"],
+      ["scenarioPrompt: selectedAvatar.scenario_prompt", "scenario_prompt"],
+      ["outfit: selectedAvatar.outfit", "outfit"],
+      ["outfitPrompt: selectedAvatar.outfit_prompt", "outfit_prompt"],
+    ] as const) {
+      if (!corpoReread.includes(campoDefaults)) {
+        failures.push(
+          `avatar-defaults: a tela não relê mais o cenário/traje padrão salvo ao selecionar um avatar ` +
+            `existente — falta \`${campoDefaults}\` perto do bloco de releitura em ${PASSO1}. O campo ` +
+            `\`avatar.${campoAvatar}\` foi persistido pelo PUT e não volta para \`defaults\` ao reabrir.`,
+        );
+      }
+    }
+    if (!corpoReread.includes("}, [selectedAvatar?.id]);")) {
+      failures.push(
+        `avatar-defaults: a releitura de cenário/traje padrão em ${PASSO1} não está mais presa a ` +
+          "`[selectedAvatar?.id]` — sem essa dependência ela roda a cada render (sobrescrevendo edição " +
+          "em andamento) ou nunca (voltando ao bug do item (a)).",
+      );
+    }
+  }
+
   if (failures.length === 0) {
     notes.push(
       "    avatar-defaults: migration 068 declara as 4 colunas, PUT /avatars/:id persiste com COALESCE, " +
-        "Concluir configuração grava o padrão, e POST /videos cai para ele só quando o próprio vídeo " +
-        "não manda um valor seu",
+        "Concluir configuração grava o padrão, POST /videos cai para ele só quando o próprio vídeo não " +
+        "manda um valor seu, e a tela do avatar existente relê o padrão salvo ao selecionar",
     );
   }
 

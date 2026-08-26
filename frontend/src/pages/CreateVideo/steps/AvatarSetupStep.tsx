@@ -168,6 +168,37 @@ export function AvatarSetupStep({
     }
   }, [selectedAvatar?.id]);
 
+  /**
+   * CENÁRIO/TRAJE PADRÃO — relê o que está salvo no avatar ao trocar a
+   * seleção. Fase A, item (a) da Seção 6 (25/08): o PUT já persistia
+   * `scenario`/`scenario_prompt`/`outfit`/`outfit_prompt` desde a rodada
+   * anterior, e o servidor já caía neles em `POST /videos` quando o vídeo
+   * não mandava valor próprio — só faltava a TELA reler o padrão salvo ao
+   * reabrir. Sem isto, o campo aparecia vazio até alguém editar de novo,
+   * contradizendo o que o banco já tinha.
+   *
+   * MESMA regra dos ajustes de voz acima: resincroniza só na troca de
+   * `selectedAvatar.id`, nunca a cada `setAvatars` disparado por outra
+   * ação da tela. SOBRESCREVE sempre (não é `defaults.x || avatar.x`): ao
+   * trocar de avatar dentro da mesma visita, o padrão do avatar NOVO tem
+   * de vencer o que sobrou do anterior — sem isso, trocar de avatar
+   * manteria na tela um cenário/traje que não é mais o daquele avatar.
+   * `scenarioName` volta a `""` na troca: não há nome persistido (só a
+   * URL), e manter o nome do avatar anterior rotularia a imagem errada.
+   */
+  useEffect(() => {
+    if (!selectedAvatar) return;
+    onDefaultsChange({
+      ...defaults,
+      scenario: selectedAvatar.scenario || "",
+      scenarioName: "",
+      scenarioPrompt: selectedAvatar.scenario_prompt || "",
+      outfit: selectedAvatar.outfit || "",
+      outfitPrompt: selectedAvatar.outfit_prompt || "",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAvatar?.id]);
+
   // O custo por traje e os trajes em preparo, do avatar selecionado. Recarrega
   // ao trocar de avatar: sem isto o bloco mostraria o andamento de outro.
   useEffect(() => {

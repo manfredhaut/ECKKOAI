@@ -75,7 +75,7 @@ export const MUTANTS: Mutant[] = [
     file: ROTA_VOZ,
     find: "          voiceTuningDoAvatar(avatar),\n        );",
     replace: "        );",
-    expect: "a prévia não usa os ajustes do avatar",
+    expect: "a prévia pós-clonagem sintetiza sem os ajustes do avatar",
   },
 ];
 
