@@ -7,7 +7,7 @@ import { useMediaRecorderCapture } from "../hooks/useMediaRecorder";
 import type { AssetDefaults } from "../types";
 import { Field } from "../../../components/ui/Field";
 import { BACKGROUND_OPTIONS, DEFAULT_BACKGROUND_ID } from "../virtualBackground/backgroundOptions";
-import { DEFAULT_QUALITY } from "../imageQuality/applyQualityTreatment";
+import { applyQualityTreatment, DEFAULT_QUALITY } from "../imageQuality/applyQualityTreatment";
 import type { QualityOptions } from "../imageQuality/applyQualityTreatment";
 import { useFeature } from "../../../features/FeatureFlagContext";
 import {
@@ -20,31 +20,6 @@ import {
 import { RecordingProgress } from "../RecordingProgress";
 import { VoiceSampleRecorder } from "../VoiceSampleRecorder";
 import { AvatarReadinessNotice } from "../AvatarReadinessNotice";
-
-/**
- * A JANELA DE ESPERA DO TRAJE, e por que ela é declarada aqui em vez de virar
- * um `20` solto dentro do laço.
- *
- * As duas conclusões MEDIDAS em live foram de 15 s e 50 s (06/08). A janela
- * antiga eram 20 tentativas de 3 s — 60 s, dez segundos além da medição mais
- * lenta que tínhamos. Uma janela dimensionada pela maior amostra observada não
- * tem folga nenhuma: basta o fornecedor demorar o que já demorou mais uma vez
- * e a tela desiste de um traje que está a caminho.
- *
- * 240 s são 4,8× a conclusão mais lenta medida. O número não é gratuito — o
- * custo de errar para menos é a pessoa achar que perdeu US$ 1,00 e criar o
- * traje de novo, gastando outro; o custo de errar para mais é a tela seguir
- * consultando um GET que não é tarifado. Os dois lados não são simétricos, e a
- * folga fica do lado barato.
- *
- * Esgotar a janela NÃO é falha: a reconciliação vive na LISTAGEM do servidor
- * (`services/avatar/looks.ts`), então o traje continua sendo preparado e
- * aparece sozinho na próxima vez que alguém abrir a tela. É isso que a
- * mensagem final precisa dizer, e é por isso que ela não é um erro.
- */
-const LOOK_POLL_INTERVAL_MS = 3_000;
-const LOOK_POLL_WINDOW_MS = 240_000;
-const LOOK_POLL_ATTEMPTS = LOOK_POLL_WINDOW_MS / LOOK_POLL_INTERVAL_MS;
 
 export function AvatarSetupStep({
   selectedAvatarId,
@@ -90,19 +65,31 @@ export function AvatarSetupStep({
   const [intensity, setIntensity] = useState(1);
   const [quality, setQualityState] = useState<QualityOptions>(DEFAULT_QUALITY);
   const [targetLufsDraft, setTargetLufsDraft] = useState(-16);
-  // "Adicionar traje": cria um look novo para o avatar já selecionado.
-  const [lookName, setLookName] = useState("");
-  const [lookPrompt, setLookPrompt] = useState("");
-  const [lookImageUrl, setLookImageUrl] = useState<string | null>(null);
-  // Ver `AssetDefaults.scenarioName`: o nome do arquivo não sobrevive nem na
-  // URL (o armazenamento renomeia para `<uuid>.<ext>`) nem no campo de arquivo.
-  const [lookImageName, setLookImageName] = useState<string | null>(null);
-  const [lookSaving, setLookSaving] = useState(false);
-  const [lookMessage, setLookMessage] = useState<string | null>(null);
-  const [lookError, setLookError] = useState(false);
-  // O custo por traje e os que ainda estão em preparo vêm do SERVIDOR, nunca
-  // digitados aqui: o número é o medido na conta (60 un / US$ 1,00 em 06/08), e
-  // um valor repetido na tela envelheceria sozinho na primeira mudança de tarifa.
+  // Os três ajustes contínuos de síntese — migration 067. Rascunho local
+  // enquanto o slider é arrastado; o commit vai no soltar, como o LUFS. Os
+  // valores iniciais são os MEDIDOS no fornecedor em 25/08 e são substituídos
+  // pelos do avatar assim que ele carrega (ver o `useEffect` do rascunho).
+  const [voiceStabilityDraft, setVoiceStabilityDraft] = useState(0.5);
+  const [voiceSimilarityDraft, setVoiceSimilarityDraft] = useState(0.75);
+  const [voiceStyleDraft, setVoiceStyleDraft] = useState(0);
+  // OS MESMOS QUATRO, para o avatar JÁ EXISTENTE — 25/08. Cópia separada, não
+  // reuso das três acima: aquelas seguem `draftAvatar` (o assistente de
+  // criação), estas seguem `selectedAvatar` (reabrir um avatar pronto), e os
+  // dois podem — em tese — existir ao mesmo tempo (nada impede escolher um
+  // avatar E clicar em "Configurar novo avatar" na mesma visita). Duas fontes
+  // de estado independentes evitam que um arraste num painel invada o outro.
+  const [existingVoiceStabilityDraft, setExistingVoiceStabilityDraft] = useState(0.5);
+  const [existingVoiceSimilarityDraft, setExistingVoiceSimilarityDraft] = useState(0.75);
+  const [existingVoiceStyleDraft, setExistingVoiceStyleDraft] = useState(0);
+  // MESMO padrão dos três acima, para o bloco de Tratamento de Áudio (LUFS)
+  // do avatar JÁ EXISTENTE — Item 2, fecha a lacuna de navegação (o bloco só
+  // existia no assistente de criação).
+  const [existingTargetLufsDraft, setExistingTargetLufsDraft] = useState(-16);
+  // A CRIAÇÃO de traje por esta tela saiu em UI-PARIDADE-TRAJE (25/08) — a
+  // LEITURA não: `lookInfo` continua vindo do servidor para saber se algum
+  // traje já existente segue em preparo, e travar o Avançar enquanto isso
+  // (`onOutfitPreparingChange` abaixo). Vídeos antigos e o que a listagem do
+  // fornecedor já criou continuam precisando ser lidos.
   const [lookInfo, setLookInfo] = useState<AvatarLooksResponse | null>(null);
 
   const camera = useCamera();
@@ -132,14 +119,11 @@ export function AvatarSetupStep({
    * `failed` fica de fora de propósito: um traje que falhou não está vindo, e
    * travar por ele prenderia a pessoa no passo 1 sem saída nenhuma.
    */
-  // As DUAS leituras de `lookInfo` que a tela faz por campo, derivadas num
-  // lugar só. O payload chega da REDE, e a rota tem dois retornos: o completo e
-  // o do avatar que ainda não pode receber traje. Espalhar `lookInfo.x` pelo
-  // JSX faz cada ponto de uso apostar de novo que o campo veio — e foi assim
-  // que `lookCost.usd` derrubou o passo 1 no clique do card.
+  // Derivado num lugar só, e não espalhado pelo JSX: foi ali que
+  // `lookCost.usd` derrubou o passo 1 no clique do card, num payload que
+  // chega da rede e às vezes não traz o campo (avatar que ainda não pode
+  // receber traje).
   const lookPendentes = lookInfo?.pendentes ?? [];
-  /** Ausente = não há traje a criar, logo não há preço a declarar. Ver `types.ts`. */
-  const lookCostDoServidor = lookInfo?.lookCost ?? null;
   const outfitPreparing = lookPendentes.some((p) => p.status === "processing");
   useEffect(() => {
     onOutfitPreparingChange?.(outfitPreparing);
@@ -159,7 +143,30 @@ export function AvatarSetupStep({
   // in-progress LUFS slider drag.
   useEffect(() => {
     if (draftAvatar) setTargetLufsDraft(Number(draftAvatar.audio_treatment_target_lufs));
+    // Os três de síntese seguem a MESMA regra e pelo mesmo motivo: `numeric`
+    // chega como string do servidor, e ressincronizar a cada `setDraftAvatar`
+    // atropelaria um arraste em curso.
+    if (draftAvatar) {
+      setVoiceStabilityDraft(Number(draftAvatar.voice_stability));
+      setVoiceSimilarityDraft(Number(draftAvatar.voice_similarity_boost));
+      setVoiceStyleDraft(Number(draftAvatar.voice_style));
+    }
   }, [draftAvatar?.id]);
+
+  // MESMA regra, para o painel do avatar JÁ EXISTENTE — 25/08. Resincroniza
+  // só quando a SELEÇÃO muda (trocar de avatar na grade), não a cada
+  // `setAvatars` disparado por outra ação da tela — senão um arraste em
+  // andamento aqui seria atropelado por, por exemplo, uma foto sendo enviada
+  // em paralelo.
+  useEffect(() => {
+    if (selectedAvatar) {
+      setExistingVoiceStabilityDraft(Number(selectedAvatar.voice_stability));
+      setExistingVoiceSimilarityDraft(Number(selectedAvatar.voice_similarity_boost));
+      setExistingVoiceStyleDraft(Number(selectedAvatar.voice_style));
+      // Item 2 — mesma regra: resincroniza só na troca de avatar selecionado.
+      setExistingTargetLufsDraft(Number(selectedAvatar.audio_treatment_target_lufs));
+    }
+  }, [selectedAvatar?.id]);
 
   // O custo por traje e os trajes em preparo, do avatar selecionado. Recarrega
   // ao trocar de avatar: sem isto o bloco mostraria o andamento de outro.
@@ -229,6 +236,26 @@ export function AvatarSetupStep({
     });
   }
 
+  // Mesmo tratamento que a câmera já aplica por frame (useCamera.ts,
+  // applyQualityTreatment sobre o canvas de saída) — aqui aplicado uma vez,
+  // sobre a imagem enviada por arquivo. Sem isto, o toggle Automático/Manual
+  // e os sliders de Qualidade da imagem não tinham efeito nenhum neste
+  // caminho: a captura por câmera lia o canvas já tratado, e o upload de
+  // arquivo ia direto para `api.upload` sem passar por canvas nenhum.
+  async function applyQualityToFile(file: File, options: QualityOptions): Promise<Blob> {
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0);
+    applyQualityTreatment(ctx, canvas.width, canvas.height, options);
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob ?? file), "image/jpeg", 0.9);
+    });
+  }
+
   // Enviar foto de arquivo, em vez de capturar pela câmera.
   //
   // Sem este caminho o passo inteiro trava numa máquina sem câmera: concluir
@@ -252,7 +279,8 @@ export function AvatarSetupStep({
     await guard(async () => {
       let latest = draftAvatar;
       for (const file of files.slice(0, remaining)) {
-        latest = await api.upload<Avatar>(`/avatars/${latest.id}/photos`, file, file.name);
+        const treated = await applyQualityToFile(file, quality);
+        latest = await api.upload<Avatar>(`/avatars/${latest.id}/photos`, treated, file.name);
       }
       setDraftAvatar(latest);
     });
@@ -353,8 +381,24 @@ export function AvatarSetupStep({
     });
   }
 
-  function handleFinishSetup() {
+  async function handleFinishSetup() {
     if (!draftAvatar) return;
+    // Persistência de Cenário/Traje padrão — Fase A, item 5 (25/08). Até
+    // aqui `defaults.scenario/scenarioPrompt/outfit/outfitPrompt` viviam só
+    // no estado do wizard de vídeo (CreateVideoPage.tsx) e nunca
+    // sobreviviam entre visitas — o rótulo "padrão" prometia uma
+    // persistência que não existia. Falha aqui NÃO trava a conclusão do
+    // avatar (guard() já reporta o erro): o avatar treinado é o que
+    // importa nesta tela, e o pior caso de um PUT que falha é o mesmo
+    // estado de hoje (nada persiste).
+    await guard(async () => {
+      await api.put<Avatar>(`/avatars/${draftAvatar.id}`, {
+        scenario: defaults.scenario || null,
+        scenario_prompt: defaults.scenarioPrompt || null,
+        outfit: defaults.outfit || null,
+        outfit_prompt: defaults.outfitPrompt || null,
+      });
+    });
     camera.stop();
     refreshAvatars();
     onSelectAvatar(draftAvatar.id);
@@ -383,6 +427,58 @@ export function AvatarSetupStep({
     setDraftAvatar(updated);
   }
 
+  /**
+   * Os QUATRO ajustes de síntese do ElevenLabs — migration 067, 25/08.
+   *
+   * Mesmo caminho de `commitTargetLufs`: `PUT /avatars/:id` com um campo só, e
+   * o avatar devolvido substitui o rascunho. O commit é no `onMouseUp`/
+   * `onTouchEnd`, nunca no `onChange` — arrastar um slider dispara dezenas de
+   * eventos, e um PUT por evento é o que já se evitou uma vez no LUFS.
+   */
+  async function commitVoiceTuning(patch: Partial<Avatar>) {
+    if (!draftAvatar) return;
+    const updated = await api.put<Avatar>(`/avatars/${draftAvatar.id}`, patch);
+    setDraftAvatar(updated);
+  }
+
+  /**
+   * O MESMO `commitVoiceTuning`, para o avatar JÁ EXISTENTE — 25/08.
+   *
+   * Mesmo `PUT /avatars/:id`, nenhuma rota nova. A diferença é só onde o
+   * resultado pousa: `draftAvatar` é local ao assistente de criação e não
+   * existe fora dele, então aqui o avatar atualizado entra na lista (`
+   * setAvatars`) do mesmo jeito que `VoiceSampleRecorder` já faz em
+   * `onCloned` — é dali que `selectedAvatar` é derivado (`avatars.find(...)`),
+   * então atualizar a lista é o que faz o slider reflectir o valor salvo.
+   */
+  async function commitExistingVoiceTuning(patch: Partial<Avatar>) {
+    if (!selectedAvatar) return;
+    const updated = await api.put<Avatar>(`/avatars/${selectedAvatar.id}`, patch);
+    setAvatars((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+  }
+
+  /**
+   * O MESMO `handleAudioTreatmentToggle`/`commitTargetLufs`, para o avatar JÁ
+   * EXISTENTE — Item 2. Mesmo padrão de `commitExistingVoiceTuning`: `PUT
+   * /avatars/:id`, e o resultado atualiza a lista (`setAvatars`) em vez do
+   * rascunho, porque é dali que `selectedAvatar` é derivado.
+   */
+  async function handleExistingAudioTreatmentToggle(enabled: boolean) {
+    if (!selectedAvatar) return;
+    const updated = await api.put<Avatar>(`/avatars/${selectedAvatar.id}`, {
+      audio_treatment_enabled: enabled,
+    });
+    setAvatars((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+  }
+
+  async function commitExistingTargetLufs(value: number) {
+    if (!selectedAvatar) return;
+    const updated = await api.put<Avatar>(`/avatars/${selectedAvatar.id}`, {
+      audio_treatment_target_lufs: value,
+    });
+    setAvatars((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+  }
+
   async function handleAssetUpload(kind: "scenario" | "outfit", file: File) {
     const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
     // O nome vai junto porque é a única cópia dele que sobrevive: o
@@ -395,103 +491,11 @@ export function AvatarSetupStep({
     });
   }
 
-  async function handleLookImage(file: File) {
-    const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
-    setLookImageUrl(url);
-    setLookImageName(file.name);
-  }
-
-  /**
-   * Cria o traje e o deixa disponível no passo Cena.
-   *
-   * O erro do servidor é mostrado como veio: em live esta rota devolve 501 com
-   * a explicação de que o endpoint de criação de look do fornecedor não é
-   * conhecido e que criar look custa cerca de US$ 1,00. Traduzir isso para um
-   * "algo deu errado" genérico esconderia justamente a informação que decide se
-   * vale insistir.
-   */
-  async function refreshLooks(avatarId: string): Promise<AvatarLooksResponse | null> {
-    try {
-      const info = await api.get<AvatarLooksResponse>(`/avatars/${avatarId}/looks`);
-      setLookInfo(info);
-      return info;
-    } catch {
-      // Falha aqui não derruba o passo 1: sem esta informação o bloco de traje
-      // some, e o resto da tela (avatar, voz, avançar) continua utilizável.
-      return null;
-    }
-  }
-
-  /**
-   * Cria o traje e acompanha até ele ficar pronto.
-   *
-   * A criação é ASSÍNCRONA no fornecedor — medido em 06/08: o 200 devolve
-   * `processing` e o look leva alguns segundos para ficar `completed`. Enquanto
-   * isso ele NÃO é escolhível, e é por isso que a tela mostra andamento em vez
-   * de dizer "criado" e deixar a pessoa procurar um traje que ainda não existe.
-   *
-   * A reconciliação acontece no servidor, na própria listagem; aqui basta
-   * pedi-la de novo até o pendente sumir. Sem `setInterval`: um intervalo que
-   * sobrevive à saída da tela continua consultando o fornecedor para ninguém.
-   */
-  async function handleCreateLook() {
-    if (!selectedAvatar) return;
-    setLookSaving(true);
-    setLookError(false);
-    setLookMessage(null);
-    try {
-      const criado = await api.post<{ look: { id: string; name: string }; status: string }>(
-        `/avatars/${selectedAvatar.id}/looks`,
-        { name: lookName.trim(), imageUrl: lookImageUrl, prompt: lookPrompt.trim() || undefined },
-      );
-      setLookName("");
-      setLookPrompt("");
-      setLookImageUrl(null);
-
-      if (criado.status === "completed") {
-        setLookMessage(t("createVideo.avatarSetup.addLookCreated", { name: criado.look.name }));
-        await refreshLooks(selectedAvatar.id);
-      } else {
-        setLookMessage(t("createVideo.avatarSetup.addLookPreparing", { name: criado.look.name }));
-        let concluiu = false;
-        for (let i = 0; i < LOOK_POLL_ATTEMPTS; i++) {
-          await new Promise((r) => setTimeout(r, LOOK_POLL_INTERVAL_MS));
-          const info = await refreshLooks(selectedAvatar.id);
-          const aindaEmPreparo = info?.pendentes.some((p) => p.status === "processing");
-          if (!aindaEmPreparo) {
-            const falhou = info?.pendentes.some((p) => p.status === "failed");
-            setLookError(Boolean(falhou));
-            setLookMessage(
-              falhou
-                ? t("createVideo.avatarSetup.addLookFailed")
-                : t("createVideo.avatarSetup.addLookCreated", { name: criado.look.name }),
-            );
-            concluiu = true;
-            break;
-          }
-        }
-        // A JANELA ACABOU E O TRAJE NÃO. Antes daqui o laço simplesmente
-        // terminava: a última mensagem continuava sendo "o fornecedor está
-        // gerando", congelada, sem nada dizendo que a tela havia parado de
-        // olhar. Quem esperava via um traje que nunca chegava e concluía que os
-        // US$ 1,00 tinham sumido — e o conserto natural, criar de novo, gasta
-        // outro dólar por um traje que já estava vindo.
-        //
-        // Não é `setLookError`: nada falhou. O traje continua em preparo no
-        // fornecedor e a listagem o reconcilia na próxima abertura da tela.
-        if (!concluiu) {
-          setLookMessage(
-            t("createVideo.avatarSetup.addLookStillPreparing", { name: criado.look.name }),
-          );
-        }
-      }
-    } catch (err) {
-      setLookError(true);
-      setLookMessage(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLookSaving(false);
-    }
-  }
+  // A LEITURA de looks (para o gate de `outfitPreparing` acima e para o bloco
+  // "Traje deste vídeo"/"Traje padrão" nada usarem daqui) vem só do
+  // `useEffect` que recarrega `lookInfo` ao trocar de avatar, mais abaixo —
+  // não há mais uma função dedicada de refresh, porque a única chamadora
+  // dela (`handleCreateLook`) saiu em UI-PARIDADE-TRAJE (25/08).
 
   if (!creating) {
     return (
@@ -609,105 +613,162 @@ export function AvatarSetupStep({
           />
         )}
 
-        {/* ADICIONAR TRAJE — o destino que o formulário órfão nunca teve.
-            Fica aqui, e não no fluxo de criação, por uma razão medida: traje é
-            LOOK do avatar, e look exige um avatar já treinado no fornecedor. No
-            fluxo de criação o rascunho ainda não tem `provider_avatar_id`, e a
-            rota recusaria — o formulário voltaria a ser decorativo, que é
-            exatamente o defeito que este bloco desfaz.
-            Mesmo lugar e mesma lógica do bloco de voz: aparece depois da
-            seleção, longe de "Novo avatar", e não debita crédito nenhum. */}
+        {/* AJUSTES DA VOZ — migration 067, 25/08. O MESMO painel que já existia
+            só no assistente de criação (ver mais abaixo, `draftAvatar`), agora
+            também aqui: antes desta rodada, reabrir um avatar já treinado não
+            dava acesso nenhum a estes quatro controles — só existiam durante a
+            criação, e um avatar já pronto não tinha onde ajustá-los depois.
+            Mesmo `PUT /avatars/:id`, nenhuma rota nova, nenhuma migration nova.
+            NÃO leva o bloco de Tratamento de Áudio (LUFS) junto — fora do
+            escopo desta rodada por decisão explícita do operador. */}
         {selectedAvatar && (
           <div className="card" style={{ marginTop: 16 }}>
-            <div className="card-title">{t("createVideo.avatarSetup.addLookTitle")}</div>
-            <p className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
-              {t("createVideo.avatarSetup.addLookHelp")}
+            <div className="card-title">{t("createVideo.avatarSetup.voiceTuning.title")}</div>
+            <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
+              {t("createVideo.avatarSetup.voiceTuning.help")}
             </p>
-            <div style={{ maxWidth: 420 }}>
-              <Field label={t("createVideo.avatarSetup.lookNameLabel")}>
-                <input
-                  value={lookName}
-                  onChange={(e) => setLookName(e.target.value)}
-                  placeholder={t("createVideo.avatarSetup.lookNamePlaceholder")}
-                />
-              </Field>
-              <Field label={t("createVideo.avatarSetup.lookImageLabel")}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => e.target.files?.[0] && handleLookImage(e.target.files[0])}
-                />
-              </Field>
-              {lookImageUrl && (
-                <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
-                  {lookImageName
-                    ? t("createVideo.avatarSetup.imageSavedNamed", { name: lookImageName })
-                    : t("createVideo.avatarSetup.imageSaved")}
-                </p>
-              )}
-              <Field
-                label={t("createVideo.avatarSetup.lookPromptLabel")}
-                help={t("createVideo.avatarSetup.lookPromptHelp")}
-              >
-                <input
-                  value={lookPrompt}
-                  onChange={(e) => setLookPrompt(e.target.value)}
-                  placeholder={t("createVideo.avatarSetup.lookPromptPlaceholder")}
-                />
-              </Field>
-              {/* O CUSTO ANTES DO CLIQUE, e não no extrato depois.
-                  Um traje custa 60 unidades — US$ 1,00 medidos na conta real em
-                  06/08, o mesmo que 20 segundos de vídeo cobrados. O número vem
-                  do servidor; em simulação, o aviso é de que nada será cobrado. */}
-              {lookInfo?.simulated && (
-                <p className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
-                  {t("createVideo.avatarSetup.lookCostSimulated")}
-                </p>
-              )}
-              {/* SEM CUSTO A DECLARAR é um estado próprio, e não um erro engolido.
-                  O servidor omite `lookCost` quando o avatar não pode receber traje
-                  — em treino, ou tenant sem credencial —, e ali a frase de preço
-                  não teria sujeito. O bloco simplesmente não existe nesse caso.
-                  Antes, ler `.usd` de um payload assim derrubava o passo 1 inteiro
-                  no clique do card; a checagem abaixo é a condição de renderizar,
-                  não um `try` em volta de uma expressão que se espera funcionar. */}
-              {!lookInfo?.simulated && lookCostDoServidor && (
-                <p className="text-muted" style={{ fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
-                  {t("createVideo.avatarSetup.lookCostLive", {
-                    usd: lookCostDoServidor.usd.toFixed(2).replace(".", ","),
-                    units: lookCostDoServidor.units,
-                  })}
-                </p>
-              )}
-              {lookPendentes.length > 0 && (
-                <ul className="text-muted" style={{ fontSize: 12, marginBottom: 12, paddingLeft: 18 }}>
-                  {lookPendentes.map((p) => (
-                    <li key={p.id}>
-                      {p.status === "processing"
-                        ? t("createVideo.avatarSetup.lookPending", { name: p.name })
-                        : t("createVideo.avatarSetup.lookFailedItem", { name: p.name })}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <button
-                className="btn btn-outline"
-                onClick={handleCreateLook}
-                disabled={lookSaving || !lookName.trim() || (!lookPrompt.trim() && !lookImageUrl)}
-              >
-                {lookSaving
-                  ? t("createVideo.avatarSetup.addLookSaving")
-                  : t("createVideo.avatarSetup.addLookButton")}
-              </button>
-              {lookMessage && (
-                <p
-                  className="text-muted"
-                  style={{ fontSize: 12, marginTop: 10, color: lookError ? "var(--color-danger)" : undefined }}
+
+            <Field
+              label={`${t("createVideo.avatarSetup.voiceTuning.stabilityLabel")} (${existingVoiceStabilityDraft.toFixed(2)})`}
+              help={t("createVideo.avatarSetup.voiceTuning.stabilityHelp")}
+            >
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={existingVoiceStabilityDraft}
+                onChange={(e) => setExistingVoiceStabilityDraft(Number(e.target.value))}
+                onMouseUp={() =>
+                  commitExistingVoiceTuning({ voice_stability: String(existingVoiceStabilityDraft) })
+                }
+                onTouchEnd={() =>
+                  commitExistingVoiceTuning({ voice_stability: String(existingVoiceStabilityDraft) })
+                }
+              />
+            </Field>
+
+            <Field
+              label={`${t("createVideo.avatarSetup.voiceTuning.similarityLabel")} (${existingVoiceSimilarityDraft.toFixed(2)})`}
+              help={t("createVideo.avatarSetup.voiceTuning.similarityHelp")}
+            >
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={existingVoiceSimilarityDraft}
+                onChange={(e) => setExistingVoiceSimilarityDraft(Number(e.target.value))}
+                onMouseUp={() =>
+                  commitExistingVoiceTuning({
+                    voice_similarity_boost: String(existingVoiceSimilarityDraft),
+                  })
+                }
+                onTouchEnd={() =>
+                  commitExistingVoiceTuning({
+                    voice_similarity_boost: String(existingVoiceSimilarityDraft),
+                  })
+                }
+              />
+            </Field>
+
+            <Field
+              label={`${t("createVideo.avatarSetup.voiceTuning.styleLabel")} (${existingVoiceStyleDraft.toFixed(2)})`}
+              help={t("createVideo.avatarSetup.voiceTuning.styleHelp")}
+            >
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={existingVoiceStyleDraft}
+                onChange={(e) => setExistingVoiceStyleDraft(Number(e.target.value))}
+                onMouseUp={() =>
+                  commitExistingVoiceTuning({ voice_style: String(existingVoiceStyleDraft) })
+                }
+                onTouchEnd={() =>
+                  commitExistingVoiceTuning({ voice_style: String(existingVoiceStyleDraft) })
+                }
+              />
+            </Field>
+
+            <Field help={t("createVideo.avatarSetup.voiceTuning.speakerBoostHelp")}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => commitExistingVoiceTuning({ voice_speaker_boost: true })}
+                  style={{
+                    borderColor: selectedAvatar.voice_speaker_boost ? "var(--color-primary)" : undefined,
+                  }}
                 >
-                  {lookMessage}
-                </p>
-              )}
-            </div>
+                  {t("createVideo.avatarSetup.voiceTuning.speakerBoostOn")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => commitExistingVoiceTuning({ voice_speaker_boost: false })}
+                  style={{
+                    borderColor: !selectedAvatar.voice_speaker_boost ? "var(--color-primary)" : undefined,
+                  }}
+                >
+                  {t("createVideo.avatarSetup.voiceTuning.speakerBoostOff")}
+                </button>
+              </div>
+            </Field>
+          </div>
+        )}
+
+        {/* TRATAMENTO DE ÁUDIO (LUFS) — mesmo bloco do assistente de criação,
+            agora também no avatar JÁ EXISTENTE — Item 2, 25/08. Mesmo motivo
+            do painel de Ajustes da voz logo acima: só existia durante a
+            criação, e reabrir um avatar pronto não dava acesso a ele. Mesmo
+            `PUT /avatars/:id`, nenhuma rota nova, nenhuma migration nova. Não
+            redesenha o que o bloco faz — só fecha a lacuna de navegação. */}
+        {selectedAvatar && (
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-title">{t("createVideo.avatarSetup.audioTreatment.title")}</div>
+            <Field help={t("createVideo.avatarSetup.audioTreatment.help")}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => handleExistingAudioTreatmentToggle(true)}
+                  style={{
+                    borderColor: selectedAvatar.audio_treatment_enabled ? "var(--color-primary)" : undefined,
+                  }}
+                >
+                  {t("createVideo.avatarSetup.audioTreatment.enabled")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => handleExistingAudioTreatmentToggle(false)}
+                  style={{
+                    borderColor: !selectedAvatar.audio_treatment_enabled ? "var(--color-primary)" : undefined,
+                  }}
+                >
+                  {t("createVideo.avatarSetup.audioTreatment.disabled")}
+                </button>
+              </div>
+            </Field>
+
+            {selectedAvatar.audio_treatment_enabled && (
+              <Field
+                label={`${t("createVideo.avatarSetup.audioTreatment.targetLufsLabel")} (${existingTargetLufsDraft} LUFS)`}
+                help={t("createVideo.avatarSetup.audioTreatment.targetLufsHelp")}
+              >
+                <input
+                  type="range"
+                  min={-24}
+                  max={-6}
+                  value={existingTargetLufsDraft}
+                  onChange={(e) => setExistingTargetLufsDraft(Number(e.target.value))}
+                  onMouseUp={() => commitExistingTargetLufs(existingTargetLufsDraft)}
+                  onTouchEnd={() => commitExistingTargetLufs(existingTargetLufsDraft)}
+                />
+              </Field>
+            )}
           </div>
         )}
 
@@ -1171,6 +1232,95 @@ export function AvatarSetupStep({
                   />
                 </Field>
               )}
+
+              {/* OS QUATRO AJUSTES DE SÍNTESE — migration 067, 25/08.
+                  Mesmo padrão do tratamento de áudio logo acima: três sliders
+                  com commit no soltar e um par de botões para o booleano.
+                  Eles valem para TODO vídeo deste avatar, nos três níveis — a
+                  voz é do avatar, não do vídeo. */}
+              <div className="card-title" style={{ marginTop: 20 }}>
+                {t("createVideo.avatarSetup.voiceTuning.title")}
+              </div>
+              <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
+                {t("createVideo.avatarSetup.voiceTuning.help")}
+              </p>
+
+              <Field
+                label={`${t("createVideo.avatarSetup.voiceTuning.stabilityLabel")} (${voiceStabilityDraft.toFixed(2)})`}
+                help={t("createVideo.avatarSetup.voiceTuning.stabilityHelp")}
+              >
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={voiceStabilityDraft}
+                  onChange={(e) => setVoiceStabilityDraft(Number(e.target.value))}
+                  onMouseUp={() => commitVoiceTuning({ voice_stability: String(voiceStabilityDraft) })}
+                  onTouchEnd={() => commitVoiceTuning({ voice_stability: String(voiceStabilityDraft) })}
+                />
+              </Field>
+
+              <Field
+                label={`${t("createVideo.avatarSetup.voiceTuning.similarityLabel")} (${voiceSimilarityDraft.toFixed(2)})`}
+                help={t("createVideo.avatarSetup.voiceTuning.similarityHelp")}
+              >
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={voiceSimilarityDraft}
+                  onChange={(e) => setVoiceSimilarityDraft(Number(e.target.value))}
+                  onMouseUp={() =>
+                    commitVoiceTuning({ voice_similarity_boost: String(voiceSimilarityDraft) })
+                  }
+                  onTouchEnd={() =>
+                    commitVoiceTuning({ voice_similarity_boost: String(voiceSimilarityDraft) })
+                  }
+                />
+              </Field>
+
+              <Field
+                label={`${t("createVideo.avatarSetup.voiceTuning.styleLabel")} (${voiceStyleDraft.toFixed(2)})`}
+                help={t("createVideo.avatarSetup.voiceTuning.styleHelp")}
+              >
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={voiceStyleDraft}
+                  onChange={(e) => setVoiceStyleDraft(Number(e.target.value))}
+                  onMouseUp={() => commitVoiceTuning({ voice_style: String(voiceStyleDraft) })}
+                  onTouchEnd={() => commitVoiceTuning({ voice_style: String(voiceStyleDraft) })}
+                />
+              </Field>
+
+              <Field help={t("createVideo.avatarSetup.voiceTuning.speakerBoostHelp")}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => commitVoiceTuning({ voice_speaker_boost: true })}
+                    style={{
+                      borderColor: draftAvatar.voice_speaker_boost ? "var(--color-primary)" : undefined,
+                    }}
+                  >
+                    {t("createVideo.avatarSetup.voiceTuning.speakerBoostOn")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => commitVoiceTuning({ voice_speaker_boost: false })}
+                    style={{
+                      borderColor: !draftAvatar.voice_speaker_boost ? "var(--color-primary)" : undefined,
+                    }}
+                  >
+                    {t("createVideo.avatarSetup.voiceTuning.speakerBoostOff")}
+                  </button>
+                </div>
+              </Field>
             </div>
           </div>
 
@@ -1206,22 +1356,44 @@ export function AvatarSetupStep({
                 />
               </Field>
             </div>
-            {/* O traje CONTINUA sem campo aqui — mas não pela razão que este
-                comentário afirmava antes do BLOCO B5c, e vale desfazer o
-                engano: o campo antigo (upload + prompt gravando em
-                `defaults.outfit`/`outfitPrompt`) foi removido porque
-                `corpoDaGeracao()` NUNCA os incluía no corpo — eram estado
-                morto, não porque dependessem de `provider_avatar_id`. Essa
-                dependência é do OUTRO traje, o LOOK do fornecedor
-                ("Adicionar traje", na área do avatar já selecionado) — coisas
-                diferentes que o nome "traje" confundia.
-                Hoje `outfit`/`outfitPrompt` voltaram a ser preenchíveis, e
-                funcionam exatamente como `scenario` funciona NESTE MESMO
-                bloco — upload + texto, sem avatar treinado nenhum. Só não
-                estão AQUI porque o B5c restringiu o escopo ao avatar
-                EXISTENTE de propósito, para não mexer no fluxo (caro: US$
-                1,00 + 1 crédito) de criar avatar novo. O par vive no ramo
-                `!creating`, logo depois de "Adicionar traje". */}
+            {/* TRAJE PADRÃO — UI-PARIDADE-TRAJE, 25/08.
+                Mesmo par upload+texto do Cenário padrão, ao lado, escrevendo
+                nos MESMOS `defaults.outfit`/`outfitPrompt` que o ramo de
+                avatar EXISTENTE já lê (bloco "Traje deste vídeo", logo
+                abaixo no arquivo) — nenhuma coluna nova, nenhum estado novo.
+                Título PRÓPRIO (`outfitDefaultTitle`, "Traje padrão"), não
+                reaproveita `outfitTitle` ("Traje deste vídeo"): são a MESMA
+                gravação, mas esta tela é onde o avatar nasce, não onde um
+                vídeo específico a sobrescreve. */}
+            <div>
+              <div className="card-title">{t("createVideo.avatarSetup.outfitDefaultTitle")}</div>
+              <Field
+                label={t("createVideo.avatarSetup.uploadImageLabel")}
+                help={t("createVideo.avatarSetup.outfitHelp")}
+              >
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => e.target.files?.[0] && handleAssetUpload("outfit", e.target.files[0])}
+                />
+              </Field>
+              {defaults.outfit && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
+                  {t("createVideo.avatarSetup.imageSaved")}
+                </p>
+              )}
+              <Field
+                label={t("createVideo.avatarSetup.generateViaAiLabel")}
+                help={t("createVideo.avatarSetup.outfitPromptHelp")}
+                helpPrompt={t("createVideo.avatarSetup.outfitHelpPrompt")}
+              >
+                <input
+                  placeholder={t("createVideo.avatarSetup.outfitPlaceholder")}
+                  value={defaults.outfitPrompt}
+                  onChange={(e) => onDefaultsChange({ ...defaults, outfitPrompt: e.target.value })}
+                />
+              </Field>
+            </div>
           </div>
 
           <button

@@ -43,6 +43,22 @@ const FAKE_AVATAR: Avatar = {
   provider_status: "ready",
   audio_treatment_enabled: true,
   audio_treatment_target_lufs: "-16",
+  // Os quatro ajustes de síntese — migration 067. Como STRING nos três
+  // `numeric`, que é como o servidor os entrega: a galeria existe para
+  // exercitar a tela com a forma REAL da resposta, e um number aqui esconderia
+  // exatamente o caso que obriga o `Number()` do outro lado.
+  voice_stability: "0.5",
+  voice_similarity_boost: "0.75",
+  voice_style: "0.0",
+  voice_speaker_boost: true,
+  // Cenário/traje padrão — migration 068. `null` nos quatro: a galeria já
+  // exercita o caminho preenchido via `FILLED_DEFAULTS` (estado do wizard),
+  // e um avatar de exemplo SEM padrão persistido é o estado mais comum hoje
+  // (nenhum avatar real passou pelo "Concluir configuração" novo ainda).
+  scenario: null,
+  scenario_prompt: null,
+  outfit: null,
+  outfit_prompt: null,
   simulated: true,
   created_at: new Date().toISOString(),
 };

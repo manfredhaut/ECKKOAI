@@ -30,7 +30,12 @@ const KEYS = [
   { name: "PLATFORM_COPILOT_API_KEY", desc: "Anthropic — copiloto público e do admin" },
   { name: "PLATFORM_EMBEDDING_API_KEY", desc: "Google — só embeddings" },
   { name: "PLATFORM_HEYGEN_API_KEY", desc: "HeyGen da plataforma (ainda não consumida por código)" },
-  { name: "PLATFORM_ELEVENLABS_API_KEY", desc: "ElevenLabs da plataforma (ainda não consumida por código)" },
+  // CORRIGIDO em 25/08: dizia "ainda não consumida por código", e não é mais
+  // verdade — ela é lida em config.ts e declarada em platformCredentials.ts.
+  // No ambiente local ela está VAZIA (medido: len=0), e a chave em uso vem de
+  // `api_credentials` por tenant; "vazia" e "não consumida" são coisas
+  // diferentes, e a segunda ensinava a ignorar a variável.
+  { name: "PLATFORM_ELEVENLABS_API_KEY", desc: "ElevenLabs da plataforma (lida por config.ts; vazia no ambiente local)" },
 ];
 
 const NEWLINE = "\n";

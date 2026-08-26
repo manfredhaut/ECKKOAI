@@ -511,33 +511,16 @@
       "saveRecording": "Save recording",
       "orUploadFile": "Or upload a file",
       "scenarioTitle": "Default scenario",
-      "scenarioHelp": "Where the avatar appears.",
+      "scenarioHelp": "Where the avatar appears. Applies only to the next video generated in this visit — it isn't saved as a permanent default for the avatar.",
       "scenarioPromptHelp": "Describe the scenario in text for the AI to use as a reference.",
       "scenarioHelpPrompt": "Explain what the 'Scenario' field on this screen is for and how to fill it in correctly (both the image upload and the generate-via-AI options).",
       "scenarioPlaceholder": "e.g. Modern newsroom studio",
+      "outfitDefaultTitle": "Default outfit",
       "outfitTitle": "This video's outfit",
-      "outfitHelp": "What the avatar wears in the composition — not the vendor look (that's 'Add outfit', below).",
+      "outfitHelp": "What the avatar wears in the composition. Applies only to the next video generated in this visit — it isn't saved as a permanent default for the avatar.",
       "outfitPromptHelp": "Describe the outfit in text for the AI to use as reference.",
-      "outfitHelpPrompt": "Explain what the 'This video's outfit' field on this screen is for and how to fill it in correctly (both the image upload option and the AI-generated one), and how it differs from 'Add outfit'.",
+      "outfitHelpPrompt": "Explain what the 'Outfit' field on this screen is for and how to fill it in correctly (both the image upload option and the AI-generated one).",
       "outfitPlaceholder": "e.g. buttoned white lab coat",
-      "addLookTitle": "Add outfit",
-      "addLookHelp": "An outfit is a look belonging to the avatar, not a per-video setting. What you create here shows up in the outfit selector of the Scene step and applies to any video made with this avatar.",
-      "lookNameLabel": "Outfit name",
-      "lookNamePlaceholder": "e.g. Navy business suit",
-      "lookImageLabel": "Reference image (optional)",
-      "lookPromptLabel": "Outfit description",
-      "lookPromptHelp": "Upload an image, describe it in text, or both. A name alone doesn't describe any clothing.",
-      "lookPromptPlaceholder": "e.g. navy suit, white shirt, no tie",
-      "addLookButton": "Create outfit",
-      "addLookSaving": "Creating…",
-      "addLookCreated": "Outfit \"{{name}}\" created. It already appears in the Scene step selector.",
-      "addLookPreparing": "Outfit \"{{name}}\" submitted. The provider is generating the image — this takes a few seconds, and it shows up in the selector once it's ready.",
-      "addLookStillPreparing": "Outfit \"{{name}}\" is still being prepared by the provider — it's taking longer than usual. It was already charged and is not lost: it will show up on its own in the Scene step selector as soon as it's ready, with nothing for you to do. Don't create it again — each outfit is charged separately.",
-      "addLookFailed": "The provider could not generate this outfit. Nothing was charged — the credit was returned.",
-      "lookCostLive": "Creating an outfit costs US$ {{usd}} ({{units}} units) — about the same as 20 seconds of video. You are charged as soon as the provider accepts the request.",
-      "lookCostSimulated": "Simulated mode: creating an outfit here does not contact the provider and costs nothing.",
-      "lookPending": "\"{{name}}\" — being prepared by the provider",
-      "lookFailedItem": "\"{{name}}\" — failed, and the credit was returned",
       "uploadImageLabel": "Upload reference image",
       "generateViaAiLabel": "Generate via AI",
       "imageSaved": "Image saved.",
@@ -588,7 +571,20 @@
       "referenceGuidance": "Video preferably at 1080p and 30fps. Up to 100 MB and up to 2 minutes of continuous speech — 30 seconds already works, with simpler results.",
       "imageTooLarge": "The image is {{size}} and the limit is {{max}}. Reduce the image resolution before uploading, or use a compressed copy instead of the camera original.",
       "readinessTitle": "This avatar still has pending items:",
-      "readinessCanProceed": "You can move on anyway — generation in step 6 is what will refuse."
+      "readinessCanProceed": "You can move on anyway — generation in step 6 is what will refuse.",
+      "voiceTuning": {
+        "title": "Voice tuning",
+        "help": "Applies to every video from this avatar, across all three tiers. The starting values are the ones the provider was already applying — changes here only take effect from the next generation on.",
+        "stabilityLabel": "Stability",
+        "stabilityHelp": "Lower varies the intonation more; higher makes delivery more uniform and can sound monotone.",
+        "similarityLabel": "Similarity to the original voice",
+        "similarityHelp": "Higher tries to match the recording you sent, flaws included; lower smooths it out.",
+        "styleLabel": "Style",
+        "styleHelp": "Exaggerates expressiveness. Above zero, generation gets slower.",
+        "speakerBoostHelp": "Speaker boost: improves similarity to the speaker at some processing cost. On by default.",
+        "speakerBoostOn": "Boost on",
+        "speakerBoostOff": "Boost off"
+      }
     },
     "script": {
       "title": "Script",
@@ -702,6 +698,7 @@
         "premium": "The best motion quality available today, at a much higher cost."
       },
       "tierUnavailable": "One of the tiers above isn't available for this account yet.",
+      "tierAllUnavailable": "None of the tiers above are available for this account.",
       "formatConfidence": {
         "vendor_response": "This format has already come out this way in a real generation, at this tier.",
         "documentation": "The provider documents this format, but no real generation has confirmed it yet.",
@@ -769,7 +766,7 @@
       "blockedShort": "The sample needs to be at least {{min}}.",
       "cloned": "Voice cloned. The account now has {{used}} of {{limit}} voices in use.",
       "slotsUsed": "{{used}} of {{limit}} voice slots used",
-      "slotsDeclaredNote": "Limit declared by this application, not confirmed with the provider: the quota endpoint requires the user_read permission, which the key in use does not have.",
+      "slotsDeclaredNote": "Cap declared by this app, not confirmed with the provider in this reading.",
       "result": {
         "created": "Voice created and linked to this avatar · {{used}} of {{limit}} slots used",
         "done": "Done",
@@ -786,7 +783,10 @@
       "hintLoading": "Loading duration limits…",
       "scope": "This voice belongs to the avatar, not to this video: replacing it changes every video you generate with it from now on. Already-generated videos keep the old voice.",
       "changeVoice": "Change voice",
-      "recordNow": "Record voice"
+      "recordNow": "Record voice",
+      "removeNoiseLabel": "Remove background noise",
+      "removeNoiseHelp": "Only tick this if you recorded somewhere noisy. The cleanup is destructive and can strip part of the timbre along with the noise — on an already quiet recording it has only downside.",
+      "fileMaxSize": "Files up to {{size}}. Anything larger is refused before conversion."
     },
     "scene": {
       "title": "Scene",
@@ -810,11 +810,7 @@
       "expressivenessHelp": "How much the face and body follow the speech. Set to \"Medium\" by default — switch to Low or High whenever you like.",
       "expressiveness_low": "Low",
       "expressiveness_medium": "Medium",
-      "expressiveness_high": "High",
-      "videoAvatarLabel": "This video's avatar",
-      "videoAvatarHelp": "Independent of the avatar chosen in Step 1. On the Simple tier, pick from your existing avatars; on Normal/Premium, upload an image of the character.",
-      "videoAvatarDefault": "None selected",
-      "videoAvatarPreparing": "In preparation: this choice doesn't affect the generated video yet."
+      "expressiveness_high": "High"
     }
   },
   "knowledge": {

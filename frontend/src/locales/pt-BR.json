@@ -511,33 +511,16 @@
       "saveRecording": "Salvar gravação",
       "orUploadFile": "Ou envie um arquivo",
       "scenarioTitle": "Cenário padrão",
-      "scenarioHelp": "Onde o avatar aparece.",
+      "scenarioHelp": "Onde o avatar aparece. Vale só para o próximo vídeo gerado nesta visita — não fica salvo como padrão do avatar.",
       "scenarioPromptHelp": "Descreva o cenário em texto para a IA usar como referência.",
       "scenarioHelpPrompt": "Explique o que é o campo 'Cenário' nesta tela, para que serve e como preenchê-lo corretamente (tanto a opção de enviar imagem quanto a de gerar via IA).",
       "scenarioPlaceholder": "ex.: Estúdio de telejornal moderno",
+      "outfitDefaultTitle": "Traje padrão",
       "outfitTitle": "Traje deste vídeo",
-      "outfitHelp": "O que o avatar veste na composição — não é o look do fornecedor (isso é 'Adicionar traje', abaixo).",
+      "outfitHelp": "O que o avatar veste na composição. Vale só para o próximo vídeo gerado nesta visita — não fica salvo como padrão do avatar.",
       "outfitPromptHelp": "Descreva o traje em texto para a IA usar como referência.",
-      "outfitHelpPrompt": "Explique o que é o campo 'Traje deste vídeo' nesta tela, para que serve e como preenchê-lo corretamente (tanto a opção de enviar imagem quanto a de gerar via IA), e como ele se diferencia de 'Adicionar traje'.",
+      "outfitHelpPrompt": "Explique o que é o campo 'Traje' nesta tela, para que serve e como preenchê-lo corretamente (tanto a opção de enviar imagem quanto a de gerar via IA).",
       "outfitPlaceholder": "ex.: jaleco branco abotoado",
-      "addLookTitle": "Adicionar traje",
-      "addLookHelp": "Traje é um look do avatar, não um ajuste por vídeo. O que você criar aqui aparece no seletor de traje do passo Cena e vale para qualquer vídeo deste avatar.",
-      "lookNameLabel": "Nome do traje",
-      "lookNamePlaceholder": "ex.: Terno azul-marinho",
-      "lookImageLabel": "Imagem de referência (opcional)",
-      "lookPromptLabel": "Descrição do traje",
-      "lookPromptHelp": "Envie uma imagem, descreva em texto, ou as duas coisas. Só o nome não descreve roupa nenhuma.",
-      "lookPromptPlaceholder": "ex.: terno azul-marinho, camisa branca, sem gravata",
-      "addLookButton": "Criar traje",
-      "addLookSaving": "Criando…",
-      "addLookCreated": "Traje \"{{name}}\" criado. Ele já aparece no seletor do passo Cena.",
-      "addLookPreparing": "Traje \"{{name}}\" enviado. O fornecedor está gerando a imagem — isso leva alguns segundos, e ele aparece no seletor quando ficar pronto.",
-      "addLookStillPreparing": "Traje \"{{name}}\" continua sendo preparado pelo fornecedor — está demorando mais que o normal. Ele já foi cobrado e não se perdeu: aparece sozinho no seletor do passo Cena assim que ficar pronto, sem você fazer nada. Não crie de novo, porque cada traje custa à parte.",
-      "addLookFailed": "O fornecedor não conseguiu gerar este traje. Nada foi cobrado — o crédito voltou.",
-      "lookCostLive": "Criar um traje custa US$ {{usd}} ({{units}} unidades) — o mesmo que cerca de 20 segundos de vídeo. A cobrança acontece assim que o fornecedor aceita o pedido.",
-      "lookCostSimulated": "Modo simulado: criar traje aqui não fala com o fornecedor e não custa nada.",
-      "lookPending": "\"{{name}}\" — em preparo no fornecedor",
-      "lookFailedItem": "\"{{name}}\" — falhou, e o crédito foi devolvido",
       "uploadImageLabel": "Enviar imagem de referência",
       "generateViaAiLabel": "Gerar via IA",
       "imageSaved": "Imagem salva.",
@@ -588,7 +571,20 @@
       "referenceGuidance": "Vídeo preferencialmente com 1080p a 30fps. Até 100 MB e até 2 minutos de fala contínua — 30 segundos já funcionam, com resultado mais simples.",
       "imageTooLarge": "A imagem tem {{size}} e o limite é {{max}}. Reduza a resolução da imagem antes de enviar, ou use uma cópia comprimida em vez do arquivo original da câmera.",
       "readinessTitle": "Este avatar ainda tem pendências:",
-      "readinessCanProceed": "Você pode avançar assim mesmo — a geração no passo 6 é que vai recusar."
+      "readinessCanProceed": "Você pode avançar assim mesmo — a geração no passo 6 é que vai recusar.",
+      "voiceTuning": {
+        "title": "Ajustes da voz",
+        "help": "Valem para todos os vídeos deste avatar, nos três níveis. Os valores iniciais são os que o provedor já aplicava — mexer aqui só muda algo a partir da próxima geração.",
+        "stabilityLabel": "Estabilidade",
+        "stabilityHelp": "Mais baixo varia mais a entonação; mais alto deixa a fala mais uniforme e pode soar monótona.",
+        "similarityLabel": "Semelhança com a voz original",
+        "similarityHelp": "Mais alto tenta se aproximar da gravação enviada, inclusive dos defeitos dela; mais baixo suaviza.",
+        "styleLabel": "Estilo",
+        "styleHelp": "Exagera a expressividade. Acima de zero a geração fica mais lenta.",
+        "speakerBoostHelp": "Reforço de voz: melhora a semelhança com o locutor, com custo de processamento. Ligado por padrão.",
+        "speakerBoostOn": "Reforço ligado",
+        "speakerBoostOff": "Reforço desligado"
+      }
     },
     "script": {
       "title": "Roteiro",
@@ -702,6 +698,7 @@
         "premium": "A maior qualidade de movimento disponível hoje, por um custo bem mais alto."
       },
       "tierUnavailable": "Um dos níveis acima ainda não está disponível para esta conta.",
+      "tierAllUnavailable": "Nenhum dos níveis acima está disponível para esta conta.",
       "formatConfidence": {
         "vendor_response": "Este formato já saiu assim numa geração real, neste nível.",
         "documentation": "O fornecedor documenta este formato, mas nenhuma geração real confirmou ainda.",
@@ -769,7 +766,7 @@
       "blockedShort": "A amostra precisa de pelo menos {{min}}.",
       "cloned": "Voz clonada. A conta ficou com {{used}} de {{limit}} vozes em uso.",
       "slotsUsed": "{{used}} de {{limit}} slots de voz usados",
-      "slotsDeclaredNote": "Teto declarado por este aplicativo, não confirmado no fornecedor: o endpoint de cota exige a permissão user_read, que a chave em uso não tem.",
+      "slotsDeclaredNote": "Teto declarado por este aplicativo, não confirmado no fornecedor nesta leitura.",
       "result": {
         "created": "Voz criada e ligada a este avatar · {{used}} de {{limit}} slots usados",
         "done": "Pronto",
@@ -786,7 +783,10 @@
       "hintLoading": "Carregando os limites de duração…",
       "scope": "Esta voz pertence ao avatar, não a este vídeo: trocá-la muda todos os vídeos que você gerar com ele daqui em diante. Os já gerados continuam com a voz antiga.",
       "changeVoice": "Trocar voz",
-      "recordNow": "Gravar voz"
+      "recordNow": "Gravar voz",
+      "removeNoiseLabel": "Remover ruído de fundo",
+      "removeNoiseHelp": "Só marque se gravou em ambiente barulhento. A limpeza é destrutiva e pode tirar parte do timbre junto — numa gravação já silenciosa, ela só tem a perder.",
+      "fileMaxSize": "Arquivo de até {{size}}. Acima disso o envio é recusado antes da conversão."
     },
     "scene": {
       "title": "Cena",
@@ -810,11 +810,7 @@
       "expressivenessHelp": "Quanto o rosto e o corpo acompanham a fala. Já vem em \"Média\" por padrão — troque para Baixa ou Alta quando quiser.",
       "expressiveness_low": "Baixa",
       "expressiveness_medium": "Média",
-      "expressiveness_high": "Alta",
-      "videoAvatarLabel": "Avatar deste vídeo",
-      "videoAvatarHelp": "Independente do avatar escolhido no Passo 1. No nível Simples, escolha entre os avatares existentes; em Normal/Premium, envie uma imagem do personagem.",
-      "videoAvatarDefault": "Nenhum selecionado",
-      "videoAvatarPreparing": "Em preparação: esta escolha ainda não entra no vídeo gerado."
+      "expressiveness_high": "Alta"
     }
   },
   "knowledge": {

@@ -21,6 +21,7 @@ import type { Mutant } from "./mutants.js";
 
 const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
 const TABELA_FRONTEND = "frontend/src/pages/CreateVideo/DurationCostReference.tsx";
+const CARTAO_NIVEL = "frontend/src/pages/CreateVideo/steps/SceneStep.tsx";
 
 export const MUTANTS: Mutant[] = [
   {
@@ -94,6 +95,23 @@ export const MUTANTS: Mutant[] = [
       "    // F2, 22/08/2026: teto de duração REAL deste tier",
     expect: "a tabela de custo ignorou o tier pedido e sempre respondeu como heygen",
   },
+  {
+    guard: "cartão de nível: o preço vem de /video-cost-reference (estimateVideoCost), nunca um texto fixo",
+    name: "o preço do cartão Premium volta a ser a string fixa 'US$ 14,19'",
+    kind: "esperto",
+    // ESPERTO: os outros dois cartões continuam corretos, a chamada a
+    // /video-cost-reference continua acontecendo para os três tiers — só o
+    // valor calculado deixa de ser usado no cartão Premium. É o defeito A3
+    // original, palavra por palavra: uma string que não reage a nada,
+    // cabendo perfeitamente ao lado de código que parece dinâmico.
+    file: CARTAO_NIVEL,
+    find:
+      '                <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>{precoDoCartao(opt.value)}</span>',
+    replace:
+      '                <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>' +
+      '{opt.value === "premium" ? "US$ 14,19" : precoDoCartao(opt.value)}</span>',
+    expect: "parece ter um preço em dólar escrito no código, fora de",
+  },
 ];
 
 export interface CostReferenceCheckResult {
@@ -137,6 +155,22 @@ export function checkCostReferencePolicy(repoRoot: string): CostReferenceCheckRe
       failures.push(
         "um ponto acima do que o Wan anima (15s) não foi marcado como indisponível para o tier — " +
           "/video-cost-reference não resolve mais o teto real por maxReachableSecondsForTier(tier).",
+      );
+    }
+    // `target` — Fase A, item 2: o ponto ÚNICO que o cartão de nível usa
+    // (SceneStep.tsx) tem de sair da MESMA estimateVideoCost dos pontos
+    // fixos acima, nunca de um número à parte.
+    if (!corpoRota.includes("estimateVideoCost(pontoAlvo, vendor)")) {
+      failures.push(
+        "cartão de nível: /video-cost-reference não calcula mais `target` por estimateVideoCost(pontoAlvo, " +
+          "vendor) — o preço que o cartão de nível mostra pode ter deixado de vir da régua de custo real.",
+      );
+    }
+    if (!corpoRota.includes("const pontoAlvo = targetSecondsPedido ?? maxAlcancavel;")) {
+      failures.push(
+        "cartão de nível: /video-cost-reference deixou de cair no teto real do tier quando não há " +
+          "targetSeconds — sem essa régua, o preço do cartão antes de haver roteiro voltaria a ser um " +
+          "número inventado ou ausente.",
       );
     }
   }
@@ -187,10 +221,36 @@ export function checkCostReferencePolicy(repoRoot: string): CostReferenceCheckRe
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // O CARTÃO DE NÍVEL (SceneStep.tsx) também só consome — defeito A3.
+  // ---------------------------------------------------------------------------
+  const cartaoSrc = readFileSync(path.join(repoRoot, CARTAO_NIVEL), "utf8");
+  if (!cartaoSrc.includes("/video-cost-reference")) {
+    failures.push(`cartão de nível: ${CARTAO_NIVEL} não chama mais /video-cost-reference.`);
+  }
+  // Nenhum preço em dólar ESCRITO no componente — nem ponto decimal (padrão
+  // americano) nem vírgula (padrão pt-BR, o formato do literal original do
+  // defeito A3, "US$ 14,19"). Bloco de comentário `/** … */` removido antes
+  // de testar: o histórico do defeito é citado em comentário no próprio
+  // arquivo, e citar não é reintroduzir.
+  const cartaoSemComentarios = cartaoSrc.replace(/\/\*[\s\S]*?\*\//g, "");
+  if (/US\$\s*\d/.test(cartaoSemComentarios)) {
+    failures.push(
+      `cartão de nível: ${CARTAO_NIVEL} parece ter um preço em dólar escrito no código, fora de ` +
+        'comentário — padrão `US$` seguido de dígito. É exatamente a forma do defeito A3 original ' +
+        '("US$ 14,19", uma faixa que citava "30s de referência" sem nunca recalcular). O preço é ' +
+        "responsabilidade do servidor (/video-cost-reference), nunca de um literal no componente.",
+    );
+  }
+
   if (failures.length === 0) {
     notes.push(
       "tabela de custo: /video-cost-reference calcula cada ponto por estimateVideoCost, resolvido pelo " +
         "vendor do tier pedido; DurationCostReference.tsx só consome, nenhum preço escrito no componente",
+    );
+    notes.push(
+      "    cartão de nível: SceneStep.tsx consome /video-cost-reference (target, pelo mesmo estimador), " +
+        "nenhum preço fixo escrito no componente — A3 fechado",
     );
   }
 

@@ -69,9 +69,14 @@ export const MUTANTS: Mutant[] = [
     // do fornecedor, que ninguém deste lado controla nem registra. E a régua de
     // custo continua dividindo por 0.85, então a estimativa passa a errar.
     file: "backend/src/services/providers/voiceProvider.ts",
-    find: "  if (supportsSpeed(modelId)) {\n    body.voice_settings = { speed: VOICE_SPEED };\n  }",
+    // ÂNCORA ATUALIZADA em 25/08: o bloco deixou de montar `voice_settings`
+    // inteiro e passou a acumular em `settings`, porque os quatro ajustes do
+    // avatar entram fora deste `if`. O `find` antigo (`body.voice_settings =
+    // { speed: VOICE_SPEED };`) deixou de existir e o mutante voltaria ERRO de
+    // aplicação — que não é reprovação nem aprovação.
+    find: "  if (supportsSpeed(modelId)) {\n    settings.speed = VOICE_SPEED;\n  }",
     replace: "",
-    expect: "o corpo da síntese saiu sem `voice_settings`",
+    expect: "o corpo da síntese saiu sem a velocidade medida",
   },
 ];
 
@@ -165,7 +170,7 @@ export function checkDirectionLimitPolicy(repoRoot: string): DirectionLimitCheck
   };
   if (corpo.voice_settings?.speed !== VOICE_SPEED) {
     failures.push(
-      `voz: o corpo da síntese saiu sem \`voice_settings\` com a velocidade medida — recebi ` +
+      `voz: o corpo da síntese saiu sem a velocidade medida — recebi ` +
         `${JSON.stringify(corpo.voice_settings)}, esperado { speed: ${VOICE_SPEED} }. Sem o campo, vale ` +
         "o que estiver guardado no painel do fornecedor: global, editável fora do produto e sem rastro. " +
         "A régua de custo continuaria dividindo pela velocidade que ninguém está mais usando.",
@@ -177,16 +182,29 @@ export function checkDirectionLimitPolicy(repoRoot: string): DirectionLimitCheck
         `${JSON.stringify(ELEVENLABS_TTS_MODEL)}.`,
     );
   }
-  // Contraponto: modelo que NÃO suporta `speed` não recebe o campo. Sem isto,
-  // uma guarda que só exigisse presença empurraria o campo para todo modelo — e
-  // o fornecedor aceita em silêncio o que não suporta, que é o pior caso
-  // conhecido deste projeto.
-  const semSpeed = buildSynthesisBody("texto", "eleven_v3") as { voice_settings?: unknown };
+  // Contraponto: modelo que NÃO suporta `speed` não recebe ESSE campo. O que
+  // mudou em 25/08 é o resto do objeto — os quatro ajustes do avatar vão em
+  // QUALQUER modelo, por decisão explícita do operador, então `voice_settings`
+  // presente em `eleven_v3` deixou de ser sintoma de defeito. O que continua
+  // sendo defeito é a VELOCIDADE vazar para um modelo que não a tem.
+  const semSpeed = buildSynthesisBody("texto", "eleven_v3") as {
+    voice_settings?: { speed?: number };
+  };
+  if (semSpeed.voice_settings?.speed !== undefined) {
+    failures.push(
+      "voz: `speed` foi enviado a um modelo que não tem o campo (eleven_v3). O fornecedor aceita e " +
+        "ignora em silêncio — o mesmo pior caso de `expressiveness` com `avatar_iii` —, e o sintoma " +
+        "seria uma fala mais rápida que ninguém saberia explicar.",
+    );
+  }
+  // E sem ajuste nenhum o objeto não vai VAZIO: `voice_settings: {}` sobrescreve
+  // o que está guardado na voz e devolve tudo ao default do fornecedor — pior
+  // que não mandar nada. É o que mantém o corpo de antes de 25/08 idêntico
+  // quando o parâmetro novo é omitido.
   if (semSpeed.voice_settings !== undefined) {
     failures.push(
-      "voz: `voice_settings` foi enviado a um modelo que não tem o campo. O fornecedor aceita e ignora " +
-        "em silêncio — o mesmo pior caso de `expressiveness` com `avatar_iii` —, e o sintoma seria uma " +
-        "fala mais rápida que ninguém saberia explicar.",
+      "voz: um modelo sem `speed` e sem ajustes de avatar recebeu `voice_settings` vazio. Um objeto " +
+        "vazio sobrescreve o que está guardado na voz e devolve tudo ao default do fornecedor.",
     );
   }
 

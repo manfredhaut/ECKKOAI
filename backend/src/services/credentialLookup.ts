@@ -70,22 +70,6 @@ function vendorHerdavel(provider: CredentialProvider): string {
   return coberto ?? defaultVendor(provider);
 }
 
-/**
- * A plataforma vence a BYOK neste par? Ver `HERANCA_DE_PLATAFORMA`.
- *
- * Hoje só a fal responde `true`, por decisão do bloco de centralização
- * (21/08). Esta função existe para que os dois leitores abaixo perguntem em
- * vez de cada um decidir — e para que a exceção tenha UM lugar.
- */
-async function plataformaVence(
-  provider: CredentialProvider,
-  vendor: string,
-): Promise<ResolvedCredential | null> {
-  const cobertura = plataformaQueCobre(provider, vendor);
-  if (cobertura?.precedencia !== "plataforma_vence") return null;
-  return herdarDaPlataforma(provider, vendor);
-}
-
 // Shared by every route that needs a tenant's BYOK credential + chosen
 // vendor (scripts, copilot, avatars, videos) — returns null when the
 // tenant hasn't connected a key for that provider category yet.
@@ -115,15 +99,15 @@ export async function getCredential(
   const escolhido = rows[0]?.vendor || null;
   const vendor = escolhido ?? vendorHerdavel(provider);
   const encryptedKey = rows[0]?.encrypted_key;
-  // A EXCEÇÃO primeiro, e só ela: no par em que a plataforma vence, ela vence
-  // inclusive havendo BYOK. Ver `plataformaVence`.
-  const centralizada = await plataformaVence(provider, vendor);
-  if (centralizada) return centralizada;
+  // A PLATAFORMA PRIMEIRO, SEMPRE — regra geral desde h.3 (25/08). Até aqui
+  // isto era uma exceção isolada (só `avatar/fal`, via `plataformaVence`);
+  // agora é a mesma chamada que cobre a AUSÊNCIA (W1, 24/08) — não há mais
+  // dois caminhos, um só: tem cobertura com chave gravada, ela vence; não
+  // tem, cai no BYOK abaixo.
+  const daPlataforma = await herdarDaPlataforma(provider, vendor);
+  if (daPlataforma) return daPlataforma;
   if (encryptedKey) return { apiKey: decrypt(encryptedKey), vendor, source: "tenant_byok" };
-  // W1 — sem chave própria, a plataforma cobre. Antes disto a função devolvia
-  // `null` aqui, e um tenant recém-criado não alcançava fornecedor nenhum
-  // mesmo com todas as chaves de plataforma gravadas.
-  return herdarDaPlataforma(provider, vendor);
+  return null;
 }
 
 // A busca por VENDOR EXPLÍCITO — Fase C. Os 3 call sites tier-aware de
@@ -143,12 +127,13 @@ export async function getCredentialForVendor(
     [tenantId, provider, vendor],
   );
   const encryptedKey = rows[0]?.encrypted_key;
-  const centralizada = await plataformaVence(provider, vendor);
-  if (centralizada) return centralizada;
+  // A PLATAFORMA PRIMEIRO, SEMPRE — mesma regra geral de `getCredential`
+  // acima, e aqui o vendor não precisa ser adivinhado: ele é o parâmetro.
+  // É este mesmo caminho que faz um tenant zerado poder escolher QUALQUER
+  // nível na tela (W1), e não só o do vendor que alguém tenha cadastrado
+  // para ele.
+  const daPlataforma = await herdarDaPlataforma(provider, vendor);
+  if (daPlataforma) return daPlataforma;
   if (encryptedKey) return { apiKey: decrypt(encryptedKey), vendor, source: "tenant_byok" };
-  // W1 — mesma herança da função acima, e aqui o vendor não precisa ser
-  // adivinhado: ele é o parâmetro. É este caminho que faz um tenant zerado
-  // poder escolher QUALQUER nível na tela, e não só o do vendor que alguém
-  // tenha cadastrado para ele.
-  return herdarDaPlataforma(provider, vendor);
+  return null;
 }

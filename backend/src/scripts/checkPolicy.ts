@@ -84,6 +84,7 @@ import { checkFalVideoApprovalPolicy } from "./checkFalVideoApprovalPolicy.js";
 import { checkFalGastoInstrumentadoPolicy } from "./checkFalGastoInstrumentadoPolicy.js";
 import { checkUsageAttributionPolicy } from "./checkUsageAttributionPolicy.js";
 import { checkVoiceRotationPolicy } from "./checkVoiceRotationPolicy.js";
+import { checkVoiceTuningPolicy } from "./checkVoiceTuningPolicy.js";
 import { checkEnsaioSimuladoPolicy } from "./checkEnsaioSimuladoPolicy.js";
 import { checkPlatformInheritancePolicy } from "./checkPlatformInheritancePolicy.js";
 import { checkGateRunnerPolicy } from "./checkGateRunnerPolicy.js";
@@ -94,6 +95,7 @@ import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
 import { checkExistingAvatarAssetsPolicy } from "./checkExistingAvatarAssetsPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
+import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -801,6 +803,14 @@ async function main(): Promise<void> {
   voiceRotation.failures.forEach((f) => failures.push(f));
   voiceRotation.notes.forEach((n) => note(n));
 
+  // --- 24o-quinquies-bis. os ajustes de síntese vêm do avatar (067) -------
+  //
+  // Sem rede e sem banco: chama uma função pura com um avatar de mentira e lê
+  // dois arquivos de rota.
+  const voiceTuning = await checkVoiceTuningPolicy();
+  voiceTuning.failures.forEach((f) => failures.push(f));
+  voiceTuning.notes.forEach((n) => note(n));
+
   // --- 24o-sexies. o ensaio não gasta (R7) --------------------------------
   //
   // Troca `globalThis.fetch` e `PROVIDER_MODE`, restaurando os dois no
@@ -877,6 +887,13 @@ async function main(): Promise<void> {
   const referenceVideoPhotoOptional = await checkReferenceVideoPhotoOptionalPolicy();
   referenceVideoPhotoOptional.failures.forEach((f) => failures.push(f));
   referenceVideoPhotoOptional.notes.forEach((n) => note(n));
+
+  // --- 24o-septies-bis. cenário/traje padrão do avatar persistem (068) ----
+  //
+  // Só leitura de arquivo — nenhuma rede, nenhum banco, nenhum React montado.
+  const avatarSceneDefaults = checkAvatarSceneDefaultsPolicy(process.env.REPO_ROOT ?? "/repo");
+  avatarSceneDefaults.failures.forEach((f) => failures.push(f));
+  avatarSceneDefaults.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //

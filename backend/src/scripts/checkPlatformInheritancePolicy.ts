@@ -14,15 +14,26 @@
  * │ tenant que tem continua pagando a dele.                                  │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
+ * ┌─ h.3, 25/08 — A REGRA MUDOU DE NOVO, e esta guarda mudou junto ──────────┐
+ * │ Até aqui a fal era a ÚNICA exceção: `avatar/fal` vencia a BYOK do        │
+ * │ tenant, todo o resto seguia `byok_vence`. O operador generalizou: a      │
+ * │ plataforma vence SEMPRE que tiver cobertura, para QUALQUER vendor — não  │
+ * │ há mais campo de precedência, não há mais ramo à parte para a fal. Os    │
+ * │ testes abaixo foram REESCRITOS para provar a regra geral, não a exceção  │
+ * │ antiga; ver `platformInheritance.ts` para o mapa e `credentialLookup.ts` │
+ * │ para onde a decisão é aplicada.                                          │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
  *  G-1  tenant SEM linha nenhuma alcança os vendors cobertos, via plataforma.
- *  G-2  tenant COM chave própria continua usando a DELE — a herança cobre a
- *       ausência, nunca substitui uma escolha (exceto no par declarado como
- *       `plataforma_vence`; ver G-4).
- *  G-3  sem chave nos DOIS níveis, a resposta é `null` — falha FECHADA e
+ *  G-2  tenant COM chave própria e a plataforma TAMBÉM cobrindo: a plataforma
+ *       vence — para heygen e voz, não só para a fal. É a prova de que a
+ *       regra é geral, não uma exceção isolada.
+ *  G-3  sem cobertura de plataforma para o par (ex.: `avatar/did`), o BYOK do
+ *       tenant segue funcionando sem erro — o fallback não regrediu.
+ *  G-3b sem chave nos DOIS níveis, a resposta é `null` — falha FECHADA e
  *       explícita, jamais uma chave herdada por acidente de nomenclatura.
- *  G-4  a divergência de precedência da fal é DECLARADA no mapa, não
- *       escondida: `avatar/fal` é `plataforma_vence` e os demais são
- *       `byok_vence`.
+ *  G-4  a exceção isolada da fal não existe mais NO CÓDIGO — nenhum arquivo
+ *       menciona `precedencia`, `plataforma_vence` ou `byok_vence`.
  *  G-6  o tenant ZERADO vê os TRÊS níveis disponíveis — é a mesma cadeia que
  *       a criação usa para recusar (`vendorRequiredByTier` +
  *       `getCredentialForVendor`), e a tela pergunta em vez de reimplementar.
@@ -50,7 +61,7 @@ import { pool } from "../db/pool.js";
 import { encrypt } from "../services/crypto.js";
 import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 import { invalidatePlatformKeyCache } from "../services/platformCredentialStore.js";
-import { HERANCA_DE_PLATAFORMA, plataformaQueCobre } from "../services/platformInheritance.js";
+import { HERANCA_DE_PLATAFORMA } from "../services/platformInheritance.js";
 import { VIDEO_TIERS, vendorRequiredByTier } from "../services/video/falPipeline.js";
 
 const LOOKUP = "backend/src/services/credentialLookup.ts";
@@ -67,39 +78,96 @@ const ESTADOS_DO_SELO = ["ausente", "gravada", "gravada_sem_sonda", "validada", 
 export const MUTANTS: Mutant[] = [
   {
     guard: "tenant sem chave própria herda a da plataforma",
-    name: "a herança some e o tenant zerado volta a não ter acesso",
+    name: "a herança some inteiramente e o tenant zerado volta a não ter acesso",
     kind: "obvio",
+    // ÓBVIO: com a regra geral (h.3), platform-first é a ÚNICA chamada que
+    // resolve herança — não há mais um segundo caminho de fallback separado
+    // para "sem chave própria". Removê-la quebra as duas pernas de uma vez:
+    // o tenant zerado (W1) E o tenant com BYOK que a plataforma deveria
+    // vencer (h.3) — a mais grosseira das duas quebras possíveis aqui.
     file: LOOKUP,
     find:
+      "  const daPlataforma = await herdarDaPlataforma(provider, vendor);\n" +
+      "  if (daPlataforma) return daPlataforma;\n" +
       "  if (encryptedKey) return { apiKey: decrypt(encryptedKey), vendor, source: \"tenant_byok\" };\n" +
-      "  // W1 — sem chave própria, a plataforma cobre. Antes disto a função devolvia\n" +
-      "  // `null` aqui, e um tenant recém-criado não alcançava fornecedor nenhum\n" +
-      "  // mesmo com todas as chaves de plataforma gravadas.\n" +
-      "  return herdarDaPlataforma(provider, vendor);",
+      "  return null;\n" +
+      "}\n" +
+      "\n" +
+      "// A busca por VENDOR EXPLÍCITO",
     replace:
       "  if (encryptedKey) return { apiKey: decrypt(encryptedKey), vendor, source: \"tenant_byok\" };\n" +
-      "  return null;",
+      "  return null;\n" +
+      "}\n" +
+      "\n" +
+      "// A busca por VENDOR EXPLÍCITO",
     expect: "herança: tenant zerado não alcançou",
   },
   {
-    guard: "a chave do tenant vence a da plataforma",
-    name: "a plataforma passa a vencer a chave do tenant em todos os pares",
+    guard: "a plataforma vence SEMPRE que tiver cobertura — regra GERAL, não exceção isolada da fal (h.3)",
+    name: "reintroduz a exceção isolada da fal — só ela consulta a plataforma primeiro",
     kind: "esperto",
-    // ESPERTO: continua havendo herança, o tenant zerado continua funcionando,
-    // e o caminho feliz do W1 segue verde. O que muda é quem PAGA: todo tenant
-    // que conectou a própria chave passa a gastar a da plataforma sem nada na
-    // tela dizendo isso — o oposto exato da decisão do operador ("tenant COM
-    // chave própria continua pagando a dele").
+    // ESPERTO: a fal continua funcionando exatamente como antes — é
+    // justamente por isso que este mutante é perigoso. O que ele reintroduz
+    // é o ramo à parte que h.3 existe para eliminar: heygen e elevenlabs
+    // voltam a `byok_vence` (a BYOK do tenant vence, a plataforma só cobre a
+    // ausência), enquanto a fal segue plataforma-primeiro — a MESMA
+    // divergência declarada de 24/08, só que sem o campo dizendo isso.
+    //
+    // ⚠️ ALVO: `getCredentialForVendor`, não `getCredential` — é ela que G-2
+    // exercita (os 3 call sites tier-aware de `routes/videos.ts` usam
+    // `getCredentialForVendor`, e é assim que a guarda mede). Mutar
+    // `getCredential` deixaria o mutante INERTE: a função mutada nunca
+    // seria chamada pelo caminho que a guarda observa.
     file: LOOKUP,
     find:
-      "  const cobertura = plataformaQueCobre(provider, vendor);\n" +
-      "  if (cobertura?.precedencia !== \"plataforma_vence\") return null;\n" +
-      "  return herdarDaPlataforma(provider, vendor);",
+      "  // A PLATAFORMA PRIMEIRO, SEMPRE — mesma regra geral de `getCredential`\n" +
+      "  // acima, e aqui o vendor não precisa ser adivinhado: ele é o parâmetro.\n" +
+      "  // É este mesmo caminho que faz um tenant zerado poder escolher QUALQUER\n" +
+      "  // nível na tela (W1), e não só o do vendor que alguém tenha cadastrado\n" +
+      "  // para ele.\n" +
+      "  const daPlataforma = await herdarDaPlataforma(provider, vendor);\n" +
+      "  if (daPlataforma) return daPlataforma;\n" +
+      "  if (encryptedKey) return { apiKey: decrypt(encryptedKey), vendor, source: \"tenant_byok\" };\n" +
+      "  return null;\n" +
+      "}",
     replace:
-      "  const cobertura = plataformaQueCobre(provider, vendor);\n" +
-      "  if (!cobertura) return null;\n" +
-      "  return herdarDaPlataforma(provider, vendor);",
-    expect: "herança: a chave do tenant foi substituída",
+      "  if (vendor === \"fal\") {\n" +
+      "    const daPlataforma = await herdarDaPlataforma(provider, vendor);\n" +
+      "    if (daPlataforma) return daPlataforma;\n" +
+      "  }\n" +
+      "  if (encryptedKey) return { apiKey: decrypt(encryptedKey), vendor, source: \"tenant_byok\" };\n" +
+      "  return herdarDaPlataforma(provider, vendor);\n" +
+      "}",
+    expect: "herança: a plataforma não venceu a BYOK do tenant",
+  },
+  {
+    guard: "sem cobertura de plataforma, o BYOK do tenant segue funcionando (fallback preservado)",
+    name: "quebra o fallback para BYOK quando não há credencial de plataforma",
+    kind: "esperto",
+    // ESPERTO: continua havendo herança para os pares COM cobertura — o
+    // caminho feliz do h.3 segue verde. O que quebra é o outro lado da
+    // mesma decisão: um vendor sem chave de plataforma (ex.: `avatar/did`)
+    // deixa de cair no BYOK do tenant. Não é erro visível — é `null` onde
+    // deveria haver a chave que o tenant conectou, e a geração recusa como
+    // se o tenant nunca tivesse configurado nada.
+    file: LOOKUP,
+    find:
+      "  // A PLATAFORMA PRIMEIRO, SEMPRE — mesma regra geral de `getCredential`\n" +
+      "  // acima, e aqui o vendor não precisa ser adivinhado: ele é o parâmetro.\n" +
+      "  // É este mesmo caminho que faz um tenant zerado poder escolher QUALQUER\n" +
+      "  // nível na tela (W1), e não só o do vendor que alguém tenha cadastrado\n" +
+      "  // para ele.\n" +
+      "  const daPlataforma = await herdarDaPlataforma(provider, vendor);\n" +
+      "  if (daPlataforma) return daPlataforma;\n" +
+      "  if (encryptedKey) return { apiKey: decrypt(encryptedKey), vendor, source: \"tenant_byok\" };\n" +
+      "  return null;\n" +
+      "}",
+    replace:
+      "  const daPlataforma = await herdarDaPlataforma(provider, vendor);\n" +
+      "  if (daPlataforma) return daPlataforma;\n" +
+      "  return null;\n" +
+      "}",
+    expect: "herança: o fallback para BYOK regrediu",
   },
   {
     guard: "par sem cobertura falha FECHADO",
@@ -125,22 +193,25 @@ export const MUTANTS: Mutant[] = [
     // o roteiro do cliente passaria a consumir a cota do copiloto público.
     file: MAPA,
     find: '  "avatar/did": null,',
-    replace: '  "avatar/did": { id: "heygen", precedencia: "byok_vence" },',
+    replace: '  "avatar/did": { id: "heygen" },',
     expect: "herança: par sem cobertura não falhou fechado",
   },
   {
-    guard: "a divergência de precedência da fal é declarada",
-    name: "a fal passa a seguir a regra geral e a BYOK inválida volta",
+    guard: "o mapa não tem mais campo de precedência — a exceção isolada da fal está eliminada, não só inerte",
+    name: "o campo de precedência volta ao mapa de herança",
     kind: "esperto",
-    // ESPERTO: alinhar a fal à regra geral parece CONSERTAR uma
-    // inconsistência. O efeito medido é o oposto: a BYOK do tenant
-    // `dev-c77a5b` é a chave que devolveu 401 em 19/08, e fazê-la vencer
-    // re-bloqueia o caminho da fal — o P7.c volta a estar travado, sem nada
-    // na tela dizendo por quê.
+    // MEDIDO por execução manual (não só previsto): este mutante nem chega
+    // a rodar `checkPolicy.ts` — `tsc --noEmit` reprova ANTES, porque
+    // `Cobertura` não tem mais o campo `precedencia` (a interface foi
+    // simplificada para `{ id: PlatformCredentialId }`, sem o campo). É uma
+    // garantia MAIS FORTE que a checagem estrutural por texto abaixo: o
+    // compilador, e não um `.includes()`, é quem barra a reintrodução —
+    // confirmado com `docker compose exec backend npm run check` rodando de
+    // verdade sobre o arquivo mutado à mão, EXIT 2, `error TS2353`.
     file: MAPA,
-    find: '  "avatar/fal": { id: "fal", precedencia: "plataforma_vence" },',
-    replace: '  "avatar/fal": { id: "fal", precedencia: "byok_vence" },',
-    expect: "herança: a fal deixou de ser plataforma_vence",
+    find: '  "avatar/heygen": { id: "heygen" },',
+    replace: '  "avatar/heygen": { id: "heygen", precedencia: "byok_vence" },',
+    expect: "error TS2353: Object literal may only specify known properties, and 'precedencia' does not exist in type 'Cobertura'",
   },
   {
     guard: "o selo verde significa que o fornecedor respondeu",
@@ -205,6 +276,10 @@ const LINHAS: Record<string, { provider: string; vendor: string; chave: string }
     { provider: "avatar", vendor: "heygen", chave: "BYOK-AVATAR-DO-TENANT" },
     { provider: "voice", vendor: "elevenlabs", chave: "BYOK-VOZ-DO-TENANT" },
     { provider: "avatar", vendor: "fal", chave: "BYOK-FAL-DO-TENANT" },
+    // SEM cobertura de plataforma (`avatar/did` é `null` no mapa) — h.3,
+    // item 3/4: prova que o fallback para BYOK não regrediu para os pares
+    // que a plataforma não cobre.
+    { provider: "avatar", vendor: "did", chave: "BYOK-DID-DO-TENANT" },
   ],
 };
 
@@ -306,6 +381,10 @@ export async function checkPlatformInheritancePolicy(): Promise<PlatformInherita
     proprioAvatar: await getCredentialForVendor(TENANT_COM_CHAVE, "avatar", "heygen"),
     proprioVoz: await getCredentialForVendor(TENANT_COM_CHAVE, "voice", "elevenlabs"),
     proprioFal: await getCredentialForVendor(TENANT_COM_CHAVE, "avatar", "fal"),
+    // SEM cobertura de plataforma para `did` — h.3, item 3/4: o BYOK deste
+    // tenant para um par que a plataforma NÃO cobre tem de continuar
+    // vencendo, exatamente como antes da mudança de regra.
+    proprioDid: await getCredentialForVendor(TENANT_COM_CHAVE, "avatar", "did"),
   }));
 
   // -------------------------------------------------------------------------
@@ -336,51 +415,89 @@ export async function checkPlatformInheritancePolicy(): Promise<PlatformInherita
   }
 
   // -------------------------------------------------------------------------
-  // G-2 — a chave do tenant vence
+  // G-2 — a plataforma vence a BYOK, para QUALQUER vendor com cobertura —
+  // h.3, 25/08. Reescrita: até 24/08 esperava-se `tenant_byok` aqui; a
+  // decisão do operador (h.3) inverteu isso — agora é a plataforma quem
+  // paga sempre que tiver a chave. Os TRÊS pares abaixo (heygen, elevenlabs,
+  // fal) provam que não é mais um caso isolado da fal: os dois primeiros
+  // eram `byok_vence` até esta rodada e passam a se comportar IGUAL à fal.
   // -------------------------------------------------------------------------
-  if (medido.proprioAvatar?.source !== "tenant_byok" || medido.proprioVoz?.source !== "tenant_byok") {
+  const proprios = [
+    ["avatar/heygen", medido.proprioAvatar],
+    ["voice/elevenlabs", medido.proprioVoz],
+    ["avatar/fal", medido.proprioFal],
+  ] as const;
+  const naoVenceram = proprios.filter(([, c]) => c?.source !== "platform").map(([par]) => par);
+  if (naoVenceram.length > 0) {
     failures.push(
-      "herança: a chave do tenant foi substituída pela da plataforma — " +
-        `avatar=${JSON.stringify(medido.proprioAvatar?.source)}, voz=${JSON.stringify(medido.proprioVoz?.source)}. ` +
-        "A decisão do operador é explícita: a plataforma paga a AUSÊNCIA, e quem conectou a própria " +
-        "chave continua pagando a dele. Inverter isso muda quem recebe a fatura, em silêncio.",
+      `herança: a plataforma não venceu a BYOK do tenant para ${naoVenceram.join(", ")} — ` +
+        `${JSON.stringify(proprios.map(([par, c]) => [par, c?.source]))}. Decisão do operador (h.3, ` +
+        "25/08): a plataforma vence SEMPRE que tiver cobertura, para qualquer vendor — não é mais uma " +
+        "exceção isolada da fal. Um tenant com BYOK própria continuar sendo cobrado é o sintoma exato " +
+        "de a regra geral ter regredido para a antiga (`byok_vence` por padrão, fal como exceção).",
     );
   } else {
-    notes.push("    herança: tenant COM chave própria continua usando a dele (avatar e voz)");
+    notes.push(
+      "    herança: a plataforma vence a BYOK do tenant nos três pares medidos (heygen, elevenlabs, " +
+        "fal) — regra geral, não mais exceção isolada da fal",
+    );
   }
 
   // -------------------------------------------------------------------------
-  // G-3 — sem cobertura, falha fechada
+  // G-3 — sem cobertura, o fallback para BYOK segue funcionando (não regrediu)
   // -------------------------------------------------------------------------
   if (medido.zeradoDid !== null) {
     failures.push(
-      `herança: par sem cobertura não falhou fechado — \`avatar/did\` devolveu ` +
+      `herança: par sem cobertura não falhou fechado — \`avatar/did\` (tenant zerado) devolveu ` +
         `${JSON.stringify(medido.zeradoDid?.source)}. Não há chave de plataforma para o did; herdar ` +
         "aqui faria a plataforma pagar uma conta que ninguém decidiu, e por um vendor que o produto " +
         "sequer despacha hoje.",
     );
-  } else {
-    notes.push("    herança: par sem chave de plataforma (avatar/did) devolve null — falha fechada");
-  }
-
-  // -------------------------------------------------------------------------
-  // G-4 — a divergência da fal, declarada e efetiva
-  // -------------------------------------------------------------------------
-  const coberturaFal = plataformaQueCobre("avatar", "fal");
-  if (coberturaFal?.precedencia !== "plataforma_vence") {
+  } else if (medido.proprioDid?.source !== "tenant_byok") {
     failures.push(
-      "herança: a fal deixou de ser plataforma_vence — ela é a exceção DECLARADA desde `2a04b4a` " +
-        "(21/08), e alinhá-la à regra geral traz de volta a BYOK do tenant `dev-c77a5b`, que é a chave " +
-        "que devolveu 401 em 19/08. O caminho da fal voltaria a estar bloqueado sem nada dizer por quê.",
-    );
-  } else if (medido.proprioFal?.source !== "platform") {
-    failures.push(
-      `herança: a fal está declarada como plataforma_vence mas resolveu ${JSON.stringify(medido.proprioFal?.source)} ` +
-        "num tenant que TEM BYOK de fal. A declaração e o comportamento têm de contar a mesma história.",
+      `herança: o fallback para BYOK regrediu — \`avatar/did\` (tenant COM chave própria) devolveu ` +
+        `${JSON.stringify(medido.proprioDid?.source)}, esperado \`tenant_byok\`. A plataforma não cobre ` +
+        "este par (declarado `null` no mapa); sem o fallback, um tenant que configurou a própria chave " +
+        "para um vendor sem credencial de plataforma perde acesso a ele — regressão da propriedade que " +
+        "h.3 promete preservar: 'sem credencial de plataforma, cai no BYOK exatamente como hoje'.",
     );
   } else {
     notes.push(
-      "    herança: `avatar/fal` é a exceção declarada (plataforma_vence) e se comporta como tal",
+      "    herança: sem cobertura de plataforma (avatar/did), o tenant zerado falha fechado (null) e o " +
+        "tenant COM chave própria segue usando a dele (tenant_byok) — fallback preservado",
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // G-4 — a exceção isolada da fal não existe mais NO CÓDIGO, estruturalmente
+  // — h.3. Por TEXTO, e não só por comportamento: um campo de precedência
+  // que ninguém lê ainda convidaria alguém a reintroduzir o ramo à parte
+  // amanhã. Ver o mutante "o campo de precedência volta ao mapa" acima.
+  // -------------------------------------------------------------------------
+  // Comentários FORA da checagem, de propósito: o cabeçalho de
+  // platformInheritance.ts cita os nomes antigos (`byok_vence`,
+  // `plataforma_vence`) para explicar a HISTÓRIA da mudança — exatamente o
+  // estilo de comentário que este projeto usa em toda parte. O que não pode
+  // sobreviver é o termo em CÓDIGO: um tipo, um campo, uma comparação.
+  const semComentarios = (fonte: string) =>
+    fonte.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const mapaFonte = semComentarios(lerDaRaiz(MAPA));
+  const lookupFonte = semComentarios(lerDaRaiz(LOOKUP));
+  const TERMOS_DA_EXCECAO_ISOLADA = ["precedencia", "plataforma_vence", "byok_vence", "Precedencia"];
+  const achadosNoMapa = TERMOS_DA_EXCECAO_ISOLADA.filter((t) => mapaFonte.includes(t));
+  const achadosNoLookup = TERMOS_DA_EXCECAO_ISOLADA.filter((t) => lookupFonte.includes(t));
+  if (achadosNoMapa.length > 0 || achadosNoLookup.length > 0) {
+    failures.push(
+      "herança: a exceção isolada da fal voltou a existir NO CÓDIGO — " +
+        `${MAPA} contém ${JSON.stringify(achadosNoMapa)}, ${LOOKUP} contém ${JSON.stringify(achadosNoLookup)}. ` +
+        "h.3 (25/08) generalizou a regra para eliminar o campo de precedência por vendor, não só o " +
+        "comportamento — um campo desses, mesmo não lido, é convite para reabrir o ramo à parte.",
+    );
+  } else {
+    notes.push(
+      "    herança: nenhum termo da precedência antiga (precedencia/plataforma_vence/byok_vence) " +
+        "sobrevive em platformInheritance.ts ou credentialLookup.ts — a exceção da fal está eliminada, " +
+        "não só inerte",
     );
   }
 
@@ -394,6 +511,7 @@ export async function checkPlatformInheritancePolicy(): Promise<PlatformInherita
     medido.proprioAvatar,
     medido.proprioVoz,
     medido.proprioFal,
+    medido.proprioDid,
   ].filter((c) => c !== null);
   const semSource = resolvidas.filter((c) => c!.source !== "platform" && c!.source !== "tenant_byok");
   if (semSource.length > 0) {
@@ -402,7 +520,7 @@ export async function checkPlatformInheritancePolicy(): Promise<PlatformInherita
         "`provider_usage.key_source` (migration 063): sem ele a atribuição de gasto volta a não saber de " +
         "quem é a fatura, que foi o buraco inteiro do R5.",
     );
-  } else if (resolvidas.length >= 6) {
+  } else if (resolvidas.length >= 7) {
     notes.push(`    herança: as ${resolvidas.length} credenciais resolvidas trazem \`source\` preenchido`);
   }
 

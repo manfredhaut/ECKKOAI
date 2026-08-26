@@ -4,7 +4,7 @@ import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
 import { PublishStep } from "./PublishStep";
 import type { WizardState } from "../types";
-import type { Avatar, Credential } from "../../../types";
+import type { Credential } from "../../../types";
 
 /** Espelho de `formatConfidenceForTier` (`backend/src/services/providers/videoFormat.ts`). */
 type FormatConfidenceLevel = "vendor_response" | "documentation" | "unverified";
@@ -20,18 +20,26 @@ interface FormatSupport {
 }
 
 /**
- * O passo CENA: nível do vídeo, avatar/cenário/traje deste vídeo,
- * interpretação e formato.
+ * O passo CENA: nível do vídeo, cenário/traje deste vídeo, interpretação e
+ * formato.
  *
  * "Fundo" (background.type) e o dropdown "Traje" (avatar_look_id, o LOOK
  * pago do HeyGen) saíram em 25/08 — são conceitos de CONFIGURAÇÃO DO
  * AVATAR (Passo 1), não do vídeo, e nenhum dos dois é obrigatório no
  * payload do tier Simples (`buildHeygenVideoPayload`,
  * `providerAvatarIdParaGeracao`, confirmado por leitura antes da remoção).
- * "Avatar deste vídeo", "Cenário" e "Traje" (novos) são blocos EM
- * PREPARAÇÃO, independentes do Passo 1, sem persistência e sem entrar no
- * corpo de `POST /videos` — decisão registrada, aguardando o operador
- * decidir a ligação funcional depois de ver na tela.
+ * "Cenário" e "Traje" (novos) são blocos EM PREPARAÇÃO, independentes do
+ * Passo 1, sem persistência e sem entrar no corpo de `POST /videos` —
+ * decisão registrada, aguardando o operador decidir a ligação funcional
+ * depois de ver na tela.
+ *
+ * "AVATAR DESTE VÍDEO" saiu em 25/08 — não tinha razão de existir em
+ * NENHUM nível: o avatar já é escolhido/criado no Passo 1, e este bloco (só
+ * decorativo, "Em preparação: esta escolha ainda não entra no vídeo
+ * gerado") não tinha consumidor em lugar nenhum — confirmado por grep no
+ * repositório inteiro antes da remoção (`avatarDesteVideoId`,
+ * `personagemImagemNome`, `avatarsDoVideo`: zero ocorrência fora deste
+ * arquivo, e zero em `backend/src`).
  *
  * O que continua indo ao fornecedor:
  *
@@ -43,15 +51,32 @@ const EXPRESSIVENESS = ["low", "medium", "high"] as const;
 
 /**
  * Os TRÊS níveis — BLOCO A. Nomes de plataforma nunca aparecem aqui, só nos
- * comentários do código: o rótulo, a faixa de custo e a chave de tradução.
- * A faixa é a mesma da tabela decidida na sessão do sistema de tiers (30 s de
- * referência); custo REAL varia com a duração escolhida pelo roteiro.
+ * comentários do código: o rótulo e a chave de tradução.
+ *
+ * O PREÇO ao lado de cada nível NÃO é literal — Fase A, item 2 (25/08),
+ * fecha o defeito A3 do BACKLOG: era `range: "US$ 14,19"`, uma string fixa
+ * que citava "30s de referência" enquanto o teto real do Premium é 15s, e
+ * não reagia a nada. Agora vem de `GET /video-cost-reference?tier=…`
+ * (`tierCosts`, abaixo) — a duração-alvo escolhida no Roteiro quando
+ * existe, ou o teto real do tier quando ainda não há uma, resolvido pela
+ * MESMA `estimateVideoCost` do resto do produto.
  */
-const TIER_OPTIONS: { value: "simples" | "normal" | "premium"; range: string }[] = [
-  { value: "simples", range: "US$ 0,50–2,00" },
-  { value: "normal", range: "US$ 1,50–3,00" },
-  { value: "premium", range: "US$ 14,19" },
+const TIER_OPTIONS: { value: "simples" | "normal" | "premium" }[] = [
+  { value: "simples" },
+  { value: "normal" },
+  { value: "premium" },
 ];
+
+/** Resposta de `GET /video-cost-reference?tier=…[&targetSeconds=…]`. */
+interface CostReferenceResponse {
+  maxReachableSeconds: number;
+  target: {
+    seconds: number;
+    costUsd: number | null;
+    costUnknownReason: string | null;
+    unavailableForTier: boolean;
+  };
+}
 
 /**
  * Teto do texto de interpretação.
@@ -72,6 +97,7 @@ export function SceneStep({
   onPublishPlatformChange,
   tierVideo,
   onTierVideoChange,
+  targetDurationSeconds,
 }: {
   motionPrompt: string;
   onMotionPromptChange: (value: string) => void;
@@ -82,6 +108,13 @@ export function SceneStep({
   /** Mesmo padrão de `onCaptionsChange` — BLOCO A. Movido de GenerateStep.tsx: o nível é escolhido AQUI, na Cena, antes do resumo final. */
   tierVideo: WizardState["tierVideo"];
   onTierVideoChange: (tierVideo: WizardState["tierVideo"]) => void;
+  /**
+   * A duração-alvo do passo Roteiro (15/30/45/60 s, ou `null` para "mais"
+   * sem número digitado). Fase A, item 2: alimenta o preço de cada cartão
+   * de nível via `GET /video-cost-reference?targetSeconds=…` — nunca
+   * recalculado aqui, só repassado.
+   */
+  targetDurationSeconds: number | null;
 }) {
   const { t } = useTranslation();
 
@@ -133,6 +166,62 @@ export function SceneStep({
   const podeEscolherSimples = tiersDisponiveis?.simples === true;
   const podeEscolherFal = tiersDisponiveis?.normal === true || tiersDisponiveis?.premium === true;
 
+  /**
+   * QUANTOS grupos de vendor estão bloqueados — Fase A, item 1 (25/08),
+   * fecha o defeito A2 do BACKLOG (movido de GenerateStep.tsx para cá no
+   * mesmo commit que moveu os cartões de nível). Antes disto a legenda só
+   * sabia SE havia bloqueio (um OR), e dizia sempre "Um dos níveis..." mesmo
+   * quando os DOIS grupos (heygen e fal) estavam indisponíveis — o que
+   * bloqueia os 3 cartões inteiros, não um.
+   */
+  const gruposIndisponiveisCount = [!podeEscolherSimples, !podeEscolherFal].filter(Boolean).length;
+
+  /**
+   * O PREÇO de cada cartão de nível — Fase A, item 2 (25/08), fecha o
+   * defeito A3. Uma chamada por tier a `GET /video-cost-reference`, a MESMA
+   * rota que `DurationCostReference.tsx` já usa no passo Roteiro — nenhum
+   * estimador novo. Refeita quando a duração-alvo muda, porque é ela que
+   * decide o ponto: com alvo, o preço É o daquela duração; sem alvo, é o
+   * preço no teto REAL do tier (nunca um número inventado).
+   */
+  const [tierCosts, setTierCosts] = useState<Partial<Record<"simples" | "normal" | "premium", CostReferenceResponse>>>(
+    {},
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const alvo = targetDurationSeconds != null ? `&targetSeconds=${targetDurationSeconds}` : "";
+    Promise.all(
+      TIER_OPTIONS.map((opt) =>
+        api
+          .get<CostReferenceResponse>(`/video-cost-reference?tier=${opt.value}${alvo}`)
+          .then((r) => [opt.value, r] as const)
+          .catch(() => [opt.value, null] as const),
+      ),
+    ).then((entradas) => {
+      if (cancelled) return;
+      const proximo: Partial<Record<"simples" | "normal" | "premium", CostReferenceResponse>> = {};
+      for (const [tier, resposta] of entradas) {
+        if (resposta) proximo[tier] = resposta;
+      }
+      setTierCosts(proximo);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [targetDurationSeconds]);
+
+  /** Texto do preço no cartão — "sem medição" ou "não alcança este nível" nunca viram um número mudo. */
+  function precoDoCartao(tier: "simples" | "normal" | "premium"): string {
+    const info = tierCosts[tier];
+    if (!info) return "";
+    const { target } = info;
+    if (target.unavailableForTier) {
+      return t("createVideo.script.costReference.unavailableForTier", { max: info.maxReachableSeconds });
+    }
+    if (target.costUsd == null) return t("createVideo.cost.notMeasured");
+    return `US$ ${target.costUsd.toFixed(2).replace(".", ",")} (${target.seconds.toFixed(0)} s)`;
+  }
+
   // Se o tier selecionado deixou de estar disponível (ou nunca esteve, e o
   // wizard nasceu com "normal" por padrão — `CreateVideoPage.tsx`), o
   // próprio wizard troca para um nível que a conta REALMENTE tem, assim que
@@ -169,41 +258,10 @@ export function SceneStep({
   const confiancaDoFormato = formatSupport?.perPlatformConfidence?.[publishPlatform] ?? null;
 
   /**
-   * AVATAR DESTE VÍDEO — bloco independente do Passo 1, EM PREPARAÇÃO.
-   *
-   * Não lê nem escreve `AvatarSetupStep.tsx`/`wizard.avatarId`: estado,
-   * fonte de dados e handlers são próprios deste bloco. A lista de avatares
-   * reaproveita a MESMA fonte que o Passo 1 usa (`GET /avatars`) — mas em
-   * leitura própria, não o componente. A seleção (Simples) e o upload
-   * (Normal/Premium) não persistem e não entram no corpo de `POST /videos`:
-   * não há hoje, em nenhum dos dois caminhos (HeyGen ou fal), uma segunda
-   * forma de resolver "qual avatar" fora do Passo 1 — ver a investigação
-   * registrada no ponto de retomada desta linha de trabalho. Sem guarda
-   * nova de propósito: sem destino real, não há o que a guarda testasse.
-   */
-  const [avatarsDoVideo, setAvatarsDoVideo] = useState<Avatar[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<Avatar[]>("/avatars")
-      .then((r) => {
-        if (!cancelled) setAvatarsDoVideo(r);
-      })
-      .catch(() => {
-        if (!cancelled) setAvatarsDoVideo([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  const [avatarDesteVideoId, setAvatarDesteVideoId] = useState<string | null>(null);
-  const [personagemImagemNome, setPersonagemImagemNome] = useState<string | null>(null);
-
-  /**
-   * CENÁRIO e TRAJE deste vídeo — mesmo padrão do bloco "Avatar deste
-   * vídeo" acima: estado local, próprio, sem persistência e sem entrar em
-   * `corpoDaGeracao`. Upload OU descrição por texto — os dois convivem, não
-   * são mutuamente exclusivos, porque nenhum dos dois faz nada ainda.
+   * CENÁRIO e TRAJE deste vídeo — estado local, próprio, sem persistência e
+   * sem entrar em `corpoDaGeracao`. Upload OU descrição por texto — os dois
+   * convivem, não são mutuamente exclusivos, porque nenhum dos dois faz
+   * nada ainda.
    */
   const [cenarioImagemNome, setCenarioImagemNome] = useState<string | null>(null);
   const [cenarioPrompt, setCenarioPrompt] = useState("");
@@ -216,8 +274,8 @@ export function SceneStep({
 
       {/* O NÍVEL — BLOCO A, movido de GenerateStep.tsx para a Cena: o
           usuário escolhe o tipo de vídeo antes do resto da tela, porque é
-          o campo que mais muda o custo e o bloco "avatar deste vídeo" logo
-          abaixo depende dele. Três cartões, sem nome de plataforma nenhum. */}
+          o campo que mais muda o custo. Três cartões, sem nome de
+          plataforma nenhum. */}
       <fieldset className="tier-choice" style={{ border: 0, padding: 0, margin: "0 0 12px" }}>
         <legend style={{ fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 6 }}>
           {t("createVideo.generate.tierLabel")}
@@ -240,7 +298,7 @@ export function SceneStep({
                 style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 120 }}
               >
                 <span>{t(`createVideo.generate.tier.${opt.value}`)}</span>
-                <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>{opt.range}</span>
+                <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>{precoDoCartao(opt.value)}</span>
               </button>
             );
           })}
@@ -248,9 +306,13 @@ export function SceneStep({
         <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
           {t(`createVideo.generate.tierHint.${tierVideo}`)}
         </p>
-        {(!podeEscolherSimples || !podeEscolherFal) && (
+        {gruposIndisponiveisCount > 0 && (
           <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
-            {t("createVideo.generate.tierUnavailable")}
+            {t(
+              gruposIndisponiveisCount > 1
+                ? "createVideo.generate.tierAllUnavailable"
+                : "createVideo.generate.tierUnavailable",
+            )}
           </p>
         )}
         {/* A confiança do FORMATO (escolhido logo abaixo) NESTE tier —
@@ -270,37 +332,6 @@ export function SceneStep({
           </p>
         )}
       </fieldset>
-
-      {/* ------------------------------------------- AVATAR DESTE VÍDEO */}
-      <Field label={t("createVideo.scene.videoAvatarLabel")} help={t("createVideo.scene.videoAvatarHelp")}>
-        {tierVideo === "simples" ? (
-          <select
-            value={avatarDesteVideoId ?? ""}
-            onChange={(e) => setAvatarDesteVideoId(e.target.value || null)}
-          >
-            <option value="">{t("createVideo.scene.videoAvatarDefault")}</option>
-            {avatarsDoVideo.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setPersonagemImagemNome(e.target.files?.[0]?.name ?? null)}
-          />
-        )}
-        {personagemImagemNome && tierVideo !== "simples" && (
-          <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-            {personagemImagemNome}
-          </p>
-        )}
-        <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-          {t("createVideo.scene.videoAvatarPreparing")}
-        </p>
-      </Field>
 
       {/* -------------------------------------------------------- CENÁRIO */}
       <Field label={t("createVideo.scene.scenarioLabel")} help={t("createVideo.scene.scenarioHelp")}>

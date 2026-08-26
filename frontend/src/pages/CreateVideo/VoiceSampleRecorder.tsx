@@ -3,6 +3,8 @@ import type { ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../api/client";
 import type { Avatar } from "../../types";
+// O teto de bytes vem da POLÍTICA do servidor; daqui sai só a formatação.
+import { formatBytes } from "../../uploadLimits";
 
 /**
  * Captura de voz dedicada: gravar → ouvir → regravar → enviar.
@@ -46,8 +48,19 @@ interface SamplePolicy {
    * simplesmente não mostra a contagem: inventar "0 de 10" seria pior que
    * omitir, porque um número errado aqui convida a clonar.
    */
-  voice_slots: { used: number; limit: number } | null;
+  voice_slots: { used: number; limit: number; source?: VoiceSlotLimitSource } | null;
 }
+
+/**
+ * De onde saiu o TETO — R6.5, e a tela passou a olhar em 25/08.
+ *
+ * `vendor` é MEDIDO (`/v1/user/subscription` respondeu 200 com `voice_limit`),
+ * `env` é um freio que o operador fixou de propósito, e `default` é a
+ * retaguarda declarada por este aplicativo. A ressalva de "não confirmado no
+ * fornecedor" só vale nos dois últimos: dá-la a um número medido é o mesmo
+ * defeito, com o sinal trocado — desconfiar do que se sabe.
+ */
+type VoiceSlotLimitSource = "env" | "vendor" | "default";
 
 interface CloneResponse {
   avatar: Avatar;
@@ -93,6 +106,17 @@ export function VoiceSampleRecorder({
 }) {
   const { t } = useTranslation();
   const [policy, setPolicy] = useState<SamplePolicy | null>(null);
+  /**
+   * Limpeza de ruído — R6.4, ligada à tela em 25/08.
+   *
+   * A rota já aceitava o campo desde 24/08; o que faltava era a tela mandá-lo,
+   * então na prática ele era sempre `false`. Default `false` continua sendo o
+   * certo: a limpeza é DESTRUTIVA e o próprio fornecedor documenta que ela
+   * piora gravação já limpa — o algoritmo leva parte do timbre junto. Aqui o
+   * "sim" errado não custa dinheiro, custa a voz que o cliente vai ouvir em
+   * todos os vídeos.
+   */
+  const [removerRuido, setRemoverRuido] = useState(false);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [blob, setBlob] = useState<Blob | null>(null);
@@ -249,11 +273,18 @@ export function VoiceSampleRecorder({
       // O nome digitado só viaja quando o servidor pediu por ele — é a porta
       // da voz PROTEGIDA, e mandá-lo sempre transformaria a segunda pergunta
       // num campo qualquer do formulário.
-      const campos: Record<string, string> | undefined = replace
+      // A limpeza de ruído vai SEMPRE explícita, nos dois valores — nunca
+      // omitida quando é `false`. É a mesma doutrina do lado do servidor
+      // (`voiceProvider.cloneVoice`): o que não se declara, o default do
+      // fornecedor declara por você, e um default que muda do lado dele
+      // mudaria o timbre de toda clonagem nova sem uma linha de diferença
+      // deste lado.
+      const ruido = { remove_background_noise: removerRuido ? "true" : "false" };
+      const campos: Record<string, string> = replace
         ? protectedGate
-          ? { replace: "true", confirm_avatar_name: typedName }
-          : { replace: "true" }
-        : undefined;
+          ? { ...ruido, replace: "true", confirm_avatar_name: typedName }
+          : { ...ruido, replace: "true" }
+        : ruido;
       const res = await api.upload<CloneResponse>(
         `/avatars/${avatar.id}/voice-sample`,
         blob,
@@ -361,7 +392,9 @@ export function VoiceSampleRecorder({
           })}
           <span className="voice-sample__limit-note">
             {" "}
-            {t("createVideo.voiceSample.slotsDeclaredNote")}
+            {policy.voice_slots.source === "vendor"
+              ? ""
+              : t("createVideo.voiceSample.slotsDeclaredNote")}
           </span>
         </p>
       )}
@@ -470,6 +503,32 @@ export function VoiceSampleRecorder({
           <input type="file" accept="audio/*" onChange={handleFile} disabled={recording || sending} />
         </label>
       </div>
+
+      {/* O TETO DE BYTES, derivado da política — nunca um "10 MB" literal, pelo
+          mesmo motivo que não há número de duração escrito neste arquivo. Ele
+          governa exclusivamente o caminho de UPLOAD: um arquivo acima disso é
+          recusado na porta (`takeUpload`), ANTES de qualquer guarda de duração,
+          e até aqui a tela não avisava. */}
+      {policy && (
+        <p className="voice-sample__limit-note">
+          {t("createVideo.voiceSample.fileMaxSize", { size: formatBytes(policy.max_bytes) })}
+        </p>
+      )}
+
+      {/* LIMPEZA DE RUÍDO — a opção existe no servidor desde R6.4 e só agora
+          chega à tela. Fica junto dos controles porque é decisão sobre ESTA
+          amostra, e precisa ser tomada antes de clonar: depois do clone, mudar
+          de ideia custa outro slot. */}
+      <label className="voice-sample__noise">
+        <input
+          type="checkbox"
+          checked={removerRuido}
+          onChange={(e) => setRemoverRuido(e.target.checked)}
+          disabled={recording || sending}
+        />
+        {t("createVideo.voiceSample.removeNoiseLabel")}
+      </label>
+      <p className="voice-sample__limit-note">{t("createVideo.voiceSample.removeNoiseHelp")}</p>
 
       {(recording || elapsed > 0) && (
         <p className={`voice-sample__timer voice-sample__timer--${faixa}`} role="status">

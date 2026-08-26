@@ -30,7 +30,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { falPoll, falResult, falSubmit, falUpload } from "../providers/falClient.js";
-import { synthesizeSpeech } from "../providers/voiceProvider.js";
+import { synthesizeSpeech, type VoiceTuning } from "../providers/voiceProvider.js";
 import { logEvent } from "../log/safeLog.js";
 import { PIPELINE_TETO_USD, PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd } from "../billing/providerCost.js";
 import { custoDe } from "../billing/providerPrices.js";
@@ -540,6 +540,12 @@ export interface FalPipelineInput {
   apiKeyElevenLabs: string;
   /** Reusado, nunca clonado: clonar consome slot irreversível. */
   voiceId: string;
+  /**
+   * Os quatro ajustes de síntese do avatar — migration 067, 25/08. Opcional
+   * porque as sondas e o ensaio montam este input sem banco; nos call sites de
+   * produto ele vem sempre, por `voiceTuningDoAvatar(avatar)`.
+   */
+  voiceTuning?: VoiceTuning;
   script: string;
   /** A foto do rosto, já em bytes. */
   fotoBase: Buffer;
@@ -1276,7 +1282,12 @@ async function narrarSincronizar(
   // A voz é REUSADA (`input.voiceId`), nunca clonada: clonar consome um slot
   // irreversível, e a conta já está em 10/10 pela nossa régua.
   const narracaoStep = await input.diario.abrirEtapa("narrar", 3, "elevenlabs", null);
-  const fala = await synthesizeSpeech(input.apiKeyElevenLabs, input.voiceId, input.script);
+  const fala = await synthesizeSpeech(
+    input.apiKeyElevenLabs,
+    input.voiceId,
+    input.script,
+    input.voiceTuning,
+  );
   await input.diario.gravarRespostaCrua(
     narracaoStep,
     JSON.stringify({ bytes: fala.audio.length, durationSeconds: fala.durationSeconds, source: fala.source }),

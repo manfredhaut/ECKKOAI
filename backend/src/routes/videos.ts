@@ -66,6 +66,7 @@ import {
 import { decidirEstorno, type VideoFailureReason } from "../services/video/videoFailure.js";
 import { captionsDelivered, urlParaServir } from "../services/video/captionSelection.js";
 import { semCamposVelados } from "../services/video/tenantView.js";
+import { voiceTuningDoAvatar } from "../services/voice/voiceTuning.js";
 import {
   DirectionTranslationError,
   resolveInterfaceLocale,
@@ -793,7 +794,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * padrão de `isVideoTier(...) ? ... : DEFAULT_VIDEO_TIER` já usado na
    * criação.
    */
-  app.get<{ Querystring: { tier?: string } }>("/video-cost-reference", async (req) => {
+  app.get<{ Querystring: { tier?: string; targetSeconds?: string } }>(
+    "/video-cost-reference",
+    async (req) => {
     const tierBruto = req.query.tier;
     const tier = isVideoTier(tierBruto) ? tierBruto : DEFAULT_VIDEO_TIER;
     const vendor = vendorRequiredByTier(tier);
@@ -803,10 +806,30 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     // Um ponto acima dele não é "sem medição" (que soa a "ainda não
     // calculamos") — é uma duração que este nível não alcança HOJE.
     const maxAlcancavel = maxReachableSecondsForTier(tier);
+
+    // `target` — Fase A, item 2 (25/08), fecha o defeito A3 do BACKLOG. O
+    // cartão de nível (SceneStep.tsx) precisa de UM preço, não de uma
+    // tabela, e o defeito era esse número ser um literal fixo ("US$ 14,19",
+    // base 30s) que não reagia a nada. Ponto ÚNICO, calculado pela MESMA
+    // `estimateVideoCost` dos pontos fixos abaixo — nunca um estimador novo.
+    // `targetSeconds` (a duração-alvo do passo Roteiro) manda quando existe;
+    // sem ela, o ponto é o teto REAL deste tier — nunca um número inventado.
+    const targetSecondsBruto = Number(req.query.targetSeconds);
+    const targetSecondsPedido =
+      Number.isFinite(targetSecondsBruto) && targetSecondsBruto > 0 ? targetSecondsBruto : null;
+    const pontoAlvo = targetSecondsPedido ?? maxAlcancavel;
+    const custoAlvo = estimateVideoCost(pontoAlvo, vendor);
+
     return {
       tier,
       vendor,
       maxReachableSeconds: Math.floor(maxAlcancavel),
+      target: {
+        seconds: pontoAlvo,
+        costUsd: custoAlvo.known ? custoAlvo.usd : null,
+        costUnknownReason: custoAlvo.known ? null : custoAlvo.explanation,
+        unavailableForTier: pontoAlvo > maxAlcancavel,
+      },
       points: COST_REFERENCE_SECONDS.map((seconds) => {
         const cost = estimateVideoCost(seconds, vendor);
         return {
@@ -1315,6 +1338,17 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       throw new Error("readiness passou mas o avatar sumiu entre as duas leituras");
     }
 
+    // FALLBACK para o cenário/traje PADRÃO do avatar — Fase A, item 5
+    // (25/08), migration 068. O vídeo que manda o SEU PRÓPRIO valor SEMPRE
+    // vence — isto só entra quando o corpo não mandou nada (`|| null` do
+    // corpo, string vazia incluída, cai aqui). Sem isto, "Cenário
+    // padrão"/"Traje padrão" persistidos no Passo 1 nunca alcançariam um
+    // vídeo que não os repetisse explicitamente.
+    const scenarioParaGerar = scenario || avatar.scenario || null;
+    const scenarioPromptParaGerar = scenarioPrompt || avatar.scenario_prompt || null;
+    const outfitParaGerar = outfit || avatar.outfit || null;
+    const outfitPromptParaGerar = outfitPrompt || avatar.outfit_prompt || null;
+
     // -----------------------------------------------------------------------
     // O LOOK, validado ANTES do débito e antes de qualquer chamada — G2,
     // 22/08/2026 (gap dimensionado em Z0.3). Sem isto, um `avatar_look_id`
@@ -1505,10 +1539,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         req.tenantId,
         avatar_id,
         script,
-        scenario,
-        outfit,
-        scenarioPrompt,
-        outfitPrompt,
+        scenarioParaGerar,
+        outfitParaGerar,
+        scenarioPromptParaGerar,
+        outfitPromptParaGerar,
         duration_seconds,
         avatarCredential.vendor,
         isFixtureMode(),
@@ -1673,6 +1707,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         script,
         elevenLabsApiKey: voiceCredential?.apiKey ?? null,
         voiceId: avatar.voice_id,
+        // Os quatro ajustes de síntese, do BANCO — migration 067, 25/08. Lidos
+        // aqui pelo mesmo motivo de `audioTreatment*` logo abaixo: os providers
+        // não falam com o banco, e é essa ausência de I/O que os torna
+        // exercitáveis com `fetch` substituído e mais nada.
+        voiceTuning: voiceTuningDoAvatar(avatar),
         tenantId: req.tenantId,
         // R5 — a ponte que faltava entre o consumo de VOZ e o vídeo que o
         // causou. A linha já existe aqui (o INSERT e o débito acontecem
@@ -1706,10 +1745,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // contrato — ver o item 1 dos cinco defeitos no CLAUDE.md —, então
         // passá-los aqui não muda nada naquele caminho.
         photoUrls: avatar.photo_urls ?? null,
-        scenario,
-        scenarioPrompt,
-        outfit,
-        outfitPrompt,
+        scenario: scenarioParaGerar,
+        scenarioPrompt: scenarioPromptParaGerar,
+        outfit: outfitParaGerar,
+        outfitPrompt: outfitPromptParaGerar,
         engineChoice,
         captions,
         // A duração REAL, gravada ANTES do `POST /v3/videos`.
@@ -2175,6 +2214,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 apiKeyFal,
                 apiKeyElevenLabs,
                 voiceId: avatar.voice_id ?? "",
+                // Migration 067 — a narração É refeita aqui (`narrarSincronizar`
+                // ressintetiza a cada aprovação), então os ajustes têm de vir.
+                voiceTuning: voiceTuningDoAvatar(avatar),
                 script: video.script,
                 // A composição não é refeita, então nada disto sobe de novo — os
                 // campos existem porque o input é o mesmo tipo. Ver
@@ -2411,6 +2453,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           apiKeyFal,
           apiKeyElevenLabs,
           voiceId: avatar.voice_id ?? "",
+          voiceTuning: voiceTuningDoAvatar(avatar),
           script: video.script,
           fotoBase: await readUpload(fotoUrl),
           fotoMimeType: mimeDoUpload(fotoUrl),
@@ -2529,6 +2572,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 apiKeyFal,
                 apiKeyElevenLabs,
                 voiceId: avatar.voice_id ?? "",
+                // Migration 067 — a narração É refeita aqui, mesmo com a
+                // composição e a animação preservadas.
+                voiceTuning: voiceTuningDoAvatar(avatar),
                 script: video.script,
                 // Nem a composição nem a animação são refeitas aqui — os
                 // campos existem porque o input é o mesmo tipo. Ver
@@ -2711,6 +2757,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             apiKeyFal,
             apiKeyElevenLabs,
             voiceId: avatar.voice_id ?? "",
+            voiceTuning: voiceTuningDoAvatar(avatar),
             script: video.script,
             fotoBase: Buffer.alloc(0),
             fotoMimeType: "image/jpeg",

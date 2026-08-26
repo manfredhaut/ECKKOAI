@@ -223,16 +223,57 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
   app.put<{
     Params: { id: string };
     Body: Partial<
-      Pick<Avatar, "name" | "provider" | "audio_treatment_enabled" | "audio_treatment_target_lufs">
+      Pick<
+        Avatar,
+        | "name"
+        | "provider"
+        | "audio_treatment_enabled"
+        | "audio_treatment_target_lufs"
+        // Os quatro ajustes de síntese — migration 067, 25/08. Mesmo padrão de
+        // COALESCE dos dois de tratamento de áudio: campo ausente no corpo não
+        // zera a coluna, mantém o valor salvo.
+        | "voice_stability"
+        | "voice_similarity_boost"
+        | "voice_style"
+        | "voice_speaker_boost"
+        // Cenário/traje PADRÃO do avatar — migration 068, Fase A item 5
+        // (25/08). Mesmo padrão de COALESCE dos demais: campo ausente no
+        // corpo não zera a coluna, mantém o valor salvo.
+        | "scenario"
+        | "scenario_prompt"
+        | "outfit"
+        | "outfit_prompt"
+      >
     >;
   }>("/avatars/:id", async (req, reply) => {
-    const { name, provider, audio_treatment_enabled, audio_treatment_target_lufs } = req.body;
+    const {
+      name,
+      provider,
+      audio_treatment_enabled,
+      audio_treatment_target_lufs,
+      voice_stability,
+      voice_similarity_boost,
+      voice_style,
+      voice_speaker_boost,
+      scenario,
+      scenario_prompt,
+      outfit,
+      outfit_prompt,
+    } = req.body;
     const { rows } = await pool.query<Avatar>(
       `UPDATE avatars SET
          name = COALESCE($3, name),
          provider = COALESCE($4, provider),
          audio_treatment_enabled = COALESCE($5, audio_treatment_enabled),
-         audio_treatment_target_lufs = COALESCE($6, audio_treatment_target_lufs)
+         audio_treatment_target_lufs = COALESCE($6, audio_treatment_target_lufs),
+         voice_stability = COALESCE($7, voice_stability),
+         voice_similarity_boost = COALESCE($8, voice_similarity_boost),
+         voice_style = COALESCE($9, voice_style),
+         voice_speaker_boost = COALESCE($10, voice_speaker_boost),
+         scenario = COALESCE($11, scenario),
+         scenario_prompt = COALESCE($12, scenario_prompt),
+         outfit = COALESCE($13, outfit),
+         outfit_prompt = COALESCE($14, outfit_prompt)
        WHERE id = $1 AND tenant_id = $2 RETURNING *`,
       [
         req.params.id,
@@ -241,6 +282,14 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         provider ?? null,
         audio_treatment_enabled ?? null,
         audio_treatment_target_lufs ?? null,
+        voice_stability ?? null,
+        voice_similarity_boost ?? null,
+        voice_style ?? null,
+        voice_speaker_boost ?? null,
+        scenario ?? null,
+        scenario_prompt ?? null,
+        outfit ?? null,
+        outfit_prompt ?? null,
       ],
     );
     if (!rows[0]) return reply.code(404).send({ error: "Avatar not found" });

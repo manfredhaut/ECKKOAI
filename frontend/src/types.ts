@@ -29,6 +29,21 @@ export interface Avatar {
   // Postgres `numeric` columns serialize as strings over JSON — parse with
   // Number(...) before using this in arithmetic or a range input's value.
   audio_treatment_target_lufs: string;
+  // Os quatro ajustes de síntese do ElevenLabs — migration 067, 25/08. Os três
+  // `numeric` chegam como STRING pelo mesmo motivo do LUFS acima: parse com
+  // Number(...) antes de usar num input numérico.
+  voice_stability: string;
+  voice_similarity_boost: string;
+  voice_style: string;
+  voice_speaker_boost: boolean;
+  /**
+   * Cenário/traje PADRÃO do avatar — migration 068, 25/08. Persistidos ao
+   * "Concluir configuração" do Passo 1 (AvatarSetupStep.tsx).
+   */
+  scenario: string | null;
+  scenario_prompt: string | null;
+  outfit: string | null;
+  outfit_prompt: string | null;
   /** Treinado em PROVIDER_MODE=fixture — não passou pelo provedor real. */
   simulated: boolean;
   created_at: string;

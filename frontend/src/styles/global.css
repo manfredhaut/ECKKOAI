@@ -673,6 +673,12 @@ button.nav-link {
 }
 
 .field textarea {
+  /* Sem isto, um textarea aninhado num <div> comum dentro de `.field` (o
+     padrão de "Gerar via IA" em Cenário/Traje) não herda o `align-items:
+     stretch` que alarga um textarea filho DIRETO do `.field` (como
+     Interpretação) — cai no `cols` padrão do navegador, ~217px contra os
+     ~497px dos irmãos. Medido em 25/08 via computed width no /dev/steps. */
+  width: 100%;
   resize: vertical;
   min-height: 160px;
   font-family: var(--font-sans);

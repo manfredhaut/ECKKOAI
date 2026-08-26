@@ -154,7 +154,16 @@ function runGate(env = {}) {
   // Sinaliza que HÁ mutante aplicado. `checkMutantRegistryPolicy` usa isto
   // para pular a conferência de cadastro: sob mutação, "todo find casa 1x" é
   // falso por construção, e acusá-lo derrubaria todos os contrapontos.
-  const args = ["compose", "exec", "-T", "-e", "ARNES_EM_CURSO=1"];
+  // `-p twinai`: só importa quando este script roda de DENTRO do container
+  // (docker-in-docker, via o socket do host montado em
+  // /var/run/docker.sock) — nesse caso `cwd` é `/repo`, e o Compose deriva o
+  // nome do projeto do diretório atual ("repo"), não do nome real ("twinai")
+  // que o `docker compose up` do HOST usou. Sem isto, `exec`/`ps` daqui de
+  // dentro não encontra o container "backend" nenhum — MEDIDO: `docker
+  // compose ps` sem `-p` devolve lista vazia; com `-p twinai`, os 4
+  // containers aparecem. Do HOST, onde `cwd` já é a pasta certa, esta flag é
+  // redundante (mesmo nome), nunca nociva.
+  const args = ["compose", "-p", "twinai", "exec", "-T", "-e", "ARNES_EM_CURSO=1"];
   for (const [k, v] of Object.entries(base)) args.push("-e", `${k}=${v}`);
   args.push("backend", "npm", "run", "check");
   try {
@@ -180,9 +189,10 @@ function runGate(env = {}) {
 }
 
 function collectMutants() {
+  // Mesma flag `-p twinai` de `rodarGateEm` acima, e pelo mesmo motivo.
   const raw = execFileSync(
     "docker",
-    ["compose", "exec", "-T", "backend", "npx", "tsx", "src/scripts/collectMutants.ts"],
+    ["compose", "-p", "twinai", "exec", "-T", "backend", "npx", "tsx", "src/scripts/collectMutants.ts"],
     { cwd: repoRoot, encoding: "utf8", stdio: "pipe", maxBuffer: 32 * 1024 * 1024 },
   );
   const start = raw.indexOf("[");
@@ -481,7 +491,13 @@ async function main() {
     console.error(`\n? âncora do ESTADO.md: NÃO CONFERIDA — ${String(err).slice(0, 160)}\n`);
   }
 
-  const sujoAntes = treeStatus();
+  // `--list` não muta nada (linha 19) e por isso não precisa provar reversão
+  // nenhuma — é exatamente o caso em que a exigência de `git` (documentada no
+  // topo do arquivo, "o guardrail deste arnês é a reversão garantida") não se
+  // aplica. Pular `treeStatus()` aqui não abre exceção nenhuma para passadas
+  // que mutam: `sujoAntes` continua vindo de `git status` normalmente em
+  // qualquer invocação que não seja `--list`, no host, como sempre foi.
+  const sujoAntes = apenasListar ? null : treeStatus();
   // SÓ no serial. Ali o mutante é escrito na árvore de TRABALHO, e sem partir
   // de um estado limpo não há como distinguir uma reversão falha das edições
   // de quem está trabalhando.

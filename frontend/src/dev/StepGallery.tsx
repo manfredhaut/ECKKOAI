@@ -316,6 +316,7 @@ function StepUnderGlass({
           onPublishPlatformChange={noop}
           tierVideo={wizard.tierVideo}
           onTierVideoChange={noop}
+          targetDurationSeconds={wizard.targetDurationSeconds}
         />
       );
     case "passo4-gerar":

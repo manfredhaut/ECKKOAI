@@ -6,7 +6,7 @@
 // same as the Gemini script adapter's model id was.
 import { createHash } from "node:crypto";
 import { mimeDoUpload, readUpload } from "../storage.js";
-import { synthesizeSpeech } from "./voiceProvider.js";
+import { synthesizeSpeech, type VoiceTuning } from "./voiceProvider.js";
 import { processVoiceAudio } from "../audioProcessing.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { vendorSignal } from "./vendorTimeout.js";
@@ -136,6 +136,15 @@ export interface GenerateVideoInput {
   script: string;
   elevenLabsApiKey: string | null;
   voiceId: string | null;
+  /**
+   * Os quatro ajustes de síntese do avatar — migration 067, 25/08.
+   *
+   * Opcional pelo mesmo motivo de `videoId`: as guardas exercitam o provider
+   * sem banco. Nos call sites de produto ele vem SEMPRE, por
+   * `voiceTuningDoAvatar(avatar)` — e é isso que a guarda
+   * `voz: os ajustes de síntese vêm do avatar` prova.
+   */
+  voiceTuning?: VoiceTuning;
   tenantId: string;
   /**
    * A linha de `videos` que esta geração serve — R5, 24/08.
@@ -363,7 +372,12 @@ async function requireAudio(input: GenerateVideoInput): Promise<SynthesizedAudio
       "No cloned voice available — connect ElevenLabs in Settings and finish avatar setup with a reference recording before generating a video.",
     );
   }
-  const synthesized = await synthesizeSpeech(input.elevenLabsApiKey, input.voiceId, input.script);
+  const synthesized = await synthesizeSpeech(
+    input.elevenLabsApiKey,
+    input.voiceId,
+    input.script,
+    input.voiceTuning,
+  );
   await recordProviderUsage({
     tenantId: input.tenantId,
     // R5, 24/08 — MEDIDO: as 12 linhas de `voice/elevenlabs` desta tabela
@@ -1258,6 +1272,10 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
     apiKeyFal: input.apiKey,
     apiKeyElevenLabs: input.elevenLabsApiKey,
     voiceId: input.voiceId,
+    // Os quatro ajustes atravessam a ponte junto da voz: os dois caminhos
+    // (HeyGen e fal) sintetizam pela MESMA função, então o ajuste do avatar
+    // vale nos dois — foi assim que ele foi desenhado em 25/08.
+    voiceTuning: input.voiceTuning,
     script: input.script,
     fotoBase,
     fotoMimeType: mimeDoUpload(fotoUrl),

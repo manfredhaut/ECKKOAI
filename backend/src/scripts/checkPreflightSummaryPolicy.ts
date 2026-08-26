@@ -48,7 +48,11 @@ const PASSO1 = "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx";
  */
 const CAMPOS: { chave: string; corpo: string; oQueE: string }[] = [
   { chave: "avatar", corpo: "corpo.avatar_id", oQueE: "o avatar" },
-  { chave: "outfit", corpo: "corpo.avatar_look_id", oQueE: "o traje" },
+  // Fase A, item 3 (25/08): `corpo.avatar_look_id` era o campo do dropdown
+  // "Traje", removido em 25/08 — desde então este campo é SEMPRE null, e a
+  // linha do resumo mentia "Traje: nenhum" mesmo com o Traje Padrão do
+  // Passo 1 (outfit/outfit_prompt) sendo enviado de verdade.
+  { chave: "outfit", corpo: "corpo.outfit_prompt", oQueE: "o traje" },
   { chave: "background", corpo: "corpo.background", oQueE: "o fundo" },
   { chave: "motionPrompt", corpo: "corpo.motion_prompt", oQueE: "a interpretação" },
   { chave: "expressiveness", corpo: "corpo.expressiveness", oQueE: "a expressividade" },
@@ -110,6 +114,20 @@ export const MUTANTS: Mutant[] = [
       "    publish_platform: wizard.publishPlatform,\n" +
       "  };",
     expect: "gerar: o resumo deixou de ser derivado do corpo",
+  },
+  {
+    guard: "gerar: a linha Traje do resumo lê o campo que realmente chega ao corpo (outfit/outfit_prompt), não o dropdown removido em 25/08 (avatar_look_id)",
+    name: "a linha Traje do resumo volta a ler avatar_look_id",
+    kind: "esperto",
+    // ESPERTO: o resumo continua existindo, continua com seis linhas, e a
+    // linha "Traje" continua parecendo válida — só que lê um campo que o
+    // dropdown removido em 25/08 nunca mais preenche. Resultado: "Traje:
+    // nenhum" sempre, mesmo quando o Traje Padrão do Passo 1 está sendo
+    // enviado de verdade — o mesmo rótulo cosmético que este conserto fechou.
+    file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
+    find: '    { campo: "outfit", value: corpo.outfit_prompt || corpo.outfit || null },',
+    replace: '    { campo: "outfit", value: corpo.avatar_look_id ? (nomes.look ?? corpo.avatar_look_id) : null },',
+    expect: "gerar: o resumo deixou de ser derivado do corpo em o traje",
   },
   {
     guard: "passo 1: traje em preparo trava o Avançar",
@@ -304,9 +322,18 @@ export async function checkPreflightSummaryPolicy(
     // continuava achando a NOVA e o gate passava verde com o defeito
     // aplicado — guarda INERTE. Contar exige as `minimoOcorrencias`
     // conhecidas; cair abaixo é a única forma de reprovar de verdade.
+    //
+    // ⚠️ UI-PARIDADE-TRAJE (25/08): a entrada `["lookImageName", "a imagem
+    // do traje", 1]` SAIU deste laço. Ela media o nome do arquivo salvo
+    // dentro do bloco "Adicionar traje" (LOOK do fornecedor), removido nesta
+    // rodada — `lookImageName` não existe mais em `AvatarSetupStep.tsx`. Não
+    // é substituída por nada: o traje que sobra na tela ("Traje padrão"/
+    // "Traje deste vídeo") mostra "Imagem salva." GENÉRICO por decisão já
+    // registrada no próprio arquivo (`AssetDefaults` não tem `outfitName`,
+    // e adicioná-lo por simetria cosmética sem consumidor no backend não foi
+    // autorizado) — não há nome nenhum para esta guarda contar.
     for (const [origem, oQueE, minimoOcorrencias] of [
       ["defaults.scenarioName", "o cenário", 2],
-      ["lookImageName", "a imagem do traje", 1],
     ] as const) {
       const usa = new RegExp(
         `${origem.replace(".", "\\.")}\\s*\\?\\s*t\\("createVideo\\.avatarSetup\\.imageSavedNamed"`,

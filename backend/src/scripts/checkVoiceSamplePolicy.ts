@@ -65,7 +65,7 @@ export const MUTANTS: Mutant[] = [
     // texto antigo (`body: JSON.stringify(buildSynthesisBody(text))`) deixou de
     // existir e o mutante voltou ERRO de aplicação — que não é reprovação nem
     // aprovação: é o arnês dizendo que não conseguiu nem plantar o defeito.
-    find: `  const corpoFallback = buildSynthesisBody(text);`,
+    find: `  const corpoFallback = buildSynthesisBody(text, ELEVENLABS_TTS_MODEL, tuning);`,
     replace: `  const corpoFallback = { text, model_id: ELEVENLABS_TTS_MODEL };`,
     expect: "não monta o corpo pela mesma função nos dois ramos",
   },
@@ -90,8 +90,8 @@ export const MUTANTS: Mutant[] = [
     // está guardado na voz, então um objeto vazio devolve tudo ao default do
     // fornecedor. O 0.85 salvo no painel deixa de valer.
     file: "backend/src/services/providers/voiceProvider.ts",
-    find: "    body.voice_settings = { speed: VOICE_SPEED };",
-    replace: "    body.voice_settings = {};",
+    find: "    settings.speed = VOICE_SPEED;",
+    replace: "    settings.speed = undefined;",
     expect: "não leva `voice_settings.speed",
   },
   {
@@ -138,7 +138,7 @@ export const MUTANTS: Mutant[] = [
     name: "não há velocidade nenhuma",
     kind: "obvio",
     file: "backend/src/services/providers/voiceProvider.ts",
-    find: "  if (supportsSpeed(modelId)) {\n    body.voice_settings = { speed: VOICE_SPEED };\n  }",
+    find: "  if (supportsSpeed(modelId)) {\n    settings.speed = VOICE_SPEED;\n  }",
     replace: "",
     expect: "não leva `voice_settings.speed",
   },
@@ -1369,11 +1369,61 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
   // Modelo SEM suporte não pode receber o campo: o fornecedor aceita e ignora
   // em silêncio, que é o pior caso — o mesmo de `expressiveness` com
   // `avatar_iii`.
-  const corpoV3 = buildSynthesisBody("oi", "eleven_v3");
-  if ("voice_settings" in corpoV3) {
+  // ⚠️ REESCRITA em 25/08. Antes esta asserção exigia `voice_settings` AUSENTE
+  // em `eleven_v3`, o que era verdade quando `speed` era o único ocupante do
+  // objeto. Com os quatro ajustes do avatar indo em qualquer modelo (decisão
+  // explícita do operador), o objeto passa a existir lá — o que continua
+  // proibido é a VELOCIDADE vazar para um modelo que não a tem.
+  const corpoV3 = buildSynthesisBody("oi", "eleven_v3") as {
+    voice_settings?: { speed?: number };
+  };
+  if (corpoV3.voice_settings?.speed !== undefined) {
     failures.push(
       "voz: envia speed para um modelo que não o suporta (eleven_v3). O fornecedor aceita e ignora em " +
         "silêncio, e o sintoma seria uma fala mais rápida que ninguém saberia explicar.",
+    );
+  }
+  // Sem ajuste de avatar e sem speed, o objeto não vai VAZIO — ele sobrescreve
+  // o que está guardado na voz e devolve tudo ao default do fornecedor.
+  if (corpoV3.voice_settings !== undefined) {
+    failures.push(
+      "voz: `voice_settings` foi enviado VAZIO a um modelo sem speed e sem ajustes de avatar. Objeto " +
+        "vazio é pior que campo ausente: ele apaga o que está guardado na voz.",
+    );
+  }
+  // E os QUATRO ajustes do avatar chegam ao corpo em QUALQUER modelo — inclusive
+  // no que não aceita `speed`. É a decisão de 25/08, e sem esta perna ela pode
+  // ser desfeita movendo os campos para dentro do `if (supportsSpeed())` sem
+  // que nada acuse.
+  const corpoV3ComAjustes = buildSynthesisBody("oi", "eleven_v3", {
+    stability: 0.31,
+    similarityBoost: 0.62,
+    style: 0.17,
+    speakerBoost: false,
+  }) as { voice_settings?: Record<string, unknown> };
+  const ajustesV3 = corpoV3ComAjustes.voice_settings;
+  if (
+    !ajustesV3 ||
+    ajustesV3.stability !== 0.31 ||
+    ajustesV3.similarity_boost !== 0.62 ||
+    ajustesV3.style !== 0.17 ||
+    ajustesV3.use_speaker_boost !== false
+  ) {
+    failures.push(
+      "voz: os quatro ajustes do avatar (stability, similarity_boost, style, use_speaker_boost) não " +
+        `chegaram ao corpo num modelo sem speed. Recebi ${JSON.stringify(ajustesV3)}. A decisão de ` +
+        "25/08 é que eles vão em QUALQUER modelo — o risco de o fornecedor ignorar em silêncio foi " +
+        "apresentado e aceito pelo operador.",
+    );
+  }
+  // Os nomes são os DO FORNECEDOR (snake_case), não os nossos (camelCase). Um
+  // `similarityBoost` no corpo é campo desconhecido: o ElevenLabs não fecha o
+  // objeto, então ele aceita, ignora, e o ajuste da tela não faz nada.
+  if (ajustesV3 && ("similarityBoost" in ajustesV3 || "speakerBoost" in ajustesV3)) {
+    failures.push(
+      "voz: o corpo saiu com os nomes internos (camelCase) em vez dos do fornecedor (snake_case). " +
+        "O objeto `voice_settings` não é fechado do lado dele: campo com nome errado é aceito, " +
+        "ignorado, e o ajuste simplesmente não acontece.",
     );
   }
   if (supportsSpeed("eleven_v3")) {
@@ -1394,7 +1444,14 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
   // refatoração, não por defeito. O que precisa continuar verdadeiro é que os
   // dois ramos montem pela MESMA função; onde o resultado é guardado antes de
   // virar JSON é detalhe.
-  const chamadas = (provider.match(/=\s*buildSynthesisBody\(text\)/g) ?? []).length;
+  //
+  // ⚠️ A regex ficou SOLTA em 25/08, e é de propósito. Ela era
+  // `/=\s*buildSynthesisBody\(text\)/g` — presa à lista de argumentos — e
+  // reprovou na primeira vez que um argumento novo entrou (o `tuning`), por
+  // refatoração e não por defeito. É a SEGUNDA vez que esta mesma asserção
+  // quebra assim; o que precisa continuar verdadeiro é que os dois ramos
+  // montem o corpo pela MESMA função, não quais argumentos ela recebe.
+  const chamadas = (provider.match(/=\s*buildSynthesisBody\(/g) ?? []).length;
   if (chamadas !== 2) {
     failures.push(
       `voz: não monta o corpo pela mesma função nos dois ramos de synthesizeSpeech (achei ${chamadas} de 2). ` +

@@ -93,33 +93,6 @@ export const MUTANTS: Mutant[] = [
     replace: "export const HEYGEN_LOOK_COST = {\n  units: 30,",
     expect: "o custo do traje deixou de bater com a medição",
   },
-  {
-    guard: "traje: a espera cobre o preparo e diz o que fazer ao esgotar",
-    name: "a janela de espera volta a ser curta demais",
-    kind: "esperto",
-    // 60 s eram o valor antigo, e ele passa despercebido porque na maioria das
-    // vezes FUNCIONA: as duas conclusões medidas foram 15 s e 50 s, e as duas
-    // cabem. O defeito só aparece na criação lenta — justamente aquela em que a
-    // pessoa mais precisa de resposta — e o sintoma é a tela desistir de um
-    // traje pago que estava a caminho.
-    file: "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx",
-    find: "const LOOK_POLL_WINDOW_MS = 240_000;",
-    replace: "const LOOK_POLL_WINDOW_MS = 60_000;",
-    expect: "a janela de espera do traje encolheu",
-  },
-  {
-    guard: "traje: a espera cobre o preparo e diz o que fazer ao esgotar",
-    name: "esgotar a espera volta a não dizer nada",
-    kind: "esperto",
-    // O laço termina e a tela fica com "o fornecedor está gerando" congelado.
-    // Nada quebra, nada fica vermelho, nenhum erro é registrado — e é essa
-    // aparência de normalidade que faz a pessoa criar o traje de novo e gastar
-    // outro US$ 1,00 por um que já vinha.
-    file: "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx",
-    find: '            t("createVideo.avatarSetup.addLookStillPreparing", { name: criado.look.name }),',
-    replace: '            t("createVideo.avatarSetup.addLookPreparing", { name: criado.look.name }),',
-    expect: "esgotar a espera do traje não avisa ninguém",
-  },
 ];
 
 type Row = Record<string, unknown>;
@@ -497,8 +470,15 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
   }
 
   // ---------------------------------------------------------------------------
-  // 7. Se o passo 1 coleta `outfit`, o corpo enviado tem de USÁ-LO — e o
-  //    "Adicionar traje" (LOOK) continua existindo do lado dele.
+  // 7. Se o passo 1 coleta `outfit`, o corpo enviado tem de USÁ-LO.
+  //
+  // ⚠️ UI-PARIDADE-TRAJE (25/08): o bloco "Adicionar traje" (criação de LOOK
+  // por esta tela) saiu do passo 1 — a criação morreu, a LEITURA de looks já
+  // existentes não (rota, `criarLook`/`listarLooks` e os 4 mutantes acima
+  // continuam de pé, testados por chamada direta ao serviço). Os 2 mutantes
+  // que mutavam `LOOK_POLL_WINDOW_MS`/`addLookStillPreparing` em
+  // `AvatarSetupStep.tsx`, e a checagem de `handleCreateLook`, saíram junto —
+  // mutavam/exigiam texto que não existe mais no arquivo.
   //
   // ⚠️ ESTA INVARIANTE MUDOU no BLOCO B5c, e o histórico importa para não
   // reabrir a dúvida: até então, `handleAssetUpload("outfit", …)` NÃO PODIA
@@ -530,81 +510,8 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
         );
       }
     }
-    if (!/handleCreateLook/.test(fonte)) {
-      failures.push("traje: o passo 1 não tem mais como criar traje — `handleCreateLook` sumiu.");
-    }
-
-    // -------------------------------------------------------------------------
-    // 8. A ESPERA cobre o preparo, e esgotá-la diz o que fazer.
-    //
-    // Lido do TEXTO do arquivo, e não importando a constante: `AvatarSetupStep`
-    // é um componente React que arrasta i18n, contexto de flag e hooks de
-    // câmera atrás de si, e nada disso sobe num script de backend. O preço é
-    // uma regex; o troco é que o mutante da janela reprova AQUI, na guarda, e
-    // não no compilador — que foi como o mutante do custo saía inerte antes de
-    // 854f29d.
-    // -------------------------------------------------------------------------
-    const MINIMO_MS = 180_000;
-    const janela = /const LOOK_POLL_WINDOW_MS = ([\d_]+);/.exec(fonte);
-    if (!janela) {
-      failures.push(
-        "traje: `LOOK_POLL_WINDOW_MS` sumiu do passo 1. A janela de espera voltou a ser um número solto " +
-          "dentro do laço, que é onde ela passou despercebida em 60 s.",
-      );
-    } else {
-      const ms = Number(janela[1].replace(/_/g, ""));
-      if (!(ms >= MINIMO_MS)) {
-        failures.push(
-          `traje: a janela de espera do traje encolheu para ${ms / 1000} s, abaixo do mínimo de ` +
-            `${MINIMO_MS / 1000} s. As conclusões MEDIDAS em 06/08 foram 15 s e 50 s — uma janela ` +
-            "dimensionada pela maior amostra observada não tem folga, e desistir cedo faz a tela abandonar " +
-            "um traje pago que estava a caminho. O conserto natural de quem vê isso é criar de novo, e " +
-            "cada traje custa US$ 1,00.",
-        );
-      }
-    }
-
-    // Esgotar a janela precisa VIRAR TEXTO NA TELA. Sem esta linha o laço
-    // termina em silêncio e a última mensagem continua sendo "o fornecedor está
-    // gerando" — congelada, indistinguível de uma espera que ainda corre.
-    if (!/addLookStillPreparing/.test(fonte)) {
-      failures.push(
-        "traje: esgotar a espera do traje não avisa ninguém — `addLookStillPreparing` não é usada no " +
-          "passo 1. O laço acaba, a mensagem de 'gerando' fica congelada, e nada diz que a tela parou de " +
-          "olhar nem que o traje aparece sozinho depois.",
-      );
-    }
   } catch {
     failures.push(`traje: não foi possível ler ${passo1}.`);
-  }
-
-  // A mensagem existe nos DOIS idiomas: uma chave sem tradução vira o próprio
-  // nome da chave na tela, que é pior que a mensagem congelada que ela veio
-  // substituir.
-  for (const idioma of ["pt-BR", "en"]) {
-    const arquivo = path.join(repoRoot, `frontend/src/locales/${idioma}.json`);
-    try {
-      const texto = await readFile(arquivo, "utf-8");
-      const dict = JSON.parse(texto) as Record<string, unknown>;
-      const passo = (dict.createVideo as Record<string, unknown> | undefined)?.avatarSetup as
-        | Record<string, string>
-        | undefined;
-      if (!passo?.addLookStillPreparing) {
-        failures.push(
-          `traje: \`addLookStillPreparing\` não existe em ${idioma}.json. A tela mostraria o nome da ` +
-            "chave no lugar do aviso de que o traje continua vindo.",
-        );
-      }
-    } catch {
-      failures.push(`traje: não foi possível ler ${arquivo}.`);
-    }
-  }
-
-  if (failures.length === 0) {
-    notes.push(
-      "  traje: a espera do preparo cobre 240 s (4,8× a conclusão mais lenta medida) e, ao esgotar, diz " +
-        "que o traje continua vindo e aparece sozinho",
-    );
   }
 
   return { failures, notes };

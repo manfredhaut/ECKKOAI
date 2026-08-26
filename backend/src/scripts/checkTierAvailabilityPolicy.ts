@@ -134,9 +134,13 @@ export const MUTANTS: Mutant[] = [
     // bug, carregamento ou decisão de produto.
     file: ARQUIVO_DA_TELA,
     find:
-      "        {(!podeEscolherSimples || !podeEscolherFal) && (\n" +
+      "        {gruposIndisponiveisCount > 0 && (\n" +
       "          <p className=\"text-muted\" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>\n" +
-      "            {t(\"createVideo.generate.tierUnavailable\")}\n" +
+      "            {t(\n" +
+      "              gruposIndisponiveisCount > 1\n" +
+      "                ? \"createVideo.generate.tierAllUnavailable\"\n" +
+      "                : \"createVideo.generate.tierUnavailable\",\n" +
+      "            )}\n" +
       "          </p>\n" +
       "        )}\n",
     replace: "",
@@ -144,17 +148,39 @@ export const MUTANTS: Mutant[] = [
   },
   {
     guard: "a legenda considera os DOIS sentidos (Simples sem heygen, ou Normal/Premium sem fal)",
-    name: "a condição da legenda volta a olhar só podeEscolherSimples",
+    name: "a contagem de grupos bloqueados volta a olhar só podeEscolherSimples",
     kind: "esperto",
     // ESPERTO: a legenda continua aparecendo — para o caso Simples-sem-
     // heygen, que já existia antes da Fase C. O que ela deixa de cobrir é
     // o caso NOVO: um tenant heygen-only com Normal/Premium desabilitados
-    // vê os cartões cinzas SEM NENHUMA explicação, porque a condição da
-    // legenda nem olha `podeEscolherFal`.
+    // vê os cartões cinzas SEM NENHUMA explicação, porque a contagem nem
+    // olha `podeEscolherFal`.
     file: ARQUIVO_DA_TELA,
-    find: "        {(!podeEscolherSimples || !podeEscolherFal) && (",
-    replace: "        {!podeEscolherSimples && (",
-    expect: "tier: a condição da legenda não cobre os dois sentidos",
+    find: "  const gruposIndisponiveisCount = [!podeEscolherSimples, !podeEscolherFal].filter(Boolean).length;",
+    replace: "  const gruposIndisponiveisCount = [!podeEscolherSimples].filter(Boolean).length;",
+    expect: "tier: a contagem de grupos bloqueados deu o veredito errado",
+  },
+  {
+    guard: "A2 — a legenda distingue UM grupo bloqueado de DOIS, em vez de um OR sem contagem",
+    name: "a legenda volta a juntar os dois grupos num OR sem contagem",
+    kind: "esperto",
+    // ESPERTO: a legenda continua aparecendo quando algo está bloqueado
+    // (G-4/G-5 não pegam isto), e a contagem `gruposIndisponiveisCount`
+    // continua correta — só a ESCOLHA da mensagem que regride: com os DOIS
+    // grupos bloqueados (heygen E fal, ou seja, os 3 níveis inteiros
+    // indisponíveis), a tela volta a dizer "Um dos níveis..." — o defeito
+    // A2 do BACKLOG, MEDIDO em 25/08 por leitura direta do código, com o
+    // texto errado sobrevivendo à mudança de arquivo (GenerateStep.tsx →
+    // SceneStep.tsx) que moveu os cartões de nível no mesmo commit.
+    file: ARQUIVO_DA_TELA,
+    find:
+      "            {t(\n" +
+      "              gruposIndisponiveisCount > 1\n" +
+      "                ? \"createVideo.generate.tierAllUnavailable\"\n" +
+      "                : \"createVideo.generate.tierUnavailable\",\n" +
+      "            )}",
+    replace: '            {t("createVideo.generate.tierUnavailable")}',
+    expect: "tier: a legenda de indisponibilidade não aparece com as duas mensagens",
   },
 ];
 
@@ -233,6 +259,43 @@ const CASOS_INDISPONIVEL: ReadonlyArray<{
   { rotulo: "simples, sem heygen (indisponível)", optValue: "simples", podeEscolherSimples: false, podeEscolherFal: true, indisponivelEsperado: true },
   { rotulo: "normal, sem fal (indisponível)", optValue: "normal", podeEscolherSimples: true, podeEscolherFal: false, indisponivelEsperado: true },
   { rotulo: "premium, com fal (disponível)", optValue: "premium", podeEscolherSimples: false, podeEscolherFal: true, indisponivelEsperado: false },
+];
+
+/**
+ * As 4 combinações de podeEscolherSimples/podeEscolherFal, para
+ * `gruposIndisponiveisCount` — A2, Fase A item 1 (25/08).
+ *
+ * `trecho.includes("gruposIndisponiveisCount")` sozinho NÃO pega um mutante
+ * que tire só um dos dois lados da soma: o NOME da variável continua
+ * aparecendo no JSX de qualquer jeito, porque quem mudou foi a expressão que
+ * a calcula, não onde ela é usada. Por isso esta é AVALIADA, como
+ * `podeEscolherSimples`/`podeEscolherFal` acima — mesmo padrão de G-1a/G-1b.
+ */
+const CASOS_GRUPOS: ReadonlyArray<{
+  rotulo: string;
+  podeEscolherSimples: boolean;
+  podeEscolherFal: boolean;
+  esperado: number;
+}> = [
+  { rotulo: "os dois grupos disponíveis", podeEscolherSimples: true, podeEscolherFal: true, esperado: 0 },
+  {
+    rotulo: "só Simples disponível (Normal/Premium bloqueados)",
+    podeEscolherSimples: true,
+    podeEscolherFal: false,
+    esperado: 1,
+  },
+  {
+    rotulo: "só Normal/Premium disponível (Simples bloqueado)",
+    podeEscolherSimples: false,
+    podeEscolherFal: true,
+    esperado: 1,
+  },
+  {
+    rotulo: "os dois grupos bloqueados — os 3 níveis inteiros indisponíveis",
+    podeEscolherSimples: false,
+    podeEscolherFal: false,
+    esperado: 2,
+  },
 ];
 
 function lerFonte(repoRoot: string): string {
@@ -372,6 +435,63 @@ export function checkTierAvailabilityPolicy(repoRoot: string): TierAvailabilityR
   }
 
   // -------------------------------------------------------------------------
+  // G-2b — gruposIndisponiveisCount, AVALIADO — A2, Fase A item 1 (25/08).
+  // -------------------------------------------------------------------------
+  const casadoGrupos = /const gruposIndisponiveisCount = ([^;]+);/.exec(fonte);
+  if (!casadoGrupos) {
+    failures.push(
+      `tier: não há \`const gruposIndisponiveisCount = …;\` em ${ARQUIVO_DA_TELA}. Sem essa contagem, a ` +
+        "legenda não sabe distinguir UM grupo bloqueado de DOIS — o defeito A2 do BACKLOG (a mensagem " +
+        'dizia sempre "Um dos níveis..." mesmo com os 3 níveis inteiros indisponíveis).',
+    );
+  } else {
+    const expressaoGrupos = casadoGrupos[1].trim();
+    let avaliarGrupos: (podeEscolherSimples: boolean, podeEscolherFal: boolean) => unknown;
+    try {
+      // eslint-disable-next-line no-new-func
+      avaliarGrupos = new Function(
+        "podeEscolherSimples",
+        "podeEscolherFal",
+        `return (${expressaoGrupos});`,
+      ) as typeof avaliarGrupos;
+    } catch (err) {
+      failures.push(
+        `tier: o predicado \`${expressaoGrupos}\` (gruposIndisponiveisCount) não é uma expressão ` +
+          `avaliável (${String(err)}).`,
+      );
+      avaliarGrupos = undefined as never;
+    }
+    if (avaliarGrupos) {
+      let algumaFalha = false;
+      for (const caso of CASOS_GRUPOS) {
+        let obtido: unknown;
+        try {
+          obtido = avaliarGrupos(caso.podeEscolherSimples, caso.podeEscolherFal);
+        } catch (err) {
+          failures.push(
+            `tier: avaliar gruposIndisponiveisCount no caso "${caso.rotulo}" levantou ${String(err)}.`,
+          );
+          algumaFalha = true;
+          continue;
+        }
+        if (Number(obtido) === caso.esperado) continue;
+        algumaFalha = true;
+        failures.push(
+          `tier: a contagem de grupos bloqueados deu o veredito errado para ${caso.rotulo} — esperado ` +
+            `${caso.esperado}, obtido ${JSON.stringify(obtido)}. Predicado: \`${expressaoGrupos}\`. Sem a ` +
+            'contagem certa, a legenda A2 mostra a mensagem errada — "um nível" quando são todos, ou o ' +
+            "contrário.",
+        );
+      }
+      if (!algumaFalha) {
+        notes.push(
+          "    tier: gruposIndisponiveisCount soma os dois lados certo — avaliado nas 4 combinações (A2)",
+        );
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // G-3 e G-4 — o laço dos cartões, recortado por âncora intrínseca
   // -------------------------------------------------------------------------
   const inicioLaco = fonte.indexOf("{TIER_OPTIONS.map((opt) => {");
@@ -396,25 +516,33 @@ export function checkTierAvailabilityPolicy(repoRoot: string): TierAvailabilityR
     notes.push("    tier: o botão de cada cartão leva `disabled={indisponivel}`");
   }
 
-  if (!trecho.includes('{t("createVideo.generate.tierUnavailable")}')) {
+  if (
+    !trecho.includes('"createVideo.generate.tierUnavailable"') ||
+    !trecho.includes('"createVideo.generate.tierAllUnavailable"')
+  ) {
     failures.push(
-      "tier: a legenda de indisponibilidade não aparece — o texto " +
-        '`{t("createVideo.generate.tierUnavailable")}` não está mais no recorte do laço dos cartões. ' +
-        "Os cartões podem continuar desabilitados (isso é outra guarda), mas sem explicação nenhuma na " +
-        "tela quem vê um cartão cinza não sabe se é bug, carregamento ou decisão de produto.",
+      "tier: a legenda de indisponibilidade não aparece com as duas mensagens — " +
+        '`"createVideo.generate.tierUnavailable"` e `"createVideo.generate.tierAllUnavailable"` não ' +
+        "estão as duas no recorte do laço dos cartões. Os cartões podem continuar desabilitados (isso é " +
+        "outra guarda), mas sem a mensagem certa quem vê um cartão cinza não sabe se falta um nível ou " +
+        "todos.",
     );
   } else {
-    notes.push("    tier: a legenda de indisponibilidade aparece quando algum nível está desabilitado");
+    notes.push(
+      "    tier: a legenda de indisponibilidade aparece quando algum nível está desabilitado, com a " +
+        "mensagem certa para um grupo bloqueado ou para os dois (A2)",
+    );
   }
 
-  if (!trecho.includes("(!podeEscolherSimples || !podeEscolherFal)")) {
+  if (!trecho.includes("gruposIndisponiveisCount")) {
     failures.push(
-      "tier: a condição da legenda não cobre os dois sentidos — `(!podeEscolherSimples || " +
-        "!podeEscolherFal)` não está mais no recorte do laço dos cartões. Um tenant heygen-only com " +
-        "Normal/Premium desabilitados veria os cartões cinzas sem nenhuma explicação.",
+      "tier: a legenda deixou de contar quantos grupos estão bloqueados — `gruposIndisponiveisCount` " +
+        "não está mais no recorte do laço dos cartões. Sem a contagem, a tela não sabe distinguir UM " +
+        "grupo bloqueado (ex.: só Simples) de DOIS (heygen e fal juntos, ou seja, os 3 níveis inteiros) " +
+        "— o defeito A2 do BACKLOG.",
     );
   } else {
-    notes.push("    tier: a legenda cobre os dois sentidos — Simples sem heygen, ou Normal/Premium sem fal");
+    notes.push("    tier: a legenda conta os grupos bloqueados (gruposIndisponiveisCount) — A2 fechado");
   }
 
   return { failures, notes };

@@ -46,49 +46,50 @@ import type { CredentialProvider } from "../types.js";
  * identifica: `heygen` só existe em `avatar`, mas `google` cobre `script` e
  * nada mais, e amanhã pode cobrir dois.
  */
-export type Precedencia =
-  /** Regra do W1: a chave do TENANT vence; a plataforma só cobre a ausência. */
-  | "byok_vence"
-  /** A plataforma vence mesmo havendo BYOK — hoje só a fal. Ver a nota abaixo. */
-  | "plataforma_vence";
-
 export interface Cobertura {
   id: PlatformCredentialId;
-  precedencia: Precedencia;
 }
 
 /**
- * ⚠️ **AS DUAS PRECEDÊNCIAS DIVERGEM, e a divergência é DECLARADA — 24/08.**
+ * ⚠️ **A PLATAFORMA VENCE SEMPRE — regra GERAL desde 25/08 (h.3).**
  *
- * A regra do W1, dita pelo operador, é `byok_vence`: "a plataforma passa a
- * pagar quando o tenant não tem chave própria; tenant COM chave própria
- * continua pagando a dele".
+ * Até aqui a regra do W1 (24/08) era `byok_vence`: "a plataforma paga a
+ * AUSÊNCIA; quem tem chave própria continua pagando a dele" — com UMA
+ * exceção isolada, `avatar/fal`, que fazia o contrário desde `2a04b4a`
+ * (21/08) por decisão pontual daquele bloco (a BYOK do tenant `dev-c77a5b`
+ * era a chave que devolvia 401 em 19/08).
  *
- * A fal faz o CONTRÁRIO desde `2a04b4a` (21/08): `resolveTenantAvatarFalKey`
- * consulta a plataforma PRIMEIRO e só cai na BYOK se ela faltar. Não é
- * descuido — foi a centralização deliberada daquele bloco, e é o que está
- * sustentando o caminho da fal HOJE: a BYOK do tenant `dev-c77a5b` é a chave
- * que devolveu 401 em 19/08, e alinhá-la à regra geral a traria de volta,
- * re-bloqueando o P7.c.
+ * O operador respondeu ao item (g)/(h.3) do fechamento de 25/08: a
+ * divergência não é mais um ramo à parte — é a regra para QUALQUER vendor.
+ * **Ter uma linha aqui (não-`null`) já significa "a plataforma vence
+ * quando tiver a chave"**, para todo par. A fal deixou de ser exceção porque
+ * deixou de haver exceção: ela é só mais uma entrada do mesmo mapa.
  *
- * Por isso a precedência é um CAMPO e não uma regra global: o código declara
- * a divergência em vez de escondê-la, e mudá-la é editar uma palavra num
- * lugar. Qual das duas a fal deve seguir é decisão do operador, registrada
- * como pendente.
+ * A ausência de cobertura (entrada `null`, ou par fora do mapa) continua
+ * caindo no BYOK do tenant exatamente como antes — isso não mudou, e é a
+ * retaguarda que protege `avatar/did`/`script/anthropic`/`script/openai`
+ * abaixo, que seguem sem entrada por decisão, não por lacuna.
+ *
+ * ⚠️ **MEDIDO no banco local, 25/08 — ISTO NÃO É INERTE.** `SELECT key,
+ * last_four FROM platform_credentials` mostra linha gravada para os QUATRO
+ * pares abaixo (heygen, elevenlabs, google, fal) — não só a fal. A regra
+ * geral fica ATIVA para os quatro imediatamente, não represada esperando
+ * alguém cadastrar uma chave. Ver o relatório do item 3 (h.3) para o
+ * levantamento completo, vendor por vendor.
  */
 export const HERANCA_DE_PLATAFORMA: Record<string, Cobertura | null> = {
   // Os quatro casos que o W1 abriu — até 24/08 os quatro tinham
   // `servedBy: ""` no painel ("armazenada e validada; ainda sem consumidor
-  // no código").
-  "avatar/heygen": { id: "heygen", precedencia: "byok_vence" },
-  "voice/elevenlabs": { id: "elevenlabs", precedencia: "byok_vence" },
-  "script/gemini": { id: "google", precedencia: "byok_vence" },
+  // no código"); hoje (25/08) TODOS têm linha gravada em
+  // `platform_credentials` (MEDIDO no banco local) — a regra geral vale de
+  // verdade para os quatro, não só para a fal.
+  "avatar/heygen": { id: "heygen" },
+  "voice/elevenlabs": { id: "elevenlabs" },
+  "script/gemini": { id: "google" },
 
-  // Já servida desde 21/08 (`2a04b4a`), por `resolveTenantAvatarFalKey`. Está
-  // aqui para que a herança do tenant zerado alcance TAMBÉM a fal: aquela
-  // função resolve o VALOR de uma linha que já existe, e o tenant novo não
-  // tem linha nenhuma. As duas convivem e concordam — a mesma chave.
-  "avatar/fal": { id: "fal", precedencia: "plataforma_vence" },
+  // Já servida desde 21/08 (`2a04b4a`). Continua aqui — agora como um caso
+  // igual aos outros três, não mais o único `plataforma_vence` do mapa.
+  "avatar/fal": { id: "fal" },
 
   // AUSÊNCIAS DELIBERADAS, e cada uma por um motivo diferente:
   //

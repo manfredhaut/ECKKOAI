@@ -186,6 +186,7 @@ export function CreateVideoPage() {
           onPublishPlatformChange={(publishPlatform) => setWizard((w) => ({ ...w, publishPlatform }))}
           tierVideo={wizard.tierVideo}
           onTierVideoChange={(tierVideo) => setWizard((w) => ({ ...w, tierVideo }))}
+          targetDurationSeconds={wizard.targetDurationSeconds}
         />
       )}
       {step === 3 && (

@@ -31,6 +31,28 @@ export interface Avatar {
   provider_engines: string[] | null;
   audio_treatment_enabled: boolean;
   audio_treatment_target_lufs: number;
+  /**
+   * Os quatro ajustes de síntese do ElevenLabs — migration 067, 25/08.
+   *
+   * Os três primeiros são `numeric` e chegam do `pg` como STRING, apesar do
+   * tipo declarado aqui (mesma dívida já existente em
+   * `audio_treatment_target_lufs`). Quem os usa em aritmética ou no corpo da
+   * síntese passa por `voiceTuningDoAvatar()`, que aplica `Number()`.
+   */
+  voice_stability: number;
+  voice_similarity_boost: number;
+  voice_style: number;
+  voice_speaker_boost: boolean;
+  /**
+   * Cenário/traje PADRÃO do avatar — migration 068, Fase A item 5 (25/08).
+   * Persistidos ao "Concluir configuração" do Passo 1; usados por
+   * `POST /videos` como PADRÃO quando o próprio vídeo não manda um valor
+   * seu (o vídeo que manda o seu sempre vence — ver routes/videos.ts).
+   */
+  scenario: string | null;
+  scenario_prompt: string | null;
+  outfit: string | null;
+  outfit_prompt: string | null;
   created_at: string;
 }
 

@@ -72,7 +72,12 @@ export function resumoDaGeracao(
   const plataforma = PUBLISH_PLATFORMS.find((p) => p.id === corpo.publish_platform);
   return [
     { campo: "avatar", value: corpo.avatar_id ? (nomes.avatar ?? corpo.avatar_id) : null },
-    { campo: "outfit", value: corpo.avatar_look_id ? (nomes.look ?? corpo.avatar_look_id) : null },
+    // Fase A, item 3 (25/08): o dropdown "Traje" (avatar_look_id) saiu da
+    // tela em 25/08 — ler esse campo aqui mostrava "Traje: nenhum" mesmo
+    // quando o Traje Padrão do Passo 1 (outfit/outfit_prompt) estava sendo
+    // enviado de verdade. `outfit_prompt` (texto legível) tem prioridade
+    // sobre `outfit` (URL do arquivo), mesmo padrão de `background` acima.
+    { campo: "outfit", value: corpo.outfit_prompt || corpo.outfit || null },
     {
       campo: "background",
       value: corpo.background

@@ -68,6 +68,7 @@ import {
   normalizeVoiceSample,
   probeSampleDurationSeconds,
 } from "../services/voice/voiceSampleAudio.js";
+import { voiceTuningDoAvatar } from "../services/voice/voiceTuning.js";
 import type { VoicePreview } from "../services/voice/voicePreview.js";
 import {
   VOICE_PREVIEW_PHRASE,
@@ -431,6 +432,11 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
           voiceCredential.apiKey,
           previewVoiceId(voiceId),
           VOICE_PREVIEW_PHRASE,
+          // Migration 067 — a prévia usa os MESMOS ajustes que o vídeo vai
+          // usar. É o ponto do desenho: se ela sintetizasse com outros
+          // valores, o operador aprovaria um som e receberia outro, que é
+          // exatamente o defeito que a prévia existe para fechar.
+          voiceTuningDoAvatar(avatar),
         );
         const previewUrl = await saveUpload(req.tenantId, falado.audio, "voice-preview.mp3");
         preview = {

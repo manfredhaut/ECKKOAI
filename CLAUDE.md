@@ -1,46 +1,23 @@
 Always respond in Brazilian Portuguese.
 
-> ## ⚠️ PONTO DE RETOMADA CORRENTE — Cena ganhou 3 rodadas, ligação funcional NÃO decidida
+> ## ⚠️ PONTO DE RETOMADA CORRENTE — leia a Seção 6 (fim do arquivo)
 >
-> [RETOMAR-CENARIO-TRAJE.md](RETOMAR-CENARIO-TRAJE.md) é HISTÓRICO — a
-> análise das 3 guardas que ele registrava já foi feita, e **MOVER-
-> CENARIO-TRAJE (mover os campos JÁ LIGADOS de `AvatarSetupStep.tsx` para
-> a Cena) foi ABANDONADO no caminho e não deve ser reaberto.** No lugar
-> entrou um plano mais conservador, em três rodadas (25/08), todas em
-> `SceneStep.tsx`:
+> O estado corrente da linha de trabalho Cena/Cenário/Traje/Voz vive só na
+> [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova),
+> escrita e verificada no fechamento de 25/08 — não duplicado aqui de
+> propósito, para não haver dois textos podendo discordar um do outro. Este
+> bloco chegou a descrever "Avatar deste vídeo" como bloco ainda existente;
+> foi removido na mesma sessão que fechou a Seção 6, e por isso o texto
+> antigo saiu daqui.
 >
-> 1. Os cartões de nível (Simples/Normal/Premium) saíram do passo Gerar
->    (`GenerateStep.tsx`) e passaram a ser escolhidos AQUI, na Cena — o
->    estado (`wizard.tierVideo`) continua em `CreateVideoPage.tsx`, só
->    quem renderiza mudou. Nasceu junto o bloco "Avatar deste vídeo":
->    Simples lista avatares reais (`GET /avatars`), Normal/Premium é
->    upload de imagem — os dois decorativos.
-> 2. "Cenário" e "Traje" entraram como blocos NOVOS e INDEPENDENTES,
->    mesmo padrão do "Avatar deste vídeo": upload OU "Gerar via IA" (área
->    de texto), estado local, rotulados "Em preparação", sem persistir e
->    sem entrar em `corpoDaGeracao`.
-> 3. **Fundo** (`background.type/value`) e o dropdown **Traje**
->    (`avatar_look_id`, o LOOK pago da HeyGen) **saíram da Cena** —
->    decisão de produto: são configuração do AVATAR, não do vídeo.
->    Confirmado por leitura de
->    `buildHeygenVideoPayload`/`providerAvatarIdParaGeracao` que nenhum
->    dos dois é obrigatório no payload do tier Simples antes de remover.
->
-> Os campos ANTIGOS que alimentam a composição da fal de verdade
-> (`defaults.scenario/outfit`, coletados em `AvatarSetupStep.tsx`) **não
-> foram tocados** e continuam sendo os únicos com efeito real hoje.
->
-> **Decisão confirmada nesta linha de trabalho: HeyGen atende SÓ o tier
-> Simples — Normal e Premium usam o outro caminho (fal).** Qualquer
-> ligação futura dos 3 blocos decorativos tem de respeitar essa divisão
-> (ex.: upload de cenário/traje só faz sentido ir para a composição da
-> fal, nunca para o payload da HeyGen).
->
-> **Ligação funcional dos 3 blocos DECORATIVOS — "Avatar deste vídeo",
-> "Cenário" e "Traje" — está AGUARDANDO o operador decidir**, depois de
-> ver na tela; não implementar sem essa decisão. Os cartões de nível
-> (item 1 acima) NÃO são decorativos — já são o seletor real de
-> `wizard.tierVideo`, só mudaram de lugar.
+> Duas decisões PERMANENTES desta linha de trabalho — não são "estado de
+> sessão", por isso não estão na Seção 6, e não devem ser reabertas sem
+> ordem explícita do operador:
+> - **MOVER-CENARIO-TRAJE** (mover os campos JÁ LIGADOS de
+>   `AvatarSetupStep.tsx` para a Cena) foi abandonado no caminho.
+>   [RETOMAR-CENARIO-TRAJE.md](RETOMAR-CENARIO-TRAJE.md) é histórico.
+> - **HeyGen atende SÓ o tier Simples** — Normal e Premium usam o caminho
+>   da fal.
 
 > # 🚦 ABERTURA DE SESSÃO — antes de tudo, o healthcheck do frontend
 >
@@ -246,7 +223,15 @@ SaaS multi-tenant de vídeo com avatar digital. Docker Compose: `traefik` (únic
 
 **Item 2 da rodada — QUEM CONSOME `requestedUnitCount`: ninguém que decida nada. É RÓTULO.** Rastreado em 05/08: escrito em 6 lugares (`routes/videos.ts` e `usageTracking.ts:123` → coluna `requested_unit_count`), e do lado da leitura **`videos.ts` o SELECIONA e nunca o usa** — `linha.requested_unit_count` não aparece em nenhuma linha do handler. `adminPanel.ts` e `dashboard-summary` agregam `unit_count`, não o pedido; o frontend não o menciona. **Não reserva, não freia, não audita:** `debitCredit` cobra 1 crédito por vídeo (`amount ?? 1`), independente da duração, e o teto live conta gerações. A preocupação de "45 un reservadas para um vídeo de 108" **não se materializa** — não há reserva por unidade em lugar nenhum.
 
-**⚠️ ESTADO ATUAL: ARMADO, NÃO DESARMADO — MEDIDO em 09/08/2026 02:01Z.** O texto abaixo descreve como CONFERIR o desarme; ele não descreve o estado de hoje. Hoje o processo está em **`PROVIDER_MODE=live`**, com **`PROVIDER_LIVE_CONFIRM` preenchida (len=28)** e **`PROVIDER_LIVE_MAX_GENERATIONS=10`** — e `docker compose config` **concorda** com o processo nos três (não há divergência arquivo×processo desta vez). `DAILY_PAID_GENERATION_LIMIT=10`, com **0 usadas hoje** (query de `dailyGenerationLimit.ts`, 09/08). `StartedAt=2026-08-09T01:02:24Z`, **`RestartCount=0`**, `Health=healthy`. A **linha de boot não foi encontrada** em `--tail 500`: a janela do log cobria ~26 min e o boot fora ~1 h antes — ausência que o gotcha 1 proíbe interpretar, e que o `printenv` supre por ser evidência mais forte. **Um clique em Gerar cobra dinheiro real.** Qualquer sessão que precise de `fixture` tem de desarmar com `up -d` e conferir de novo — `restart` não recarrega o `.env`.
+**⚠️ ESTADO ATUAL: DESARMADO — MEDIDO em 25/08/2026.** `printenv` dentro do
+container responde `MODE=fixture liveconfirm_len=0`, e
+`PLATFORM_ELEVENLABS_API_KEY` está vazia (len=0) — a chave em uso vem de
+`api_credentials` por tenant. Os 4 containers estão `healthy` (backend de pé há
+9 h, frontend 5 h). **Um clique em Gerar NÃO cobra dinheiro real hoje.** O
+parágrafo abaixo é de 09/08 e descrevia o estado ARMADO; ele fica como
+histórico do procedimento, não como descrição de hoje.
+
+**⚠️ HISTÓRICO — ARMADO, NÃO DESARMADO — MEDIDO em 09/08/2026 02:01Z.** O texto abaixo descreve como CONFERIR o desarme; ele não descreve o estado de hoje. Hoje o processo está em **`PROVIDER_MODE=live`**, com **`PROVIDER_LIVE_CONFIRM` preenchida (len=28)** e **`PROVIDER_LIVE_MAX_GENERATIONS=10`** — e `docker compose config` **concorda** com o processo nos três (não há divergência arquivo×processo desta vez). `DAILY_PAID_GENERATION_LIMIT=10`, com **0 usadas hoje** (query de `dailyGenerationLimit.ts`, 09/08). `StartedAt=2026-08-09T01:02:24Z`, **`RestartCount=0`**, `Health=healthy`. A **linha de boot não foi encontrada** em `--tail 500`: a janela do log cobria ~26 min e o boot fora ~1 h antes — ausência que o gotcha 1 proíbe interpretar, e que o `printenv` supre por ser evidência mais forte. **Um clique em Gerar cobra dinheiro real.** Qualquer sessão que precise de `fixture` tem de desarmar com `up -d` e conferir de novo — `restart` não recarrega o `.env`.
 
 **1 · DESARME — confirme antes de tudo. Modo `live` gasta dinheiro real.** Exigido `fixture` + `len=0`, nos 5 critérios: `printenv` (o processo) · `docker compose config` (o arquivo — pode divergir, e um `up -d` transforma um no outro) · `StartedAt` · `RestartCount` · linha de boot `"billable":false`.
 
@@ -333,40 +318,55 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 
 **PENDÊNCIAS CONHECIDAS E NÃO ABORDADAS:** guarda de voz inexistente (`voiceId: avatar.voice_id`, [videos.ts:1179](backend/src/routes/videos.ts:1179) — trocar por id fixo passa o gate inteiro); CENÁRIO PADRÃO da estação 1 é **ÓRFÃO e morre no frontend** (`corpoDaGeracao` não monta `scenario`; e `grep scenario|outfit` nos providers dá 0), com a ironia de que a única guarda que o cita exige que a tela diga "Imagem salva" sobre um arquivo que nunca chega ao fornecedor; assimetria do tratamento de imagem (o upload por ARQUIVO não passa pelo canvas, então os sliders não valem nada nesse caminho — [AvatarSetupStep.tsx:241](frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx:241)); LUFS e qualidade de imagem sem guarda nenhuma; lentidão do gate.
 
+> **⚠️ NOTA — 4:5/`instagram_feed`, investigação só-leitura, 25/08/2026 (Fase A, item 4).** Confirma, por `git log -S` e leitura do código, a hipótese do operador: **é a mesma reabertura de 19-20/08**, e o bug de barra sólida do HeyGen **segue sem reconfirmação por geração real**.
+>
+> **`git log --follow -S "instagram_feed" -- frontend/.../publishPlatforms.ts`** mostra só 3 commits tocando a contagem da string desde a criação do arquivo (`33ad5f1`, 01/08 — já nasceu com `instagram_feed`/4:5 presente) até hoje — **nenhum commit removeu e depois recolocou** a entrada. A leitura correta da nota antiga do CLAUDE.md ("4:5 RETIRADO... Instagram e Facebook eram as duas entradas 4:5", 05/08/DEMO-2) é: aquele catálogo tinha DUAS entradas 4:5 (Instagram e Facebook); a de Facebook foi removida e nunca voltou — a de Instagram foi a que saiu e **voltou**, e é sobre ela que trata este item.
+>
+> **MEDIDO por leitura direta, [videoFormat.ts:74-97](backend/src/services/providers/videoFormat.ts:74):** comentário do próprio código confirma, letra por letra — **"4:5 REINTRODUZIDO em 19/08, só para o feed do Instagram (Facebook segue fora — não foi pedido, e reintroduzir os dois juntos por simetria seria reabrir mais risco do que o testado cobre)"**.
+>
+> **O bug de 40% de barra sólida (medido no DEMO-2, 05/08, sonda `padded`, HeyGen) NÃO foi reconfirmado — é DEDUZIDO como ainda presente, não medido de novo.** Citação literal do comentário: *"reoferecer 4:5 também o reoferece para tenants na HeyGen, cujo defeito de 40% de barra NUNCA foi corrigido — só evitado removendo a opção. Nenhuma geração HeyGen com 4:5 rodou desde então"*. O conserto de 06/08 (`HEYGEN_FIT="cover"`) foi validado para o caso GERAL de barra (a troca de `contain`→`cover` que zerou os 40% medidos naquele momento), mas **nenhuma geração HeyGen real testou especificamente 4:5 depois da reintrodução de 19/08** — o `cover` nunca foi reconfirmado NESTA combinação exata (HeyGen × 4:5).
+>
+> **Do lado da fal:** MEDIDO em 19/08 que `aspect_ratio` sobrevive até o vídeo final para 9:16 (vídeo real, 716×1284, ffprobe). **Para 4:5 especificamente, NÃO VERIFICADO** — mesmo mecanismo (compor decide, animar herda), nenhuma chamada real testou 4:5 ainda ([videoFormat.ts:91-95](backend/src/services/providers/videoFormat.ts:91)).
+>
+> **Nenhum código foi tocado nesta investigação** — nem o catálogo, nem `HEYGEN_FIT`, nem nenhuma flag. Fica registrado para o operador decidir se quer reconfirmar por geração real (HeyGen × 4:5) antes de expor a opção a um tenant HeyGen-only, ou se o risco DEDUZIDO é aceitável por ora.
+
 ## 6 · Bloco de retomada — cole numa sessão nova
 
-> ⚠️ **ESTE BLOCO É DE 05/08 E ESTÁ SUPERADO ONDE CONFLITAR COM A SEÇÃO 5.1 (11/08).** Hoje: HEAD **`828142a`**, arnês **211/211**, backend **ARMADO** (`live`, len=28), saldo **US$ 4,00 / 240 un**. O texto abaixo diz `8f6572b`, `fixture` e US$ 12,05 — nada disso vale mais. O que continua valendo aqui são os gotchas, a régua de dinheiro e o procedimento de desarme.
+> ⚠️ **FECHAMENTO DE SESSÃO — COMMIT ÚNICO, 25/08/2026 — SUBSTITUI TODO O TEXTO ANTERIOR DESTA SEÇÃO.** Sessão longa, encadeada a partir do fechamento anterior (15:53): mapeamento de ligação Fase A, 5 itens fechados (A2, A3, rótulo Traje do resumo, persistência de Cenário/Traje do avatar, generalização h.3 da herança de plataforma), validação visual no browser real, e agora o commit que a Seção 6 anterior deixava condicionado a esclarecer a diretriz do operador (item g) — **o operador confirmou que esse bloqueio caiu**. Tudo abaixo medido nesta rodada de fechamento.
 >
-> **eckko.ai, diretório `TWINAI`. HEAD `8f6572b` + o commit da rodada de correções (05/08), árvore limpa, `fixture` com `PROVIDER_LIVE_CONFIRM` vazia — DESARMADO e conferido nos 5 critérios às 08:02 e de novo depois de dois `restart`.** Confirme os 5 critérios do desarme antes de tocar em nada: `printenv` e `docker compose config` podem divergir, e um `up -d` arma o modo pago sem nova pergunta. **`RestartCount` compara-se com o valor pós-boot, não com 0**, e a linha de boot pode estar fora da janela de `--tail 500` — nesse caso o `printenv` é a evidência mais forte, porque em `live` o processo nem sobe sem a confirmação.
+> ### (a) Estado do repositório — pós-commit
 >
-> ## ✅ O CAMINHO INTEIRO ESTÁ PROVADO EM PRODUÇÃO (05/08). O que falta é conserto, não descoberta.
+> Este commit cobre TUDO que estava pendente desde o fechamento de 15:53 **mais** o trabalho desta sessão. Não há mais stash de duas origens misturadas: a árvore inteira (o que estava staged + o que estava só modificado) foi para um commit único, com a mensagem descrevendo os grupos separadamente (ver mensagem do commit para o detalhamento exato por arquivo). **HEAD e hash exatos: reportados ao operador no chat desta sessão**, não replicados aqui por seguirem o commit que ainda não existia no momento em que este texto foi escrito — evita a auto-referência impossível (um arquivo não pode conter o hash do commit que o grava).
 >
-> Clonagem real, síntese e **um vídeo pago** saíram pelo produto, no avatar `7557957c` ("TESTE REAL 15:40 01/08"). **O Mário não foi tocado e `wAd9MJ2IK71FGs1FWjIX` está intacta.** Não há mais NÃO VERIFICADO bloqueando a demo — o ElevenLabs aceita nosso WAV, a GUARDA B liberou com a contagem corrigida, e a régua de custo fechou ao centavo pela 5ª vez.
+> **Gate estático** (`docker compose exec -T -e PROVIDER_MODE=fixture backend npm run check`) → **EXIT 0**, reconfirmado nesta rodada, depois de todo o trabalho de A2/A3/item 5/h.3. **`tsc -b --noEmit` do frontend** (não coberto pelo gate do backend) → **também EXIT 0**, reconfirmado na mesma rodada.
 >
-> **Saldo hoje: 723 un / US$ 12,05** (~6 vídeos de 37 s, ou ~19 de 15 s). Gasto da passada: **US$ 1,80** de vídeo + **US$ 0,056** de voz + **1 slot irreversível** (4 → 5; substituir a voz não apaga a antiga, e liberar exige o painel).
+> **Mutantes declarados: 404** — confirmado por `node tools/run-mutants.mjs --list` do host (eram 398 no fechamento de 15:53; +6 desta sessão: 1 para A2, 1 para A3, 1 para o rótulo Traje, 2 para a persistência de Cenário/Traje do avatar, 1 para h.3 líquido — ver o detalhamento dos itens abaixo).
 >
-> **Restam 2 dos 5 defeitos, e são justamente os visíveis a olho nu.** Os defeitos 3 (duração que não limita), 4 (estimativa 0,42×) e 5 (rótulo com a duração pedida) foram corrigidos em 05/08 e conferidos na tela em `fixture`. Sobram: o passo 3 do assistente não fazer absolutamente nada — os arquivos de cenário e traje sobem, são salvos e nunca chegam ao fornecedor, e **não há campo no contrato para mandá-los**, então a saída é remover o passo, não ligá-lo — e os **40% de barra no 4:5**, cuja correção completa toca 5 arquivos e só se prova pagando. Para a demo, a recomendação registrada é retirar o 4:5 e apresentar em 16:9.
+> **Passada completa de mutantes NÃO disparada nesta sessão** — fica para depois, isolada, fora do horário de trabalho, como já é a regra.
 >
-> **Nada foi gasto na rodada de correções: zero rede a fornecedor, zero geração, saldo intacto.**
+> ### (b) O que este commit fecha
 >
-> **Rearmar (o `.env` não é editado; as variáveis vão na invocação):**
-> ```
-> PROVIDER_MODE=live PROVIDER_LIVE_CONFIRM=eu-autorizo-gastar-cota-real PROVIDER_LIVE_MAX_GENERATIONS=2 docker compose up -d backend
-> ```
-> **2 é obrigatório:** `consumeLiveGeneration()` roda em `cloneVoice()` **e** em `generateVideo()` — com o default de 1 a clonagem come a única unidade e o vídeo é recusado por nós mesmos (bloco DEMO-4). **Observado e NÃO VERIFICADO:** `maxgen=2` sobrevive ao desarme; `docker compose config` também o resolve como 2, então vem do `.env` — dedução, porque o `grep` no `.env` foi negado duas vezes pela camada de permissão.
+> - **Fechamento de 25/08 15:53** (já pronto, só sem commit até agora): LUFS no avatar existente, qualidade de imagem no upload por arquivo, ajustes de voz (migration 067), achado sobre a divergência de resolução de credencial entre `avatars.ts` e `POST /videos` — ver o texto histórico que estava aqui, agora substituído; nada mudou nesses itens nesta sessão, só deixaram de estar pendurados sem commit.
+> - **A2 — aviso de nível indisponível.** `SceneStep.tsx` conta quantos grupos de vendor estão bloqueados (`gruposIndisponiveisCount`) e escolhe entre "um dos níveis" / "nenhum dos níveis" — antes dizia sempre a mesma frase mesmo com os 3 níveis inteiros indisponíveis. Guarda em `checkTierAvailabilityPolicy.ts`.
+> - **A3 — preço do Premium reage à duração real.** `/video-cost-reference` (routes/videos.ts) ganhou o campo `target`, resolvido pela MESMA `estimateVideoCost` dos pontos fixos; `SceneStep.tsx` consome por tier. A string fixa "US$ 14,19" saiu. Guarda em `checkCostReferencePolicy.ts`.
+> - **GenerationSummary.tsx — rótulo "Traje" lê o campo certo.** Linha 75 lia `avatar_look_id` (dropdown removido em 25/08, sempre `null`); agora lê `outfit_prompt`/`outfit`. Guarda em `checkPreflightSummaryPolicy.ts`.
+> - **Persistência de Cenário/Traje do avatar (item 5).** Migration 068 (`avatars.scenario`/`scenario_prompt`/`outfit`/`outfit_prompt` — não existiam antes, ao contrário do que a tarefa original presumia). `PUT /avatars/:id` persiste com COALESCE. `handleFinishSetup` (AvatarSetupStep.tsx) grava ao "Concluir configuração". `POST /videos` cai para o padrão do avatar só quando o próprio vídeo não manda valor. Guarda nova `checkAvatarSceneDefaultsPolicy.ts`.
+> - **h.3 — herança de plataforma generalizada.** A plataforma vence a BYOK do tenant SEMPRE que tiver cobertura, para qualquer vendor — não é mais exceção isolada da fal. `Cobertura` perdeu o campo `precedencia`; `credentialLookup.ts` chama `herdarDaPlataforma` primeiro, sempre, nas duas funções de resolução. Guarda reescrita em `checkPlatformInheritancePolicy.ts` (5 mutantes, 2 novos líquidos).
 >
-> **O upload é do OPERADOR, não do assistente:** `POST /avatars/:id/voice-sample` exige sessão autenticada e o assistente não faz login com a senha dele. A tela tem `<input type="file">` ([VoiceSampleRecorder.tsx:306](frontend/src/pages/CreateVideo/VoiceSampleRecorder.tsx:306)) — foi assim que esta clonagem entrou. **Confirme a substituição já na primeira vez**, senão a primeira tentativa morre em `voice_exists` (aconteceu nas duas passadas).
+> ### (c) Validação visual real — o que ela confirmou e o que ela achou de novo
 >
-> **Três coisas que o roteiro do tiro pedia e o código NÃO faz — decididas, não reabrir:** (1) a rota clona com `name: avatar.name`, então não existe nomear a voz sem renomear um avatar — foi por isso que a voz nova nasceu chamada "TESTE REAL 15:40 01/08", igual à antiga; (2) a rota clona e grava o `voice_id` no MESMO request, então não cabe portão de aprovação entre clonar e prender; (3) os créditos do ElevenLabs **não são legíveis** (401 por falta de `user_read`), então o custo da voz só tem o lado de dentro — a régua é nossa, sem confirmação do fornecedor.
+> Rodada de validação no browser (fixture, custo zero, dois avatares descartáveis criados: `TESTE PROVA h5 - descartavel` e `TESTE PROVA h5 v2 - descartavel`) confirmou a persistência de ponta a ponta — `scenario_prompt`/`outfit_prompt` gravados no Postgres imediatamente após "Concluir configuração" — e achou dois pontos que o código sozinho não deixava óbvios: ver itens 1 e 2 da lista de abertos abaixo.
 >
-> **Gotchas:** (1) `docker compose logs` sem `--tail 500` devolve log rotacionado e congelado — nunca conclua ausência de evidência com ele; (2) código novo exige `restart backend`/`restart frontend`, e `vite.config.ts`/`package.json`/`Dockerfile` exigem `build`; (3) `restart` não recarrega `.env`; (4) **ligar/desligar o PC reinicia o backend**, e o polling em `setInterval` não é retomado no boot.
+> ### (d) ITENS EM ABERTO — registrados nesta rodada, NÃO resolvidos
 >
-> **Dinheiro:** vídeo US$ 0,05 por segundo inteiro truncado; voz por caractere (2,5% do total); avatar novo US$ 1,00. Nunca reinicie **nem desligue a máquina** com geração em andamento — o vídeo trava em `queued` para sempre, sem estorno.
+> 1. **BUG REAL — a tela de avatar existente não relê `scenario_prompt`/`outfit_prompt` do banco ao reabrir.** A persistência (item 5 acima) funciona — confirmado por leitura direta do Postgres — mas o campo "Cenário"/"Traje" na tela do avatar existente aparece VAZIO até alguém editar de novo, porque nada em `AvatarSetupStep.tsx` inicializa `defaults.scenarioPrompt`/`outfitPrompt` a partir de `avatar.scenario_prompt`/`outfit_prompt` quando um avatar é selecionado. Achado na validação visual desta sessão (recarregar página + reselecionar avatar treinado + ler o DOM: nenhum dos dois campos trazia o texto salvo). Correção pendente, não implementada.
+> 2. **LIMITAÇÃO ARQUITETURAL ACEITA, NÃO É BUG — o resumo da Cena/Gerar não pode mostrar a herança do padrão do avatar antes de o vídeo existir.** O resumo (`resumoDaGeracao`) é montado 100% no cliente a partir do que o wizard já tem preenchido; o fallback para o padrão do avatar só roda dentro do servidor, ao processar `POST /videos`. Confirmado ao vivo: vídeo novo com Cenário/Traje vazios na Cena → resumo mostra "Traje: nenhum", mesmo com o avatar tendo padrão persistido. Não há como o resumo pré-clique refletir uma decisão que só existe pós-clique sem redesenhar o que o resumo é — decisão de produto, não conserto de bug.
+> 3. **Os dois avatares descartáveis de teste** (`TESTE PROVA h5 - descartavel`, `TESTE PROVA h5 v2 - descartavel`) seguem no tenant `dev-c77a5b`, aguardando decisão do operador sobre excluir ou manter.
+> 4. **Passada completa dos mutantes (404 declarados, contagem atual) segue pendente** — roda isolada, fora do horário de trabalho, como já é a regra do projeto.
 >
-> **Aberto (dono: usuário):** chaves de plataforma pelo painel, rotação da chave Google e das senhas de demo, `user_read` no ElevenLabs, saldo HeyGen, backup de `uploads/_prova/`, autostart do Docker.
+> ### (e) Pendências herdadas, ainda não tocadas (do fechamento de 15:53, sobrevivem sem mudança)
 >
-> **O NÃO VERIFICADO que bloqueia um tiro real da voz: se o ElevenLabs aceita a amostra que sai daqui.** O formato é **WAV PCM 16 bit mono a 24 kHz** — sem perda desde o HIGIENE-1, taxa fixada no FECHAMENTO-1. A conversão está provada sobre a captura real de 2:33 (webm/opus 48 kHz → wav pcm_s16le 24 kHz, 7.338.318 B, md5 `e579a890…`, 318 ms); o **aceite do fornecedor, não** — nenhuma clonagem real passou por nenhum dos três formatos já usados. Trocar de formato **não reduziu** esse risco, só o mudou de lugar. Fechá-lo consome um slot **irreversível**: este produto não exclui vozes, e liberar slot exige o painel do fornecedor.
+> 1. Os campos "Em preparação" do Passo 3 (Cenário/Traje da Cena, decorativos) ficam VISÍVEIS no fluxo Simples ou são ESCONDIDOS? *(Decisão 1, ainda aberta — Cenário/Traje da Cena permanecem decorativos por decisão explícita, não tocados nesta sessão.)*
+> 2. Dropdown de Traje no Passo 3 — reintroduzir, ou está resolvido pela remoção? *(Decisão 3, ainda aberta — o rótulo cosmético que a mascarava foi corrigido nesta sessão, item (b) acima, mas a decisão de produto em si segue aberta.)*
 >
-> **Resolvido no FECHAMENTO-1 (era o efeito colateral do HIGIENE-1):** a 48 kHz o WAV ocupava ~5,5 MB/min, os 10 MiB cabiam ~109 s, e a captura de 2:33 do E2E-1 **deixara de passar** — enquanto `checkSampleDuration` aceitava 120 s "limpa", divergindo entre 109 e 120 s. A 24 kHz são ~2,8 MB/min, o teto é **218 s**, aquela captura passa de novo, e as duas réguas saem da mesma função — a faixa divergente não pode reabrir sem mudar a fórmula.
->
-> Detalhe em `docs-internal/`. Gate: `docker compose exec -T -e PROVIDER_MODE=fixture backend npm run check`.
+> Gate: `docker compose exec -T -e PROVIDER_MODE=fixture backend npm run check`. `--list`: `node tools/run-mutants.mjs --list`, do host.

@@ -460,6 +460,33 @@ export function supportsSpeed(modelId: string): boolean {
 }
 
 /**
+ * OS QUATRO AJUSTES DE SÍNTESE, por AVATAR — 25/08.
+ *
+ * Vêm de `avatars.voice_*` (migration 067), nunca de constante deste módulo:
+ * um valor fixo aqui faria os quatro campos parecerem configuráveis na tela e
+ * serem os mesmos para todo mundo. É o defeito que a guarda
+ * `voz: os ajustes de síntese vêm do avatar` existe para impedir.
+ *
+ * ⚠️ RISCO ACEITO, registrado por decisão do operador em 25/08: estes quatro
+ * vão em QUALQUER modelo, sem a lista de suporte que `speed` tem. Se um modelo
+ * não suportar algum deles, o fornecedor aceita e ignora em silêncio — o pior
+ * caso conhecido deste projeto (`expressiveness` com `avatar_iii`) — e aqui ele
+ * é ainda mais surdo, porque nenhum dos quatro muda a duração. A recomendação
+ * de travar por modelo foi apresentada e recusada; não reabrir sem nova ordem.
+ *
+ * MEDIDO em 25/08 (`GET /v1/voices/0hQuq0q2…/settings`, HTTP 200): os quatro
+ * campos existem na resposta do fornecedor, com `stability` 0.5,
+ * `similarity_boost` 0.75, `style` 0.0 (floats) e `use_speaker_boost` true.
+ * Que cada MODELO os honre segue NÃO VERIFICADO — o endpoint é por voz.
+ */
+export interface VoiceTuning {
+  stability: number;
+  similarityBoost: number;
+  style: number;
+  speakerBoost: boolean;
+}
+
+/**
  * O corpo da síntese, montado num lugar só.
  *
  * Os DOIS ramos de `synthesizeSpeech` (com timestamps e simples) chamam esta
@@ -473,10 +500,36 @@ export function supportsSpeed(modelId: string): boolean {
  * e receberia outro no vídeo — exatamente o defeito de aprovar sem ouvir que a
  * prévia existe para fechar.
  */
-export function buildSynthesisBody(text: string, modelId = ELEVENLABS_TTS_MODEL): Record<string, unknown> {
+export function buildSynthesisBody(
+  text: string,
+  modelId = ELEVENLABS_TTS_MODEL,
+  tuning?: VoiceTuning,
+): Record<string, unknown> {
   const body: Record<string, unknown> = { text, model_id: modelId };
+  const settings: Record<string, unknown> = {};
+  // `speed` continua CONDICIONADO ao modelo: ele é o único dos cinco cujo
+  // suporte está medido (`MODELS_WITH_SPEED`), e `eleven_v3` comprovadamente
+  // não o tem.
   if (supportsSpeed(modelId)) {
-    body.voice_settings = { speed: VOICE_SPEED };
+    settings.speed = VOICE_SPEED;
+  }
+  // Os QUATRO vão SEMPRE, em qualquer modelo — decisão explícita do operador
+  // em 25/08, contra a recomendação registrada. O risco aceito está escrito
+  // em `VoiceTuning`: um modelo que não suporte algum deles aceita e ignora
+  // em silêncio, e nenhum dos quatro tem sintoma mensurável deste lado (ao
+  // contrário de `speed`, que aparece na duração).
+  if (tuning) {
+    settings.stability = tuning.stability;
+    settings.similarity_boost = tuning.similarityBoost;
+    settings.style = tuning.style;
+    settings.use_speaker_boost = tuning.speakerBoost;
+  }
+  // Objeto VAZIO não vai: `voice_settings: {}` sobrescreve o que está guardado
+  // na voz e devolve tudo ao default do fornecedor — pior que não mandar nada.
+  // É o caso do modelo sem `speed` chamado sem `tuning`, e é ele que mantém o
+  // corpo de HOJE idêntico quando o parâmetro novo é omitido.
+  if (Object.keys(settings).length > 0) {
+    body.voice_settings = settings;
   }
   return body;
 }
@@ -507,11 +560,27 @@ export function buildSynthesisBody(text: string, modelId = ELEVENLABS_TTS_MODEL)
  * o recebe.
  */
 export function logSynthesisBody(context: string, body: Record<string, unknown>): void {
-  const settings = body.voice_settings as { speed?: number } | undefined;
+  const settings = body.voice_settings as
+    | {
+        speed?: number;
+        stability?: number;
+        similarity_boost?: number;
+        style?: number;
+        use_speaker_boost?: boolean;
+      }
+    | undefined;
   logEvent("info", "voice_payload_built", {
     context,
     campos: Object.keys(body),
     model_id: body.model_id,
+    // Os QUATRO de 25/08, pelo mesmo motivo do speed: eles vêm do avatar
+    // (`avatars.voice_*`), e sem este registro "o ajuste da tela chegou ao
+    // fornecedor?" volta a ser dedução. "ausente" por extenso, e não
+    // `undefined`, para distinguir valor de omissão.
+    voice_settings_stability: settings?.stability ?? "ausente",
+    voice_settings_similarity_boost: settings?.similarity_boost ?? "ausente",
+    voice_settings_style: settings?.style ?? "ausente",
+    voice_settings_use_speaker_boost: settings?.use_speaker_boost ?? "ausente",
     // "ausente" por extenso, e não `undefined`: a diferença entre "mandamos
     // 0.85" e "não mandamos velocidade nenhuma" é a única coisa que este evento
     // existe para deixar visível, e um campo que some do JSON não a mostra.
@@ -535,6 +604,9 @@ export async function synthesizeSpeech(
   apiKey: string,
   voiceId: string,
   text: string,
+  // Opcional, e a ausência produz EXATAMENTE o corpo de antes de 25/08. É o
+  // que permite às guardas exercitarem a montagem sem inventar um avatar.
+  tuning?: VoiceTuning,
 ): Promise<SynthesizedSpeech> {
   if (isFixtureMode()) return synthesizeSpeechFixture();
   const base = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`;
@@ -542,7 +614,7 @@ export async function synthesizeSpeech(
   // A PROVA do que sai, antes de sair. Registrada nos DOIS ramos: se só o
   // caminho feliz fosse registrado, o fallback poderia mandar outro corpo e
   // nada apontaria para isso.
-  const corpo = buildSynthesisBody(text);
+  const corpo = buildSynthesisBody(text, ELEVENLABS_TTS_MODEL, tuning);
   logSynthesisBody("elevenlabs.synthesizeWithTimestamps", corpo);
 
   let res: Response;
@@ -605,7 +677,7 @@ export async function synthesizeSpeech(
   // interessa: dois corpos divergindo entre os endpoints. Assim o log mostra o
   // que cada chamada levou, e dois eventos no mesmo vídeo já dizem que o
   // fallback entrou — e que o TTS foi pago duas vezes.
-  const corpoFallback = buildSynthesisBody(text);
+  const corpoFallback = buildSynthesisBody(text, ELEVENLABS_TTS_MODEL, tuning);
   logSynthesisBody("elevenlabs.synthesizeSpeech", corpoFallback);
 
   let plain: Response;
