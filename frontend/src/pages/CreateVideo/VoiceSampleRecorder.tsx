@@ -175,6 +175,11 @@ export function VoiceSampleRecorder({
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const tickRef = useRef<number | null>(null);
+  // Input nativo escondido — o texto "Escolher arquivo/Nenhum arquivo
+  // selecionado" vem do NAVEGADOR (varia por idioma do SO, já visto como
+  // "ficheiro" em pt-PT), não da aplicação. O botão abaixo troca esse
+  // texto pelo nosso.
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     api.get<SamplePolicy>("/voice/sample-policy").then(setPolicy).catch(() => setPolicy(null));
@@ -498,10 +503,22 @@ export function VoiceSampleRecorder({
           </button>
         )}
 
-        <label className="voice-sample__file">
+        <button
+          type="button"
+          className="voice-sample__file"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={recording || sending}
+        >
           {t("createVideo.voiceSample.orUploadFile")}
-          <input type="file" accept="audio/*" onChange={handleFile} disabled={recording || sending} />
-        </label>
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*"
+          hidden
+          onChange={handleFile}
+          disabled={recording || sending}
+        />
       </div>
 
       {/* O TETO DE BYTES, derivado da política — nunca um "10 MB" literal, pelo

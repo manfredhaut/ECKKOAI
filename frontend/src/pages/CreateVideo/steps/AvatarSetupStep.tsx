@@ -100,6 +100,10 @@ export function AvatarSetupStep({
   const selectedAvatar = avatars.find((a) => a.id === selectedAvatarId) ?? null;
   const referenceFileInput = useRef<HTMLInputElement | null>(null);
   const photoFileInput = useRef<HTMLInputElement | null>(null);
+  // Compartilhados entre o ramo de avatar existente e o de avatar novo — os
+  // dois nunca montam ao mesmo tempo (`{!draftAvatar ? (...) : (...)}`).
+  const scenarioFileInput = useRef<HTMLInputElement | null>(null);
+  const outfitFileInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     refreshAvatars();
@@ -522,6 +526,43 @@ export function AvatarSetupStep({
     });
   }
 
+  /**
+   * REMOVER a imagem de Cenário/Traje — avatar EXISTENTE.
+   *
+   * Chama o servidor IMEDIATAMENTE (`scenario_clear`/`outfit_clear`, o sinal
+   * que força NULL apesar do COALESCE — ver o comentário em avatars.ts), e
+   * não só limpa o estado local: este bloco (Cenário/Traje de avatar já
+   * criado) não tem NENHUM outro ponto de salvamento — diferente do ramo de
+   * avatar novo, que persiste tudo em `handleFinishSetup`. Um "remover" que
+   * só mexesse em `defaults` pareceria funcionar e não mudaria o banco.
+   */
+  async function commitExistingAssetClear(kind: "scenario" | "outfit") {
+    if (!selectedAvatar) return;
+    const updated = await api.put<Avatar>(
+      `/avatars/${selectedAvatar.id}`,
+      kind === "scenario" ? { scenario_clear: true } : { outfit_clear: true },
+    );
+    setAvatars((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    onDefaultsChange({
+      ...defaults,
+      ...(kind === "scenario" ? { scenario: "", scenarioName: "" } : { outfit: "" }),
+    });
+  }
+
+  /** REMOVER a imagem de Cenário/Traje — avatar NOVO (ainda em criação). */
+  async function commitDraftAssetClear(kind: "scenario" | "outfit") {
+    if (!draftAvatar) return;
+    const updated = await api.put<Avatar>(
+      `/avatars/${draftAvatar.id}`,
+      kind === "scenario" ? { scenario_clear: true } : { outfit_clear: true },
+    );
+    setDraftAvatar(updated);
+    onDefaultsChange({
+      ...defaults,
+      ...(kind === "scenario" ? { scenario: "", scenarioName: "" } : { outfit: "" }),
+    });
+  }
+
   // A LEITURA de looks (para o gate de `outfitPreparing` acima e para o bloco
   // "Traje deste vídeo"/"Traje padrão" nada usarem daqui) vem só do
   // `useEffect` que recarrega `lookInfo` ao trocar de avatar, mais abaixo —
@@ -827,19 +868,44 @@ export function AvatarSetupStep({
                   label={t("createVideo.avatarSetup.uploadImageLabel")}
                   help={t("createVideo.avatarSetup.scenarioHelp")}
                 >
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => scenarioFileInput.current?.click()}
+                    >
+                      {t("createVideo.avatarSetup.chooseFile")}
+                    </button>
+                    {defaults.scenario && (
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => commitExistingAssetClear("scenario")}
+                      >
+                        {t("createVideo.avatarSetup.removeImage")}
+                      </button>
+                    )}
+                  </div>
+                  {/* Preso ao botão, dentro do MESMO Field — não mais uma
+                      margem negativa calculada para caber sob um input
+                      nativo de uma linha só. Com dois botões lado a lado, a
+                      margem antiga podia sobrepor o texto de ajuda do Field
+                      logo abaixo. */}
+                  {defaults.scenario && (
+                    <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                      {defaults.scenarioName
+                        ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
+                        : t("createVideo.avatarSetup.imageSaved")}
+                    </p>
+                  )}
                   <input
+                    ref={scenarioFileInput}
                     type="file"
                     accept="image/*"
+                    hidden
                     onChange={(e) => e.target.files?.[0] && handleAssetUpload("scenario", e.target.files[0])}
                   />
                 </Field>
-                {defaults.scenario && (
-                  <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
-                    {defaults.scenarioName
-                      ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
-                      : t("createVideo.avatarSetup.imageSaved")}
-                  </p>
-                )}
                 <Field
                   label={t("createVideo.avatarSetup.generateViaAiLabel")}
                   help={t("createVideo.avatarSetup.scenarioPromptHelp")}
@@ -858,21 +924,42 @@ export function AvatarSetupStep({
                   label={t("createVideo.avatarSetup.uploadImageLabel")}
                   help={t("createVideo.avatarSetup.outfitHelp")}
                 >
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => outfitFileInput.current?.click()}
+                    >
+                      {t("createVideo.avatarSetup.chooseFile")}
+                    </button>
+                    {defaults.outfit && (
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => commitExistingAssetClear("outfit")}
+                      >
+                        {t("createVideo.avatarSetup.removeImage")}
+                      </button>
+                    )}
+                  </div>
+                  {/* Sem `outfitName`: `AssetDefaults` não tem esse campo (só
+                      `scenarioName`), e adicioná-lo por simetria cosmética sem
+                      consumidor no backend não foi autorizado nesta rodada.
+                      "Imagem salva." genérico é o estado honesto. Preso ao
+                      botão, dentro do MESMO Field — mesmo ajuste do Cenário. */}
+                  {defaults.outfit && (
+                    <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                      {t("createVideo.avatarSetup.imageSaved")}
+                    </p>
+                  )}
                   <input
+                    ref={outfitFileInput}
                     type="file"
                     accept="image/*"
+                    hidden
                     onChange={(e) => e.target.files?.[0] && handleAssetUpload("outfit", e.target.files[0])}
                   />
                 </Field>
-                {/* Sem `outfitName`: `AssetDefaults` não tem esse campo (só
-                    `scenarioName`), e adicioná-lo por simetria cosmética sem
-                    consumidor no backend não foi autorizado nesta rodada.
-                    "Imagem salva." genérico é o estado honesto. */}
-                {defaults.outfit && (
-                  <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
-                    {t("createVideo.avatarSetup.imageSaved")}
-                  </p>
-                )}
                 <Field
                   label={t("createVideo.avatarSetup.generateViaAiLabel")}
                   help={t("createVideo.avatarSetup.outfitPromptHelp")}
@@ -1156,7 +1243,11 @@ export function AvatarSetupStep({
               )}
 
               {draftAvatar.reference_video_url ? (
-                <p className="text-muted">{t("createVideo.avatarSetup.referenceSaved")}</p>
+                <p>
+                  <span className="status-pill status-connected">
+                    {t("createVideo.avatarSetup.referenceSaved")}
+                  </span>
+                </p>
               ) : (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {!recorder.isRecording ? (
@@ -1371,19 +1462,39 @@ export function AvatarSetupStep({
                 label={t("createVideo.avatarSetup.uploadImageLabel")}
                 help={t("createVideo.avatarSetup.scenarioHelp")}
               >
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => scenarioFileInput.current?.click()}
+                  >
+                    {t("createVideo.avatarSetup.chooseFile")}
+                  </button>
+                  {defaults.scenario && (
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => commitDraftAssetClear("scenario")}
+                    >
+                      {t("createVideo.avatarSetup.removeImage")}
+                    </button>
+                  )}
+                </div>
+                {defaults.scenario && (
+                  <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                    {defaults.scenarioName
+                      ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
+                      : t("createVideo.avatarSetup.imageSaved")}
+                  </p>
+                )}
                 <input
+                  ref={scenarioFileInput}
                   type="file"
                   accept="image/*"
+                  hidden
                   onChange={(e) => e.target.files?.[0] && handleAssetUpload("scenario", e.target.files[0])}
                 />
               </Field>
-              {defaults.scenario && (
-                <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
-                  {defaults.scenarioName
-                    ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
-                    : t("createVideo.avatarSetup.imageSaved")}
-                </p>
-              )}
               <Field
                 label={t("createVideo.avatarSetup.generateViaAiLabel")}
                 help={t("createVideo.avatarSetup.scenarioPromptHelp")}
@@ -1399,29 +1510,48 @@ export function AvatarSetupStep({
             {/* TRAJE PADRÃO — UI-PARIDADE-TRAJE, 25/08.
                 Mesmo par upload+texto do Cenário padrão, ao lado, escrevendo
                 nos MESMOS `defaults.outfit`/`outfitPrompt` que o ramo de
-                avatar EXISTENTE já lê (bloco "Traje deste vídeo", logo
-                abaixo no arquivo) — nenhuma coluna nova, nenhum estado novo.
-                Título PRÓPRIO (`outfitDefaultTitle`, "Traje padrão"), não
-                reaproveita `outfitTitle` ("Traje deste vídeo"): são a MESMA
-                gravação, mas esta tela é onde o avatar nasce, não onde um
-                vídeo específico a sobrescreve. */}
+                avatar EXISTENTE já lê. Título PRÓPRIO (`outfitDefaultTitle`,
+                "Traje padrão") — desde esta rodada, `outfitTitle` (usado no
+                ramo de avatar existente) tem o MESMO texto: são a mesma
+                gravação, e o rótulo divergente ("Traje deste vídeo") já foi
+                a causa de confusão sobre se o campo persistia ou não. */}
             <div>
               <div className="card-title">{t("createVideo.avatarSetup.outfitDefaultTitle")}</div>
               <Field
                 label={t("createVideo.avatarSetup.uploadImageLabel")}
                 help={t("createVideo.avatarSetup.outfitHelp")}
               >
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => outfitFileInput.current?.click()}
+                  >
+                    {t("createVideo.avatarSetup.chooseFile")}
+                  </button>
+                  {defaults.outfit && (
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => commitDraftAssetClear("outfit")}
+                    >
+                      {t("createVideo.avatarSetup.removeImage")}
+                    </button>
+                  )}
+                </div>
+                {defaults.outfit && (
+                  <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                    {t("createVideo.avatarSetup.imageSaved")}
+                  </p>
+                )}
                 <input
+                  ref={outfitFileInput}
                   type="file"
                   accept="image/*"
+                  hidden
                   onChange={(e) => e.target.files?.[0] && handleAssetUpload("outfit", e.target.files[0])}
                 />
               </Field>
-              {defaults.outfit && (
-                <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
-                  {t("createVideo.avatarSetup.imageSaved")}
-                </p>
-              )}
               <Field
                 label={t("createVideo.avatarSetup.generateViaAiLabel")}
                 help={t("createVideo.avatarSetup.outfitPromptHelp")}

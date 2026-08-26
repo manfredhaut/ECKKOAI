@@ -242,7 +242,19 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         | "scenario_prompt"
         | "outfit"
         | "outfit_prompt"
-      >
+      > & {
+        // Sinal de LIMPEZA explícito — diferente de "não mandei nada".
+        // `scenario = COALESCE($11, scenario)` preserva o valor antigo quando
+        // $11 é nulo, de propósito (permite atualizar só um campo por
+        // requisição) — mas isso também significa que mandar `scenario:
+        // null` para APAGAR uma imagem não apaga nada, só é lido como "não
+        // mudei". Sem um sinal à parte, "remover imagem" seria um botão que
+        // parece funcionar (a tela esconde a prévia) e não muda o banco —
+        // reaparece no próximo GET. Os dois flags forçam NULL de propósito,
+        // ignorando o COALESCE.
+        scenario_clear?: boolean;
+        outfit_clear?: boolean;
+      }
     >;
   }>("/avatars/:id", async (req, reply) => {
     const {
@@ -258,6 +270,8 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       scenario_prompt,
       outfit,
       outfit_prompt,
+      scenario_clear,
+      outfit_clear,
     } = req.body;
     const { rows } = await pool.query<Avatar>(
       `UPDATE avatars SET
@@ -269,9 +283,9 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
          voice_similarity_boost = COALESCE($8, voice_similarity_boost),
          voice_style = COALESCE($9, voice_style),
          voice_speaker_boost = COALESCE($10, voice_speaker_boost),
-         scenario = COALESCE($11, scenario),
+         scenario = CASE WHEN $15 THEN NULL ELSE COALESCE($11, scenario) END,
          scenario_prompt = COALESCE($12, scenario_prompt),
-         outfit = COALESCE($13, outfit),
+         outfit = CASE WHEN $16 THEN NULL ELSE COALESCE($13, outfit) END,
          outfit_prompt = COALESCE($14, outfit_prompt)
        WHERE id = $1 AND tenant_id = $2 RETURNING *`,
       [
@@ -289,6 +303,8 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         scenario_prompt ?? null,
         outfit ?? null,
         outfit_prompt ?? null,
+        scenario_clear === true,
+        outfit_clear === true,
       ],
     );
     if (!rows[0]) return reply.code(404).send({ error: "Avatar not found" });

@@ -142,13 +142,23 @@ export function checkAvatarSceneDefaultsPolicy(repoRoot: string): AvatarSceneDef
 
   // ---------------------------------------------------------------------------
   // G-2 — PUT /avatars/:id aceita e faz COALESCE dos 4 campos.
+  //
+  // `scenario`/`outfit` (as IMAGENS, não os `_prompt`) ganharam um segundo
+  // caminho em 26/08 — `scenario_clear`/`outfit_clear` — para permitir
+  // remover a imagem de propósito (COALESCE sozinho nunca zera nada, então
+  // um "remover" precisa de um jeito de FORÇAR null). Por isso o COALESCE
+  // desses dois campos pode vir dentro de um `CASE WHEN $n THEN NULL ELSE
+  // COALESCE(...) END` — o padrão exige só que `COALESCE($` apareça na
+  // mesma atribuição, não mais que venha logo depois do `=`.
   // ---------------------------------------------------------------------------
   const avatarsRoute = lerDaRaiz(repoRoot, ROTA_AVATARS);
   for (const campo of CAMPOS) {
-    if (!avatarsRoute.includes(`${campo} = COALESCE($`)) {
+    const atribuicao = new RegExp(`${campo} = [^,]*COALESCE\\(\\$`);
+    if (!atribuicao.test(avatarsRoute)) {
       failures.push(
-        `avatar-defaults: PUT /avatars/:id não faz \`${campo} = COALESCE(...)\` em ${ROTA_AVATARS}. Sem o ` +
-          "COALESCE, um PUT que não manda este campo (ex.: só o LUFS) zeraria o padrão já salvo.",
+        `avatar-defaults: PUT /avatars/:id não faz \`${campo} = COALESCE(...)\` (direto ou dentro de um CASE) ` +
+          `em ${ROTA_AVATARS}. Sem o COALESCE, um PUT que não manda este campo (ex.: só o LUFS) zeraria o ` +
+          "padrão já salvo.",
       );
     }
   }

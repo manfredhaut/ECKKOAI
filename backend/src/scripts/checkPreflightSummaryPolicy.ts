@@ -161,15 +161,17 @@ export const MUTANTS: Mutant[] = [
     name: "o nome do arquivo salvo volta a sumir da tela",
     kind: "esperto",
     // A frase "Imagem salva." continua ali, então a tela não fica muda — ela
-    // fica ambígua, que foi o estado original: o campo de arquivo diz "nenhum
-    // ficheiro selecionado" e a linha ao lado diz que há imagem salva, sem
-    // dizer qual.
+    // fica ambígua: diz que há imagem salva, sem dizer qual. Reindentado em
+    // 26/08 quando o texto passou a ficar PRESO ao botão "Carregar arquivo"
+    // (dentro do mesmo `Field`), em vez de um parágrafo solto com margem
+    // negativa calculada para caber sob o `<input type="file">` nativo —
+    // aquele layout antigo é que produzia a ambiguidade original.
     file: "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx",
     find:
-      "                  {defaults.scenarioName\n" +
-      '                    ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })\n' +
-      '                    : t("createVideo.avatarSetup.imageSaved")}',
-    replace: '                  {t("createVideo.avatarSetup.imageSaved")}',
+      "                    {defaults.scenarioName\n" +
+      '                      ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })\n' +
+      '                      : t("createVideo.avatarSetup.imageSaved")}',
+    replace: '                    {t("createVideo.avatarSetup.imageSaved")}',
     expect: "passo 1: o cenário já salvo não aparece pelo nome",
   },
 ];
