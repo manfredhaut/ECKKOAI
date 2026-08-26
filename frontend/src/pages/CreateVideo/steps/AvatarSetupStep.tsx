@@ -98,10 +98,56 @@ export function AvatarSetupStep({
   // mesma verdade divergem no primeiro `refreshAvatars()`, e o que divergiria
   // aqui é a voz que a tela acha que o avatar tem.
   const selectedAvatar = avatars.find((a) => a.id === selectedAvatarId) ?? null;
+
+  /**
+   * A REGRA GERAL — sem exceção — de quando "Fotos do rosto" e "Vídeo de
+   * referência" aparecem: `provider_status !== "ready"`, para QUALQUER
+   * avatar, novo ou existente. Antes desta rodada a visibilidade dependia de
+   * `draftAvatar` (só existia durante a criação) — e um avatar que "concluía
+   * configuração" sem enviar o vídeo ficava preso para sempre, porque a
+   * seção some junto com `creating`/`draftAvatar`, não junto com o treino
+   * real. Aconteceu 2 vezes seguidas (avatares "TESTE ZERO 26/08" e "V2").
+   *
+   * `avatarForTraining` é o avatar em foco nesta função — o rascunho em
+   * criação, OU o avatar selecionado quando ele ainda não treinou. Os dois
+   * nunca coexistem (criar um novo desmarca a seleção antes de avançar), e
+   * quando nenhum dos dois se aplica o valor é `null`.
+   */
+  const avatarForTraining =
+    draftAvatar ?? (selectedAvatar && selectedAvatar.provider_status !== "ready" ? selectedAvatar : null);
+  const needsTrainingCapture = avatarForTraining !== null;
+
+  /**
+   * Atualização ÚNICA para `avatarForTraining`, que pode vir de duas fontes
+   * de estado diferentes (`draftAvatar` durante a criação, ou uma linha de
+   * `avatars` quando é um avatar já existente ainda sem treino) — sem isto,
+   * cada handler precisaria saber de qual das duas ele está tratando.
+   */
+  function updateAvatarForTraining(updated: Avatar) {
+    if (draftAvatar) {
+      setDraftAvatar(updated);
+    } else {
+      setAvatars((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    }
+  }
+
+  // Câmera liga sozinha ao entrar em modo de captura — para QUALQUER origem
+  // (`avatarForTraining`), não só a criação. Antes disso só
+  // `handleCreateAvatar` chamava `camera.start()`, e um avatar existente sem
+  // treino não tinha como a câmera nunca ligar. Chave em `.id` (não no
+  // objeto inteiro, que muda de referência a cada upload) para não reiniciar
+  // a câmera a cada foto enviada — e o valor vira `undefined` quando o
+  // treino termina e a seção desaparece, o que dispara a limpeza (para a
+  // câmera) pela troca de dependência.
+  useEffect(() => {
+    if (avatarForTraining) camera.start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarForTraining?.id]);
+
   const referenceFileInput = useRef<HTMLInputElement | null>(null);
   const photoFileInput = useRef<HTMLInputElement | null>(null);
-  // Compartilhados entre o ramo de avatar existente e o de avatar novo — os
-  // dois nunca montam ao mesmo tempo (`{!draftAvatar ? (...) : (...)}`).
+  // Compartilhados entre o ramo "já treinado" (avatar existente) e o de
+  // captura (`avatarForTraining`) — os dois nunca montam ao mesmo tempo.
   const scenarioFileInput = useRef<HTMLInputElement | null>(null);
   const outfitFileInput = useRef<HTMLInputElement | null>(null);
 
@@ -142,20 +188,21 @@ export function AvatarSetupStep({
     camera.setQuality(quality);
   }, [quality]);
 
-  // Resyncs only when a different avatar becomes the draft (not on every
-  // unrelated field update via setDraftAvatar), so it doesn't clobber an
-  // in-progress LUFS slider drag.
+  // Resyncs only when a different avatar becomes o alvo de captura (não a
+  // cada `updateAvatarForTraining`), so it doesn't clobber an in-progress
+  // LUFS slider drag. Segue `avatarForTraining` (não só `draftAvatar`) desde
+  // que a mesma seção passou a atender avatar existente sem treino também.
   useEffect(() => {
-    if (draftAvatar) setTargetLufsDraft(Number(draftAvatar.audio_treatment_target_lufs));
+    if (avatarForTraining) setTargetLufsDraft(Number(avatarForTraining.audio_treatment_target_lufs));
     // Os três de síntese seguem a MESMA regra e pelo mesmo motivo: `numeric`
-    // chega como string do servidor, e ressincronizar a cada `setDraftAvatar`
+    // chega como string do servidor, e ressincronizar a cada atualização
     // atropelaria um arraste em curso.
-    if (draftAvatar) {
-      setVoiceStabilityDraft(Number(draftAvatar.voice_stability));
-      setVoiceSimilarityDraft(Number(draftAvatar.voice_similarity_boost));
-      setVoiceStyleDraft(Number(draftAvatar.voice_style));
+    if (avatarForTraining) {
+      setVoiceStabilityDraft(Number(avatarForTraining.voice_stability));
+      setVoiceSimilarityDraft(Number(avatarForTraining.voice_similarity_boost));
+      setVoiceStyleDraft(Number(avatarForTraining.voice_style));
     }
-  }, [draftAvatar?.id]);
+  }, [avatarForTraining?.id]);
 
   // MESMA regra, para o painel do avatar JÁ EXISTENTE — 25/08. Resincroniza
   // só quando a SELEÇÃO muda (trocar de avatar na grade), não a cada
@@ -255,19 +302,21 @@ export function AvatarSetupStep({
   async function handleCreateAvatar() {
     if (!name) return;
     await guard(async () => {
+      // A câmera liga sozinha pelo `useEffect` de `avatarForTraining` — não
+      // é mais chamada aqui, para valer da MESMA lógica que liga a câmera
+      // quando quem precisa de captura é um avatar já existente.
       const avatar = await api.post<Avatar>("/avatars", { name });
       setDraftAvatar(avatar);
-      await camera.start();
     });
   }
 
   async function handleCapturePhoto() {
-    if (!draftAvatar) return;
+    if (!avatarForTraining) return;
     const blob = await camera.capturePhoto();
     if (!blob) return;
     await guard(async () => {
-      const updated = await api.upload<Avatar>(`/avatars/${draftAvatar.id}/photos`, blob, "photo.jpg");
-      setDraftAvatar(updated);
+      const updated = await api.upload<Avatar>(`/avatars/${avatarForTraining.id}/photos`, blob, "photo.jpg");
+      updateAvatarForTraining(updated);
     });
   }
 
@@ -304,20 +353,20 @@ export function AvatarSetupStep({
   // define em qual posição cada foto aparece.
   async function handlePhotoFileChange(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    if (files.length === 0 || !draftAvatar) return;
-    const remaining = PHOTO_SLOTS.length - draftAvatar.photo_urls.length;
+    if (files.length === 0 || !avatarForTraining) return;
+    const remaining = PHOTO_SLOTS.length - avatarForTraining.photo_urls.length;
     const grande = files.slice(0, remaining).find((f) => f.size > MAX_IMAGE_BYTES);
     if (grande && rejectImageIfTooLarge(grande.size)) {
       e.target.value = "";
       return;
     }
     await guard(async () => {
-      let latest = draftAvatar;
+      let latest = avatarForTraining;
       for (const file of files.slice(0, remaining)) {
         const treated = await applyQualityToFile(file, quality);
         latest = await api.upload<Avatar>(`/avatars/${latest.id}/photos`, treated, file.name);
       }
-      setDraftAvatar(latest);
+      updateAvatarForTraining(latest);
     });
     // Permite reenviar o mesmo arquivo depois de um erro: sem isto, escolher
     // o mesmo nome não dispara `change` de novo.
@@ -383,7 +432,7 @@ export function AvatarSetupStep({
   }
 
   async function handleUploadRecording() {
-    if (!draftAvatar || !recorder.recordedBlob) return;
+    if (!avatarForTraining || !recorder.recordedBlob) return;
     if (rejectIfTooLarge(recorder.recordedBlob.size)) return;
     if (rejectRecordingIfTooLong(recorder.elapsedSeconds)) return;
     // Este é o passo que dispara o treino de avatar na HeyGen/D-ID. A
@@ -391,33 +440,33 @@ export function AvatarSetupStep({
     // (`VoiceSampleRecorder`) logo abaixo, que usa `/avatars/:id/voice-sample`.
     await guard(async () => {
       const updated = await api.upload<Avatar>(
-        `/avatars/${draftAvatar.id}/reference-video`,
+        `/avatars/${avatarForTraining.id}/reference-video`,
         recorder.recordedBlob as Blob,
         "reference.webm",
       );
-      setDraftAvatar(updated);
+      updateAvatarForTraining(updated);
     });
   }
 
   async function handleReferenceFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !draftAvatar) return;
+    if (!file || !avatarForTraining) return;
     if (rejectIfTooLarge(file.size)) {
       e.target.value = "";
       return;
     }
     await guard(async () => {
       const updated = await api.upload<Avatar>(
-        `/avatars/${draftAvatar.id}/reference-video`,
+        `/avatars/${avatarForTraining.id}/reference-video`,
         file,
         file.name,
       );
-      setDraftAvatar(updated);
+      updateAvatarForTraining(updated);
     });
   }
 
   async function handleFinishSetup() {
-    if (!draftAvatar) return;
+    if (!avatarForTraining) return;
     // Persistência de Cenário/Traje padrão — Fase A, item 5 (25/08). Até
     // aqui `defaults.scenario/scenarioPrompt/outfit/outfitPrompt` viviam só
     // no estado do wizard de vídeo (CreateVideoPage.tsx) e nunca
@@ -427,19 +476,26 @@ export function AvatarSetupStep({
     // importa nesta tela, e o pior caso de um PUT que falha é o mesmo
     // estado de hoje (nada persiste).
     await guard(async () => {
-      await api.put<Avatar>(`/avatars/${draftAvatar.id}`, {
+      await api.put<Avatar>(`/avatars/${avatarForTraining.id}`, {
         scenario: defaults.scenario || null,
         scenario_prompt: defaults.scenarioPrompt || null,
         outfit: defaults.outfit || null,
         outfit_prompt: defaults.outfitPrompt || null,
       });
     });
-    camera.stop();
+    // Só reseta o assistente de CRIAÇÃO quando foi ele quem nos trouxe aqui.
+    // Chegando por um avatar EXISTENTE ainda sem treino (a correção desta
+    // rodada), não há "criação" para fechar — `creating` já era falso, e a
+    // seção de captura já sabe sumir sozinha assim que `provider_status`
+    // virar "ready" (é `avatarForTraining` que decide, não este clique).
+    if (draftAvatar) {
+      camera.stop();
+      onSelectAvatar(draftAvatar.id);
+      setCreating(false);
+      setDraftAvatar(null);
+      setName("");
+    }
     refreshAvatars();
-    onSelectAvatar(draftAvatar.id);
-    setCreating(false);
-    setDraftAvatar(null);
-    setName("");
   }
 
   function updateQuality(patch: Partial<QualityOptions>) {
@@ -447,19 +503,19 @@ export function AvatarSetupStep({
   }
 
   async function handleAudioTreatmentToggle(enabled: boolean) {
-    if (!draftAvatar) return;
-    const updated = await api.put<Avatar>(`/avatars/${draftAvatar.id}`, {
+    if (!avatarForTraining) return;
+    const updated = await api.put<Avatar>(`/avatars/${avatarForTraining.id}`, {
       audio_treatment_enabled: enabled,
     });
-    setDraftAvatar(updated);
+    updateAvatarForTraining(updated);
   }
 
   async function commitTargetLufs(value: number) {
-    if (!draftAvatar) return;
-    const updated = await api.put<Avatar>(`/avatars/${draftAvatar.id}`, {
+    if (!avatarForTraining) return;
+    const updated = await api.put<Avatar>(`/avatars/${avatarForTraining.id}`, {
       audio_treatment_target_lufs: value,
     });
-    setDraftAvatar(updated);
+    updateAvatarForTraining(updated);
   }
 
   /**
@@ -471,9 +527,9 @@ export function AvatarSetupStep({
    * eventos, e um PUT por evento é o que já se evitou uma vez no LUFS.
    */
   async function commitVoiceTuning(patch: Partial<Avatar>) {
-    if (!draftAvatar) return;
-    const updated = await api.put<Avatar>(`/avatars/${draftAvatar.id}`, patch);
-    setDraftAvatar(updated);
+    if (!avatarForTraining) return;
+    const updated = await api.put<Avatar>(`/avatars/${avatarForTraining.id}`, patch);
+    updateAvatarForTraining(updated);
   }
 
   /**
@@ -551,12 +607,12 @@ export function AvatarSetupStep({
 
   /** REMOVER a imagem de Cenário/Traje — avatar NOVO (ainda em criação). */
   async function commitDraftAssetClear(kind: "scenario" | "outfit") {
-    if (!draftAvatar) return;
+    if (!avatarForTraining) return;
     const updated = await api.put<Avatar>(
-      `/avatars/${draftAvatar.id}`,
+      `/avatars/${avatarForTraining.id}`,
       kind === "scenario" ? { scenario_clear: true } : { outfit_clear: true },
     );
-    setDraftAvatar(updated);
+    updateAvatarForTraining(updated);
     onDefaultsChange({
       ...defaults,
       ...(kind === "scenario" ? { scenario: "", scenarioName: "" } : { outfit: "" }),
@@ -569,7 +625,12 @@ export function AvatarSetupStep({
   // não há mais uma função dedicada de refresh, porque a única chamadora
   // dela (`handleCreateLook`) saiu em UI-PARIDADE-TRAJE (25/08).
 
-  if (!creating) {
+  // `needsTrainingCapture` faz a lista/detalhe do avatar (abaixo) dar lugar
+  // à captura sempre que HÁ algo para capturar — não só durante a criação.
+  // É a correção desta rodada: sem isto, selecionar um avatar já existente
+  // mas ainda sem treino caía direto na visão "pronto", sem seção de vídeo
+  // nenhuma — o bloqueio que já aconteceu 2 vezes.
+  if (!creating && !needsTrainingCapture) {
     return (
       <div className="card">
         <p className="text-muted" style={{ fontSize: 13, marginBottom: 16 }}>
@@ -636,7 +697,15 @@ export function AvatarSetupStep({
                 <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
                   {t("createVideo.avatarSetup.photosVoiceStatus", {
                     count: a.photo_urls.length,
-                    voiceStatus: a.reference_video_url
+                    // Lia `a.reference_video_url` (o VÍDEO, para a HeyGen) —
+                    // era o mesmo campo que a clonagem de voz também setava,
+                    // de volta quando as duas coisas saíam da MESMA rota. A
+                    // separação de rotas (26/08) quebrou essa coincidência: um
+                    // avatar pode ter voz real e nenhum vídeo (como este),
+                    // e o texto dizia "voz ainda não configurada" ao lado do
+                    // selo "Voz clonada" — duas fontes de verdade divergentes
+                    // para a MESMA pergunta. `voice_id` é o campo certo.
+                    voiceStatus: a.voice_id
                       ? t("createVideo.avatarSetup.voiceReady")
                       : t("createVideo.avatarSetup.voiceNotReady"),
                   })}
@@ -997,7 +1066,12 @@ export function AvatarSetupStep({
         {t("createVideo.avatarSetup.scopeNote")}
       </p>
 
-      {!draftAvatar ? (
+      {/* Formulário de NOME só quando genuinamente começando um avatar do
+          zero. Quando o motivo de estar aqui é `avatarForTraining` vindo de
+          um avatar EXISTENTE sem treino, não há nome a pedir — o avatar já
+          tem um, e a regra geral (item 1 desta correção) manda direto para
+          a captura. */}
+      {creating && !draftAvatar ? (
         <div style={{ maxWidth: 320 }}>
           <Field
             label={t("createVideo.avatarSetup.nameLabel")}
@@ -1015,7 +1089,7 @@ export function AvatarSetupStep({
           </button>
           {actionError && <div className="alert alert-error">{actionError}</div>}
         </div>
-      ) : (
+      ) : avatarForTraining ? (
         <>
           <div className="grid grid-cols-2" style={{ marginBottom: 20 }}>
             <div>
@@ -1183,7 +1257,7 @@ export function AvatarSetupStep({
               )}
 
               <div className="card-title">
-                {t("createVideo.avatarSetup.facePhotos", { count: draftAvatar.photo_urls.length })}
+                {t("createVideo.avatarSetup.facePhotos", { count: avatarForTraining.photo_urls.length })}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {PHOTO_SLOTS.map((slot, i) => (
@@ -1191,9 +1265,9 @@ export function AvatarSetupStep({
                     <span style={{ width: 90, fontSize: 13 }} className="text-muted">
                       {slot}
                     </span>
-                    {draftAvatar.photo_urls[i] ? (
+                    {avatarForTraining.photo_urls[i] ? (
                       <img
-                        src={draftAvatar.photo_urls[i]}
+                        src={avatarForTraining.photo_urls[i]}
                         alt={slot}
                         style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover" }}
                       />
@@ -1210,7 +1284,7 @@ export function AvatarSetupStep({
                   anexa ao fim da lista: um botão por slot prometeria escolher
                   a posição, e a foto cairia na primeira vaga livre de
                   qualquer jeito. */}
-              {draftAvatar.photo_urls.length < PHOTO_SLOTS.length && (
+              {avatarForTraining.photo_urls.length < PHOTO_SLOTS.length && (
                 <div style={{ marginTop: 8 }}>
                   <button className="btn btn-ghost" onClick={() => photoFileInput.current?.click()}>
                     {t("createVideo.avatarSetup.orUploadPhoto")}
@@ -1236,13 +1310,13 @@ export function AvatarSetupStep({
                   validação: nada aqui bloqueia o envio. Dizer depois — na
                   recusa por tamanho, ou pior, num avatar de qualidade ruim —
                   custa uma regravação inteira. */}
-              {!draftAvatar.reference_video_url && (
+              {!avatarForTraining.reference_video_url && (
                 <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 8 }}>
                   {t("createVideo.avatarSetup.referenceGuidance")}
                 </p>
               )}
 
-              {draftAvatar.reference_video_url ? (
+              {avatarForTraining.reference_video_url ? (
                 <p>
                   <span className="status-pill status-connected">
                     {t("createVideo.avatarSetup.referenceSaved")}
@@ -1277,6 +1351,23 @@ export function AvatarSetupStep({
                 </div>
               )}
 
+              {/* O PORTÃO DE ASSISTIR — feedback IMEDIATO de que a gravação
+                  funcionou, ANTES do upload/confirmação do servidor. Mesmo
+                  papel do `<audio controls>` que a voz já tinha
+                  (`VoiceSampleRecorder`, `blobUrl`/`listenFirst`): até aqui só
+                  havia duração e tamanho em texto — números, não a gravação
+                  em si. Vem antes de "Salvar gravação" de propósito, mesmo
+                  raciocínio da voz: confirmar ANTES de gastar o treino
+                  (US$ 1,00 + 1 crédito). */}
+              {!recorder.isRecording && recorder.previewUrl && !avatarForTraining.reference_video_url && (
+                <div style={{ marginTop: 10 }}>
+                  <p className="text-muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                    {t("createVideo.avatarSetup.watchFirst")}
+                  </p>
+                  <video controls src={recorder.previewUrl} style={{ maxWidth: "100%", maxHeight: 240 }} />
+                </div>
+              )}
+
               {/* Progresso em direção à META, não ao teto. O contador anterior
                   dizia "0:15 de 2:00 — para sozinho em 105s": vigiava o limite
                   superior e deixava a meta inferior invisível, que foi como um
@@ -1286,14 +1377,14 @@ export function AvatarSetupStep({
               {/* Depois de parar, o veredito PERMANECE: é o último momento em
                   que regravar ainda é barato. Some quando a gravação já foi
                   enviada. */}
-              {!recorder.isRecording && recorder.recordedBlob && !draftAvatar.reference_video_url && (
+              {!recorder.isRecording && recorder.recordedBlob && !avatarForTraining.reference_video_url && (
                 <RecordingProgress elapsedSeconds={recorder.elapsedSeconds} />
               )}
 
               {/* Tamanho SEMPRE que houver gravação, não só quando estoura:
                   é o número que explica um envio lento e o único jeito de
                   comparar com o teto antes de tentar. */}
-              {recorder.recordedBlob && !draftAvatar.reference_video_url && (
+              {recorder.recordedBlob && !avatarForTraining.reference_video_url && (
                 <p
                   className={recorder.isOverSizeLimit ? "alert-error" : "text-muted"}
                   style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}
@@ -1316,7 +1407,7 @@ export function AvatarSetupStep({
                   leve e com teto próprio — nunca mais o mesmo arquivo de
                   vídeo forçado para os dois fornecedores. */}
               <div style={{ marginTop: 20 }}>
-                <VoiceSampleRecorder avatar={draftAvatar} onCloned={setDraftAvatar} />
+                <VoiceSampleRecorder avatar={avatarForTraining} onCloned={updateAvatarForTraining} />
               </div>
 
               <div className="card-title" style={{ marginTop: 20 }}>
@@ -1329,7 +1420,7 @@ export function AvatarSetupStep({
                     className="btn btn-outline"
                     onClick={() => handleAudioTreatmentToggle(true)}
                     style={{
-                      borderColor: draftAvatar.audio_treatment_enabled ? "var(--color-primary)" : undefined,
+                      borderColor: avatarForTraining.audio_treatment_enabled ? "var(--color-primary)" : undefined,
                     }}
                   >
                     {t("createVideo.avatarSetup.audioTreatment.enabled")}
@@ -1339,7 +1430,7 @@ export function AvatarSetupStep({
                     className="btn btn-outline"
                     onClick={() => handleAudioTreatmentToggle(false)}
                     style={{
-                      borderColor: !draftAvatar.audio_treatment_enabled ? "var(--color-primary)" : undefined,
+                      borderColor: !avatarForTraining.audio_treatment_enabled ? "var(--color-primary)" : undefined,
                     }}
                   >
                     {t("createVideo.avatarSetup.audioTreatment.disabled")}
@@ -1347,7 +1438,7 @@ export function AvatarSetupStep({
                 </div>
               </Field>
 
-              {draftAvatar.audio_treatment_enabled && (
+              {avatarForTraining.audio_treatment_enabled && (
                 <Field
                   label={`${t("createVideo.avatarSetup.audioTreatment.targetLufsLabel")} (${targetLufsDraft} LUFS)`}
                   help={t("createVideo.avatarSetup.audioTreatment.targetLufsHelp")}
@@ -1435,7 +1526,7 @@ export function AvatarSetupStep({
                     className="btn btn-outline"
                     onClick={() => commitVoiceTuning({ voice_speaker_boost: true })}
                     style={{
-                      borderColor: draftAvatar.voice_speaker_boost ? "var(--color-primary)" : undefined,
+                      borderColor: avatarForTraining.voice_speaker_boost ? "var(--color-primary)" : undefined,
                     }}
                   >
                     {t("createVideo.avatarSetup.voiceTuning.speakerBoostOn")}
@@ -1445,7 +1536,7 @@ export function AvatarSetupStep({
                     className="btn btn-outline"
                     onClick={() => commitVoiceTuning({ voice_speaker_boost: false })}
                     style={{
-                      borderColor: !draftAvatar.voice_speaker_boost ? "var(--color-primary)" : undefined,
+                      borderColor: !avatarForTraining.voice_speaker_boost ? "var(--color-primary)" : undefined,
                     }}
                   >
                     {t("createVideo.avatarSetup.voiceTuning.speakerBoostOff")}
@@ -1569,12 +1660,12 @@ export function AvatarSetupStep({
           <button
             className="btn btn-primary"
             onClick={handleFinishSetup}
-            disabled={!draftAvatar.reference_video_url && draftAvatar.photo_urls.length === 0}
+            disabled={!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0}
           >
             {t("createVideo.avatarSetup.finishSetup")}
           </button>
         </>
-      )}
+      ) : null}
     </div>
   );
 }

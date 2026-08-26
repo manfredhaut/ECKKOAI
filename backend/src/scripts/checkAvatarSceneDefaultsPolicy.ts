@@ -60,7 +60,7 @@ export const MUTANTS: Mutant[] = [
     file: PASSO1,
     find:
       "    await guard(async () => {\n" +
-      "      await api.put<Avatar>(`/avatars/${draftAvatar.id}`, {\n" +
+      "      await api.put<Avatar>(`/avatars/${avatarForTraining.id}`, {\n" +
       "        scenario: defaults.scenario || null,\n" +
       "        scenario_prompt: defaults.scenarioPrompt || null,\n" +
       "        outfit: defaults.outfit || null,\n" +
@@ -177,7 +177,7 @@ export function checkAvatarSceneDefaultsPolicy(repoRoot: string): AvatarSceneDef
     );
   } else {
     const corpoFinish = passo1.slice(inicioFinish, fimFinish);
-    if (!corpoFinish.includes("await api.put<Avatar>(`/avatars/${draftAvatar.id}`, {")) {
+    if (!corpoFinish.includes("await api.put<Avatar>(`/avatars/${avatarForTraining.id}`, {")) {
       failures.push(
         `avatar-defaults: Concluir configuração não persiste mais o padrão do avatar — o PUT a ` +
           `/avatars/:id não está mais dentro de \`handleFinishSetup\` em ${PASSO1}. A pessoa configura ` +

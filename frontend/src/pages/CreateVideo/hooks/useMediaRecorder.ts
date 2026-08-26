@@ -30,8 +30,24 @@ export function useMediaRecorderCapture() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Feedback IMEDIATO ao parar — antes de qualquer envio ao servidor. Sem
+  // isto, a única confirmação de que a gravação funcionou era duração e
+  // tamanho em texto; a voz já tinha player desde sempre (`VoiceSampleRecorder`,
+  // `blobUrl`), e o vídeo de referência nunca teve o equivalente — quem
+  // gravasse não tinha como CONFERIR o que foi capturado antes de enviar.
+  useEffect(() => {
+    if (!recordedBlob) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(recordedBlob);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [recordedBlob]);
 
   function clearTimer() {
     if (timerRef.current) {
@@ -97,6 +113,7 @@ export function useMediaRecorderCapture() {
   return {
     isRecording,
     recordedBlob,
+    previewUrl,
     elapsedSeconds,
     remainingSeconds: Math.max(0, MAX_RECORDING_SECONDS - elapsedSeconds),
     maxSeconds: MAX_RECORDING_SECONDS,

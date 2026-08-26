@@ -509,6 +509,7 @@
       "recordWithCamera": "Gravar com a câmera",
       "stopRecording": "Parar gravação",
       "saveRecording": "Salvar gravação",
+      "watchFirst": "Gravação capturada — confira antes de enviar.",
       "orUploadFile": "Ou envie um arquivo",
       "scenarioTitle": "Cenário padrão",
       "scenarioHelp": "Onde o avatar aparece. Fica salvo como padrão do avatar — qualquer vídeo novo que não especificar o seu próprio cenário herda este.",

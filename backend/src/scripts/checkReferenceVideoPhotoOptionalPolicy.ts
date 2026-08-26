@@ -84,8 +84,8 @@ export const MUTANTS: Mutant[] = [
     // Reintroduz EXATAMENTE a condição antiga (photo_urls.length < 3),
     // travando o botão mesmo com vídeo salvo e mesmo com 1 ou 2 fotos.
     file: STEP,
-    find: "disabled={!draftAvatar.reference_video_url && draftAvatar.photo_urls.length === 0}",
-    replace: "disabled={draftAvatar.photo_urls.length < 3 || !draftAvatar.reference_video_url}",
+    find: "disabled={!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0}",
+    replace: "disabled={avatarForTraining.photo_urls.length < 3 || !avatarForTraining.reference_video_url}",
     expect: "volta a exigir 3 fotos",
   },
 ];
@@ -160,7 +160,7 @@ export async function checkReferenceVideoPhotoOptionalPolicy(): Promise<Referenc
 
   // 3. O botão "Concluir configuração": ancorado em `onClick={handleFinishSetup}`
   //    (único no arquivo) até o fechamento do próprio botão — nunca no
-  //    arquivo inteiro, que também tem outros `disabled={...draftAvatar...}`
+  //    arquivo inteiro, que também tem outros `disabled={...avatarForTraining...}`
   //    nos controles de câmera/gravação sem relação com este porteiro.
   const step = lerDaRaiz(STEP);
   const inicioBotao = step.indexOf("onClick={handleFinishSetup}");
@@ -178,11 +178,15 @@ export async function checkReferenceVideoPhotoOptionalPolicy(): Promise<Referenc
           "(`photo_urls.length < 3`) — trava a tela mesmo com o backend já aceitando 0 fotos e mesmo com " +
           "vídeo de referência salvo. A regra é vídeo OU pelo menos 1 foto.",
       );
-    } else if (!/disabled=\{!draftAvatar\.reference_video_url && draftAvatar\.photo_urls\.length === 0\}/.test(trechoBotao)) {
+    } else if (
+      !/disabled=\{!avatarForTraining\.reference_video_url && avatarForTraining\.photo_urls\.length === 0\}/.test(
+        trechoBotao,
+      )
+    ) {
       failures.push(
         `reference-video-photo: o botão "Concluir configuração" em ${STEP} não tem a condição esperada ` +
-          "(`!draftAvatar.reference_video_url && draftAvatar.photo_urls.length === 0`) — não reconheço a " +
-          "regra atual e não posso afirmar que ela ainda é vídeo-OU-foto.",
+          "(`!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0`) — não " +
+          "reconheço a regra atual e não posso afirmar que ela ainda é vídeo-OU-foto.",
       );
     }
   }
