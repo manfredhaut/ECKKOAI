@@ -81,6 +81,7 @@ import { MUTANTS as falTierMutants } from "./checkFalTierPolicy.js";
 import { MUTANTS as existingAvatarAssetsMutants } from "./checkExistingAvatarAssetsPolicy.js";
 import { MUTANTS as referenceVideoPhotoOptionalMutants } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { MUTANTS as avatarSceneDefaultsMutants } from "./checkAvatarSceneDefaultsPolicy.js";
+import { MUTANTS as avatarTrainingVendorMutants } from "./checkAvatarTrainingVendorPolicy.js";
 import { MUTANTS as mutantRegistryMutants } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 
@@ -169,5 +170,6 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkExistingAvatarAssetsPolicy.ts", existingAvatarAssetsMutants),
   ...de("backend/src/scripts/checkReferenceVideoPhotoOptionalPolicy.ts", referenceVideoPhotoOptionalMutants),
   ...de("backend/src/scripts/checkAvatarSceneDefaultsPolicy.ts", avatarSceneDefaultsMutants),
+  ...de("backend/src/scripts/checkAvatarTrainingVendorPolicy.ts", avatarTrainingVendorMutants),
   ...de("backend/src/scripts/checkMutantRegistryPolicy.ts", mutantRegistryMutants),
 ];

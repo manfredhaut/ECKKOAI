@@ -48,18 +48,13 @@ export const MUTANTS: Mutant[] = [
     // `uploadLimits.ts` — assim o mutante compila e reproduz o defeito pela
     // FORMA, não citando um símbolo que não existe mais).
     file: ROUTE,
-    find:
-      '    if (!existing[0]) return reply.code(404).send({ error: "Avatar not found" });\n' +
-      "\n" +
-      "    const avatarCredential = await getCredential(req.tenantId, \"avatar\");",
+    find: '    if (!existing[0]) return reply.code(404).send({ error: "Avatar not found" });\n',
     replace:
       '    if (!existing[0]) return reply.code(404).send({ error: "Avatar not found" });\n' +
       "\n" +
       "    if (existing[0].photo_urls.length === 0) {\n" +
       '      return reply.code(422).send({ error: "reference_video_no_face_photo", message: "Envie ao menos 1 foto do rosto antes de enviar o vídeo de referência." });\n' +
-      "    }\n" +
-      "\n" +
-      "    const avatarCredential = await getCredential(req.tenantId, \"avatar\");",
+      "    }\n",
     expect: "volta a condicionar o handler de /reference-video a `photo_urls.length`",
   },
   {

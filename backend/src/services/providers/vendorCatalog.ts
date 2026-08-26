@@ -40,6 +40,34 @@ export function hasConnectionProbe(provider: CredentialProvider, vendor: string)
 }
 
 /**
+ * Vendors que TREINAM avatar — os únicos que `trainAvatar()` sabe atender.
+ *
+ * Existe pelo mesmo motivo de `VENDORS_WITH_CONNECTION_PROBE`: o dispatch de
+ * treino também é um ternário (`vendor === "did" ? … : heygen`), e um
+ * ternário não tem caso "nenhum dos dois" — todo vendor novo cai no `else` e
+ * vai bater na HeyGen. Foi assim que `avatar/fal` (só GUARDA a chave, sem
+ * ramo de treino nenhum — ver comentário de `VENDORS_BY_PROVIDER` acima)
+ * acabou mandando a chave da fal, em claro, para `api.heygen.com` num
+ * cabeçalho `x-api-key` — 401 do fornecedor, dinheiro real em jogo (26/08).
+ *
+ * Hoje coincide com `VENDORS_WITH_CONNECTION_PROBE.avatar`: os mesmos dois
+ * vendors têm implementação de verdade (`trainAvatarHeygen`/`trainAvatarDid`
+ * em avatarProvider.ts). É uma lista PRÓPRIA, não um alias, porque as duas
+ * capacidades podem divergir no futuro sem motivo nenhum para arrastar uma
+ * atrás da outra.
+ */
+export const VENDORS_WITH_TRAINING_PATH: Readonly<Record<CredentialProvider, readonly string[]>> = {
+  script: [],
+  avatar: ["heygen", "did"],
+  voice: [],
+};
+
+/** O vendor treina avatar? Quem responde `false` nunca deve receber uma chamada de treino. */
+export function hasTrainingPath(provider: CredentialProvider, vendor: string): boolean {
+  return VENDORS_WITH_TRAINING_PATH[provider].includes(vendor);
+}
+
+/**
  * Vendors com CAMINHO DE GERAÇÃO PELO PRODUTO — os únicos que `POST /videos`
  * pode aceitar.
  *

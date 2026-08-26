@@ -96,6 +96,7 @@ import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
 import { checkExistingAvatarAssetsPolicy } from "./checkExistingAvatarAssetsPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
+import { checkAvatarTrainingVendorPolicy } from "./checkAvatarTrainingVendorPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -894,6 +895,13 @@ async function main(): Promise<void> {
   const avatarSceneDefaults = checkAvatarSceneDefaultsPolicy(process.env.REPO_ROOT ?? "/repo");
   avatarSceneDefaults.failures.forEach((f) => failures.push(f));
   avatarSceneDefaults.notes.forEach((n) => note(n));
+
+  // --- 24o-octies. treino de avatar resolve credencial só entre quem treina
+  //
+  // Só leitura de arquivo — nenhuma rede, nenhum banco.
+  const avatarTrainingVendor = checkAvatarTrainingVendorPolicy(process.env.REPO_ROOT ?? "/repo");
+  avatarTrainingVendor.failures.forEach((f) => failures.push(f));
+  avatarTrainingVendor.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //

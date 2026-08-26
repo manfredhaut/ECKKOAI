@@ -8,7 +8,9 @@ import { listAvatarLooks, trainAvatar, waitForAvatarReady, AvatarPhotoRequiredEr
 import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import type { AvatarProviderStatus } from "../services/providers/avatarProvider.js";
 import { cloneVoice, VoiceProviderError } from "../services/providers/voiceProvider.js";
-import { getCredential } from "../services/credentialLookup.js";
+import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
+import type { ResolvedCredential } from "../services/credentialLookup.js";
+import { VENDORS_WITH_TRAINING_PATH } from "../services/providers/vendorCatalog.js";
 import {
   imageUploadMaxBytes,
   referenceVideoMaxBytes,
@@ -380,11 +382,23 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     );
     if (!existing[0]) return reply.code(404).send({ error: "Avatar not found" });
 
-    const avatarCredential = await getCredential(req.tenantId, "avatar");
+    // TREINO é exclusivo de quem `trainAvatar()` sabe atender — HeyGen ou
+    // D-ID, nunca "o vendor padrão de provider=avatar" do tenant. Esse
+    // padrão pode ser `fal` (guardada para o pipeline de ANIMAÇÃO, sem ramo
+    // de treino nenhum — VENDORS_BY_PROVIDER em vendorCatalog.ts), e usar
+    // `getCredential` genérico aqui já mandou uma chave fal para a HeyGen em
+    // claro, com 401 do fornecedor e dinheiro em jogo (26/08). HeyGen
+    // primeiro — é o único vendor que a decisão de 25/08 liga para o tier
+    // Simples — com D-ID como alternativa legítima, nunca fal.
+    let avatarCredential: ResolvedCredential | null = null;
+    for (const vendorDeTreino of VENDORS_WITH_TRAINING_PATH.avatar) {
+      avatarCredential = await getCredentialForVendor(req.tenantId, "avatar", vendorDeTreino);
+      if (avatarCredential) break;
+    }
     if (!avatarCredential) {
       return reply.code(400).send({
-        error: "no_avatar_credential",
-        message: "Connect the avatar provider's API key in Settings to train an avatar.",
+        error: "no_avatar_training_credential",
+        message: "Treino de avatar requer credencial HeyGen (ou D-ID) configurada — conecte em Configurações.",
       });
     }
 
