@@ -7,7 +7,6 @@ import type { Avatar } from "../types.js";
 import { listAvatarLooks, trainAvatar, waitForAvatarReady, AvatarPhotoRequiredError } from "../services/providers/avatarProvider.js";
 import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import type { AvatarProviderStatus } from "../services/providers/avatarProvider.js";
-import { cloneVoice, VoiceProviderError } from "../services/providers/voiceProvider.js";
 import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 import type { ResolvedCredential } from "../services/credentialLookup.js";
 import { VENDORS_WITH_TRAINING_PATH } from "../services/providers/vendorCatalog.js";
@@ -23,9 +22,7 @@ import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { sendAttachment, contentTypeForExtension } from "../services/downloadProxy.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
-import { LiveBudgetExhaustedError } from "../services/providers/liveGuard.js";
 import { logEvent } from "../services/log/safeLog.js";
-import { checkVoiceReplacement } from "../services/voice/voiceSample.js";
 import { probeSampleDurationSeconds } from "../services/voice/voiceSampleAudio.js";
 import { criarLook, listarLooks } from "../services/avatar/looks.js";
 import { HEYGEN_LOOK_COST } from "../services/billing/providerCost.js";
@@ -342,9 +339,14 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     return rows[0];
   });
 
-  // Upload a recorded or provided reference video/audio, then kick off
-  // avatar training (required credential) and voice cloning (optional —
-  // skipped if no voice credential is connected yet).
+  // Upload a recorded or provided reference video, then kick off avatar
+  // training (required credential) at HeyGen/D-ID. A clonagem de voz SAIU
+  // desta rota (ver `/avatars/:id/voice-sample`, routes/voice.ts) — o
+  // treino nunca leu o buffer deste upload (usa `photo_urls`), então
+  // embutir a voz aqui só forçava o mesmo arquivo, dimensionado para
+  // VÍDEO (`referenceVideoMaxBytes`, bem maior que o teto do ElevenLabs),
+  // a ir para um fornecedor com limite muito menor — foi essa divergência
+  // de teto que produziu o 502 medido em 26/08.
   app.post<{ Params: { id: string } }>(
     "/avatars/:id/reference-video",
     { preHandler: requireActiveTenant },
@@ -496,75 +498,12 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       ],
     );
 
-    const voiceCredential = await getCredential(req.tenantId, "voice");
-
-    // GUARDA C aplicada TAMBÉM aqui, e é este o caminho que o defeito tinha.
-    //
-    // Esta rota fazia `UPDATE avatars SET voice_id = ...` incondicional: enviar
-    // um vídeo de referência de novo trocava a voz aprovada por outra, sem
-    // perguntar, e o id antigo não ficava guardado em lugar nenhum. Como ela
-    // não tem — nem deve ter — uma flag de substituição (o cliente aqui está
-    // configurando um avatar, não decidindo sobre voz), a regra é a mais
-    // conservadora possível: com voz já existente, PULA a clonagem.
-    //
-    // Pular em vez de recusar a requisição inteira é deliberado: o treino do
-    // avatar acima JÁ aconteceu e JÁ custou US$ 1,00 ao fornecedor. Derrubar a
-    // resposta agora jogaria fora um trabalho pago por causa de uma proteção de
-    // voz — e a pessoa refaria o treino inteiro para chegar ao mesmo lugar.
-    const substituicaoDeVoz = checkVoiceReplacement({
-      currentVoiceId: existing[0].voice_id,
-      replace: false,
-    });
-
-    if (voiceCredential && !substituicaoDeVoz.ok) {
-      logEvent("info", "voice_clone_skipped", {
-        avatarId: req.params.id,
-        reason: substituicaoDeVoz.code,
-      });
-      return reply.code(200).send({
-        ...trained[0],
-        voice_notice:
-          `${substituicaoDeVoz.message} O avatar foi treinado normalmente e a voz atual foi mantida. ` +
-          "Para gravar uma voz nova, use a captura de voz dedicada.",
-      });
-    }
-
-    if (voiceCredential) {
-      try {
-        const cloned = await cloneVoice({
-          apiKey: voiceCredential.apiKey,
-          name: existing[0].name,
-          fileBuffer: buffer,
-          filename: file.filename,
-          mimeType: file.mimetype,
-        });
-        const { rows: withVoice } = await pool.query<Avatar>(
-          `UPDATE avatars SET voice_id = $3 WHERE id = $1 AND tenant_id = $2 RETURNING *`,
-          [req.params.id, req.tenantId, cloned.voiceId],
-        );
-        return withVoice[0];
-      } catch (err) {
-        // Teto NOSSO, não falha do fornecedor. Aqui o treino do avatar JÁ deu
-        // certo (e consumiu a cota da sessão), então a mensagem precisa dizer
-        // que o avatar existe e só a voz ficou faltando — senão parece que
-        // tudo falhou, e o operador refaz um treino que já foi pago.
-        if (err instanceof LiveBudgetExhaustedError) {
-          logEvent("error", "live_budget_exhausted", { context: "avatars.cloneVoice", used: err.used, max: err.max });
-          return reply.code(429).send({
-            error: "live_budget_exhausted",
-            message: `O avatar foi treinado com sucesso, mas a voz não foi clonada. ${err.message}`,
-            avatar: trained[0],
-          });
-        }
-        // NÃO estorna, de propósito: o treino do avatar acima teve SUCESSO, e
-        // é isso que o crédito de avatar paga. O fornecedor de avatar fez o
-        // trabalho e gastou cota; a voz não tem crédito próprio. Devolver aqui
-        // daria de graça um treino que já foi pago ao fornecedor.
-        const { failure, message } = toClientVendorError("voice", "avatars.cloneVoice", err);
-        return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
-      }
-    }
-
+    // A clonagem de voz que existia aqui (ElevenLabs, a partir do MESMO
+    // buffer de vídeo) foi removida — ver `/avatars/:id/voice-sample` em
+    // routes/voice.ts, que já fazia isto de forma dedicada (arquivo só de
+    // áudio, teto próprio `VOICE_SAMPLE_MAX_BYTES`, conversão ffmpeg,
+    // checagem de substituição) desde antes desta rodada. O treino de
+    // avatar nunca dependeu da voz: `trained[0]` já é a resposta completa.
     return trained[0];
   });
 }

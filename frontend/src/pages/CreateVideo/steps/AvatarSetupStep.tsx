@@ -382,9 +382,9 @@ export function AvatarSetupStep({
     if (!draftAvatar || !recorder.recordedBlob) return;
     if (rejectIfTooLarge(recorder.recordedBlob.size)) return;
     if (rejectRecordingIfTooLong(recorder.elapsedSeconds)) return;
-    // Este é o passo que dispara treino de avatar e clonagem de voz — os
-    // dois fornecedores externos ao mesmo tempo, e o ponto mais provável de
-    // falha do fluxo inteiro.
+    // Este é o passo que dispara o treino de avatar na HeyGen/D-ID. A
+    // clonagem de voz saiu daqui — ver a seção "Gravar voz"
+    // (`VoiceSampleRecorder`) logo abaixo, que usa `/avatars/:id/voice-sample`.
     await guard(async () => {
       const updated = await api.upload<Avatar>(
         `/avatars/${draftAvatar.id}/reference-video`,
@@ -1218,6 +1218,15 @@ export function AvatarSetupStep({
                       })}
                 </p>
               )}
+
+              {/* Seção separada da de vídeo acima, de propósito: vídeo vai
+                  para a HeyGen (treino, US$ 1,00 + 1 crédito); voz vai para
+                  o ElevenLabs por `/avatars/:id/voice-sample`, dedicada,
+                  leve e com teto próprio — nunca mais o mesmo arquivo de
+                  vídeo forçado para os dois fornecedores. */}
+              <div style={{ marginTop: 20 }}>
+                <VoiceSampleRecorder avatar={draftAvatar} onCloned={setDraftAvatar} />
+              </div>
 
               <div className="card-title" style={{ marginTop: 20 }}>
                 {t("createVideo.avatarSetup.audioTreatment.title")}

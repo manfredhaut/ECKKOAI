@@ -923,6 +923,15 @@ export async function publicarEntradas(input: FalPipelineInput): Promise<string[
     const stepId = await input.diario.abrirEtapa("publicar", 0, "fal", null);
     let url: string;
     try {
+      // ⚠️ LOG TEMPORÁRIO — evidência de runtime para o teste de precedência
+      // de credencial (platform vs BYOK). REMOVER depois do teste; não deve
+      // virar log permanente em produção. Só os últimos 4 caracteres, nunca
+      // a chave inteira.
+      logEvent("info", "TEMP_fal_apikey_suffix", {
+        onde: "falUpload (publicarEntradas)",
+        rotulo: entrada.rotulo,
+        sufixo: input.apiKeyFal.slice(-4),
+      });
       url = await falUpload(input.apiKeyFal, entrada.bytes, entrada.mimeType);
     } catch (err) {
       await input.diario.fecharEtapa(stepId, "failed", "upload_failed");
@@ -954,6 +963,18 @@ async function etapaNaFal(
   corpo: Record<string, unknown>,
 ): Promise<{ requestId: string; saida: any }> {
   const stepId = await input.diario.abrirEtapa(etapa, ordem, "fal", endpointId);
+
+  // ⚠️ LOG TEMPORÁRIO — evidência de runtime para o teste de precedência de
+  // credencial (platform vs BYOK). REMOVER depois do teste; não deve virar
+  // log permanente em produção. Só os últimos 4 caracteres, nunca a chave
+  // inteira. Um log só para as três chamadas desta etapa, porque é a MESMA
+  // chave nas três — não há necessidade de repetir por chamada.
+  logEvent("info", "TEMP_fal_apikey_suffix", {
+    onde: "etapaNaFal (falSubmit/aguardarConclusao/falResult)",
+    etapa,
+    endpointId,
+    sufixo: input.apiKeyFal.slice(-4),
+  });
 
   const { requestId, statusUrl, responseUrl } = await falSubmit(input.apiKeyFal, endpointId, corpo, async (id) => {
     // O PONTEIRO primeiro. `falSubmit` chama isto antes do próprio

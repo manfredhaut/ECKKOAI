@@ -351,7 +351,9 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
           });
           return reply.code(429).send({ error: "live_budget_exhausted", message: err.message });
         }
-        const { failure, message } = toClientVendorError("voice", "voice.cloneVoice", err);
+        const { failure, message } = toClientVendorError("voice", "voice.cloneVoice", err, {
+          maxBytes: VOICE_SAMPLE_MAX_BYTES,
+        });
         return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
       }
 
@@ -741,7 +743,9 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         if (err instanceof LiveBudgetExhaustedError) {
           return reply.code(429).send({ error: "live_budget_exhausted", message: err.message });
         }
-        const { failure, message } = toClientVendorError("voice", "voice.cloneVoice", err);
+        const { failure, message } = toClientVendorError("voice", "voice.cloneVoice", err, {
+          maxBytes: VOICE_SAMPLE_MAX_BYTES,
+        });
         return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
       }
 

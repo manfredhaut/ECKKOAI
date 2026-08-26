@@ -20,6 +20,7 @@ export type VendorFailure =
   | "rate_limited" // 429 — cota ou excesso de requisições
   | "unavailable" // 5xx, timeout, rede
   | "auth" // 401/403 — chave inválida, revogada, sem permissão
+  | "too_large" // 400/413 — o fornecedor recusou por TAMANHO do arquivo, não por infra
   | "unknown";
 
 const VENDOR_LABEL: Record<VendorKind, string> = {
@@ -32,11 +33,22 @@ const VENDOR_LABEL: Record<VendorKind, string> = {
  * Classifica pelo texto do erro. Os adaptadores em providers/ formatam suas
  * exceções como "<Vendor> API error (<status>): <corpo>", então o status está
  * disponível sem precisar propagar o objeto Response por toda a pilha.
+ *
+ * `too_large` vem ANTES do balde genérico de propósito — medido em 26/08: um
+ * vídeo de referência de 26,9 MB foi encaminhado inteiro ao ElevenLabs (que
+ * aceita só 11 MB), o fornecedor recusou com 400 `upload_file_size_exceeded`,
+ * e por não bater em nenhuma das três regras acima isso caía em "unknown" —
+ * que devolve 502, o MESMO código de uma falha real de infraestrutura do
+ * fornecedor. Um 502 aqui manda procurar problema no fornecedor quando o
+ * problema é o arquivo que a pessoa enviou.
  */
 export function classifyVendorFailure(err: unknown): VendorFailure {
   const raw = err instanceof Error ? err.message : String(err);
 
   if (/\(429\)|RESOURCE_EXHAUSTED|rate.?limit|quota/i.test(raw)) return "rate_limited";
+  if (/upload_file_size_exceeded|file.{0,15}too large|too large.{0,15}file|payload too large|\(413\)|maximum of \d+\s*[MK]B/i.test(raw)) {
+    return "too_large";
+  }
   if (/\((5\d\d)\)|unavailable|overloaded|high demand|timeout|timed out|ECONNRESET|ENOTFOUND|fetch failed|Could not reach/i.test(raw)) {
     return "unavailable";
   }
@@ -52,7 +64,11 @@ export function classifyVendorFailure(err: unknown): VendorFailure {
  * implementação nosso, e citá-los só transfere a ele um problema que não é
  * dele.
  */
-export function vendorErrorMessage(kind: VendorKind, failure: VendorFailure): string {
+export function vendorErrorMessage(
+  kind: VendorKind,
+  failure: VendorFailure,
+  opts?: { maxBytes?: number },
+): string {
   const what = VENDOR_LABEL[kind];
   switch (failure) {
     case "rate_limited":
@@ -61,6 +77,14 @@ export function vendorErrorMessage(kind: VendorKind, failure: VendorFailure): st
       return `O serviço ${what} está temporariamente indisponível. Tente novamente em alguns minutos.`;
     case "auth":
       return `O serviço ${what} não está configurado corretamente. Fale com o suporte.`;
+    case "too_large":
+      // `opts.maxBytes` é o teto que O CHAMADOR conhece (ex.: `VOICE_SAMPLE_MAX_BYTES`
+      // em routes/voice.ts) — o próprio fornecedor pode aceitar menos ou mais
+      // do que isso, e por isso o número aqui é O NOSSO, nunca extraído do
+      // texto do fornecedor (que muda de frase entre versões da API dele).
+      return opts?.maxBytes
+        ? `O arquivo enviado é grande demais para o serviço ${what} — máximo de ${Math.floor(opts.maxBytes / (1024 * 1024))} MB. Reduza o tamanho e tente novamente.`
+        : `O arquivo enviado é grande demais para o serviço ${what}. Reduza o tamanho e tente novamente.`;
     default:
       return `Não foi possível concluir a operação no serviço ${what}. Tente novamente em alguns minutos.`;
   }
@@ -74,6 +98,7 @@ export function toClientVendorError(
   kind: VendorKind,
   context: string,
   err: unknown,
+  opts?: { maxBytes?: number },
 ): { failure: VendorFailure; message: string } {
   const failure = classifyVendorFailure(err);
   logEvent("error", "vendor_error", { context,
@@ -94,10 +119,19 @@ export function toClientVendorError(
       // mascarado.
       detail: scrubSecretsFromText(err instanceof Error ? err.message : String(err)),
     });
-  return { failure, message: vendorErrorMessage(kind, failure) };
+  return { failure, message: vendorErrorMessage(kind, failure, opts) };
 }
 
-/** Código HTTP coerente com a natureza da falha. */
+/**
+ * Código HTTP coerente com a natureza da falha.
+ *
+ * `too_large` → 422: é uma entrada inválida do CLIENTE (arquivo grande
+ * demais), não uma falha do fornecedor — 502 (Bad Gateway) afirmaria o
+ * contrário. `rate_limited` → 429. Todo o resto (infra real do fornecedor,
+ * ou causa não classificada) continua 502.
+ */
 export function vendorErrorStatus(failure: VendorFailure): number {
-  return failure === "rate_limited" ? 429 : 502;
+  if (failure === "rate_limited") return 429;
+  if (failure === "too_large") return 422;
+  return 502;
 }

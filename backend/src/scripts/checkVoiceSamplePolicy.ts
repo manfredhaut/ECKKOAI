@@ -376,16 +376,16 @@ export const MUTANTS: Mutant[] = [
   },
   {
     guard: "voz: proteção da voz em uso",
-    name: "o caminho ANTIGO volta a sobrescrever a voz",
+    name: "reference-video volta a escrever voice_id",
     kind: "esperto",
-    // O caminho novo continua protegido e todas as asserções de política
-    // continuam verdes — mas `POST /avatars/:id/reference-video` volta a
-    // trocar a voz aprovada sem perguntar, que é onde o defeito morava.
-    // Só a asserção que inspeciona o OUTRO arquivo pega isto.
+    // O caminho novo (voice-sample) continua protegido e todas as asserções
+    // de política acima continuam verdes — mas `/reference-video` volta a
+    // tocar `voice_id`, que é exatamente o que a separação de rotas existe
+    // para impedir. Só a asserção que inspeciona o OUTRO arquivo pega isto.
     file: "backend/src/routes/avatars.ts",
-    find: "    if (voiceCredential && !substituicaoDeVoz.ok) {",
-    replace: "    if (false) {",
-    expect: "não protege mais a voz existente antes de clonar",
+    find: "      `UPDATE avatars SET reference_video_url = $3, provider_avatar_id = $4, provider = $5, simulated = $6,\n                          provider_status = $7, provider_engines = $8\n       WHERE id = $1 AND tenant_id = $2 RETURNING *`,",
+    replace: "      `UPDATE avatars SET reference_video_url = $3, provider_avatar_id = $4, provider = $5, simulated = $6,\n                          provider_status = $7, provider_engines = $8, voice_id = 'mutado'\n       WHERE id = $1 AND tenant_id = $2 RETURNING *`,",
+    expect: "reference-video voltou a escrever voice_id fora da rota dedicada",
   },
 
   // --- GUARDA D: formato e tamanho ---------------------------------------
@@ -940,10 +940,20 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
   notes.push(`voz: ${alvosDeModo.length} caminho(s) de voz desviando para fixture antes da rede`);
 
   // --- GUARDA C no caminho ANTIGO ----------------------------------------
-  // A asserção que separa "o caminho novo é seguro" de "nenhum caminho
-  // substitui sem flag". Sem ela, `POST /avatars/:id/reference-video` volta a
-  // trocar a voz aprovada sem perguntar, e toda a política acima continua
-  // verde — porque ela nunca é consultada por aquela rota.
+  // Até 26/08 esta seção exigia que `POST /avatars/:id/reference-video`
+  // CALCULASSE e CONSULTASSE `checkVoiceReplacement()` antes de clonar — a
+  // rota clonava voz a partir do mesmo buffer de vídeo, e essa era a
+  // proteção contra sobrescrever a voz aprovada sem perguntar.
+  //
+  // A clonagem SAIU inteira daquela rota (o treino nunca leu o buffer de
+  // vídeo — usa `photo_urls` — então embutir voz ali só forçava o mesmo
+  // arquivo, dimensionado para VÍDEO, a ir para um fornecedor com teto bem
+  // menor; foi essa divergência que produziu o 502 medido em 26/08). A
+  // garantia agora é mais forte que "proteger antes de escrever": a rota
+  // simplesmente NUNCA toca `voice_id`. Quem clona é só
+  // `/avatars/:id/voice-sample` (routes/voice.ts), que já tem a sua própria
+  // `checkVoiceReplacement()` — coberta pelas guardas A-D acima, que leem
+  // voiceSample.ts, não avatars.ts.
   const relAvatars = "backend/src/routes/avatars.ts";
   let avatarsSource: string;
   try {
@@ -956,21 +966,24 @@ export async function checkVoiceSamplePolicy(repoRoot: string): Promise<VoiceSam
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^[ \t]*\/\/.*$/gm, "");
 
-  if (!/checkVoiceReplacement\(\{/.test(avatarsCode)) {
+  if (/cloneVoice\(/.test(avatarsCode)) {
     failures.push(
-      `voz: ${relAvatars} não protege mais a voz existente antes de clonar. Aquela rota faz ` +
-        "`UPDATE avatars SET voice_id` e era o caminho em que enviar um vídeo de referência de novo " +
-        "trocava a voz aprovada sem perguntar — o id antigo não fica guardado em lugar nenhum.",
+      `voz: ${relAvatars} voltou a chamar cloneVoice() — a clonagem deve viver só em routes/voice.ts ` +
+        "(/avatars/:id/voice-sample), nunca em /reference-video: o treino não depende da voz, e o buffer " +
+        "de vídeo é grande demais para o teto do fornecedor de voz.",
     );
   }
-  if (!/voiceCredential\s*&&\s*!substituicaoDeVoz\.ok/.test(avatarsCode)) {
+  if (/UPDATE avatars SET[^;`]*voice_id/i.test(avatarsCode)) {
     failures.push(
-      `voz: ${relAvatars} não protege mais a voz existente antes de clonar — o veredito é calculado e ` +
-        "não é consultado. Calcular sem usar é a forma mais silenciosa de guarda inerte.",
+      `voz: ${relAvatars} voltou a escrever \`voice_id\` num UPDATE. /reference-video não deve tocar a ` +
+        "voz do avatar de jeito nenhum — nem clonando, nem sobrescrevendo direto.",
     );
   }
 
-  notes.push("voz: o caminho antigo (reference-video) pula a clonagem quando já existe voz, em vez de sobrescrever");
+  notes.push(
+    "voz: /reference-video (avatars.ts) não toca voice_id — a clonagem inteira vive em " +
+      "/avatars/:id/voice-sample, com a proteção de substituição própria dela",
+  );
 
   // --- A porta chega até a TELA -------------------------------------------
   //
