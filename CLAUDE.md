@@ -2,13 +2,15 @@ Always respond in Brazilian Portuguese.
 
 > ## ⚠️ PONTO DE RETOMADA CORRENTE — leia a Seção 6 (fim do arquivo)
 >
-> O estado corrente da linha de trabalho Cena/Cenário/Traje/Voz vive só na
-> [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova),
-> escrita e verificada no fechamento de 25/08 — não duplicado aqui de
-> propósito, para não haver dois textos podendo discordar um do outro. Este
-> bloco chegou a descrever "Avatar deste vídeo" como bloco ainda existente;
-> foi removido na mesma sessão que fechou a Seção 6, e por isso o texto
-> antigo saiu daqui.
+> O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
+> — não duplicado aqui de propósito, para não haver dois textos podendo
+> discordar um do outro. **Dentro da Seção 6, o bloco mais novo é "FECHAMENTO
+> PARA TROCA DE CONTA (27/08)", no FIM da seção — leia-o antes dos blocos de
+> 26/08 e 25/08 que vêm antes dele, que estão superados no que os três
+> conflitarem.**
+> Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
+> existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
+> isso o texto antigo saiu daqui.
 >
 > Duas decisões PERMANENTES desta linha de trabalho — não são "estado de
 > sessão", por isso não estão na Seção 6, e não devem ser reabertas sem
@@ -370,3 +372,86 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > 2. Dropdown de Traje no Passo 3 — reintroduzir, ou está resolvido pela remoção? *(Decisão 3, ainda aberta — o rótulo cosmético que a mascarava foi corrigido nesta sessão, item (b) acima, mas a decisão de produto em si segue aberta.)*
 >
 > Gate: `docker compose exec -T -e PROVIDER_MODE=fixture backend npm run check`. `--list`: `node tools/run-mutants.mjs --list`, do host.
+
+> ⚠️ **FECHAMENTO PARA TROCA DE CONTA (26/08/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão de TESTE PAGO REAL em ambiente local (armado em live), encadeada a partir do commit `4e84014` (h.3 + reread de Cenário/Traje). Meio do teste, um bug real com dinheiro em jogo foi encontrado, diagnosticado e corrigido nesta mesma sessão — ver (a). Nenhum vídeo foi gerado ainda, nos dois tiers planejados.
+>
+> ### (a) HEAD atual e o que ele corrige
+>
+> **HEAD: `68b418b4652b5de068e4e84cbec467c1438b329b`.** Corrige `POST /avatars/:id/reference-video`, que resolvia a credencial de TREINO pelo `is_default` genérico de `provider=avatar` do tenant — para o `dev-c77a5b`, essa linha é `vendor=fal` (guardada só para o pipeline de ANIMAÇÃO, sem ramo de treino). `trainAvatar()` despacha por um ternário que só conhece `"did"` como caso especial; `"fal"` caía no `else` e ia para `trainAvatarHeygen()`, mandando a chave da fal para `api.heygen.com`. **MEDIDO em live:** 401 do fornecedor (`kind="auth"`), crédito de avatar debitado e estornado automaticamente 2s depois (líquido zero), nenhuma voz nova, nenhum custo real. Correção: a rota agora resolve por `getCredentialForVendor()`, iterando `VENDORS_WITH_TRAINING_PATH.avatar` (novo em `vendorCatalog.ts`, hoje `["heygen", "did"]`) — nunca mais considera `fal` para treino. Guarda nova `checkAvatarTrainingVendorPolicy.ts`, provada reprovando isoladamente. Gate verde, `tsc` do frontend limpo.
+>
+> **Achado à parte, NÃO é bug de hoje:** o `is_default=fal` do tenant já existia desde antes de 13/08 (não foi setado pela preparação do teste de h.3 desta sessão). O tenant TEVE uma credencial `avatar/heygen` (3 atualizações em 22/08, sempre `is_default:false`) que não existe mais em `api_credentials` hoje — sumiu sem `DELETE` registrado em `audit_log`. Ver (c).
+>
+> ### (b) O teste em andamento — objetivo, e por que NENHUM vídeo saiu ainda
+>
+> Objetivo do bloco: provar, com dinheiro real, (1) a herança de Cenário/Traje do avatar (Fase A, item 5 + a releitura corrigida em `68b418b`) num vídeo tier **Normal** (fal/Wan), com Cenário/Traje da Cena vazios de propósito; e (2) um vídeo tier **Simples** (HeyGen) com o Mário. **Nenhum dos dois foi gerado.** A única tentativa desta sessão foi criar um avatar novo do zero (`TESTE PAGO REAL 26/08`) para servir de base ao vídeo Normal — ela morreu no bug de (a), durante o UPLOAD do vídeo de referência (treino), antes de qualquer vídeo ser sequer iniciado. **Custo real da tentativa: ZERO** (débito estornado, nenhuma chamada faturável completou).
+>
+> O avatar de teste incompleto (`55b68d1d-4f3c-4aa7-94ce-6c848b95da9f`, sem treino, sem voz) foi **excluído** nesta rodada de fechamento — linha em `avatars` e os 3 arquivos de foto associados.
+>
+> ### (c) PRÓXIMO PASSO EXATO
+>
+> Recriar o avatar de teste do ZERO pelo fluxo normal da tela (Passo 1 → "+ Configurar novo avatar" → fotos + vídeo de referência real + voz real via upload de arquivo, câmera bloqueada neste ambiente) — o bug que travou a tentativa anterior está corrigido em `68b418b`. Depois: preencher Cenário/Traje Padrão, "Concluir configuração", confirmar reread ao reabrir (correção de `4e84014`), e então os dois vídeos pagos (Normal com este avatar, Simples com o Mário), como planejado.
+>
+> ### (d) Pendências NÃO bloqueantes
+>
+> 1. **Buraco de auditoria** — a credencial `avatar/heygen` do tenant `dev-c77a5b` (criada/atualizada 3× em 22/08) sumiu de `api_credentials` sem `DELETE` correspondente em `audit_log`. Não investigado a fundo; não impede o próximo passo, mas é o tipo de lacuna que vale entender antes de confiar no audit log para outra coisa.
+> 2. **Decisão pendente:** manter `fal` como `is_default` de `provider=avatar` para este tenant, ou trocar para `heygen`? O código agora está correto nos dois casos (treino nunca mais usa `fal`), então isto é só sobre qual vendor a tela mostra como "padrão" em outros contextos (ex.: looks/trajes) — não bloqueia o próximo passo.
+> 3. **2 avatares descartáveis antigos** (`TESTE PROVA h5 - descartavel`, `TESTE PROVA h5 v2 - descartavel`, do fechamento de 25/08) seguem no tenant, aguardando decisão de excluir ou manter — não tocados nesta rodada.
+>
+> ### (e) ⚠️ AVISO — rodar a passada completa dos mutantes ANTES do primeiro vídeo pago de verdade
+>
+> **A última passada completa (404/404, ver Seção 5.1/6) NÃO cobre a guarda `checkAvatarTrainingVendorPolicy.ts` de hoje — os mutantes declarados foram de 404 para 406 nesta sessão** (1 para a guarda de treino-por-vendor, e o registro de mutantes subiu junto). Rodar `node tools/run-mutants.mjs` (sem filtro, completo, isolado, fora do horário de trabalho — a regra de sempre) antes de gerar o primeiro vídeo pago de verdade nesta linha de teste. Sem essa passada, a guarda que existe especificamente por causa do bug de dinheiro real desta sessão nunca foi provada na COMPLETA — só isoladamente (`--name`), o que basta para o commit mas não substitui a completa.
+>
+> **Ambiente ao fechar esta sessão — ARMADO EM LIVE, confirmado `.env` × processo, SEM divergência:**
+> ```
+> PROVIDER_MODE=live
+> PROVIDER_LIVE_CONFIRM=eu-autorizo-gastar-cota-real
+> PROVIDER_LIVE_MAX_GENERATIONS=3
+> ```
+> Contador diário pago (`DAILY_PAID_GENERATION_LIMIT=10`): **0 usadas hoje**, MEDIDO por query direta (`videos` + `avatar_looks`, `simulated=false`, hoje) — a tentativa que falhou não é `videos` nem `avatar_looks`, é treino de avatar, e não conta neste balde. HeyGen: saldo carteira US$ 4,00, quota 240un. ElevenLabs: 9/10 slots próprios ocupados (1 livre). Gate: `docker compose exec -T -e PROVIDER_MODE=fixture backend npm run check`. `--list`: `node tools/run-mutants.mjs --list`, do host.
+
+> ⚠️ **FECHAMENTO PARA TROCA DE CONTA (27/08/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão encadeada a partir do commit `68b418b` (correção de vendor de treino). Quatro entregas: fluxo de upload de Cenário/Traje com confirmação (Salvar/Excluir), feedback de treino (selo "Treinando…" + polling leve), correção da regra de roteamento do passo 1 (Fase 1(b)), seção "Ver avatar" + botão "Retreinar avatar" (Fase 2). Mais uma investigação, sem implementação (Fase 3): onde o vídeo gerado aparece na tela.
+>
+> ### (a) HEAD e o que foi commitado
+>
+> **Commit de código: `75ddd1a699ed36af5b7f06cbe4f50e11698d6520`** — 7 arquivos, 672 inserções/91 remoções: `backend/src/routes/avatars.ts` (2 rotas novas: `GET /avatars/:id/training-status`, `GET /avatars/:id/preview`), `backend/src/services/providers/avatarProvider.ts` (`checkAvatarStatusOnce`), `backend/src/scripts/checkAvatarTrainingVendorPolicy.ts` e `checkExistingAvatarAssetsPolicy.ts` (guardas ajustadas para as mudanças acima, mesma intenção protetora), `frontend/src/locales/pt-BR.json`, `frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx` (grosso da mudança), `frontend/src/types.ts`. Gate 406/406 mutantes casando exatamente 1×, `tsc` limpo nos dois lados, confirmado ANTES do commit.
+>
+> **Este próprio arquivo (CLAUDE.md) é commitado À PARTE, depois deste texto** — é o padrão já usado no fechamento de 26/08 para não criar uma auto-referência impossível (um commit não pode conter o próprio hash). O HEAD do repositório, depois desse segundo commit, será um passo à frente de `75ddd1a`, só documentação — nenhum arquivo de código muda nele.
+>
+> ### (b) Reconfirmação padrão — tudo verificado ANTES do commit e de novo depois
+>
+> | Verificação | Resultado |
+> |---|---|
+> | `tsc` (backend e frontend) | EXIT 0 nos dois |
+> | Gate estático (fixture) | EXIT 0 — 406/406 mutantes |
+> | Containers | 4/4 healthy, `RestartCount=0` nos dois que importam (backend, frontend) |
+> | Hash container × commit `75ddd1a` | bate nos 3 arquivos mais tocados (conferido via `git show HEAD:...`, não só disco) |
+> | `PROVIDER_MODE` | `live`, `PROVIDER_LIVE_CONFIRM` len=28, `PROVIDER_LIVE_MAX_GENERATIONS=3` — processo e `docker compose config` concordam |
+> | Contador de vídeos pagos hoje | **0**, MEDIDO antes E depois de todo o trabalho desta sessão — nenhuma chamada faturável de vídeo ocorreu hoje |
+>
+> ### (c) OS 3 ITENS PENDENTES DA TAREFA ANTERIOR — status exato
+>
+> 1. **Prévia de voz clonada no fluxo de criação — JÁ IMPLEMENTADA, não é trabalho desta sessão.** Confirmado por leitura: `VoiceSampleRecorder.tsx` já renderiza `<audio controls src={result.preview.url}>` com a frase falada, alimentado pelo campo `preview` que `POST /avatars/:id/voice-sample` já devolve desde antes. Nada a fazer aqui.
+> 2. **"Imagem do fornecedor não disponível" — AINDA OCORRE, causa raiz identificada, NÃO CORRIGIDA (por instrução explícita: só registrar, não implementar agora).** Medido ao vivo, leitura sem custo, no avatar "Teste de telas de confirmação": `GET /avatars/:id/preview` (e o `GET /avatars/:id/looks` já existente, de quem copiei o padrão) resolvem a credencial de avatar por `getCredential(tenantId, "avatar")` — GENÉRICO, que lê o `is_default` da tabela `api_credentials` do TENANT. Para `dev-c77a5b` isso é `fal` (guardado para animação, sem ramo de leitura de avatar na HeyGen). A chamada à HeyGen sai com a chave da fal, volta **401 Unauthorized**, e o código trata como "sem prévia" — silencioso, sem erro visível. **Não é bug novo desta rodada**: `/avatars/:id/looks` (seletor de Traje, já em produção) tem exatamente o mesmo defeito, e por isso pode estar silenciosamente mostrando o seletor de traje como "1 look só" para este tenant há mais tempo do que se sabia. O item 396 (bloco de 26/08, pendência (d).2) já cogitava esta troca de `is_default` como decisão cosmética de "qual vendor a tela mostra como padrão" — este achado mostra que NÃO é cosmético, quebra leitura real. **Conserto (não aplicado): trocar `getCredential(tenantId, "avatar")` por `getCredentialForVendor(tenantId, "avatar", "heygen")` nas duas rotas — mesma correção já aplicada ao treino em `68b418b` via `checkAvatarTrainingVendorPolicy.ts`, nunca estendida às rotas de leitura.**
+> 3. **Persistência da tela de aprovação de vídeo via URL — NÃO IMPLEMENTADA.** Confirmado por investigação (Fase 3 desta sessão, sem código): `video` em `GenerateStep.tsx` é `useState` local, sem `useParams` nem qualquer leitura de URL. Fechar a aba do wizard antes de aprovar uma imagem composta ou um vídeo mudo perde o acesso à MESMA tela de aprovação — o único resíduo visível depois disso é o status "aguardando aprovação"/"aguardando aprovação do vídeo" em Conteúdo → Biblioteca de vídeos, sem nenhum botão de aprovar ali. A aprovação pendente eventualmente expira sozinha (`approval_expired`, via varredura de recuperação já existente).
+>
+> ### (d) Números reconferidos nesta rodada — um deles estava desatualizado
+>
+> **ElevenLabs: 7 vozes próprias de 28 no inventário total (não "5/10" — número presumido pelo operador, agora corrigido por medição direta, `GET /v1/voices`, leitura sem custo).** O teto real (10) segue SUPOSTO, como já registrado — `/v1/user/subscription` exige `user_read`, não obtido. Com a suposição de 10, sobram 3 slots — sem risco de bloqueio na mesma margem de antes, só o número exato mudou.
+>
+> ### (e) Avatar pronto para o teste real
+>
+> **"Teste de telas de confirmação"** (`741c02d1-8342-4414-81ff-30af958ab0a2`) — `provider=heygen`, `provider_status=ready`, voz clonada, Cenário/Traje Padrão preenchidos. É o avatar recomendado para o próximo passo, abaixo.
+>
+> ### (f) PRÓXIMO PASSO EXATO
+>
+> 1. Passo 1 "Configurar avatar" → selecionar **"Teste de telas de confirmação"**.
+> 2. Avançar até o passo 4 "Gerar".
+> 3. Tier **"Normal" ou "Premium"** — **nunca "Simples"** (Simples é HeyGen; o teste desta rodada é sobre o caminho fal/Wan-Seedance).
+> 4. **Não preencher Cenário/Traje na tela do vídeo** — o objetivo é confirmar que a herança do padrão do avatar (Cenário/Traje Padrão, já preenchidos no avatar) funciona quando o vídeo não manda valor próprio.
+> 5. Gerar.
+>
+> **Resultado esperado: a corrida para na etapa "compor"** — uma IMAGEM composta aguardando aprovação (`awaiting_approval`), **não** o vídeo animado final. Isso é o comportamento correto e esperado do pipeline em duas aprovações (compor → animar+narrar+sincronizar), **não é erro**. A aprovação em si acontece dentro do próprio wizard, no passo 4 — ver item (c).3 acima sobre a limitação de não conseguir voltar a essa tela se a aba for fechada antes de aprovar.
+>
+> **Nenhuma chamada faturável de vídeo ocorreu hoje até o fechamento desta sessão** (contador em 0, MEDIDO — ver (b) acima). O passo acima É a primeira, e vai cobrar de verdade (síntese de voz + composição de imagem, na faixa de centavos a poucos dólares conforme já documentado neste arquivo).
+>
+> **Ambiente ao fechar esta sessão: ARMADO EM LIVE**, mesma configuração do fechamento de 26/08, reconfirmada sem divergência — ver tabela em (b).
