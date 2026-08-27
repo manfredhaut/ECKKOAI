@@ -359,3 +359,17 @@ export interface AvatarLooksResponse {
    */
   lookCost?: { units: number; usd: number };
 }
+
+/**
+ * "Ver avatar" — três fontes, todas de LEITURA, nenhuma gera nada novo:
+ * as fotos que a própria pessoa enviou, a imagem que o fornecedor de fato
+ * gerou (não as fotos cruas) e a amostra de voz ORIGINAL (não uma frase
+ * nova por TTS). `heygen_preview_url` e `voice_sample_url` são `null` em
+ * casos legítimos — avatar sem `provider_avatar_id`, ou voz clonada antes
+ * da tabela que guarda a amostra original existir.
+ */
+export interface AvatarPreviewResponse {
+  photos: string[];
+  heygen_preview_url: string | null;
+  voice_sample_url: string | null;
+}

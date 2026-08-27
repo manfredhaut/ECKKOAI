@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
-import type { Avatar, AvatarLooksResponse } from "../../../types";
+import type { Avatar, AvatarLooksResponse, AvatarPreviewResponse } from "../../../types";
 import { useCamera } from "../hooks/useCamera";
 import { useMediaRecorderCapture } from "../hooks/useMediaRecorder";
 import type { AssetDefaults } from "../types";
@@ -99,22 +99,63 @@ export function AvatarSetupStep({
   // aqui é a voz que a tela acha que o avatar tem.
   const selectedAvatar = avatars.find((a) => a.id === selectedAvatarId) ?? null;
 
+  // "Retreinar avatar" — botão explícito (27/08), NÃO automático. Um avatar
+  // pronto só reabre a captura se a pessoa pedir, depois de confirmar um
+  // aviso de custo real. Reseta ao trocar de avatar, senão o modo vazaria
+  // para o próximo avatar selecionado.
+  const [retrainRequested, setRetrainRequested] = useState(false);
+  // Enquanto `avatarForTraining.reference_video_url` já existe (é o caso de
+  // TODO retreino: só se retreina o que já tinha vídeo), a seção de vídeo
+  // mostra o selo "salvo" por padrão — este estado troca esse selo pelos
+  // controles de captura, SÓ quando a pessoa pede explicitamente ("Gravar
+  // novo vídeo"/"Enviar novo vídeo"). O vídeo antigo nunca é apagado aqui:
+  // ele só é SUBSTITUÍDO quando o novo upload tiver sucesso (mesma regra de
+  // segurança já usada em Cenário/Traje — nada some antes do substituto
+  // estar confirmado).
+  const [replacingReferenceVideo, setReplacingReferenceVideo] = useState(false);
+  useEffect(() => {
+    setRetrainRequested(false);
+    setReplacingReferenceVideo(false);
+  }, [selectedAvatarId]);
+
   /**
-   * A REGRA GERAL — sem exceção — de quando "Fotos do rosto" e "Vídeo de
-   * referência" aparecem: `provider_status !== "ready"`, para QUALQUER
-   * avatar, novo ou existente. Antes desta rodada a visibilidade dependia de
-   * `draftAvatar` (só existia durante a criação) — e um avatar que "concluía
-   * configuração" sem enviar o vídeo ficava preso para sempre, porque a
-   * seção some junto com `creating`/`draftAvatar`, não junto com o treino
-   * real. Aconteceu 2 vezes seguidas (avatares "TESTE ZERO 26/08" e "V2").
+   * A REGRA GERAL de quando "Fotos do rosto" e "Vídeo de referência"
+   * aparecem: `provider_status === "processing"` OU `retrainRequested`, para
+   * QUALQUER avatar, novo ou existente. É a MESMA regra que o backend já usa
+   * para liberar geração (ver o comentário de `provider_status` em
+   * types.ts: "unknown"/`null` liberam, só "processing" impede) — mais o
+   * escape manual do retreino.
+   *
+   * ERA `!== "ready"` até 27/08, e isso divergia da regra do backend: um
+   * avatar com `provider_status` NULL ou "unknown" (avatar antigo, ou cujo
+   * status nunca foi confirmável pelo fornecedor) já podia gerar vídeo por
+   * trás, mas a tela mandava ele de volta para a captura — medido em "TESTE
+   * REAL 15:40 01/08" (NULL desde 01/08; reconsultar a HeyGen deu "unknown",
+   * porque `GET /v3/avatars/{id}` espera GROUP id e o que gravamos é o
+   * AVATAR id — essa rota nunca vai devolver "ready" para este formato de
+   * avatar, mas "unknown" já é liberado do mesmo jeito). A correção trocou
+   * `!== "ready"` por `=== "processing"` — e, sozinha, fechava de vez a porta
+   * de retreinar um avatar pronto (nenhum valor de `provider_status` reabre
+   * a captura por engano). `retrainRequested` é essa porta, do jeito que o
+   * operador pediu: manual, com aviso, nunca automática.
+   *
+   * Antes de 26/08 a visibilidade dependia de `draftAvatar` (só existia
+   * durante a criação) — e um avatar que "concluía configuração" sem enviar
+   * o vídeo ficava preso para sempre, porque a seção some junto com
+   * `creating`/`draftAvatar`, não junto com o treino real. Aconteceu 2 vezes
+   * seguidas (avatares "TESTE ZERO 26/08" e "V2").
    *
    * `avatarForTraining` é o avatar em foco nesta função — o rascunho em
-   * criação, OU o avatar selecionado quando ele ainda não treinou. Os dois
-   * nunca coexistem (criar um novo desmarca a seleção antes de avançar), e
-   * quando nenhum dos dois se aplica o valor é `null`.
+   * criação, OU o avatar selecionado quando ele ainda está processando OU
+   * foi explicitamente pedido para retreinar. Os dois primeiros nunca
+   * coexistem (criar um novo desmarca a seleção antes de avançar), e quando
+   * nenhum se aplica o valor é `null`.
    */
   const avatarForTraining =
-    draftAvatar ?? (selectedAvatar && selectedAvatar.provider_status !== "ready" ? selectedAvatar : null);
+    draftAvatar ??
+    (selectedAvatar && (selectedAvatar.provider_status === "processing" || retrainRequested)
+      ? selectedAvatar
+      : null);
   const needsTrainingCapture = avatarForTraining !== null;
 
   /**
@@ -144,12 +185,61 @@ export function AvatarSetupStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [avatarForTraining?.id]);
 
+  // Erro da CONSULTA de status, separado de `actionError`: uma falha de
+  // polling em segundo plano não deve apagar (nem ser apagada por) o erro de
+  // uma ação que a pessoa acabou de clicar.
+  const [trainingPollError, setTrainingPollError] = useState<string | null>(null);
+
+  /**
+   * POLLING do treino — só existe enquanto há algo a esperar: vídeo de
+   * referência já salvo (é ele que dispara o treino) E `provider_status`
+   * ainda "processing". `GET /avatars/:id/training-status` (leve, sem
+   * débito) atualiza `avatarForTraining` a cada resposta; quando o status
+   * sai de "processing" (ready OU unknown), esta dependência muda, o efeito
+   * roda de novo, a condição deixa de bater, e o `return` de cima encerra o
+   * laço — não precisa de um `if` explícito de parada dentro do intervalo.
+   */
+  useEffect(() => {
+    if (!avatarForTraining) return;
+    if (!avatarForTraining.reference_video_url) return;
+    if (avatarForTraining.provider_status !== "processing") return;
+
+    setTrainingPollError(null);
+    let cancelado = false;
+    const avatarId = avatarForTraining.id;
+
+    const intervalo = setInterval(async () => {
+      try {
+        const updated = await api.get<Avatar>(`/avatars/${avatarId}/training-status`);
+        if (cancelado) return;
+        updateAvatarForTraining(updated);
+      } catch (err) {
+        if (cancelado) return;
+        setTrainingPollError(err instanceof Error ? err.message : t("errors.generic"));
+      }
+    }, 4000);
+
+    return () => {
+      cancelado = true;
+      clearInterval(intervalo);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarForTraining?.id, avatarForTraining?.reference_video_url, avatarForTraining?.provider_status]);
+
   const referenceFileInput = useRef<HTMLInputElement | null>(null);
   const photoFileInput = useRef<HTMLInputElement | null>(null);
   // Compartilhados entre o ramo "já treinado" (avatar existente) e o de
   // captura (`avatarForTraining`) — os dois nunca montam ao mesmo tempo.
   const scenarioFileInput = useRef<HTMLInputElement | null>(null);
   const outfitFileInput = useRef<HTMLInputElement | null>(null);
+
+  // Arquivo ESCOLHIDO, ainda não enviado ao servidor — Cenário/Traje.
+  // Compartilhado entre o ramo "já treinado" e o de captura pelo mesmo motivo
+  // dos refs acima: os dois nunca montam ao mesmo tempo.
+  const [pendingScenarioFile, setPendingScenarioFile] = useState<File | null>(null);
+  const [pendingScenarioPreviewUrl, setPendingScenarioPreviewUrl] = useState<string | null>(null);
+  const [pendingOutfitFile, setPendingOutfitFile] = useState<File | null>(null);
+  const [pendingOutfitPreviewUrl, setPendingOutfitPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     refreshAvatars();
@@ -268,6 +358,28 @@ export function AvatarSetupStep({
         // voz, avançar — continua utilizável. Travar tudo pelo controle menos
         // importante seria o inverso da prioridade.
         if (!cancelado) setLookInfo(null);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [selectedAvatarId]);
+
+  // "Ver avatar" — mesmo padrão do efeito de `lookInfo` acima: recarrega ao
+  // trocar de avatar, e uma falha aqui não derruba o resto do passo 1.
+  const [avatarPreview, setAvatarPreview] = useState<AvatarPreviewResponse | null>(null);
+  useEffect(() => {
+    if (!selectedAvatarId) {
+      setAvatarPreview(null);
+      return;
+    }
+    let cancelado = false;
+    api
+      .get<AvatarPreviewResponse>(`/avatars/${selectedAvatarId}/preview`)
+      .then((r) => {
+        if (!cancelado) setAvatarPreview(r);
+      })
+      .catch(() => {
+        if (!cancelado) setAvatarPreview(null);
       });
     return () => {
       cancelado = true;
@@ -445,6 +557,10 @@ export function AvatarSetupStep({
         "reference.webm",
       );
       updateAvatarForTraining(updated);
+      // O substituto foi salvo — volta ao selo "salvo", agora sobre o vídeo
+      // NOVO. Sem isto, um retreino bem-sucedido continuaria mostrando os
+      // controles de captura como se nada tivesse mudado.
+      setReplacingReferenceVideo(false);
     });
   }
 
@@ -462,7 +578,20 @@ export function AvatarSetupStep({
         file.name,
       );
       updateAvatarForTraining(updated);
+      setReplacingReferenceVideo(false);
     });
+  }
+
+  /**
+   * "Retreinar avatar" — só a pessoa decide, nunca automático. O aviso é
+   * sobre DINHEIRO: gravar/enviar um novo vídeo aqui chama a MESMA rota de
+   * treino (`POST /avatars/:id/reference-video`), que treina de novo no
+   * fornecedor e cobra de novo — mesmo com o treino atual já pronto.
+   */
+  function handleRequestRetrain() {
+    if (!selectedAvatar) return;
+    if (!window.confirm(t("createVideo.avatarSetup.retrainConfirm"))) return;
+    setRetrainRequested(true);
   }
 
   async function handleFinishSetup() {
@@ -580,6 +709,54 @@ export function AvatarSetupStep({
       [kind]: url,
       ...(kind === "scenario" ? { scenarioName: file.name } : {}),
     });
+  }
+
+  /**
+   * Escolher um arquivo NÃO envia mais nada — só guarda o `File` e uma
+   * miniatura local (`URL.createObjectURL`) para exibição, até o clique em
+   * "Salvar". Antes desta rodada `handleAssetUpload` era chamado direto no
+   * `onChange` do `<input type="file">`, sem etapa de confirmação.
+   */
+  function stageAssetFile(kind: "scenario" | "outfit", file: File) {
+    const previewUrl = URL.createObjectURL(file);
+    if (kind === "scenario") {
+      if (pendingScenarioPreviewUrl) URL.revokeObjectURL(pendingScenarioPreviewUrl);
+      setPendingScenarioFile(file);
+      setPendingScenarioPreviewUrl(previewUrl);
+    } else {
+      if (pendingOutfitPreviewUrl) URL.revokeObjectURL(pendingOutfitPreviewUrl);
+      setPendingOutfitFile(file);
+      setPendingOutfitPreviewUrl(previewUrl);
+    }
+  }
+
+  function discardPendingAsset(kind: "scenario" | "outfit") {
+    if (kind === "scenario") {
+      if (pendingScenarioPreviewUrl) URL.revokeObjectURL(pendingScenarioPreviewUrl);
+      setPendingScenarioFile(null);
+      setPendingScenarioPreviewUrl(null);
+      if (scenarioFileInput.current) scenarioFileInput.current.value = "";
+    } else {
+      if (pendingOutfitPreviewUrl) URL.revokeObjectURL(pendingOutfitPreviewUrl);
+      setPendingOutfitFile(null);
+      setPendingOutfitPreviewUrl(null);
+      if (outfitFileInput.current) outfitFileInput.current.value = "";
+    }
+  }
+
+  // Erro NÃO passa por `guard()`: `guard()` engole a exceção, e aqui é
+  // preciso saber se falhou para decidir se o arquivo pendente continua
+  // selecionado (permitindo tentar de novo) ou é descartado (sucesso).
+  async function commitPendingAsset(kind: "scenario" | "outfit") {
+    const file = kind === "scenario" ? pendingScenarioFile : pendingOutfitFile;
+    if (!file) return;
+    setActionError(null);
+    try {
+      await handleAssetUpload(kind, file);
+      discardPendingAsset(kind);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t("errors.generic"));
+    }
   }
 
   /**
@@ -913,6 +1090,82 @@ export function AvatarSetupStep({
           </div>
         )}
 
+        {/* "VER AVATAR" — as fotos enviadas, a imagem que o fornecedor de
+            fato gerou (não as fotos cruas) e a amostra de voz ORIGINAL (não
+            uma frase nova por TTS). Três leituras, nenhuma chamada nova ao
+            fornecedor além da que `/avatars/:id/looks` já fazia. */}
+        {selectedAvatar && selectedAvatar.provider_avatar_id && (
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-title">{t("createVideo.avatarSetup.viewAvatarTitle")}</div>
+            <div className="grid grid-cols-3" style={{ gap: 12, marginTop: 8 }}>
+              <div>
+                <div className="text-muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                  {t("createVideo.avatarSetup.viewAvatarPhotosLabel")}
+                </div>
+                {selectedAvatar.photo_urls.length > 0 ? (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {selectedAvatar.photo_urls.map((url) => (
+                      <img
+                        key={url}
+                        src={url}
+                        alt=""
+                        style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover" }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
+                    {t("createVideo.avatarSetup.viewAvatarPhotosNone")}
+                  </p>
+                )}
+              </div>
+              <div>
+                <div className="text-muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                  {t("createVideo.avatarSetup.viewAvatarHeygenLabel")}
+                </div>
+                {avatarPreview?.heygen_preview_url ? (
+                  <img
+                    src={avatarPreview.heygen_preview_url}
+                    alt=""
+                    style={{ width: 96, height: 96, borderRadius: 8, objectFit: "cover" }}
+                  />
+                ) : (
+                  <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
+                    {t("createVideo.avatarSetup.viewAvatarHeygenNone")}
+                  </p>
+                )}
+              </div>
+              <div>
+                <div className="text-muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                  {t("createVideo.avatarSetup.viewAvatarVoiceLabel")}
+                </div>
+                {avatarPreview?.voice_sample_url ? (
+                  <audio controls src={avatarPreview.voice_sample_url} style={{ maxWidth: "100%" }} />
+                ) : (
+                  <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
+                    {t("createVideo.avatarSetup.viewAvatarVoiceNone")}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* RETREINAR — ação EXPLÍCITA (27/08), nunca automática. A
+                condição de roteamento (`avatarForTraining`, acima) parou de
+                reabrir a captura sozinha para qualquer avatar não-"ready";
+                este botão é a única porta de volta, e só abre depois de a
+                pessoa confirmar o aviso de custo real. Escondido durante
+                `processing`/retreino em curso — a captura já está aberta
+                nesses casos, o botão não teria o que fazer. */}
+            {selectedAvatar.provider_status !== "processing" && !retrainRequested && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--color-border)" }}>
+                <button type="button" className="btn btn-outline" onClick={handleRequestRetrain}>
+                  {t("createVideo.avatarSetup.retrainButton")}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* CENÁRIO E TRAJE deste vídeo — BLOCO B5c.
             Antes desta rodada, `defaults.scenario`/`scenarioPrompt` só eram
             preenchíveis dentro de "criar avatar novo" — e `defaults.outfit`/
@@ -938,21 +1191,50 @@ export function AvatarSetupStep({
                   help={t("createVideo.avatarSetup.scenarioHelp")}
                 >
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => scenarioFileInput.current?.click()}
-                    >
-                      {t("createVideo.avatarSetup.chooseFile")}
-                    </button>
-                    {defaults.scenario && (
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={() => commitExistingAssetClear("scenario")}
-                      >
-                        {t("createVideo.avatarSetup.removeImage")}
-                      </button>
+                    {pendingScenarioFile ? (
+                      <>
+                        {pendingScenarioPreviewUrl && (
+                          <img
+                            src={pendingScenarioPreviewUrl}
+                            alt=""
+                            style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }}
+                          />
+                        )}
+                        <span className="text-muted" style={{ fontSize: 12 }}>{pendingScenarioFile.name}</span>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => commitPendingAsset("scenario")}
+                        >
+                          {t("createVideo.avatarSetup.saveImage")}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => discardPendingAsset("scenario")}
+                        >
+                          {t("createVideo.avatarSetup.discardImage")}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => scenarioFileInput.current?.click()}
+                        >
+                          {t("createVideo.avatarSetup.chooseFile")}
+                        </button>
+                        {defaults.scenario && (
+                          <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={() => commitExistingAssetClear("scenario")}
+                          >
+                            {t("createVideo.avatarSetup.removeImage")}
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                   {/* Preso ao botão, dentro do MESMO Field — não mais uma
@@ -960,7 +1242,7 @@ export function AvatarSetupStep({
                       nativo de uma linha só. Com dois botões lado a lado, a
                       margem antiga podia sobrepor o texto de ajuda do Field
                       logo abaixo. */}
-                  {defaults.scenario && (
+                  {!pendingScenarioFile && defaults.scenario && (
                     <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
                       {defaults.scenarioName
                         ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
@@ -972,7 +1254,7 @@ export function AvatarSetupStep({
                     type="file"
                     accept="image/*"
                     hidden
-                    onChange={(e) => e.target.files?.[0] && handleAssetUpload("scenario", e.target.files[0])}
+                    onChange={(e) => e.target.files?.[0] && stageAssetFile("scenario", e.target.files[0])}
                   />
                 </Field>
                 <Field
@@ -994,21 +1276,50 @@ export function AvatarSetupStep({
                   help={t("createVideo.avatarSetup.outfitHelp")}
                 >
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => outfitFileInput.current?.click()}
-                    >
-                      {t("createVideo.avatarSetup.chooseFile")}
-                    </button>
-                    {defaults.outfit && (
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={() => commitExistingAssetClear("outfit")}
-                      >
-                        {t("createVideo.avatarSetup.removeImage")}
-                      </button>
+                    {pendingOutfitFile ? (
+                      <>
+                        {pendingOutfitPreviewUrl && (
+                          <img
+                            src={pendingOutfitPreviewUrl}
+                            alt=""
+                            style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }}
+                          />
+                        )}
+                        <span className="text-muted" style={{ fontSize: 12 }}>{pendingOutfitFile.name}</span>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => commitPendingAsset("outfit")}
+                        >
+                          {t("createVideo.avatarSetup.saveImage")}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => discardPendingAsset("outfit")}
+                        >
+                          {t("createVideo.avatarSetup.discardImage")}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => outfitFileInput.current?.click()}
+                        >
+                          {t("createVideo.avatarSetup.chooseFile")}
+                        </button>
+                        {defaults.outfit && (
+                          <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={() => commitExistingAssetClear("outfit")}
+                          >
+                            {t("createVideo.avatarSetup.removeImage")}
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                   {/* Sem `outfitName`: `AssetDefaults` não tem esse campo (só
@@ -1016,7 +1327,7 @@ export function AvatarSetupStep({
                       consumidor no backend não foi autorizado nesta rodada.
                       "Imagem salva." genérico é o estado honesto. Preso ao
                       botão, dentro do MESMO Field — mesmo ajuste do Cenário. */}
-                  {defaults.outfit && (
+                  {!pendingOutfitFile && defaults.outfit && (
                     <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
                       {t("createVideo.avatarSetup.imageSaved")}
                     </p>
@@ -1026,7 +1337,7 @@ export function AvatarSetupStep({
                     type="file"
                     accept="image/*"
                     hidden
-                    onChange={(e) => e.target.files?.[0] && handleAssetUpload("outfit", e.target.files[0])}
+                    onChange={(e) => e.target.files?.[0] && stageAssetFile("outfit", e.target.files[0])}
                   />
                 </Field>
                 <Field
@@ -1310,17 +1621,36 @@ export function AvatarSetupStep({
                   validação: nada aqui bloqueia o envio. Dizer depois — na
                   recusa por tamanho, ou pior, num avatar de qualidade ruim —
                   custa uma regravação inteira. */}
-              {!avatarForTraining.reference_video_url && (
+              {(!avatarForTraining.reference_video_url || replacingReferenceVideo) && (
                 <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 8 }}>
                   {t("createVideo.avatarSetup.referenceGuidance")}
                 </p>
               )}
 
-              {avatarForTraining.reference_video_url ? (
+              {avatarForTraining.reference_video_url && !replacingReferenceVideo ? (
                 <p>
                   <span className="status-pill status-connected">
                     {t("createVideo.avatarSetup.referenceSaved")}
                   </span>
+                  {avatarForTraining.provider_status === "processing" && (
+                    <span className="status-pill status-processing" style={{ marginLeft: 8 }}>
+                      {t("createVideo.avatarSetup.trainingInProgress")}
+                    </span>
+                  )}
+                  {trainingPollError && (
+                    <span className="alert-error" style={{ display: "block", fontSize: 12, marginTop: 6 }}>
+                      {t("createVideo.avatarSetup.trainingPollError", { message: trainingPollError })}
+                    </span>
+                  )}
+                  {" "}
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => setReplacingReferenceVideo(true)}
+                  >
+                    {t("createVideo.avatarSetup.replaceReferenceVideo")}
+                  </button>
                 </p>
               ) : (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1348,6 +1678,15 @@ export function AvatarSetupStep({
                     hidden
                     onChange={handleReferenceFileChange}
                   />
+                  {avatarForTraining.reference_video_url && replacingReferenceVideo && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setReplacingReferenceVideo(false)}
+                    >
+                      {t("createVideo.avatarSetup.cancelReplaceReferenceVideo")}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1359,7 +1698,9 @@ export function AvatarSetupStep({
                   em si. Vem antes de "Salvar gravação" de propósito, mesmo
                   raciocínio da voz: confirmar ANTES de gastar o treino
                   (US$ 1,00 + 1 crédito). */}
-              {!recorder.isRecording && recorder.previewUrl && !avatarForTraining.reference_video_url && (
+              {!recorder.isRecording &&
+                recorder.previewUrl &&
+                (!avatarForTraining.reference_video_url || replacingReferenceVideo) && (
                 <div style={{ marginTop: 10 }}>
                   <p className="text-muted" style={{ fontSize: 12, marginBottom: 4 }}>
                     {t("createVideo.avatarSetup.watchFirst")}
@@ -1377,14 +1718,17 @@ export function AvatarSetupStep({
               {/* Depois de parar, o veredito PERMANECE: é o último momento em
                   que regravar ainda é barato. Some quando a gravação já foi
                   enviada. */}
-              {!recorder.isRecording && recorder.recordedBlob && !avatarForTraining.reference_video_url && (
+              {!recorder.isRecording &&
+                recorder.recordedBlob &&
+                (!avatarForTraining.reference_video_url || replacingReferenceVideo) && (
                 <RecordingProgress elapsedSeconds={recorder.elapsedSeconds} />
               )}
 
               {/* Tamanho SEMPRE que houver gravação, não só quando estoura:
                   é o número que explica um envio lento e o único jeito de
                   comparar com o teto antes de tentar. */}
-              {recorder.recordedBlob && !avatarForTraining.reference_video_url && (
+              {recorder.recordedBlob &&
+                (!avatarForTraining.reference_video_url || replacingReferenceVideo) && (
                 <p
                   className={recorder.isOverSizeLimit ? "alert-error" : "text-muted"}
                   style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}
@@ -1554,24 +1898,53 @@ export function AvatarSetupStep({
                 help={t("createVideo.avatarSetup.scenarioHelp")}
               >
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => scenarioFileInput.current?.click()}
-                  >
-                    {t("createVideo.avatarSetup.chooseFile")}
-                  </button>
-                  {defaults.scenario && (
-                    <button
-                      type="button"
-                      className="btn btn-outline"
-                      onClick={() => commitDraftAssetClear("scenario")}
-                    >
-                      {t("createVideo.avatarSetup.removeImage")}
-                    </button>
+                  {pendingScenarioFile ? (
+                    <>
+                      {pendingScenarioPreviewUrl && (
+                        <img
+                          src={pendingScenarioPreviewUrl}
+                          alt=""
+                          style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }}
+                        />
+                      )}
+                      <span className="text-muted" style={{ fontSize: 12 }}>{pendingScenarioFile.name}</span>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => commitPendingAsset("scenario")}
+                      >
+                        {t("createVideo.avatarSetup.saveImage")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => discardPendingAsset("scenario")}
+                      >
+                        {t("createVideo.avatarSetup.discardImage")}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => scenarioFileInput.current?.click()}
+                      >
+                        {t("createVideo.avatarSetup.chooseFile")}
+                      </button>
+                      {defaults.scenario && (
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => commitDraftAssetClear("scenario")}
+                        >
+                          {t("createVideo.avatarSetup.removeImage")}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
-                {defaults.scenario && (
+                {!pendingScenarioFile && defaults.scenario && (
                   <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
                     {defaults.scenarioName
                       ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
@@ -1583,7 +1956,7 @@ export function AvatarSetupStep({
                   type="file"
                   accept="image/*"
                   hidden
-                  onChange={(e) => e.target.files?.[0] && handleAssetUpload("scenario", e.target.files[0])}
+                  onChange={(e) => e.target.files?.[0] && stageAssetFile("scenario", e.target.files[0])}
                 />
               </Field>
               <Field
@@ -1613,24 +1986,53 @@ export function AvatarSetupStep({
                 help={t("createVideo.avatarSetup.outfitHelp")}
               >
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => outfitFileInput.current?.click()}
-                  >
-                    {t("createVideo.avatarSetup.chooseFile")}
-                  </button>
-                  {defaults.outfit && (
-                    <button
-                      type="button"
-                      className="btn btn-outline"
-                      onClick={() => commitDraftAssetClear("outfit")}
-                    >
-                      {t("createVideo.avatarSetup.removeImage")}
-                    </button>
+                  {pendingOutfitFile ? (
+                    <>
+                      {pendingOutfitPreviewUrl && (
+                        <img
+                          src={pendingOutfitPreviewUrl}
+                          alt=""
+                          style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }}
+                        />
+                      )}
+                      <span className="text-muted" style={{ fontSize: 12 }}>{pendingOutfitFile.name}</span>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => commitPendingAsset("outfit")}
+                      >
+                        {t("createVideo.avatarSetup.saveImage")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => discardPendingAsset("outfit")}
+                      >
+                        {t("createVideo.avatarSetup.discardImage")}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => outfitFileInput.current?.click()}
+                      >
+                        {t("createVideo.avatarSetup.chooseFile")}
+                      </button>
+                      {defaults.outfit && (
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => commitDraftAssetClear("outfit")}
+                        >
+                          {t("createVideo.avatarSetup.removeImage")}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
-                {defaults.outfit && (
+                {!pendingOutfitFile && defaults.outfit && (
                   <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
                     {t("createVideo.avatarSetup.imageSaved")}
                   </p>
@@ -1640,7 +2042,7 @@ export function AvatarSetupStep({
                   type="file"
                   accept="image/*"
                   hidden
-                  onChange={(e) => e.target.files?.[0] && handleAssetUpload("outfit", e.target.files[0])}
+                  onChange={(e) => e.target.files?.[0] && stageAssetFile("outfit", e.target.files[0])}
                 />
               </Field>
               <Field

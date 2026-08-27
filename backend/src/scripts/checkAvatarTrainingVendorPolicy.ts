@@ -48,14 +48,25 @@ export const MUTANTS: Mutant[] = [
     // defeito só aparece com um tenant que tem `fal` como is_default de
     // avatar (como o dev-c77a5b), e nesse caso manda a chave errada para a
     // HeyGen, com 401 do fornecedor e dinheiro em jogo.
+    // O `find` leva as duas linhas de comentário logo acima do bloco de
+    // propósito: `/avatars/:id/training-status` (26-27/08) repete o MESMO
+    // padrão `let avatarCredential ... for (const vendorDeTreino ...`
+    // (correto, para reconsultar com a MESMA credencial que treinou) — sem
+    // essas linhas o `find` casaria duas vezes e o mutante abortaria SEM
+    // PROVA em vez de reprovar.
     file: ROTA_AVATARS,
     find:
+      "    // primeiro — é o único vendor que a decisão de 25/08 liga para o tier\n" +
+      "    // Simples — com D-ID como alternativa legítima, nunca fal.\n" +
       "    let avatarCredential: ResolvedCredential | null = null;\n" +
       "    for (const vendorDeTreino of VENDORS_WITH_TRAINING_PATH.avatar) {\n" +
       "      avatarCredential = await getCredentialForVendor(req.tenantId, \"avatar\", vendorDeTreino);\n" +
       "      if (avatarCredential) break;\n" +
       "    }\n",
-    replace: "    const avatarCredential = await getCredential(req.tenantId, \"avatar\");\n",
+    replace:
+      "    // primeiro — é o único vendor que a decisão de 25/08 liga para o tier\n" +
+      "    // Simples — com D-ID como alternativa legítima, nunca fal.\n" +
+      "    const avatarCredential = await getCredential(req.tenantId, \"avatar\");\n",
     expect: "avatar-training-vendor: a rota volta a resolver a credencial de treino pelo is_default genérico",
   },
 ];

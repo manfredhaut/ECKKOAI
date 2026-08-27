@@ -118,11 +118,25 @@ export async function checkExistingAvatarAssetsPolicy(): Promise<ExistingAvatarA
           "escreve em `defaults` é indistinguível de funcionar até alguém gerar um vídeo.",
       );
     }
-    const upload = `handleAssetUpload("${campo === "scenarioPrompt" ? "scenario" : "outfit"}", e.target.files[0])`;
-    if (!trecho.includes(upload)) {
+    // Desde a rodada de "arquivo escolhido, ainda não salvo" (26-27/08), a
+    // seleção do arquivo não chama mais `handleAssetUpload` direto — ela só
+    // ENCENA (`stageAssetFile`), e o upload de verdade só acontece se o
+    // clique em "Salvar" (`commitPendingAsset`) acontecer. As duas pontas
+    // precisam existir, senão o arquivo fica preso sem nunca subir ou some
+    // sem nunca confirmar.
+    const kind = campo === "scenarioPrompt" ? "scenario" : "outfit";
+    const stage = `stageAssetFile("${kind}", e.target.files[0])`;
+    if (!trecho.includes(stage)) {
       failures.push(
-        `existing-avatar: upload de ${rotulo} do avatar existente ausente — esperado \`${upload}\` dentro ` +
-          "do bloco de cenário/traje.",
+        `existing-avatar: seleção de arquivo de ${rotulo} do avatar existente ausente — esperado \`${stage}\` ` +
+          "dentro do bloco de cenário/traje.",
+      );
+    }
+    const commit = `commitPendingAsset("${kind}")`;
+    if (!trecho.includes(commit)) {
+      failures.push(
+        `existing-avatar: botão "Salvar" de ${rotulo} do avatar existente ausente — esperado \`${commit}\` ` +
+          "dentro do bloco de cenário/traje.",
       );
     }
   }

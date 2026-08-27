@@ -1387,6 +1387,25 @@ export async function waitForAvatarReady(
   return "processing";
 }
 
+/**
+ * UMA leitura do estado, sem laço de espera — para a rota de polling que o
+ * CLIENTE chama (`GET /avatars/:id/training-status`). Ali quem espera é o
+ * navegador, a cada poucos segundos; `waitForAvatarReady` continua sendo o
+ * laço de 90s DENTRO do POST de treino. Sem esta função, um avatar que
+ * estourasse aquele teto ficava com `provider_status = "processing"` presa
+ * no banco para sempre — nada, nem cliente nem servidor, voltava a
+ * perguntar ao fornecedor se o treino tinha terminado.
+ */
+export async function checkAvatarStatusOnce(
+  vendor: AvatarVendor,
+  apiKey: string,
+  providerAvatarId: string,
+): Promise<AvatarProviderStatus> {
+  if (vendor === "did") return "ready";
+  if (isFixtureMode()) return waitForAvatarReadyFixture(providerAvatarId);
+  return pollAvatarStatusHeygen(apiKey, providerAvatarId);
+}
+
 export async function generateVideo(input: GenerateVideoInput): Promise<GenerateVideoResult> {
   // Vendor que não aceita formato não é motivo para recusar a geração — é
   // motivo para deixar registrado que a escolha do cliente não vai ser honrada.

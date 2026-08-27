@@ -4,7 +4,13 @@ import path from "node:path";
 import { pool } from "../db/pool.js";
 import { config } from "../config.js";
 import type { Avatar } from "../types.js";
-import { listAvatarLooks, trainAvatar, waitForAvatarReady, AvatarPhotoRequiredError } from "../services/providers/avatarProvider.js";
+import {
+  listAvatarLooks,
+  trainAvatar,
+  waitForAvatarReady,
+  checkAvatarStatusOnce,
+  AvatarPhotoRequiredError,
+} from "../services/providers/avatarProvider.js";
 import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import type { AvatarProviderStatus } from "../services/providers/avatarProvider.js";
 import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
@@ -521,5 +527,105 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     // checagem de substituição) desde antes desta rodada. O treino de
     // avatar nunca dependeu da voz: `trained[0]` já é a resposta completa.
     return trained[0];
+  });
+
+  /**
+   * Consulta LEVE do estado de treino — SEM débito, SEM criar nada.
+   *
+   * `waitForAvatarReady` espera até 90 s DENTRO do POST de treino; estourado
+   * esse teto, o avatar fica com `provider_status = "processing"` gravado —
+   * e sem esta rota nada nunca mais perguntava ao fornecedor se o treino
+   * tinha terminado. A tela chama isto em polling só enquanto o status for
+   * "processing"; um avatar já `ready`/`unknown`/`null` responde sem tocar
+   * rede nenhuma.
+   */
+  app.get<{ Params: { id: string } }>("/avatars/:id/training-status", async (req, reply) => {
+    const { rows } = await pool.query<Avatar>(
+      "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.tenantId],
+    );
+    const avatar = rows[0];
+    if (!avatar) return reply.code(404).send({ error: "Avatar not found" });
+
+    if (avatar.provider_status !== "processing" || !avatar.provider_avatar_id || !avatar.provider) {
+      return avatar;
+    }
+
+    // A MESMA credencial que treinou, nunca o default genérico de
+    // provider=avatar do tenant (o bug de 26/08: `fal` sendo usada para
+    // treino). Sem ela — credencial removida/trocada desde o treino — o
+    // estado gravado é devolvido como está, sem tentar adivinhar.
+    let avatarCredential: ResolvedCredential | null = null;
+    for (const vendorDeTreino of VENDORS_WITH_TRAINING_PATH.avatar) {
+      avatarCredential = await getCredentialForVendor(req.tenantId, "avatar", vendorDeTreino);
+      if (avatarCredential) break;
+    }
+    if (!avatarCredential || avatarCredential.vendor !== avatar.provider) {
+      return avatar;
+    }
+
+    const status = await checkAvatarStatusOnce(
+      avatarCredential.vendor as "heygen" | "did",
+      avatarCredential.apiKey,
+      avatar.provider_avatar_id,
+    );
+    if (status === avatar.provider_status) return avatar;
+
+    const { rows: updated } = await pool.query<Avatar>(
+      "UPDATE avatars SET provider_status = $3 WHERE id = $1 AND tenant_id = $2 RETURNING *",
+      [req.params.id, req.tenantId, status],
+    );
+    return updated[0];
+  });
+
+  /**
+   * PREVIEW do avatar já treinado — "como ele ficou", não "o que foi
+   * enviado". Três fontes, todas de LEITURA e nenhuma nova no fornecedor:
+   * - `photos`: as fotos que a própria pessoa enviou (já em `photo_urls`).
+   * - `heygen_preview_url`: a imagem que o fornecedor de fato gerou — vem
+   *   da MESMA consulta que `/avatars/:id/looks` já faz (GET, não tarifado,
+   *   medido em `services/avatar/looks.ts`), procurando na lista o item
+   *   cujo id é o próprio `provider_avatar_id` (o avatar base, não um
+   *   traje extra pago à parte).
+   * - `voice_sample_url`: a amostra de voz ORIGINAL (`voice_clone_samples`,
+   *   migration 064) — nenhum TTS novo. `null` para clonagens de antes da
+   *   migration, que não têm linha aqui.
+   */
+  app.get<{ Params: { id: string } }>("/avatars/:id/preview", async (req, reply) => {
+    const { rows } = await pool.query<Avatar>(
+      "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.tenantId],
+    );
+    const avatar = rows[0];
+    if (!avatar) return reply.code(404).send({ error: "Avatar not found" });
+
+    let heygenPreviewUrl: string | null = null;
+    if (avatar.provider_avatar_id) {
+      const credential = await getCredential(req.tenantId, "avatar");
+      if (credential) {
+        const doFornecedor = await listAvatarLooks(
+          credential.apiKey,
+          credential.vendor as AvatarVendor,
+          avatar.provider_avatar_id,
+        );
+        const { looks } = await listarLooks(req.tenantId, avatar.id, doFornecedor, {
+          apiKey: credential.apiKey,
+          vendor: credential.vendor as AvatarVendor,
+        });
+        const base = looks.find((l) => l.id === avatar.provider_avatar_id);
+        heygenPreviewUrl = base?.previewImageUrl ?? null;
+      }
+    }
+
+    const { rows: samples } = await pool.query<{ original_url: string }>(
+      "SELECT original_url FROM voice_clone_samples WHERE avatar_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [avatar.id],
+    );
+
+    return {
+      photos: avatar.photo_urls,
+      heygen_preview_url: heygenPreviewUrl,
+      voice_sample_url: samples[0]?.original_url ?? null,
+    };
   });
 }
