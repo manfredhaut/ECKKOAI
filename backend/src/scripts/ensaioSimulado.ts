@@ -41,12 +41,12 @@ import { pool } from "../db/pool.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 import {
-  PIPELINE_TETO_USD,
   PIPELINE_TETO_USD_PREMIUM,
   PRECOS_FAL,
   conferirRoteiro,
   custoSeedanceUsd,
   runFalPipeline,
+  tetoNormalUsd,
   vendorRequiredByTier,
   type DiarioDoPipeline,
   type FalPipelineInput,
@@ -142,7 +142,10 @@ export async function ensaiarNivel(tier: PipelineTier): Promise<void> {
   console.log(`\n${"=".repeat(78)}\n  ${rotulo}\n${"=".repeat(78)}`);
 
   const { chars, duracaoEscolhida } = conferirRoteiro(ROTEIRO);
-  const teto = tier === "premium" ? PIPELINE_TETO_USD_PREMIUM : PIPELINE_TETO_USD;
+  // BLOCO FRACOES-1 — o ensaio usa um roteiro curto e fixo (cabe num bloco
+  // só), então `tetoNormalUsd(duracaoEscolhida)` aqui é exatamente o teto
+  // que a corrida de verdade usaria para este mesmo roteiro.
+  const teto = tier === "premium" ? PIPELINE_TETO_USD_PREMIUM : tetoNormalUsd(duracaoEscolhida);
   console.log(`roteiro: ${chars} caracteres → duração escolhida ${duracaoEscolhida} s`);
   console.log(`vendor exigido pelo nível: ${vendorRequiredByTier(tier)}`);
   console.log(`teto da corrida: ${dinheiro(teto)}`);

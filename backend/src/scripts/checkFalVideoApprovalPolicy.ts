@@ -110,9 +110,18 @@ export const MUTANTS: Mutant[] = [
     // recusar — a incompatibilidade já está na comparação direta. Mesmo
     // gotcha do `if (false && …)`, `String(...)` evita sem mudar o
     // comportamento em tempo de execução.
+    //
+    // ÂNCORA — BLOCO FRACOES-1, 28/08: `if (input.pararApos === "animar")`
+    // passou a existir em DOIS lugares em `falPipeline.ts` (caminho de UM
+    // bloco e caminho de VÁRIOS blocos, dentro de `animarNarrarSincronizar`)
+    // — a âncora curta de antes virou substring das duas e ficou ambígua.
+    // `ROTEIRO_DA_PROVA` (acima) é curto de propósito e sempre cabe num
+    // bloco só, então esta guarda mede o caminho de UM bloco — a âncora
+    // agora inclui `bloco.gastoPrevistoUsd`, que só existe nele.
     file: PIPELINE,
-    find: '  if (input.pararApos === "animar") {',
-    replace: '  if (String(input.pararApos) === "impossivel-pararApos-nenhuma-corrida-tem") {',
+    find: '    gastoPrevistoUsd = bloco.gastoPrevistoUsd;\n\n    if (input.pararApos === "animar") {',
+    replace:
+      '    gastoPrevistoUsd = bloco.gastoPrevistoUsd;\n\n    if (String(input.pararApos) === "impossivel-pararApos-nenhuma-corrida-tem") {',
     expect: "a corrida não parou em animar — sincronizar foi alcançado",
   },
   {
@@ -123,13 +132,19 @@ export const MUTANTS: Mutant[] = [
     // `tsc` segue verde, e o caminho feliz ainda produz um `videoUrl` no
     // fim — só que pagando o Wan/Seedance de novo (~US$ 0,25 a ~US$ 4,60+)
     // por um vídeo que já existia e já tinha sido aprovado.
+    // find/replace REGENERADOS no BLOCO FRACOES-1 (28/08): `teto: tetoParaTier(input)`
+    // passou a `teto: tetoParaTier(input, segundosTotaisDoRoteiro)` (fórmula
+    // sobre a duração TOTAL, não mais uma constante — ver
+    // `docs-internal/plano-fracoes-2026-08-28.md`). O `replace` (a mutação)
+    // ganhou `blocos:` porque `ContextoDaAnimacao` passou a exigir o campo —
+    // sem ele o `tsc` recusaria a mutação antes de ela chegar a rodar.
     file: PIPELINE,
     find:
       "  return narrarSincronizar(input, {\n" +
       "    videoMudoUrl,\n" +
       "    imagemCompostaUrl,\n" +
       "    gastoAcumuladoUsd: 0,\n" +
-      "    teto: tetoParaTier(input),\n" +
+      "    teto: tetoParaTier(input, segundosTotaisDoRoteiro),\n" +
       "    segundosEstimados,\n" +
       "    duracaoEscolhida,\n" +
       "    composicaoRequestId,\n" +
@@ -140,10 +155,11 @@ export const MUTANTS: Mutant[] = [
       "  return animarNarrarSincronizar(input, {\n" +
       "    imagemUrl: imagemCompostaUrl ?? videoMudoUrl,\n" +
       "    gastoAcumuladoUsd: 0,\n" +
-      "    teto: tetoParaTier(input),\n" +
+      "    teto: tetoParaTier(input, segundosTotaisDoRoteiro),\n" +
       "    tier: input.tier ?? \"normal\",\n" +
       "    segundosEstimados,\n" +
       "    duracaoEscolhida,\n" +
+      "    blocos: [{ texto: input.script, duracaoEscolhida }],\n" +
       "    composicaoRequestId,\n" +
       "  });\n" +
       "}",

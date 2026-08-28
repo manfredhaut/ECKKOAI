@@ -239,15 +239,20 @@ export async function checkUsageAttributionPolicy(): Promise<UsageAttributionChe
 
   // -------------------------------------------------------------------------
   // G-5 — ausência de medição vira null, por EXECUÇÃO
+  //
+  // BLOCO FRACOES-1, 28/08: `fal` DEIXOU de ser o exemplo de "sem medição" —
+  // `costFor` passou a estimar custo para ela também (documentado, não
+  // medido — ver `providerCost.ts`). O exemplo passa a ser `did`, vendor de
+  // avatar que nunca ganhou medição nem estimativa nenhuma.
   // -------------------------------------------------------------------------
-  const semMedicao = custoConhecidoUsd(10, "fal");
+  const semMedicao = custoConhecidoUsd(10, "did");
   const comMedicao = custoConhecidoUsd(10, "heygen");
   if (semMedicao !== null) {
     failures.push(
-      `atribuição: custo desconhecido virou zero — \`custoConhecidoUsd(10, "fal")\` devolveu ` +
+      `atribuição: custo desconhecido virou zero — \`custoConhecidoUsd(10, "did")\` devolveu ` +
         `${JSON.stringify(semMedicao)}, esperado null. Zero se SOMA como se a chamada tivesse sido de ` +
-        "graça, e `fal` é justamente o caminho que mais gasta e o que não tem medição própria: um " +
-        "relatório de atribuição passaria a declarar gratuito o mais caro do produto.",
+        "graça, e um vendor sem medição nem estimativa não pode aparecer como se tivesse custado zero: " +
+        "um relatório de atribuição passaria a declarar gratuito um caminho que nunca foi medido.",
     );
   } else if (comMedicao === null || comMedicao <= 0) {
     // CONTROLE: sem um vendor que devolva número, "devolve null" seria verdade
@@ -259,7 +264,7 @@ export async function checkUsageAttributionPolicy(): Promise<UsageAttributionChe
     );
   } else {
     notes.push(
-      `    atribuição: custo sem medição vira null (fal) e custo medido vira número (heygen, ` +
+      `    atribuição: custo sem medição vira null (did) e custo medido vira número (heygen, ` +
         `US$ ${comMedicao.toFixed(2)} para 10 s)`,
     );
   }

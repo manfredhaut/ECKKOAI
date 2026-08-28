@@ -29,112 +29,60 @@
  * se a composição deu certo gasta uma síntese à toa.
  */
 import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { falPoll, falResult, falSubmit, falUpload } from "../providers/falClient.js";
 import { synthesizeSpeech, type VoiceTuning } from "../providers/voiceProvider.js";
+import { isFixtureMode } from "../providers/providerMode.js";
 import { logEvent } from "../log/safeLog.js";
-import { PIPELINE_TETO_USD, PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd } from "../billing/providerCost.js";
+import { PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd, tetoNormalUsd } from "../billing/providerCost.js";
 import { custoDe } from "../billing/providerPrices.js";
 import { HEYGEN_MAX_SCRIPT_CHARS, estimateSecondsFromChars } from "./scriptDuration.js";
+import { extractLastFrame, concatVideos } from "./ffmpeg.js";
+import {
+  fracionarRoteiro,
+  segundosTotaisDosBlocos,
+  ScriptFractioningError,
+  NORMAL_MAX_BLOCOS,
+  NORMAL_MAX_TARGET_SECONDS,
+  type BlocoDeAnimacao,
+} from "./scriptFractioning.js";
 import type { AspectRatio } from "../providers/videoFormat.js";
 import type { AvatarVendor } from "../providers/vendorCatalog.js";
 
 // ---------------------------------------------------------------------------
 // A RÉGUA DESTE PIPELINE — separada da do caminho HeyGen, DE PROPÓSITO
+//
+// EXTRAÍDA para `pipelineDuration.ts` no BLOCO FRACOES-1 (28/08), para que
+// `scriptFractioning.ts` (que este arquivo importa, logo acima) pudesse usar
+// estas constantes sem criar um ciclo de import com este arquivo. REEXPORTADA
+// aqui, byte a byte no NOME e no VALOR — nenhum import externo (`videos.ts`,
+// `ensaioSimulado.ts`, as guardas) precisa saber que o endereço mudou.
 // ---------------------------------------------------------------------------
-
-/**
- * As únicas durações que o `wan/v2.6/image-to-video/flash` aceita.
- *
- * MEDIDO por leitura do schema do fornecedor (BUSARELLOT-DURACAO-1, 20/08):
- * `duration` é `DurationEnum`, tipo STRING, valores `"5"`, `"10"` ou `"15"`,
- * default `"5"` — <https://fal.ai/models/wan/v2.6/image-to-video/flash/api>,
- * citação verbatim: *"Duration of the generated video in seconds. Choose
- * between 5, 10 or 15 seconds."* Não há emenda de clipes: um roteiro que
- * exija mais de 15 s é RECUSADO, não esticado. Ver `escolherDuracao`.
- *
- * ⚠️ O Seedance 2.5 (pesquisado no BLOCO SEEDANCE-1, 21/08, tier "Premium")
- * documenta `duration` como FAIXA contínua `4-30`, não um enum fechado — se
- * o motor do Premium um dia usar isso, `PIPELINE_DURATION_OPTIONS` deixa de
- * ser o teto do fornecedor e passa a ser puramente nosso. Não é o caso hoje.
- */
-export const PIPELINE_DURATION_OPTIONS = [5, 10, 15] as const;
-export type PipelineDuration = (typeof PIPELINE_DURATION_OPTIONS)[number];
-
-/** A maior opção — o teto absoluto desta fase, sem emenda de clipes. */
-export const PIPELINE_DURACAO_MAXIMA: PipelineDuration =
-  PIPELINE_DURATION_OPTIONS[PIPELINE_DURATION_OPTIONS.length - 1];
-
-/**
- * 10,89 caracteres por segundo.
- *
- * ⚠️ **NÃO É a `CHARS_PER_SECOND` de `scriptDuration.ts` (12,8151) e NÃO se
- * mistura com `VOICE_SPEED` (0,85).** Aquela régua tem DOIS fatores e foi
- * derivada de uma geração da HeyGen a velocidade 1.0; esta é o número desta
- * fase, de um fator só. Multiplicar uma pela outra, ou "recalibrar" uma com o
- * fator da outra, produz um terceiro número que não descreve caminho nenhum —
- * é o erro que a anotação de `VOICE_SPEED` já teve de impedir uma vez.
- *
- * Não arredondar: 10,89 é o valor, não uma aproximação de 11.
- */
-export const PIPELINE_CHARS_PER_SECOND = 10.89;
-
-/**
- * A DISPERSÃO do ritmo, 14,36%.
- *
- * ⚠️ **NÃO VERIFICADO NESTE REPOSITÓRIO.** O número foi FIXADO no desenho do
- * B0+B1 e é o que o teto abaixo consome; a medição que o produziu não está
- * registrada aqui, e nenhuma tabela deste projeto a reproduz — as seis
- * gerações do caminho HeyGen (CLAUDE.md) dispersam ~12%, sobre outra régua.
- * Fica declarado e nomeado justamente para que a origem possa ser cobrada
- * depois: um `95` solto não teria onde pendurar a dúvida.
- */
-export const PIPELINE_RITMO_DISPERSAO = 0.1436;
-
-/**
- * O teto de caracteres, POR DURAÇÃO — DERIVADO, nunca digitado.
- *
- * `floor(duração × 10,89 car/s ÷ 1,1436)`. O divisor é a dispersão acima: o
- * teto é o que cabe no clipe **no pior caso do ritmo**, não no ritmo médio.
- * Dividir (e não multiplicar por 0,8564) é o que descreve o caso ruim: se a
- * voz sair 14,36% mais LENTA, o texto ainda cabe na duração escolhida.
- *
- * A derivação é a razão de ser desta linha. Um literal continuaria parecendo
- * certo depois de `PIPELINE_DURATION_OPTIONS` ou `PIPELINE_CHARS_PER_SECOND`
- * mudarem — e o defeito só apareceria na etapa 4, com a imagem e o vídeo já
- * pagos. É o mesmo motivo pelo qual `maxScriptChars()` do caminho HeyGen é uma
- * função e não o número 1960.
- *
- *   5 s → floor( 5 × 10,89 ÷ 1,1436) =  47 caracteres (fala até ~4,32 s)
- *  10 s → floor(10 × 10,89 ÷ 1,1436) =  95 caracteres (fala até ~8,72 s)
- *  15 s → floor(15 × 10,89 ÷ 1,1436) = 142 caracteres (fala até ~13,04 s)
- */
-export const PIPELINE_MAX_CHARS_POR_DURACAO: Record<PipelineDuration, number> = Object.fromEntries(
-  PIPELINE_DURATION_OPTIONS.map((duracao) => [
-    duracao,
-    Math.floor((duracao * PIPELINE_CHARS_PER_SECOND) / (1 + PIPELINE_RITMO_DISPERSAO)),
-  ]),
-) as Record<PipelineDuration, number>;
-
-/** O maior teto de caracteres desta fase — o da maior duração disponível. */
-export const PIPELINE_MAX_CHARS: number = PIPELINE_MAX_CHARS_POR_DURACAO[PIPELINE_DURACAO_MAXIMA];
-
-/**
- * A MENOR duração de `PIPELINE_DURATION_OPTIONS` que comporta o roteiro —
- * pela mesma régua pessimista de `PIPELINE_MAX_CHARS_POR_DURACAO`. `null`
- * quando nem a maior (15 s) comporta: este pipeline não emenda clipes, então
- * um roteiro longo demais é RECUSADO, não esticado. Ver `conferirRoteiro`.
- */
-export function escolherDuracao(chars: number): PipelineDuration | null {
-  for (const duracao of PIPELINE_DURATION_OPTIONS) {
-    if (chars <= PIPELINE_MAX_CHARS_POR_DURACAO[duracao]) return duracao;
-  }
-  return null;
-}
+export {
+  PIPELINE_DURATION_OPTIONS,
+  PIPELINE_DURACAO_MAXIMA,
+  PIPELINE_CHARS_PER_SECOND,
+  PIPELINE_RITMO_DISPERSAO,
+  PIPELINE_MAX_CHARS_POR_DURACAO,
+  PIPELINE_MAX_CHARS,
+  escolherDuracao,
+  type PipelineDuration,
+} from "./pipelineDuration.js";
+import {
+  PIPELINE_DURATION_OPTIONS,
+  PIPELINE_DURACAO_MAXIMA,
+  PIPELINE_CHARS_PER_SECOND,
+  PIPELINE_RITMO_DISPERSAO,
+  escolherDuracao,
+  type PipelineDuration,
+} from "./pipelineDuration.js";
 
 // Os preços e o teto vivem em `billing/providerCost.ts`: a guarda de custo
 // cobra que todo número de dinheiro more lá, e duas cópias de uma medição
 // divergem em silêncio.
-export { PRECOS_FAL, PIPELINE_TETO_USD, PIPELINE_TETO_USD_PREMIUM, custoSeedanceUsd } from "../billing/providerCost.js";
+export { PRECOS_FAL, PIPELINE_TETO_USD_PREMIUM, custoSeedanceUsd, tetoNormalUsd } from "../billing/providerCost.js";
 
 /**
  * O NÍVEL escolhido pelo tenant, dentro do caminho da fal — BLOCO A, 21/08.
@@ -203,10 +151,17 @@ export function vendorRequiredByTier(tier: VideoTier): AvatarVendor {
  * 5.000 caracteres estimam ≈459 s, não 600. Um vídeo de 600 s não existe
  * neste tier hoje, mesmo o número aparecendo como teto "de dinheiro".
  *
- * "normal"/"premium" (fal): `PIPELINE_DURACAO_MAXIMA` (15 s) — o enum que o
- * `wan/v2.6/image-to-video/flash` aceita, "não emenda clipes" (ver
- * `PIPELINE_DURATION_OPTIONS`). Nada no roteiro muda isso: é o motor que
- * não anima mais que 15 s por clipe, ponto.
+ * "premium" (fal/Seedance): `PIPELINE_DURACAO_MAXIMA` (15 s) — o enum que o
+ * motor aceita POR CHAMADA, "não emenda clipes" (ver
+ * `PIPELINE_DURATION_OPTIONS`). Fracionamento não foi estendido a este tier
+ * nesta rodada (BLOCO FRACOES-1, 28/08 — ver `docs-internal/plano-fracoes-2026-08-28.md`,
+ * escopo explícito "só Normal por enquanto").
+ *
+ * "normal" (fal/Wan): `NORMAL_MAX_TARGET_SECONDS` (120 s = 8 blocos de 15 s)
+ * desde o BLOCO FRACOES-1 — ANTES disso era o mesmo teto de UM bloco do
+ * Premium. `fracionarRoteiro()` é quem de fato decide, roteiro a roteiro, se
+ * o pedido cabe; este número é só o TETO SUPERIOR que a tela pode prometer
+ * antes de qualquer roteiro existir.
  *
  * Existe para a tabela de referência de custo (`/video-cost-reference`)
  * distinguir "não sabemos o preço" (`sem medição`, fal em qualquer
@@ -214,7 +169,9 @@ export function vendorRequiredByTier(tier: VideoTier): AvatarVendor {
  * (qualquer ponto acima deste teto, nos dois vendors).
  */
 export function maxReachableSecondsForTier(tier: VideoTier): number {
-  return tier === "simples" ? estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS) : PIPELINE_DURACAO_MAXIMA;
+  if (tier === "simples") return estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS);
+  if (tier === "premium") return PIPELINE_DURACAO_MAXIMA;
+  return NORMAL_MAX_TARGET_SECONDS;
 }
 
 /** Teto do laço de polling. Ver `aguardarConclusao`. */
@@ -631,10 +588,11 @@ export interface FalPipelineInput {
   pollTimeoutMs?: number;
   pollIntervalMs?: number;
   /**
-   * Teto de gasto PREVISTO. Default: `PIPELINE_TETO_USD` para o tier
-   * "normal", `PIPELINE_TETO_USD_PREMIUM` para o "premium" — ver `tier`
-   * acima. Passar isto explícito SOBRESCREVE a escolha por tier; hoje só a
-   * guarda faz isso.
+   * Teto de gasto PREVISTO. Default: `tetoNormalUsd(segundosTotais)` para o
+   * tier "normal" (fórmula sobre a duração real da corrida, desde o BLOCO
+   * FRACOES-1), `PIPELINE_TETO_USD_PREMIUM` para o "premium" — ver `tier`
+   * acima e `tetoParaTier`. Passar isto explícito SOBRESCREVE a escolha por
+   * tier; hoje só a guarda faz isso.
    */
   tetoDeGastoUsd?: number;
   /**
@@ -689,36 +647,42 @@ export interface FalPipelineResult {
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * O TETO desta corrida, pelo `tier` — BLOCO A.
+ * O TETO desta corrida, pelo `tier` — BLOCO A, com FÓRMULA em vez de
+ * constante fixa para "normal" desde o BLOCO FRACOES-1 (28/08).
  *
  * `input.tetoDeGastoUsd` explícito sempre vence (hoje só a guarda o usa). Sem
- * ele, o tier decide: `PIPELINE_TETO_USD_PREMIUM` para "premium",
- * `PIPELINE_TETO_USD` (o default de sempre) para "normal" — inclusive
- * quando `tier` não foi passado, que é o comportamento de toda corrida
- * anterior ao BLOCO A.
+ * ele: `PIPELINE_TETO_USD_PREMIUM` para "premium" (inalterado); para
+ * "normal" (inclusive quando `tier` não foi passado — comportamento de toda
+ * corrida anterior ao BLOCO A), `tetoNormalUsd(segundosTotais)` —
+ * `providerCost.ts`, fórmula sobre a duração REAL que esta corrida vai
+ * gerar (a soma dos blocos, não um número fixo).
  *
- * Aplicado a partir de `animar` (via `contexto.teto`, dentro de
- * `animarNarrarSincronizar`) — NÃO na etapa `compor` de `runFalPipeline`,
- * que continua sob `PIPELINE_TETO_USD` fixo. Isso é seguro porque `compor`
- * custa sempre US$ 0,08 (mesmo preço em qualquer tier): o teto ali nunca
- * precisou saber de tier, e só a partir de `animar` os preços divergem o
- * bastante (Wan × Seedance, ~18,5×) para o teto importar. Manter `compor`
- * no teto fixo também preserva as guardas que já ancoravam aquela linha
- * antes do BLOCO A — ver `checkFalGenerationPathPolicy.ts`.
+ * `segundosTotais` é OBRIGATÓRIO para "normal" a partir desta rodada: quem
+ * chama (`runFalPipeline`/`runFalPipelineDaImagem`/`runFalPipelineDoVideoMudo`)
+ * já fracionou o roteiro antes de chegar aqui, então o número sempre existe.
+ * Sem ele, cai no pior caso de UM bloco (`PIPELINE_DURACAO_MAXIMA`) — o
+ * mesmo teto que existia antes desta rodada, para nenhuma chamada antiga
+ * (guardas, sondas) quebrar por omitir o campo novo.
  */
-function tetoParaTier(input: Pick<FalPipelineInput, "tetoDeGastoUsd" | "tier">): number {
+function tetoParaTier(
+  input: Pick<FalPipelineInput, "tetoDeGastoUsd" | "tier">,
+  segundosTotais?: number,
+): number {
   if (input.tetoDeGastoUsd !== undefined) return input.tetoDeGastoUsd;
-  return input.tier === "premium" ? PIPELINE_TETO_USD_PREMIUM : PIPELINE_TETO_USD;
+  if (input.tier === "premium") return PIPELINE_TETO_USD_PREMIUM;
+  return tetoNormalUsd(segundosTotais ?? PIPELINE_DURACAO_MAXIMA);
 }
 
 /**
- * O roteiro cabe em alguma das três durações — e em qual delas?
+ * O roteiro cabe em UM bloco — e em qual duração?
  *
  * Escolhe a MENOR de `PIPELINE_DURATION_OPTIONS` que comporta o texto
  * (`escolherDuracao`) e recusa ANTES de qualquer chamada quando nem a maior
- * (15 s) comporta: um roteiro grande demais só se descobriria na etapa 4, com
- * a imagem e o vídeo já pagos. Este pipeline não emenda clipes — a recusa é a
- * fronteira, não uma etapa a mais.
+ * (15 s) comporta. **Só para tier "premium"** desde o BLOCO FRACOES-1
+ * (28/08) — para "normal", quem decide é `conferirRoteiroENormal()` logo
+ * abaixo, que sabe fracionar. Mantida com este comportamento (e este nome)
+ * porque é o que `probeFalPipeline.ts` e várias guardas do Premium/sonda já
+ * chamam esperando exatamente isto: um roteiro, uma duração, ou uma recusa.
  */
 export function conferirRoteiro(
   script: string,
@@ -736,6 +700,52 @@ export function conferirRoteiro(
     );
   }
   return { chars, segundosEstimados: chars / PIPELINE_CHARS_PER_SECOND, duracaoEscolhida };
+}
+
+export interface RoteiroConferidoENormal {
+  chars: number;
+  segundosEstimados: number;
+  /** Do PRIMEIRO bloco — só para os call sites que ainda esperam um valor único (diário, logs). */
+  duracaoEscolhida: PipelineDuration;
+  blocos: BlocoDeAnimacao[];
+  /** Soma das durações escolhidas — o vídeo mudo total que os blocos produzem. */
+  segundosTotais: number;
+}
+
+/**
+ * O roteiro cabe em QUANTOS blocos, de que duração cada — tier "normal",
+ * BLOCO FRACOES-1 (28/08). Item 1 do plano
+ * (`docs-internal/plano-fracoes-2026-08-28.md`): empacota por fronteira de
+ * frase (`fracionarRoteiro`) e recusa ANTES de qualquer chamada quando uma
+ * frase é grande demais para UM bloco ou o total excede
+ * `NORMAL_MAX_BLOCOS`/`NORMAL_MAX_TARGET_SECONDS` — a mesma garantia de
+ * `conferirRoteiro`, só que sobre o roteiro FRACIONADO em vez de um bloco só.
+ *
+ * `ScriptFractioningError` é envolvido em `FalPipelineError` para que os
+ * chamadores (rotas, sonda) continuem tratando um tipo de erro só para
+ * "recusa antes de pagar" — `scriptFractioning.ts` não pode importar
+ * `FalPipelineError` daqui sem recriar o ciclo que a extração de
+ * `pipelineDuration.ts` evitou.
+ */
+export function conferirRoteiroENormal(script: string): RoteiroConferidoENormal {
+  const chars = script.length;
+  let blocos: BlocoDeAnimacao[];
+  try {
+    blocos = fracionarRoteiro(script);
+  } catch (err) {
+    if (err instanceof ScriptFractioningError) {
+      throw new FalPipelineError(err.message);
+    }
+    throw err;
+  }
+  const segundosTotais = segundosTotaisDosBlocos(blocos);
+  return {
+    chars,
+    segundosEstimados: chars / PIPELINE_CHARS_PER_SECOND,
+    duracaoEscolhida: blocos[0].duracaoEscolhida,
+    blocos,
+    segundosTotais,
+  };
 }
 
 /**
@@ -998,12 +1008,26 @@ async function etapaNaFal(
 }
 
 export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipelineResult> {
-  const { chars, segundosEstimados, duracaoEscolhida } = conferirRoteiro(input.script);
+  // BLOCO FRACOES-1, 28/08 — "premium" continua no caminho de UM bloco só
+  // (fracionamento fora de escopo para este tier, ver `NORMAL_MAX_TARGET_SECONDS`);
+  // "normal" (inclusive `tier` ausente — comportamento de toda corrida
+  // anterior a este bloco) passa pelo fracionador. A RECUSA por roteiro
+  // grande demais acontece AQUI, antes de `publicarEntradas` — nenhuma
+  // chamada de rede acontece antes desta linha.
+  const ehPremium = input.tier === "premium";
+  const roteiroConferido = ehPremium ? conferirRoteiro(input.script) : conferirRoteiroENormal(input.script);
+  const { chars, segundosEstimados, duracaoEscolhida } = roteiroConferido;
+  const blocosDeAnimacao: BlocoDeAnimacao[] = ehPremium
+    ? [{ texto: input.script, duracaoEscolhida }]
+    : (roteiroConferido as RoteiroConferidoENormal).blocos;
+  const segundosTotaisDoRoteiro = ehPremium ? duracaoEscolhida : (roteiroConferido as RoteiroConferidoENormal).segundosTotais;
   logEvent("info", "fal_pipeline_iniciado", {
     chars,
     segundosEstimados,
     duracaoEscolhida,
     charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+    blocos: blocosDeAnimacao.length,
+    segundosTotais: segundosTotaisDoRoteiro,
   });
 
   // --- 0. PUBLICAR ---------------------------------------------------------
@@ -1012,7 +1036,14 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
   const urlsDasEntradas = await publicarEntradas(input);
 
   // --- 1. COMPOR -----------------------------------------------------------
-  const teto = input.tetoDeGastoUsd ?? PIPELINE_TETO_USD;
+  //
+  // O teto AQUI é o mesmo de `animar` em diante (`tetoParaTier`, sobre o
+  // TOTAL da corrida) — desde o BLOCO FRACOES-1. Antes deste bloco `compor`
+  // vivia sob `PIPELINE_TETO_USD` fixo porque custa sempre US$ 0,08 e nenhum
+  // teto plausível o recusaria; isso continua verdade, então trocar de
+  // constante para fórmula aqui não muda nenhum veredito — só unifica a
+  // fonte do número.
+  const teto = tetoParaTier(input, segundosTotaisDoRoteiro);
   let gastoPrevistoUsd = 0;
 
   const custoComporUsd = await custoDaEtapa(ENDPOINT_COMPOR, 1, PRECOS_FAL.comporUsd, "compor");
@@ -1058,17 +1089,18 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
     });
   }
 
-  // O TETO de `animar` em diante é o do TIER, não o de `compor` acima — ver
-  // `tetoParaTier`. `compor` custa sempre US$ 0,08, tier nenhum muda isso, e
-  // é por isso que o teto ACIMA (fixo, `PIPELINE_TETO_USD`) nunca precisou
-  // saber de tier — só a partir daqui o preço diverge o bastante para importar.
+  // O TETO de `animar` em diante é o MESMO desta corrida (sobre o total) —
+  // ver `tetoParaTier`. Repetir a chamada com o mesmo `segundosTotaisDoRoteiro`
+  // é intencional: o teto não muda entre `compor` e `animar`, só o
+  // ACUMULADO conferido contra ele cresce.
   return animarNarrarSincronizar(input, {
     imagemUrl: String(imagemUrl),
     gastoAcumuladoUsd: gastoPrevistoUsd,
-    teto: tetoParaTier(input),
+    teto: tetoParaTier(input, segundosTotaisDoRoteiro),
     tier: input.tier ?? "normal",
     segundosEstimados,
     duracaoEscolhida,
+    blocos: blocosDeAnimacao,
     composicaoRequestId: composicao.requestId,
   });
 }
@@ -1097,22 +1129,35 @@ export async function runFalPipelineDaImagem(
   /** O `request_id` da composição que produziu esta imagem, quando conhecido. */
   composicaoRequestId = "",
 ): Promise<FalPipelineResult> {
-  const { chars, segundosEstimados, duracaoEscolhida } = conferirRoteiro(input.script);
+  // Este É o call site real de produto (`/videos/:id/approve` → aqui) — é
+  // aqui, e não em `runFalPipeline`, que o fracionamento em blocos entra em
+  // jogo de verdade hoje, porque a criação SEMPRE para em `compor`
+  // (`pararApos: "compor"`, o default do produto).
+  const ehPremium = input.tier === "premium";
+  const roteiroConferido = ehPremium ? conferirRoteiro(input.script) : conferirRoteiroENormal(input.script);
+  const { chars, segundosEstimados, duracaoEscolhida } = roteiroConferido;
+  const blocosDeAnimacao: BlocoDeAnimacao[] = ehPremium
+    ? [{ texto: input.script, duracaoEscolhida }]
+    : (roteiroConferido as RoteiroConferidoENormal).blocos;
+  const segundosTotaisDoRoteiro = ehPremium ? duracaoEscolhida : (roteiroConferido as RoteiroConferidoENormal).segundosTotais;
   logEvent("info", "fal_pipeline_retomado", {
     chars,
     segundosEstimados,
     duracaoEscolhida,
     imagemCompostaUrl,
     composicaoRequestId: composicaoRequestId || null,
+    blocos: blocosDeAnimacao.length,
+    segundosTotais: segundosTotaisDoRoteiro,
   });
 
   return animarNarrarSincronizar(input, {
     imagemUrl: imagemCompostaUrl,
     gastoAcumuladoUsd: 0,
-    teto: tetoParaTier(input),
+    teto: tetoParaTier(input, segundosTotaisDoRoteiro),
     tier: input.tier ?? "normal",
     segundosEstimados,
     duracaoEscolhida,
+    blocos: blocosDeAnimacao,
     composicaoRequestId,
   });
 }
@@ -1127,6 +1172,15 @@ interface ContextoDaAnimacao {
   /** A duração escolhida por `conferirRoteiro` — vai ao motor em `duration`. */
   duracaoEscolhida: PipelineDuration;
   composicaoRequestId: string;
+  /**
+   * Os blocos de animação — BLOCO FRACOES-1, 28/08. Um elemento só para o
+   * caminho de sempre (Premium, ou Normal que cabe num bloco); mais de um
+   * para Normal fracionado. `animarNarrarSincronizar` decide o caminho pelo
+   * TAMANHO desta lista, não pelo tier sozinho — Premium sempre chega com
+   * um elemento porque `runFalPipeline`/`runFalPipelineDaImagem` nunca o
+   * fracionam (fora de escopo, ver `NORMAL_MAX_TARGET_SECONDS`).
+   */
+  blocos: BlocoDeAnimacao[];
 }
 
 /**
@@ -1206,13 +1260,20 @@ function corpoAnimarSeedance(
   };
 }
 
-async function animarNarrarSincronizar(
+/**
+ * UM bloco de animação — extraída do laço para os dois caminhos (um bloco só
+ * e vários blocos) chamarem o MESMO código. `imagemDeEntrada` é a imagem
+ * composta no bloco 0 e o ÚLTIMO QUADRO do bloco anterior em todo bloco
+ * seguinte — ver `imagemDeEntradaDoBloco` logo abaixo.
+ */
+async function animarUmBloco(
   input: FalPipelineInput,
-  contexto: ContextoDaAnimacao,
-): Promise<FalPipelineResult> {
-  const { imagemUrl, teto, tier, segundosEstimados, duracaoEscolhida, composicaoRequestId } = contexto;
-  let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
-
+  tier: PipelineTier,
+  imagemDeEntrada: string,
+  duracaoEscolhida: PipelineDuration,
+  gastoAcumuladoUsd: number,
+  teto: number,
+): Promise<{ videoUrl: string; requestId: string; gastoPrevistoUsd: number }> {
   // O CUSTO e o ENDPOINT dependem do tier — ver `enderecoAnimarParaTier` e
   // `custoSeedanceUsd`. "normal" (Wan) é tarifado por segundo; "premium"
   // (Seedance) é tarifado por CLIPE, pela fórmula de tokens.
@@ -1224,47 +1285,169 @@ async function animarNarrarSincronizar(
     custoAnimarPeloCodigo,
     "animar",
   );
-  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoAnimarUsd, teto, "animar");
+  const gastoPrevistoUsd = autorizarGasto(gastoAcumuladoUsd, custoAnimarUsd, teto, "animar");
   await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);
 
   const corpoDeAnimar =
     tier === "premium"
-      ? corpoAnimarSeedance(input, imagemUrl, duracaoEscolhida)
-      : corpoAnimarWan(input, imagemUrl, duracaoEscolhida);
+      ? corpoAnimarSeedance(input, imagemDeEntrada, duracaoEscolhida)
+      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida);
 
   const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);
-  const videoMudoUrl = animacao.saida?.video?.url;
-  if (!videoMudoUrl) {
+  const videoUrl = animacao.saida?.video?.url;
+  if (!videoUrl) {
     throw new FalPipelineError(
       "fal: a animação concluiu sem devolver vídeo. O corpo bruto está gravado na etapa.",
     );
   }
+  return { videoUrl: String(videoUrl), requestId: animacao.requestId, gastoPrevistoUsd };
+}
 
-  // --- PARADA DO MODO B — FASE 2, 21/08 -------------------------------------
+/**
+ * O ÚLTIMO QUADRO do bloco anterior, publicado na fal como nova imagem de
+ * entrada — item 2 do plano (`docs-internal/plano-fracoes-2026-08-28.md`),
+ * técnica PROVADA no POC (`POC-MOTORES/05-fracoes/`, 21/08): extrai
+ * localmente (ffmpeg lê a URL remota direto), sobe via `falUpload`, limpa o
+ * arquivo temporário SEMPRE (inclusive se o upload falhar).
+ *
+ * ⚠️ FIXTURE, ANTES do ffmpeg — mesmo princípio de toda função exportada de
+ * `falClient.ts`: em fixture, `videoAnteriorUrl` é `FIXTURE_VIDEO_URL`
+ * (`https://exemplo.fal.invalido/...`), um host que não existe de propósito
+ * (ver o comentário de `FIXTURE_BASE`, falClient.ts) — `ffmpeg -i` sobre ele
+ * falharia sempre, e falharia por um motivo que não tem nada a ver com o que
+ * esta função testa. `falUpload` já é fixture-safe sozinho; chamá-lo direto
+ * com um buffer mínimo obtém uma URL de fixture válida sem tocar ffmpeg nem
+ * rede nenhuma.
+ */
+async function imagemDeEntradaDoProximoBloco(apiKeyFal: string, videoAnteriorUrl: string): Promise<string> {
+  if (isFixtureMode()) {
+    return await falUpload(apiKeyFal, Buffer.from("fixture-ultimo-quadro"), "image/png");
+  }
+  const dir = await mkdtemp(path.join(tmpdir(), "fal-frame-"));
+  const framePath = path.join(dir, "ultimo-quadro.png");
+  try {
+    await extractLastFrame(videoAnteriorUrl, framePath);
+    const bytes = await readFile(framePath);
+    return await falUpload(apiKeyFal, bytes, "image/png");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * CONCATENA os N vídeos mudos dos blocos e devolve uma URL da fal — item 3
+ * do plano. Sobe de volta para a fal (em vez de servir localmente) porque é
+ * assim que o contrato de retorno desta função já funciona há muito tempo
+ * (`videoMudoUrl` é sempre uma URL fetchable, nunca bytes) — `/approve`
+ * (routes/videos.ts) já sabe baixar e persistir qualquer URL que chegue
+ * aqui, fal ou local, via `persistRemoteArtifact`.
+ *
+ * ⚠️ FIXTURE, ANTES do ffmpeg — mesma razão de `imagemDeEntradaDoProximoBloco`
+ * acima: os N `videoUrls` em fixture são todos o MESMO `FIXTURE_VIDEO_URL`
+ * (host que não existe de propósito), e `ffmpeg -filter_complex` sobre eles
+ * falharia sempre, por um motivo alheio ao que se quer testar aqui.
+ */
+async function concatenarBlocosEPublicar(apiKeyFal: string, videoUrls: string[]): Promise<string> {
+  if (isFixtureMode()) {
+    return await falUpload(apiKeyFal, Buffer.from(`fixture-concat-${videoUrls.length}-blocos`), "video/mp4");
+  }
+  const dir = await mkdtemp(path.join(tmpdir(), "fal-concat-"));
+  const outputPath = path.join(dir, "concatenado.mp4");
+  try {
+    await concatVideos(videoUrls, outputPath);
+    const bytes = await readFile(outputPath);
+    return await falUpload(apiKeyFal, bytes, "video/mp4");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function animarNarrarSincronizar(
+  input: FalPipelineInput,
+  contexto: ContextoDaAnimacao,
+): Promise<FalPipelineResult> {
+  const { imagemUrl, teto, tier, segundosEstimados, duracaoEscolhida, composicaoRequestId, blocos } = contexto;
+  let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
+
+  // --- ANIMAR — UM bloco (Premium, ou Normal que já cabia em 1) ------------
   //
-  // `pararApos: "animar"` encerra a corrida logo aqui, com o vídeo MUDO
-  // gravado e nada de narrar/sincronizar disparado ainda. É o mesmo mecanismo
-  // que `pararApos: "compor"` já usa para a aprovação da imagem — ver o
-  // comentário equivalente mais acima nesta função — só que um passo adiante:
-  // agora é o vídeo animado, sem voz, que espera o clique humano antes das
-  // duas etapas mais caras da corrida (narrar + sincronizar).
+  // Caminho IDÊNTICO, byte a byte, ao que existia antes do BLOCO FRACOES-1:
+  // uma chamada a `animar()`, sem concat nem upload extra. É o que garante
+  // que nenhum vídeo de 15 s ou menos (Normal ou Premium) muda de
+  // comportamento com este bloco.
+  if (blocos.length <= 1) {
+    const bloco = await animarUmBloco(input, tier, imagemUrl, duracaoEscolhida, gastoPrevistoUsd, teto);
+    gastoPrevistoUsd = bloco.gastoPrevistoUsd;
+
+    if (input.pararApos === "animar") {
+      // --- PARADA DO MODO B — FASE 2, 21/08 -----------------------------
+      //
+      // `pararApos: "animar"` encerra a corrida logo aqui, com o vídeo MUDO
+      // gravado e nada de narrar/sincronizar disparado ainda. Mesmo
+      // mecanismo que `pararApos: "compor"` já usa para a imagem, um passo
+      // adiante.
+      return pararAqui("animar", gastoPrevistoUsd, duracaoEscolhida, {
+        imagemCompostaUrl: imagemUrl,
+        videoMudoUrl: bloco.videoUrl,
+        requestIds: { compor: composicaoRequestId, animar: bloco.requestId, sincronizar: "" },
+      });
+    }
+
+    return narrarSincronizar(input, {
+      videoMudoUrl: bloco.videoUrl,
+      imagemCompostaUrl: imagemUrl,
+      gastoAcumuladoUsd: gastoPrevistoUsd,
+      teto,
+      segundosEstimados,
+      duracaoEscolhida,
+      composicaoRequestId,
+      animarRequestId: bloco.requestId,
+    });
+  }
+
+  // --- ANIMAR — VÁRIOS blocos (Normal fracionado) --------------------------
+  //
+  // Item 2 do plano: `compor` já rodou UMA VEZ (a imagem aprovada, `imagemUrl`
+  // — nunca refeita aqui). O bloco 0 anima a partir DELA; cada bloco seguinte
+  // anima a partir do ÚLTIMO QUADRO do bloco anterior — nunca da imagem
+  // original de novo, nunca recomposta.
+  const videoUrls: string[] = [];
+  const requestIds: string[] = [];
+  for (let i = 0; i < blocos.length; i++) {
+    const imagemDeEntrada = i === 0 ? imagemUrl : await imagemDeEntradaDoProximoBloco(input.apiKeyFal, videoUrls[i - 1]);
+    const bloco = await animarUmBloco(input, tier, imagemDeEntrada, blocos[i].duracaoEscolhida, gastoPrevistoUsd, teto);
+    gastoPrevistoUsd = bloco.gastoPrevistoUsd;
+    videoUrls.push(bloco.videoUrl);
+    requestIds.push(bloco.requestId);
+  }
+
+  // Item 3 do plano: concatena os N mudos numa saída só. É ESTA url que
+  // segue como "o vídeo mudo" para o resto do pipeline — narrar+sincronizar
+  // (Ponto 2 de aprovação) não sabem, e não precisam saber, que ela veio de
+  // vários blocos.
+  const videoMudoUrl = await concatenarBlocosEPublicar(input.apiKeyFal, videoUrls);
+  logEvent("info", "fal_pipeline_blocos_concatenados", {
+    blocos: blocos.length,
+    segundosTotais: blocos.reduce((soma, b) => soma + b.duracaoEscolhida, 0),
+  });
+
   if (input.pararApos === "animar") {
     return pararAqui("animar", gastoPrevistoUsd, duracaoEscolhida, {
       imagemCompostaUrl: imagemUrl,
-      videoMudoUrl: String(videoMudoUrl),
-      requestIds: { compor: composicaoRequestId, animar: animacao.requestId, sincronizar: "" },
+      videoMudoUrl,
+      requestIds: { compor: composicaoRequestId, animar: requestIds.join(","), sincronizar: "" },
     });
   }
 
   return narrarSincronizar(input, {
-    videoMudoUrl: String(videoMudoUrl),
+    videoMudoUrl,
     imagemCompostaUrl: imagemUrl,
     gastoAcumuladoUsd: gastoPrevistoUsd,
     teto,
     segundosEstimados,
     duracaoEscolhida,
     composicaoRequestId,
-    animarRequestId: animacao.requestId,
+    animarRequestId: requestIds.join(","),
   });
 }
 
@@ -1396,10 +1579,20 @@ export async function runFalPipelineDoVideoMudo(
   /** O `request_id` da animação que produziu este vídeo mudo. */
   animarRequestId = "",
 ): Promise<FalPipelineResult> {
-  const { segundosEstimados, duracaoEscolhida } = conferirRoteiro(input.script);
+  // BLOCO FRACOES-1 — `conferirRoteiro` (única duração) lançaria para
+  // qualquer roteiro Normal fracionado (>142 caracteres), mesmo aqui, que
+  // só narra+sincroniza e não anima nada. Este passo já recebeu o vídeo
+  // mudo PRONTO (possivelmente concatenado de vários blocos) — o que falta
+  // saber do roteiro é só a duração TOTAL, para o teto, não uma duração de
+  // bloco único.
+  const ehPremium = input.tier === "premium";
+  const roteiroConferido = ehPremium ? conferirRoteiro(input.script) : conferirRoteiroENormal(input.script);
+  const { segundosEstimados, duracaoEscolhida } = roteiroConferido;
+  const segundosTotaisDoRoteiro = ehPremium ? duracaoEscolhida : (roteiroConferido as RoteiroConferidoENormal).segundosTotais;
   logEvent("info", "fal_pipeline_retomado_do_video_mudo", {
     segundosEstimados,
     duracaoEscolhida,
+    segundosTotais: segundosTotaisDoRoteiro,
     videoMudoUrl,
     composicaoRequestId: composicaoRequestId || null,
     animarRequestId: animarRequestId || null,
@@ -1409,7 +1602,7 @@ export async function runFalPipelineDoVideoMudo(
     videoMudoUrl,
     imagemCompostaUrl,
     gastoAcumuladoUsd: 0,
-    teto: tetoParaTier(input),
+    teto: tetoParaTier(input, segundosTotaisDoRoteiro),
     segundosEstimados,
     duracaoEscolhida,
     composicaoRequestId,

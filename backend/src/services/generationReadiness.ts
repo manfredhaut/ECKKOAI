@@ -53,6 +53,11 @@ import {
 // mesmo módulo que decide o que é uma cena válida, e separar os dois faria a
 // regra viver longe do tipo que ela mede.
 import { MOTION_PROMPT_MAX_CHARS, exceedsMotionPromptLimit } from "./providers/videoScene.js";
+// BLOCO FRACOES-1, 28/08 — a MESMA função que `runFalPipeline` usa para
+// decidir se um roteiro cabe no tier Normal, chamada aqui ANTES do clique,
+// para a tela poder avisar em vez de deixar a pessoa descobrir só na
+// recusa pós-débito (estornável, mas tardia).
+import { fracionarRoteiro, ScriptFractioningError } from "./video/scriptFractioning.js";
 import {
   liveGenerationAttempts,
   liveGenerationsUsed,
@@ -78,6 +83,13 @@ export type GenerationBlockerCode =
   | "no_avatar_credential"
   | "empty_script"
   | "script_too_long"
+  /**
+   * BLOCO FRACOES-1, 28/08 — tier Normal, fracionamento. Diferente de
+   * `script_too_long` (teto GLOBAL, régua da HeyGen): este é o teto REAL do
+   * tier Normal (120 s / 8 blocos de 15 s, régua da fal) — bem mais apertado,
+   * e um roteiro pode passar no teto global e falhar neste.
+   */
+  | "script_too_long_for_normal_tier"
   /**
    * A Interpretação não pôde ser traduzida para o idioma do fornecedor.
    *
@@ -134,6 +146,12 @@ export interface GenerationReadinessInput {
    * teto continua sendo só `MAX_SCRIPT_SECONDS`, como sempre foi.
    */
   targetDurationSeconds?: number | null;
+  /**
+   * O NÍVEL escolhido — BLOCO FRACOES-1, 28/08. Só usado para o teto do tier
+   * Normal (fracionamento, até 120 s); ausente ou "simples"/"premium" não
+   * muda nada do que já existia. Ver `docs-internal/plano-fracoes-2026-08-28.md`.
+   */
+  tierVideo?: "simples" | "normal" | "premium" | null;
 }
 
 export async function evaluateGenerationReadiness(
@@ -227,6 +245,25 @@ export async function evaluateGenerationReadiness(
           ". Nada foi cobrado. Encurte o roteiro ou divida em mais de um vídeo — " +
           "o texto não é cortado automaticamente para não entregar um vídeo que para no meio de uma frase.",
       });
+    } else if (input.tierVideo === "normal") {
+      // BLOCO FRACOES-1 — o teto REAL do tier Normal (fracionamento) é bem
+      // mais apertado que o teto global acima e usa outra régua (a da fal,
+      // por FRASE, não por caractere corrido). `else if`: se o roteiro já
+      // reprovou no teto global, não faz sentido também citar o do tier —
+      // a pessoa só precisa de UM motivo para agir.
+      try {
+        fracionarRoteiro(input.script);
+      } catch (err) {
+        if (err instanceof ScriptFractioningError) {
+          blockers.push({
+            code: "script_too_long_for_normal_tier",
+            status: 400,
+            message: `${err.message} Nada foi cobrado.`,
+          });
+        } else {
+          throw err;
+        }
+      }
     }
   }
 

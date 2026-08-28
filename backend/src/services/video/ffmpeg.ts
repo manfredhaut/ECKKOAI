@@ -120,3 +120,72 @@ export async function ffmpegAvailable(): Promise<{ ok: boolean; detail: string }
     return { ok: false, detail: err instanceof Error ? err.message.split("\n")[0] : String(err) };
   }
 }
+
+/**
+ * O ÚLTIMO QUADRO de um vídeo — BLOCO FRACOES-1, 28/08/2026, item 2 do plano
+ * (`docs-internal/plano-fracoes-2026-08-28.md`).
+ *
+ * `videoUrl` é lido DIRETO pelo ffmpeg (aceita `https://` como entrada) — sem
+ * baixar bytes para cá antes, porque o binário já sabe fazer isso e um
+ * download manual só duplicaria a mesma leitura de rede.
+ *
+ * A técnica: probe a duração real (`probeVideo`), busca `duração − 0,1 s`
+ * (nunca negativo) e extrai 1 quadro dali — mais confiável que `-sseof`, que
+ * em clipes muito curtos pode acabar buscando antes do início.
+ */
+export async function extractLastFrame(videoUrl: string, outputImagePath: string): Promise<void> {
+  const geometria = await probeVideo(videoUrl);
+  const buscarEm = Math.max(0, geometria.durationSeconds - 0.1);
+  await runFfmpeg(
+    [
+      "-y",
+      "-ss", String(buscarEm),
+      "-i", videoUrl,
+      "-frames:v", "1",
+      "-update", "1",
+      "-q:v", "2",
+      outputImagePath,
+    ],
+    "extractLastFrame",
+  );
+}
+
+/**
+ * CONCATENA N vídeos MUDOS numa saída só — BLOCO FRACOES-1, item 3 do plano.
+ *
+ * `videoUrls` também são lidos DIRETO por URL, um `-i` por entrada — mesma
+ * razão de `extractLastFrame`.
+ *
+ * SEMPRE usa o filtro `concat` (nunca o demuxer `concat -c copy`): o POC
+ * (`POC-MOTORES/05-fracoes/`, 21/08) MEDIU que o Wan não reproduz a mesma
+ * dimensão de pixel entre chamadas (1284×716 numa, 1286×716 noutra, mesma
+ * `resolution` pedida nas duas) — copiar direto falha ou produz vídeo
+ * quebrado nesse caso, e não há como saber ANTES se vai divergir. `scale` +
+ * `setsar=1` para a geometria do PRIMEIRO vídeo, antes do `concat`, absorve a
+ * divergência sempre, ao custo de recodificar mesmo quando as dimensões já
+ * batiam — o custo é tempo de CPU local, não dinheiro de fornecedor.
+ */
+export async function concatVideos(videoUrls: string[], outputPath: string): Promise<void> {
+  if (videoUrls.length === 0) {
+    throw new Error("concatVideos: lista de vídeos vazia — nada para concatenar.");
+  }
+  if (videoUrls.length === 1) {
+    // Um vídeo só: "concatenar" é só trazer para o formato de saída
+    // combinado, sem filtro de concat nenhum (que exigiria N>=2 entradas).
+    await runFfmpeg(["-y", "-i", videoUrls[0], "-c:v", "libx264", "-an", outputPath], "concatVideos-unico");
+    return;
+  }
+
+  const primeira = await probeVideo(videoUrls[0]);
+  const inputs = videoUrls.flatMap((url) => ["-i", url]);
+  const scaled = videoUrls
+    .map((_, i) => `[${i}:v]scale=${primeira.width}:${primeira.height},setsar=1[v${i}]`)
+    .join(";");
+  const concatInputs = videoUrls.map((_, i) => `[v${i}]`).join("");
+  const filterComplex = `${scaled};${concatInputs}concat=n=${videoUrls.length}:v=1:a=0[outv]`;
+
+  await runFfmpeg(
+    ["-y", ...inputs, "-filter_complex", filterComplex, "-map", "[outv]", "-c:v", "libx264", outputPath],
+    "concatVideos",
+  );
+}

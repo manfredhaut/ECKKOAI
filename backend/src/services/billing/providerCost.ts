@@ -207,6 +207,38 @@ export function costFor(input: {
     };
   }
 
+  // BLOCO FRACOES-1, 28/08 — a fal (tier Normal) ganha estimativa de custo
+  // pela primeira vez. `known: true` aqui é uma DECISÃO, não uma medição: ao
+  // contrário do ramo HeyGen acima (4 pontos medidos por saldo real), este
+  // número vem de `PRECOS_FAL` — preço de LISTA do painel da fal, nunca
+  // conferido contra fatura (ver o cabeçalho de `PRECOS_FAL` mais abaixo
+  // neste arquivo). Sem este ramo, `/video-cost-reference` e
+  // `/video-cost-estimate` mostrariam "sem medição" para Normal para sempre —
+  // o item A do plano de fracionamento pede o número na tela, e a alternativa
+  // (continuar devolvendo ausência) deixaria a estimativa ao vivo impossível
+  // de cumprir. A ressalva "documentado, não medido" viaja em `costBasisNote()`.
+  if (input.provider === "avatar" && input.vendor === "fal") {
+    if (input.unitType !== "seconds") {
+      return {
+        known: false,
+        reason: "unit_not_measured",
+        explanation:
+          "A estimativa da fal é por segundo de vídeo (duração-alvo); " +
+          `este consumo está em "${input.unitType}", sem estimativa correspondente.`,
+      };
+    }
+    const billedSeconds = Math.max(0, Math.floor(input.unitCount));
+    return {
+      known: true,
+      usd: custoNormalEstimadoUsd(input.unitCount),
+      // `null`, e não um número: a fal não expõe endpoint de saldo (ver
+      // `docs-internal/pipelines-tiers-2026-08-28.md`), então não há "unidade
+      // de cota do fornecedor" para reportar aqui — só dólar.
+      vendorUnits: null,
+      billedSeconds,
+    };
+  }
+
   return { known: false, reason: "never_measured", explanation: NEVER_MEASURED };
 }
 
@@ -243,7 +275,7 @@ export function custoConhecidoUsd(segundos: number, vendor: string): number | nu
  * TETO EM DÓLARES do caminho de custo CONHECIDO (hoje, só HeyGen — ver
  * `costFor` acima) — T2, 22/08/2026.
  *
- * IRMÃ pequena de `PIPELINE_TETO_USD`/`PIPELINE_TETO_USD_PREMIUM`, e não a
+ * IRMÃ pequena de `tetoNormalUsd`/`PIPELINE_TETO_USD_PREMIUM`, e não a
  * MESMA função: o pipeline da fal soma várias etapas pagas de UMA corrida
  * (compor → animar → sincronizar), e por isso `autorizarGasto`
  * (falPipeline.ts) recebe um ACUMULADO. O caminho HeyGen tem uma etapa paga
@@ -251,17 +283,23 @@ export function custoConhecidoUsd(segundos: number, vendor: string): number | nu
  * acumular: a pergunta é sempre "este vídeo, sozinho, custaria mais que o
  * teto?".
  *
- * Não recusa por VENDOR (nunca `if (vendor === "heygen")`): recusa quando
- * `costFor` devolve um custo CONHECIDO acima do teto, e fica muda quando não
- * há medição — a mesma decisão que `costFor` já toma para a TELA
- * (`/video-cost-estimate`: mostrar ausência, nunca inventar zero nem
- * bloquear às cegas). Hoje só HeyGen tem `known: true`; se outro vendor
- * ganhar medição própria no futuro, este teto passa a valer para ele
- * automaticamente, sem precisar ser editado.
+ * Recusa quando `costFor` devolve um custo CONHECIDO acima do teto, e fica
+ * muda quando não há medição — a mesma decisão que `costFor` já toma para a
+ * TELA (`/video-cost-estimate`: mostrar ausência, nunca inventar zero nem
+ * bloquear às cegas).
  *
- * O pipeline fal segue com o SEU freio (`autorizarGasto`), inalterado — os
- * dois nunca se sobrepõem: `costFor` devolve `known:false` para `fal`
- * (nenhuma medição própria ainda), então este teto nunca opina sobre ele.
+ * ⚠️ Desde o BLOCO FRACOES-1 (28/08) a fal TAMBÉM devolve `known: true` em
+ * `costFor` (estimativa, não medição — ver o ramo fal em `costFor` acima) —
+ * mas `assertHeygenSpendBudget` (a função que consulta este teto) passou a
+ * ignorar explicitamente qualquer vendor que não seja `"heygen"`, de
+ * propósito: o freio do caminho fal é `autorizarGasto`/`tetoNormalUsd`,
+ * DENTRO do pipeline, sobre o ACUMULADO real da corrida — mais preciso que
+ * `estimatedSeconds` (um chute sobre o roteiro, na régua da HeyGen) checado
+ * contra ESTE teto (`HEYGEN_TETO_USD`, sem equivalente configurável para a
+ * fal). Ver o comentário de `assertHeygenSpendBudget` para o raciocínio
+ * completo.
+ *
+ * O pipeline fal segue com o SEU freio, SEM NUNCA passar por este teto.
  */
 export const HEYGEN_TETO_USD_ENV = "HEYGEN_TETO_USD";
 
@@ -324,12 +362,23 @@ export class HeygenSpendCapExceededError extends Error {
  * O PORTEIRO. Roda ANTES do débito e antes de qualquer chamada — mesmo
  * princípio de `assertDailyGenerationBudget`/`withLiveBudget`: uma recusa
  * depois de gastar é relatório, não freio.
+ *
+ * ⚠️ SÓ PARA `vendor === "heygen"`, explícito — BLOCO FRACOES-1, 28/08. Desde
+ * que `costFor` passou a conhecer também a fal (ramo novo, acima), este
+ * porteiro PASSARIA a opinar sobre ela sem este `if` — e não deve: o freio do
+ * caminho fal é `autorizarGasto`/`tetoNormalUsd`, DENTRO do pipeline, sobre o
+ * ACUMULADO real da corrida (compor+animar+sincronizar). Este aqui usa
+ * `estimatedSeconds` da régua da HeyGen, aplicado a UM chute de segundos —
+ * sobrepor os dois porteiros ao mesmo vendor não soma segurança, só duplica
+ * uma pergunta com réguas diferentes e um deles some do controle do usuário
+ * (`HEYGEN_TETO_USD`, que não tem equivalente para `tetoNormalUsd`).
  */
 export function assertHeygenSpendBudget(
   estimatedSeconds: number,
   vendor: string,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
+  if (vendor !== "heygen") return;
   const cost = estimateVideoCost(estimatedSeconds, vendor);
   if (!cost.known) return;
   const cap = heygenSpendCapUsd(env);
@@ -408,8 +457,26 @@ export function costDifference(input: {
   };
 }
 
-/** Ressalva que acompanha toda estimativa na tela. */
-export function costBasisNote(): string {
+/**
+ * Ressalva que acompanha toda estimativa na tela.
+ *
+ * `vendor` opcional — BLOCO FRACOES-1, 28/08. Sem ele (ou para `heygen`),
+ * texto INALTERADO de antes desta rodada. Para `fal`, a ressalva é outra e
+ * mais honesta: a estimativa vem de `PRECOS_FAL` (preço de LISTA, nunca
+ * conferido contra fatura), não de medição por saldo real — a fal não expõe
+ * endpoint de saldo (ver `docs-internal/pipelines-tiers-2026-08-28.md`),
+ * então não há como fazer o mesmo tipo de medição que sustenta o texto da
+ * HeyGen. Confundir os dois textos faria a tela afirmar, com a mesma voz,
+ * um número medido e um copiado do painel.
+ */
+export function costBasisNote(vendor?: string): string {
+  if (vendor === "fal") {
+    return (
+      "Estimativa baseada em PREÇO DE LISTA da fal.ai (comporUsd/animarUsdPorSegundo/" +
+      "sincronizarUsdPorSegundoDeAudio, lidos do painel em 13/08) — nunca conferida contra fatura real, " +
+      "porque a fal não expõe endpoint de saldo para medir a diferença. Pode divergir do cobrado de fato."
+    );
+  }
   const { aspectRatio, resolution } = HEYGEN_VIDEO_COST.measuredUnder;
   return (
     `Estimativa baseada em medições reais (${HEYGEN_VIDEO_COST.measuredOn}): ` +
@@ -513,22 +580,63 @@ export function custoSeedanceUsd(duracaoSegundosDeSaida: number): number {
 }
 
 /**
- * TETO DURO de uma corrida do pipeline da fal, em dólares.
+ * CUSTO ESTIMADO TOTAL do tier Normal, para UMA duração-alvo em segundos —
+ * BLOCO FRACOES-1, 28/08. `compor` (uma vez, sempre US$ 0,08, tier nenhum
+ * muda isso) + `animar` (US$/s × segundos) + `sincronizar` (US$/s de áudio ×
+ * segundos — a mesma duração, porque a fala ocupa perto do vídeo inteiro por
+ * construção da régua de caracteres).
  *
- * Não é preço: é o freio. Vive junto dos preços porque só faz sentido lido ao
- * lado deles.
+ * Existe uma só vez, e `tetoNormalUsd`/`costFor` (ramo fal, acima) e o freio
+ * do pipeline (`falPipeline.ts`) leem TODOS esta mesma função — duas contas
+ * do mesmo número, uma para o teto e outra para a tela, é a classe de defeito
+ * que este arquivo existe para impedir (ver o cabeçalho geral).
+ */
+export function custoNormalEstimadoUsd(targetSeconds: number): number {
+  const segundos = Math.max(0, targetSeconds);
+  return round(
+    PRECOS_FAL.comporUsd + PRECOS_FAL.animarUsdPorSegundo * segundos + PRECOS_FAL.sincronizarUsdPorSegundoDeAudio * segundos,
+    4,
+  );
+}
+
+/**
+ * MARGEM do teto sobre o custo estimado — 20%.
  *
- * Dimensionado para o Wan (tier "Normal"): o pior caso da corrida inteira é
- * ~US$ 0,77 (compor US$ 0,08 + animar até 15s×US$0,025 + sincronizar), bem
- * dentro dos US$ 2,00.
+ * Por quê 20%, e não outro número: é folga para (a) o último bloco do
+ * fracionamento quase sempre "sobrar" segundos além do estritamente
+ * necessário (a régua de caracteres por bloco já é pessimista, então a soma
+ * dos blocos escolhidos tende a exceder um pouco o alvo pedido) e (b) o
+ * arredondamento de `escolherDuracao` por bloco (cada bloco assume a MENOR
+ * duração que cabe, mas nunca fração de segundo). NÃO é margem para o preço
+ * da fal mudar — `PRECOS_FAL` é preço de lista e pode mudar sem aviso; se
+ * mudar, esta margem não pretende absorver a diferença, só a variação
+ * interna do fracionamento.
+ */
+export const NORMAL_TETO_MARGEM = 1.2;
+
+/**
+ * TETO DINÂMICO do tier Normal — substitui a constante fixa que existia
+ * aqui (`PIPELINE_TETO_USD = 2.0`) até o BLOCO FRACOES-1 (28/08). A
+ * constante fixa bastava enquanto o tier Normal só tinha UM bloco possível
+ * (15 s, pior caso ~US$ 0,77); com blocos de até 120 s, um teto fixo em
+ * US$ 2,00 recusaria qualquer vídeo acima de ~26 s — abaixo do que o produto
+ * agora oferece.
+ *
+ * SEGURO para o caminho de UM bloco só (comportamento de antes desta
+ * rodada): para 15 s, `custoNormalEstimadoUsd(15)` ≈ US$ 1,205, × 1,2 ≈
+ * US$ 1,45 — MAIOR que o pior caso real (US$ 1,205), então nenhuma geração
+ * de um bloco só que passava pelo teto fixo de US$ 2,00 passa a ser recusada
+ * por este teto mais apertado.
  *
  * ⚠️ O tier "Premium" (Seedance 2.5) usa `PIPELINE_TETO_USD_PREMIUM` abaixo,
- * não este — o preço por segundo dele é ~18,5× maior, e reusar este mesmo
- * teto recusaria a etapa `animar` do Premium antes de qualquer chamada, que
- * foi exatamente o que aconteceu no BLOCO SEEDANCE-1 (21/08), quando o
- * Seedance ainda usava este teto global.
+ * inalterado — o preço por segundo dele é ~18,5× maior, e reusar esta mesma
+ * fórmula recusaria a etapa `animar` do Premium antes de qualquer chamada.
+ * Fracionamento não foi estendido ao Premium nesta rodada (fora de escopo,
+ * ver `docs-internal/plano-fracoes-2026-08-28.md`).
  */
-export const PIPELINE_TETO_USD = 2.0;
+export function tetoNormalUsd(targetSeconds: number): number {
+  return round(custoNormalEstimadoUsd(targetSeconds) * NORMAL_TETO_MARGEM, 2);
+}
 
 /**
  * TETO PRÓPRIO do tier "Premium" (Seedance 2.5) — BLOCO A, 21/08.

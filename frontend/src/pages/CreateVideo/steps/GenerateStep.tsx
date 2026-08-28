@@ -146,6 +146,10 @@ export function GenerateStep({
         // habilitado para um roteiro que `POST /videos` vai recusar — a
         // mesma divergência que este predicado inteiro existe para fechar.
         target_duration_seconds: wizard.targetDurationSeconds,
+        // BLOCO FRACOES-1 — o teto do tier Normal (fracionamento, 120 s) é
+        // bem mais apertado que o teto global acima. Sem isto, o botão
+        // ficaria habilitado para um roteiro que o tier Normal recusa.
+        tier_video: wizard.tierVideo,
       })
       .then((r) => {
         if (!cancelled) setReadiness(r);

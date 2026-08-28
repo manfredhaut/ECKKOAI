@@ -773,7 +773,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         actual: null,
         difference: null,
         failure: null,
-        basis: costBasisNote(),
+        basis: costBasisNote(credential?.vendor),
         simulated: isFixtureMode(),
       };
     },
@@ -859,11 +859,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       script?: string | null;
       motion_prompt?: string | null;
       target_duration_seconds?: number | null;
+      tier_video?: string | null;
     };
   }>(
     "/videos/readiness",
     async (req) => {
       const alvoBruto = req.body?.target_duration_seconds;
+      const tierBruto = req.body?.tier_video;
       return evaluateGenerationReadiness({
         tenantId: req.tenantId,
         avatarId: req.body?.avatar_id ?? null,
@@ -872,6 +874,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // continua sendo a rota de criação, com o mesmo predicado.
         motionPrompt: req.body?.motion_prompt ?? null,
         targetDurationSeconds: isTargetDurationSeconds(alvoBruto) ? alvoBruto : null,
+        // BLOCO FRACOES-1 — sem isto, o botão "Gerar" ficaria habilitado
+        // para um roteiro que o tier Normal recusaria (fracionamento, 120 s).
+        tierVideo: isVideoTier(tierBruto) ? tierBruto : null,
       });
     },
   );
@@ -1092,7 +1097,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // Presente mesmo quando não há consumo: é o que a tela mostra em vez de
       // um traço mudo.
       failure: linha && linha.outcome === "failed" ? { reason: linha.failure_reason } : null,
-      basis: costBasisNote(),
+      basis: costBasisNote(vendor),
       simulated: video.simulated,
     };
   });
@@ -1283,6 +1288,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // ela não sabe que existe. Ver MOTION_PROMPT_MAX_CHARS.
       motionPrompt: scene.motionPrompt,
       targetDurationSeconds,
+      // BLOCO FRACOES-1 — este É o porteiro de verdade (a tela é conveniência):
+      // sem isto, um roteiro longo demais para o tier Normal só seria
+      // recusado dentro do pipeline, depois do débito (estornável, mas tarde).
+      tierVideo,
     });
     if (!readiness.ready) {
       const [primeiro] = readiness.blockers;

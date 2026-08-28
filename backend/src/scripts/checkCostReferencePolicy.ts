@@ -189,11 +189,15 @@ export function checkCostReferencePolicy(repoRoot: string): CostReferenceCheckRe
   const premium = maxReachableSecondsForTier("premium");
   const simples = maxReachableSecondsForTier("simples");
 
-  if (normal !== 15 || premium !== 15) {
+  // BLOCO FRACOES-1, 28/08: "normal" passou a fracionar (até 120s = 8 blocos
+  // de 15s), "premium" continua no bloco único (fora de escopo desta rodada
+  // — ver docs-internal/plano-fracoes-2026-08-28.md). Os dois deixaram de
+  // ser o mesmo número de propósito.
+  if (normal !== 120 || premium !== 15) {
     failures.push(
       `tabela de custo: maxReachableSecondsForTier deu normal=${normal}, premium=${premium}, esperado ` +
-        "15 para os dois — o Wan (wan/v2.6/image-to-video/flash) não anima clipe mais longo que isso, " +
-        "e é o MESMO teto para os dois tiers hoje (Seedance ainda usa o mesmo enum de duração).",
+        "normal=120 (8 blocos de 15s, fracionado desde o BLOCO FRACOES-1) e premium=15 (bloco único, " +
+        "o Wan/Seedance não anima clipe mais longo que isso por chamada e o Premium não foi fracionado).",
     );
   }
   // ~459s é o esperado (5000 caracteres, ritmo medido) — faixa, não igualdade

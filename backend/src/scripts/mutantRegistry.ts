@@ -87,6 +87,7 @@ import { MUTANTS as scenePerVideoMutants } from "./checkScenePerVideoPolicy.js";
 import { MUTANTS as photoRemovalMutants } from "./checkPhotoRemovalPolicy.js";
 import { MUTANTS as virtualBackgroundComparatorMutants } from "./checkVirtualBackgroundComparatorPolicy.js";
 import { MUTANTS as mutantRegistryMutants } from "./checkMutantRegistryPolicy.js";
+import { MUTANTS as scriptFractioningMutants } from "./checkScriptFractioningPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 
@@ -180,4 +181,5 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkPhotoRemovalPolicy.ts", photoRemovalMutants),
   ...de("backend/src/scripts/checkVirtualBackgroundComparatorPolicy.ts", virtualBackgroundComparatorMutants),
   ...de("backend/src/scripts/checkMutantRegistryPolicy.ts", mutantRegistryMutants),
+  ...de("backend/src/scripts/checkScriptFractioningPolicy.ts", scriptFractioningMutants),
 ];

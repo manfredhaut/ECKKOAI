@@ -93,6 +93,7 @@ import { checkRefacoesPolicy } from "./checkRefacoesPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
+import { checkScriptFractioningPolicy } from "./checkScriptFractioningPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
 import { checkAvatarTrainingVendorPolicy } from "./checkAvatarTrainingVendorPolicy.js";
@@ -875,6 +876,11 @@ async function main(): Promise<void> {
   const falTier = await checkFalTierPolicy();
   falTier.failures.forEach((f) => failures.push(f));
   falTier.notes.forEach((n) => note(n));
+
+  // --- BLOCO FRACOES-1, 28/08 — fracionamento de roteiro em blocos --------
+  const scriptFractioning = checkScriptFractioningPolicy();
+  scriptFractioning.failures.forEach((f) => failures.push(f));
+  scriptFractioning.notes.forEach((n) => note(n));
 
   // --- 24o-sexies. 0 fotos não recusa nem a rota, nem trainAvatar() -------
   //

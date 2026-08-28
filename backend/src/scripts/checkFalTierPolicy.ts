@@ -60,16 +60,30 @@ export const MUTANTS: Mutant[] = [
     // corrida premium comum (5 s de clipe, ~US$ 2,39 de animar+compor) é
     // recusada por "TETO DE GASTO" antes de tocar o Seedance — o mesmo
     // incidente, de volta.
+    //
+    // find/replace REGENERADOS no BLOCO FRACOES-1 (28/08): a assinatura
+    // ganhou `segundosTotais?: number` e o ramo "normal" virou fórmula
+    // (`tetoNormalUsd`) em vez da constante `PIPELINE_TETO_USD` (removida —
+    // ver `docs-internal/plano-fracoes-2026-08-28.md`). A mutação continua
+    // sendo a MESMA: o tier premium deixa de ter teto PRÓPRIO e cai no
+    // caminho do normal.
     file: PIPELINE,
     find:
-      "function tetoParaTier(input: Pick<FalPipelineInput, \"tetoDeGastoUsd\" | \"tier\">): number {\n" +
+      "function tetoParaTier(\n" +
+      '  input: Pick<FalPipelineInput, "tetoDeGastoUsd" | "tier">,\n' +
+      "  segundosTotais?: number,\n" +
+      "): number {\n" +
       "  if (input.tetoDeGastoUsd !== undefined) return input.tetoDeGastoUsd;\n" +
-      '  return input.tier === "premium" ? PIPELINE_TETO_USD_PREMIUM : PIPELINE_TETO_USD;\n' +
+      '  if (input.tier === "premium") return PIPELINE_TETO_USD_PREMIUM;\n' +
+      "  return tetoNormalUsd(segundosTotais ?? PIPELINE_DURACAO_MAXIMA);\n" +
       "}",
     replace:
-      "function tetoParaTier(input: Pick<FalPipelineInput, \"tetoDeGastoUsd\" | \"tier\">): number {\n" +
+      "function tetoParaTier(\n" +
+      '  input: Pick<FalPipelineInput, "tetoDeGastoUsd" | "tier">,\n' +
+      "  segundosTotais?: number,\n" +
+      "): number {\n" +
       "  if (input.tetoDeGastoUsd !== undefined) return input.tetoDeGastoUsd;\n" +
-      "  return PIPELINE_TETO_USD;\n" +
+      "  return tetoNormalUsd(segundosTotais ?? PIPELINE_DURACAO_MAXIMA);\n" +
       "}",
     // TRANSCRITO da mensagem real.
     expect: "tier: o tier premium foi recusado por TETO DE GASTO numa corrida que caberia no teto PRÓPRIO",
@@ -95,9 +109,16 @@ export const MUTANTS: Mutant[] = [
     kind: "esperto",
     // Mesma forma do defeito já registrado para legenda/cenário/traje:
     // coletado na tela, e o call site é que nunca soube.
+    //
+    // ÂNCORA — BLOCO FRACOES-1, 28/08: `tier_video: wizard.tierVideo,` passou
+    // a existir DUAS vezes no arquivo (o corpo real de `POST /videos`, aqui
+    // testado, e a consulta de prontidão que só LÊ o campo, sem montar corpo
+    // nenhum) — a âncora de 1 linha virou substring das duas. O comentário
+    // que precede a ocorrência de `corpoDaGeracao` é único; a de prontidão
+    // não tem este texto acima dela.
     file: PASSO_GERAR,
-    find: "    tier_video: wizard.tierVideo,",
-    replace: "",
+    find: "ficariam com a mesma aparência no corpo.\n    tier_video: wizard.tierVideo,",
+    replace: "ficariam com a mesma aparência no corpo.\n",
     expect: "`tier_video` sumiu do corpo montado pela tela",
   },
 ];

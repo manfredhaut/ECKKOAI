@@ -168,7 +168,12 @@ export const MUTANTS: Mutant[] = [
     // mesmo assim". O sintoma não é um erro de tipo: é um roteiro longo
     // demais sendo animado (e a fala sendo TRUNCADA por `cut_off`) em vez de
     // recusado antes de qualquer chamada paga.
-    file: "backend/src/services/video/falPipeline.ts",
+    //
+    // ARQUIVO — BLOCO FRACOES-1, 28/08: `escolherDuracao` foi EXTRAÍDA para
+    // `pipelineDuration.ts` (para `scriptFractioning.ts` poder importá-la
+    // sem criar ciclo com `falPipeline.ts`) e é REEXPORTADA de lá — o corpo
+    // da função, e portanto este mutante, mudou de endereço junto.
+    file: "backend/src/services/video/pipelineDuration.ts",
     find: "  return null;\n}",
     replace: "  return PIPELINE_DURACAO_MAXIMA;\n}",
     expect: "pipeline: um roteiro de",

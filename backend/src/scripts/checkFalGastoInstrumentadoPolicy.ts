@@ -94,12 +94,18 @@ export const MUTANTS: Mutant[] = [
     // corrida que morre entre `animar` e `sincronizar` deixa no banco o custo
     // de UMA etapa onde deveria estar a soma, e a pergunta "quanto este vídeo
     // já custou?" passa a responder menos do que saiu.
+    // ÂNCORA — BLOCO FRACOES-1, 28/08: a linha de `autorizarGasto`+`registrarGastoPrevisto`
+    // do "animar" foi EXTRAÍDA para `animarUmBloco()` (um bloco de código
+    // exercitado tanto pelo caminho de UM bloco quanto pelo de VÁRIOS), com
+    // `gastoPrevistoUsd` virando `const` (era reatribuição de `let`) a
+    // partir do parâmetro `gastoAcumuladoUsd` — ver
+    // `docs-internal/plano-fracoes-2026-08-28.md`.
     file: PIPELINE,
     find:
-      '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoAnimarUsd, teto, "animar");\n' +
+      '  const gastoPrevistoUsd = autorizarGasto(gastoAcumuladoUsd, custoAnimarUsd, teto, "animar");\n' +
       "  await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);\n",
     replace:
-      '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoAnimarUsd, teto, "animar");\n' +
+      '  const gastoPrevistoUsd = autorizarGasto(gastoAcumuladoUsd, custoAnimarUsd, teto, "animar");\n' +
       "  await input.diario.registrarGastoPrevisto(custoAnimarUsd);\n",
     expect: "gasto instrumentado: a gravação de animar não é o acumulado",
   },
@@ -112,26 +118,28 @@ export const MUTANTS: Mutant[] = [
     // diferença aparece só quando a submissão falha ou o processo morre no
     // meio: o dinheiro foi pedido ao fornecedor e o registro dele não existe.
     // É o mesmo raciocínio de ordem que `gravarRespostaCrua` já protege.
+    // ÂNCORA — BLOCO FRACOES-1, 28/08, mesma extração de `animarUmBloco()`
+    // do mutante irmão acima; `imagemUrl` (parâmetro da função antiga) virou
+    // `imagemDeEntrada` (parâmetro de `animarUmBloco`) nesta rodada.
     file: PIPELINE,
     find:
-      '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoAnimarUsd, teto, "animar");\n' +
+      '  const gastoPrevistoUsd = autorizarGasto(gastoAcumuladoUsd, custoAnimarUsd, teto, "animar");\n' +
       "  await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);\n" +
       "\n" +
       "  const corpoDeAnimar =\n" +
       "    tier === \"premium\"\n" +
-      "      ? corpoAnimarSeedance(input, imagemUrl, duracaoEscolhida)\n" +
-      "      : corpoAnimarWan(input, imagemUrl, duracaoEscolhida);\n" +
+      "      ? corpoAnimarSeedance(input, imagemDeEntrada, duracaoEscolhida)\n" +
+      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida);\n" +
       "\n" +
       '  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);\n',
     replace:
-      '  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoAnimarUsd, teto, "animar");\n' +
-      "\n" +
       "  const corpoDeAnimar =\n" +
       "    tier === \"premium\"\n" +
-      "      ? corpoAnimarSeedance(input, imagemUrl, duracaoEscolhida)\n" +
-      "      : corpoAnimarWan(input, imagemUrl, duracaoEscolhida);\n" +
+      "      ? corpoAnimarSeedance(input, imagemDeEntrada, duracaoEscolhida)\n" +
+      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida);\n" +
       "\n" +
       '  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);\n' +
+      '  const gastoPrevistoUsd = autorizarGasto(gastoAcumuladoUsd, custoAnimarUsd, teto, "animar");\n' +
       "  await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);\n",
     expect: "gasto instrumentado: uma submissão paga aconteceu ANTES da gravação do gasto dela",
   },

@@ -132,13 +132,14 @@ export const MUTANTS: Mutant[] = [
     // primeiro quando as duas pontas falham — e é aí que uma falha de upload
     // deixa de custar zero e passa a acontecer com a corrida já autorizada.
     file: "backend/src/services/video/falPipeline.ts",
-    // ⚠️ find/replace REGENERADOS no W2 (24/08): o custo de `compor`
-    // deixou de ser `PRECOS_FAL.comporUsd` direto e passa por
-    // `custoDaEtapa`, que consulta `provider_prices`. A PROPRIEDADE medida
-    // é a mesma — publicar (que não custa) vem antes do primeiro
+    // ⚠️ find/replace REGENERADOS no BLOCO FRACOES-1 (28/08): `compor` passou
+    // a usar `tetoParaTier(input, segundosTotaisDoRoteiro)` em vez do antigo
+    // `input.tetoDeGastoUsd ?? PIPELINE_TETO_USD` (constante removida — ver
+    // `docs-internal/plano-fracoes-2026-08-28.md`). A PROPRIEDADE medida
+    // continua a mesma — publicar (que não custa) vem antes do primeiro
     // autorizarGasto, que é o freio da primeira etapa paga.
-    find: "  const urlsDasEntradas = await publicarEntradas(input);\n\n  // --- 1. COMPOR -----------------------------------------------------------\n  const teto = input.tetoDeGastoUsd ?? PIPELINE_TETO_USD;\n  let gastoPrevistoUsd = 0;\n\n  const custoComporUsd = await custoDaEtapa(ENDPOINT_COMPOR, 1, PRECOS_FAL.comporUsd, \"compor\");\n  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, \"compor\");",
-    replace: "  // --- 1. COMPOR -----------------------------------------------------------\n  const teto = input.tetoDeGastoUsd ?? PIPELINE_TETO_USD;\n  let gastoPrevistoUsd = 0;\n  const custoComporUsd = await custoDaEtapa(ENDPOINT_COMPOR, 1, PRECOS_FAL.comporUsd, \"compor\");\n  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, \"compor\");\n\n  const urlsDasEntradas = await publicarEntradas(input);",
+    find: "  const urlsDasEntradas = await publicarEntradas(input);\n\n  // --- 1. COMPOR -----------------------------------------------------------\n  //\n  // O teto AQUI é o mesmo de `animar` em diante (`tetoParaTier`, sobre o\n  // TOTAL da corrida) — desde o BLOCO FRACOES-1. Antes deste bloco `compor`\n  // vivia sob `PIPELINE_TETO_USD` fixo porque custa sempre US$ 0,08 e nenhum\n  // teto plausível o recusaria; isso continua verdade, então trocar de\n  // constante para fórmula aqui não muda nenhum veredito — só unifica a\n  // fonte do número.\n  const teto = tetoParaTier(input, segundosTotaisDoRoteiro);\n  let gastoPrevistoUsd = 0;\n\n  const custoComporUsd = await custoDaEtapa(ENDPOINT_COMPOR, 1, PRECOS_FAL.comporUsd, \"compor\");\n  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, \"compor\");",
+    replace: "  // --- 1. COMPOR -----------------------------------------------------------\n  //\n  // O teto AQUI é o mesmo de `animar` em diante (`tetoParaTier`, sobre o\n  // TOTAL da corrida) — desde o BLOCO FRACOES-1. Antes deste bloco `compor`\n  // vivia sob `PIPELINE_TETO_USD` fixo porque custa sempre US$ 0,08 e nenhum\n  // teto plausível o recusaria; isso continua verdade, então trocar de\n  // constante para fórmula aqui não muda nenhum veredito — só unifica a\n  // fonte do número.\n  const teto = tetoParaTier(input, segundosTotaisDoRoteiro);\n  let gastoPrevistoUsd = 0;\n\n  const custoComporUsd = await custoDaEtapa(ENDPOINT_COMPOR, 1, PRECOS_FAL.comporUsd, \"compor\");\n  gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, \"compor\");\n\n  const urlsDasEntradas = await publicarEntradas(input);",
     expect: "a autorização de gasto aconteceu ANTES da publicação das entradas",
   },
   {
