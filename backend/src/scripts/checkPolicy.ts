@@ -93,10 +93,14 @@ import { checkRefacoesPolicy } from "./checkRefacoesPolicy.js";
 import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
-import { checkExistingAvatarAssetsPolicy } from "./checkExistingAvatarAssetsPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
 import { checkAvatarTrainingVendorPolicy } from "./checkAvatarTrainingVendorPolicy.js";
+import { checkAvatarPreviewVendorPolicy } from "./checkAvatarPreviewVendorPolicy.js";
+import { checkAvatarTabRestorePolicy } from "./checkAvatarTabRestorePolicy.js";
+import { checkScenePerVideoPolicy } from "./checkScenePerVideoPolicy.js";
+import { checkPhotoRemovalPolicy } from "./checkPhotoRemovalPolicy.js";
+import { checkVirtualBackgroundComparatorPolicy } from "./checkVirtualBackgroundComparatorPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -872,13 +876,6 @@ async function main(): Promise<void> {
   falTier.failures.forEach((f) => failures.push(f));
   falTier.notes.forEach((n) => note(n));
 
-  // --- 24o-quinquies. cenário e traje no avatar EXISTENTE (BLOCO B5c) ----
-  //
-  // Só leitura de arquivo — nenhuma rede, nenhum banco, nenhum React montado.
-  const existingAvatarAssets = await checkExistingAvatarAssetsPolicy();
-  existingAvatarAssets.failures.forEach((f) => failures.push(f));
-  existingAvatarAssets.notes.forEach((n) => note(n));
-
   // --- 24o-sexies. 0 fotos não recusa nem a rota, nem trainAvatar() -------
   //
   // Foto do rosto e vídeo de referência são independentes (decisão desta
@@ -902,6 +899,48 @@ async function main(): Promise<void> {
   const avatarTrainingVendor = checkAvatarTrainingVendorPolicy(process.env.REPO_ROOT ?? "/repo");
   avatarTrainingVendor.failures.forEach((f) => failures.push(f));
   avatarTrainingVendor.notes.forEach((n) => note(n));
+
+  // --- 24o-nonies. LEITURA de avatar (looks/preview) resolve credencial ---
+  // pelo vendor que treinou, nunca pelo is_default genérico (27/08)
+  //
+  // Só leitura de arquivo — nenhuma rede, nenhum banco.
+  const avatarPreviewVendor = checkAvatarPreviewVendorPolicy(process.env.REPO_ROOT ?? "/repo");
+  avatarPreviewVendor.failures.forEach((f) => failures.push(f));
+  avatarPreviewVendor.notes.forEach((n) => note(n));
+
+  // --- 24o-decies. as 4 pendências da aba 1 (custo do retreino visível, ----
+  // avatarPreview recarrega sozinho, Fundo e Traje nativos HeyGen voltam)
+  //
+  // Só leitura de arquivo — nenhuma rede, nenhum banco.
+  const avatarTabRestore = checkAvatarTabRestorePolicy(process.env.REPO_ROOT ?? "/repo");
+  avatarTabRestore.failures.forEach((f) => failures.push(f));
+  avatarTabRestore.notes.forEach((n) => note(n));
+
+  // --- 24o-undecies. Cenário E Traje viram campo por vídeo — sem vestígio
+  // do Passo 1, com migração não-destrutiva do valor salvo no avatar
+  // (Cenário 27/08, Traje 28/08 — mesmo mecanismo, mesmo arquivo)
+  //
+  // Só leitura de arquivo — nenhuma rede, nenhum banco.
+  const scenePerVideo = checkScenePerVideoPolicy(process.env.REPO_ROOT ?? "/repo");
+  scenePerVideo.failures.forEach((f) => failures.push(f));
+  scenePerVideo.notes.forEach((n) => note(n));
+
+  // --- 24o-duodecies. excluir/refazer uma foto do rosto remove DE VERDADE,
+  // no banco e no disco, e a tela relê o que sobrou (28/08)
+  //
+  // Só leitura de arquivo — nenhuma rede, nenhum banco.
+  const photoRemoval = checkPhotoRemovalPolicy();
+  photoRemoval.failures.forEach((f) => failures.push(f));
+  photoRemoval.notes.forEach((n) => note(n));
+
+  // --- 24o-terdecies. fundo virtual como escolha comparável — a cor chega
+  // ao motor de composição e a foto capturada sai do MESMO canvas que a
+  // pré-visualização, nunca do vídeo cru (28/08)
+  //
+  // Só leitura de arquivo — nenhuma rede, nenhum banco.
+  const virtualBackgroundComparator = checkVirtualBackgroundComparatorPolicy();
+  virtualBackgroundComparator.failures.forEach((f) => failures.push(f));
+  virtualBackgroundComparator.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //

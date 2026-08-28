@@ -1,21 +1,3 @@
-export interface AssetDefaults {
-  scenario: string;
-  /**
-   * O NOME do arquivo que a pessoa escolheu, guardado à parte.
-   *
-   * Não dá para tirar de `scenario`: o armazenamento renomeia para
-   * `<uuid>.<ext>` e o nome original não sobrevive na URL. E não dá para tirar
-   * do `<input type="file">`: navegador nenhum repovoa um campo de arquivo
-   * quando o componente remonta — por segurança, e não por descuido. Ao voltar
-   * ao passo 1 o campo dizia "nenhum ficheiro selecionado" com a imagem salva e
-   * em uso, que é a tela contradizendo o servidor.
-   */
-  scenarioName: string;
-  outfit: string;
-  scenarioPrompt: string;
-  outfitPrompt: string;
-}
-
 /**
  * Fundo escolhido no passo Cena.
  *
@@ -47,6 +29,40 @@ export interface WizardState {
   targetDurationSeconds: number | null;
   /** CENA — os controles que o fornecedor de fato aceita. */
   background: SceneBackground | null;
+  /**
+   * CENÁRIO deste vídeo — POR VÍDEO desde a rodada de 27/08, não mais padrão
+   * do avatar (Passo 1). O backend já aceitava os dois por vídeo desde as
+   * migrations 002/010 (`videos.scenario`/`scenario_prompt`) — só a UI que
+   * editava isso vivia no lugar errado (`AssetDefaults`, Passo 1, hoje
+   * extinto). Imagem (upload) e texto (Gerar via IA) convivem, não são
+   * mutuamente exclusivos.
+   *
+   * MIGRAÇÃO NÃO DESTRUTIVA: `CreateVideoPage.tsx` preenche estes dois campos
+   * com o padrão salvo no AVATAR (`avatar.scenario`/`scenario_prompt`) na
+   * primeira vez que um avatar é selecionado nesta visita — depois disso, são
+   * só do vídeo, editáveis livremente, e nunca mais sobrescritos pelo padrão
+   * do avatar enquanto a mesma visita durar.
+   */
+  scenario: string | null;
+  scenarioPrompt: string | null;
+  /**
+   * TRAJE deste vídeo — POR VÍDEO desde esta rodada (28/08), seguindo
+   * EXATAMENTE o modelo do Cenário acima (era a mesma correção de rumo:
+   * "Traje Padrão" havia sido mantido como identidade fixa do avatar no
+   * Passo 1 numa decisão que a própria sessão revogou). `POST /videos` já
+   * aceitava `outfit`/`outfit_prompt` por vídeo desde antes — o servidor
+   * já fazia `outfitParaGerar = outfit || avatar.outfit || null`
+   * (`routes/videos.ts`) mesmo quando só o padrão do avatar era mandado; o
+   * que faltava era a TELA escrever um valor por vídeo em vez de sempre
+   * reenviar o padrão do avatar.
+   *
+   * MESMA migração não destrutiva do Cenário: `CreateVideoPage.tsx` semeia
+   * com `avatar.outfit`/`outfit_prompt` na primeira seleção do avatar nesta
+   * visita, pelo MESMO `handleSceneDefaultsSeed` (agora carregando os 4
+   * campos, não só os 2 de Cenário).
+   */
+  outfit: string | null;
+  outfitPrompt: string | null;
   motionPrompt: string;
   expressiveness: "low" | "medium" | "high" | null;
   /** Look do avatar. `null` = o look padrão, que é o que sempre valeu. */

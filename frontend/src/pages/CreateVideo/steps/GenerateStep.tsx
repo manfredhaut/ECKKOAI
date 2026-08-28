@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
 import type { GenerationReadiness, Video } from "../../../types";
 import { StatusPill } from "../../../components/ui/StatusPill";
-import type { AssetDefaults, WizardState } from "../types";
+import type { WizardState } from "../types";
 import { VideoPlayer } from "../../../features/VideoPlayer";
 import { VideoCostPanel } from "../VideoCostPanel";
 import { GenerationSummary } from "../GenerationSummary";
@@ -23,36 +23,24 @@ import { GenerationSummary } from "../GenerationSummary";
  * sabemos como o fornecedor lê a diferença. O servidor normaliza de novo, mas
  * mandar limpo daqui é o que mantém o corpo legível no log de prova.
  */
-export function corpoDaGeracao(
-  wizard: WizardState,
-  interfaceLocale: string,
-  // CENÁRIO E TRAJE vivem em `AssetDefaults`, e não no wizard, porque são do
-  // AVATAR e não deste vídeo — é o passo 1 que os coleta. Chegam por parâmetro
-  // em vez de serem copiados para dentro do `WizardState` justamente para não
-  // existirem em dois lugares: duas cópias do mesmo campo divergem na primeira
-  // vez que alguém edita uma delas.
-  //
-  // Opcional porque o resumo do passo 4 (`resumoDaGeracao`) não os mostra e a
-  // galeria monta o passo sem eles.
-  defaults?: AssetDefaults,
-) {
+export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string) {
   return {
     avatar_id: wizard.avatarId,
     script: wizard.script,
-    // O FIO QUE FALTAVA. Os quatro campos existem na tela desde antes do
-    // DEMO-2 e no banco desde a migration 013; o que não existia era esta
-    // linha. Sem ela o passo 1 coletava a imagem de cenário, escrevia "Imagem
-    // salva", e o corpo da geração saía sem ela — o campo morria no frontend,
-    // a um passo do servidor.
+    // O FIO QUE FALTAVA. Os quatro campos existem no banco desde as
+    // migrations 002/010; o que faltava era a UI escrever neles. Cenário e
+    // Traje são POR VÍDEO desde 27/08 e 28/08 respectivamente — os dois
+    // direto em `wizard`, nenhum mais vindo de um "padrão do Passo 1"
+    // (`AssetDefaults`, extinto).
     //
     // `|| null` e não a string vazia: no servidor a coluna é anulável, e ""
     // gravaria "o cliente mandou um cenário vazio" onde a verdade é "não
     // mandou". A distinção importa porque é ela que decide se a composição da
     // fal recebe uma imagem a mais.
-    scenario: defaults?.scenario || null,
-    scenario_prompt: defaults?.scenarioPrompt || null,
-    outfit: defaults?.outfit || null,
-    outfit_prompt: defaults?.outfitPrompt || null,
+    scenario: wizard.scenario || null,
+    scenario_prompt: wizard.scenarioPrompt || null,
+    outfit: wizard.outfit || null,
+    outfit_prompt: wizard.outfitPrompt || null,
     // `duration_seconds` NÃO vai: o servidor deriva a duração do roteiro, e
     // mandar um número daqui ofereceria a ele uma segunda resposta para a
     // mesma pergunta — era a errada.
@@ -110,13 +98,10 @@ const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
 export function GenerateStep({
   wizard,
   onCaptionsChange,
-  defaults,
 }: {
   wizard: WizardState;
   /** Mesma forma dos outros passos: o estado mora na página, o passo avisa. */
   onCaptionsChange: (captions: boolean) => void;
-  /** Cenário e traje do passo 1. Ver `corpoDaGeracao`. */
-  defaults?: AssetDefaults;
 }) {
   // `i18n.language` é o gatilho da tradução da Interpretação no servidor. Sai
   // daqui, e não de uma detecção de língua sobre o texto: o idioma da interface
@@ -374,7 +359,7 @@ export function GenerateStep({
     setSubmitting(true);
     setError(null);
     try {
-      const created = await api.post<Video>("/videos", corpoDaGeracao(wizard, i18n.language, defaults));
+      const created = await api.post<Video>("/videos", corpoDaGeracao(wizard, i18n.language));
       setVideo(created);
       pollRef.current = window.setInterval(async () => {
         const latest = await api.get<Video>(`/videos/${created.id}`);

@@ -42,12 +42,28 @@ import { corpoDaGeracao } from "./steps/GenerateStep";
  */
 
 /**
- * Os seis campos, nesta ordem — a do passo Cena, de cima para baixo.
+ * Os SETE campos, nesta ordem — a do passo Cena, de cima para baixo.
+ *
+ * Eram seis até 28/08: Cenário tinha rastreio próprio (`defaults.scenarioName`,
+ * um nome de arquivo — ver o histórico abaixo), ele foi removido quando
+ * Cenário virou campo por vídeo (27/08) na Cena, e NINGUÉM o substituiu — a
+ * linha "Cenário" simplesmente sumiu do resumo, o mesmo defeito de origem que
+ * este componente existe para impedir (campo coletado que não chega à tela de
+ * conferência, ver o cabeçalho do arquivo). Achado numa varredura completa
+ * (28/08) e fechado aqui, no MESMO padrão de leitura que a linha de Traje
+ * logo abaixo já usa: o texto do prompt vence a URL do arquivo, quando os
+ * dois existem.
+ *
+ * ⚠️ Este comentário evita citar os dois nomes de campo lado a lado com
+ * `corpo.` na frente: uma guarda deste próprio arquivo
+ * (`checkPreflightSummaryPolicy.ts`) procura a string exata em TODO o
+ * arquivo, não só no código — citá-la aqui faria um mutante que apaga a
+ * leitura real do campo passar batido, com a prova morando só no comentário.
  *
  * `campo`, e não `key`: a guarda de feature flags conta como referência a flag
  * qualquer `key: "..."` no código do frontend (foi assim que ela passou a
- * enxergar `dev/galleryFetch.ts`, que ela não via). Seis linhas com `key:` aqui
- * faziam o gate acusar seis flags inexistentes. Renomear o nosso campo é mais
+ * enxergar `dev/galleryFetch.ts`, que ela não via). Sete linhas com `key:` aqui
+ * fariam o gate acusar sete flags inexistentes. Renomear o nosso campo é mais
  * barato que afrouxar o padrão dela.
  */
 export interface SummaryRow {
@@ -57,7 +73,7 @@ export interface SummaryRow {
 
 /**
  * O resumo como DADO, separado do JSX de propósito: assim a guarda consegue
- * conferir os seis campos sem subir um componente React inteiro — que é o mesmo
+ * conferir os sete campos sem subir um componente React inteiro — que é o mesmo
  * motivo pelo qual `lookSelection.ts` saiu de dentro do handler.
  */
 export function resumoDaGeracao(
@@ -72,11 +88,16 @@ export function resumoDaGeracao(
   const plataforma = PUBLISH_PLATFORMS.find((p) => p.id === corpo.publish_platform);
   return [
     { campo: "avatar", value: corpo.avatar_id ? (nomes.avatar ?? corpo.avatar_id) : null },
-    // Fase A, item 3 (25/08): o dropdown "Traje" (avatar_look_id) saiu da
-    // tela em 25/08 — ler esse campo aqui mostrava "Traje: nenhum" mesmo
-    // quando o Traje Padrão do Passo 1 (outfit/outfit_prompt) estava sendo
-    // enviado de verdade. `outfit_prompt` (texto legível) tem prioridade
-    // sobre `outfit` (URL do arquivo), mesmo padrão de `background` acima.
+    // CENÁRIO — 28/08. `scenario_prompt` (texto legível) tem prioridade sobre
+    // `scenario` (URL do arquivo), mesmo padrão de `outfit`/`background`
+    // logo abaixo. Campo por vídeo desde 27/08 (Cena) — não vem mais de
+    // nenhum padrão do Passo 1.
+    { campo: "scenario", value: corpo.scenario_prompt || corpo.scenario || null },
+    // TRAJE — Fase A, item 3 (25/08): o dropdown "Traje" (avatar_look_id) saiu
+    // da tela em 25/08 — ler esse campo aqui mostrava "Traje: nenhum" mesmo
+    // quando o traje estava sendo enviado de verdade. Campo por vídeo desde
+    // 28/08 (Cena) — mesmo padrão do Cenário acima. `outfit_prompt` (texto
+    // legível) tem prioridade sobre `outfit` (URL do arquivo).
     { campo: "outfit", value: corpo.outfit_prompt || corpo.outfit || null },
     {
       campo: "background",

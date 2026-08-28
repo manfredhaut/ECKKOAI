@@ -93,6 +93,62 @@ export const MUTANTS: Mutant[] = [
     expect: "cenario: escolhido na tela como IMAGEM e ausente da composição enviada à fal",
   },
   {
+    guard: "a foto lateral (Lado direito/esquerdo) chega a `image_urls` quando existe",
+    name: "a lateral some inteira da composição",
+    kind: "esperto",
+    // ESPERTO: rosto, cenário e traje continuam chegando certinho — só a
+    // referência extra de identidade (a lateral) desaparece, sem nada
+    // reclamar. É a mesma forma do defeito já registrado para cenário/traje,
+    // aplicada à peça nova desta rodada (28/08).
+    file: PROVIDER,
+    find:
+      "  if (ladoDireitoUrl) {\n" +
+      "    entradasExtras.push({\n" +
+      '      rotulo: "lado_direito",\n' +
+      "      bytes: await readUpload(ladoDireitoUrl),\n" +
+      "      mimeType: mimeDoUpload(ladoDireitoUrl),\n" +
+      "    });\n" +
+      "  } else if (ladoEsquerdoUrl) {\n" +
+      "    entradasExtras.push({\n" +
+      '      rotulo: "lado_esquerdo",\n' +
+      "      bytes: await readUpload(ladoEsquerdoUrl),\n" +
+      "      mimeType: mimeDoUpload(ladoEsquerdoUrl),\n" +
+      "    });\n" +
+      "  }\n",
+    replace: "",
+    expect: 'nem "Lado direito" nem "Lado esquerdo" chegaram a `image_urls`',
+  },
+  {
+    guard: "nunca as duas fotos laterais juntas em `image_urls`",
+    name: "o \"else\" some — as duas laterais entram juntas",
+    kind: "esperto",
+    // ESPERTO: cada bloco continua com sua própria condição e seu próprio
+    // upload — nada quebra, nenhum erro. Só a exclusividade desaparece: com
+    // as duas fotos presentes no avatar, as DUAS entram na composição em vez
+    // de só "Lado direito" vencer sozinha. É exatamente o tipo de mudança
+    // que sobrevive a uma reformatação descuidada do bloco (por exemplo,
+    // "separar os dois `if` para deixar mais legível").
+    file: PROVIDER,
+    find: "  } else if (ladoEsquerdoUrl) {\n",
+    replace: "  }\n  if (ladoEsquerdoUrl) {\n",
+    expect: "as DUAS fotos laterais",
+  },
+  {
+    guard: "`image_urls` nunca ultrapassa 4 posições, mesmo com cenário+traje+lateral presentes",
+    name: "o total de imagens da composição passa de 4",
+    kind: "esperto",
+    // MESMA mutação do mutante anterior (o \"else\" sumindo): com cenário e
+    // traje também presentes na prova (ver `corridaDeComposicao`), as duas
+    // laterais somadas aos outros três papéis levam o array a 5 posições —
+    // acima do teto que esta rodada fixou. Dois mutantes, uma mutação só:
+    // ela quebra duas invariantes ao mesmo tempo, e cada uma tem sua própria
+    // prova de reprovação.
+    file: PROVIDER,
+    find: "  } else if (ladoEsquerdoUrl) {\n",
+    replace: "  }\n  if (ladoEsquerdoUrl) {\n",
+    expect: "acima do teto de 4",
+  },
+  {
     guard: "a direção traduzida chega ao prompt do motor de animação",
     name: "o motor de animação volta a receber o prompt da composição no lugar da direção",
     kind: "esperto",
@@ -286,11 +342,16 @@ export async function corridaDeComposicao(): Promise<{
       format: { platform: "youtube", aspectRatio: "16:9", resolution: "720p" } as never,
       engineEnabled: false,
       // O único arquivo que o repositório garante existir dentro de `uploads/`
-      // (`.gitignore` tem `uploads/*` com `!uploads/.gitkeep`). Os três apontam
-      // para ele porque o que se mede não é o CONTEÚDO: é se cada um dos três
-      // papéis produziu uma entrada. O contador do `fetch` dá a cada upload uma
-      // URL própria, e é o RÓTULO gravado no diário que diz quem é quem.
-      photoUrls: ["/uploads/.gitkeep"],
+      // (`.gitignore` tem `uploads/*` com `!uploads/.gitkeep`). Os cinco
+      // apontam para ele porque o que se mede não é o CONTEÚDO: é se cada
+      // papel produziu uma entrada. O contador do `fetch` dá a cada upload
+      // uma URL própria, e é o RÓTULO gravado no diário que diz quem é quem.
+      //
+      // TRÊS fotos (Frente/Lado direito/Lado esquerdo) — rodada de 28/08,
+      // fotos laterais como referência extra. Com as três presentes, a
+      // guarda G-3 abaixo confere que só a de "Lado direito" (posição 1)
+      // entra, nunca as duas juntas.
+      photoUrls: ["/uploads/.gitkeep", "/uploads/.gitkeep", "/uploads/.gitkeep"],
       scenario: "/uploads/.gitkeep",
       outfit: "/uploads/.gitkeep",
       scenarioPrompt: "consultorio claro e desfocado",
@@ -455,10 +516,51 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
       );
     }
 
+    // ---------------------------------------------------------------------
+    // G-3 — a foto LATERAL (rodada de 28/08): chega quando existe, nunca as
+    // duas juntas, e o total nunca ultrapassa 4 (1 rosto + cenário + traje +
+    // no máximo 1 lateral). A prova usa TRÊS fotos (`corridaDeComposicao`),
+    // então em código CORRETO só "lado_direito" deve aparecer — "lado_direito"
+    // vence "lado_esquerdo" por posição, a mesma ordem da captura na aba 1.
+    // ---------------------------------------------------------------------
+    const urlLadoDireito = urlDoRotulo("lado_direito");
+    const urlLadoEsquerdo = urlDoRotulo("lado_esquerdo");
+    const ladoDireitoNaComposicao = urlLadoDireito !== null && imagens.includes(urlLadoDireito);
+    const ladoEsquerdoNaComposicao = urlLadoEsquerdo !== null && imagens.includes(urlLadoEsquerdo);
+
+    if (!ladoDireitoNaComposicao && !ladoEsquerdoNaComposicao) {
+      failures.push(
+        'lateral: nem "Lado direito" nem "Lado esquerdo" chegaram a `image_urls`, mesmo com as duas ' +
+          "fotos presentes no avatar da prova — a referência extra de identidade desapareceu na " +
+          "composição, sem nada reclamar. `image_urls` enviado: " +
+          JSON.stringify(imagens),
+      );
+    }
+    if (ladoDireitoNaComposicao && ladoEsquerdoNaComposicao) {
+      failures.push(
+        'lateral: as DUAS fotos laterais ("Lado direito" e "Lado esquerdo") chegaram juntas a ' +
+          "`image_urls` — a regra fixada nesta rodada é NO MÁXIMO uma, com \"Lado direito\" vencendo " +
+          "sozinha quando as duas existem. `image_urls` enviado: " +
+          JSON.stringify(imagens),
+      );
+    }
+    if (imagens.length > 4) {
+      failures.push(
+        `lateral: a composição enviou ${imagens.length} imagens em \`image_urls\`, acima do teto de 4 ` +
+          "— mesmo com cenário, traje e uma lateral presentes, o total nunca deveria passar de 4 (1 " +
+          "obrigatória + 3 opcionais, cada opcional contribuindo no máximo 1). `image_urls` enviado: " +
+          JSON.stringify(imagens),
+      );
+    }
+
     if (failures.length === 0) {
       notes.push(
         `    cena: cenário e traje chegam à composição — ${imagens.length} imagens em \`image_urls\` na ordem ` +
           `[${criacao.publicados.map((p) => p.rotulo).join(", ")}] e o prompt leva os dois textos`,
+      );
+      notes.push(
+        '    lateral: com Frente/Lado direito/Lado esquerdo todos presentes, só "Lado direito" entra em ' +
+          "`image_urls`, o total fica em 4 posições, e nunca as duas laterais chegam juntas",
       );
     }
   }

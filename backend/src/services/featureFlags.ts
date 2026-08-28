@@ -25,9 +25,18 @@ export const FEATURE_FLAGS = {
     /**
      * O motivo é texto de produto, não de engenharia: ele aparece na tela
      * do cliente quando o recurso está indisponível.
+     *
+     * LIGADA por padrão desde 28/08 (migration 069) — o efeito é 100% LOCAL
+     * (MediaPipe rodando no navegador, sem chamada a fornecedor nenhum), e
+     * dar ao operador o comparador ao vivo das 4 cores antes de capturar não
+     * depende do teste abaixo. O que SEGUE sem resposta, e por isso o motivo
+     * fica registrado mesmo com a flag ligada, é se um fundo virtual (em vez
+     * do fundo real do ambiente) produz um avatar TREINADO melhor, igual ou
+     * pior na HeyGen — isso só se mede com um treino pago de verdade, nunca
+     * foi feito, e não é o que esta rodada resolve.
      */
-    reason: "depende de teste ainda não realizado com a HeyGen",
-    defaultEnabled: false,
+    reason: "depende de teste ainda não realizado com a HeyGen (comparação de qualidade do avatar TREINADO — o comparador visual ao vivo não depende disso)",
+    defaultEnabled: true,
   },
   explicit_avatar_engine: {
     label: "Motor de avatar explícito",

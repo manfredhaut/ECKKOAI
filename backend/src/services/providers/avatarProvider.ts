@@ -1249,10 +1249,23 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
   // bytes e é por isso que ele roda inteiro com `fetch` substituído e mais nada.
   const fotoBase = await readUpload(fotoUrl);
 
-  // A ORDEM É SIGNIFICATIVA: `[rosto, traje?, cenário?]` — a mesma que vai em
-  // `image_urls`. Traje antes de cenário porque é o que veste a pessoa; o
-  // cenário é o que está atrás dela.
+  // A ORDEM É SIGNIFICATIVA — `[rosto, cenário?, traje?, lateral?]`, a mesma
+  // que vai em `image_urls`. Prioridade fixa desta rodada (28/08): Frente é
+  // sempre a base; Cenário antes de Traje (decisão desta rodada — a ordem
+  // anterior era Traje antes de Cenário, ver histórico do git); NO MÁXIMO
+  // uma foto lateral, nunca as duas juntas — "Lado direito" vence "Lado
+  // esquerdo" quando as duas existem, porque é a mesma ordem em que já
+  // aparecem na captura (aba 1). Teto de 4 imagens é CONSEQUÊNCIA da
+  // estrutura (1 obrigatória + 3 opcionais, cada opcional contribuindo no
+  // máximo 1), não uma checagem separada.
   const entradasExtras: EntradaDeComposicao[] = [];
+  if (input.scenario) {
+    entradasExtras.push({
+      rotulo: "cenario",
+      bytes: await readUpload(input.scenario),
+      mimeType: mimeDoUpload(input.scenario),
+    });
+  }
   if (input.outfit) {
     entradasExtras.push({
       rotulo: "traje",
@@ -1260,11 +1273,25 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
       mimeType: mimeDoUpload(input.outfit),
     });
   }
-  if (input.scenario) {
+  // A LATERAL é referência de IDENTIDADE (mais um ângulo do mesmo rosto),
+  // não de composição — mas entra pelo mesmo canal (`image_urls`) porque é
+  // assim que o `nano-banana-2/edit` aceita referência extra. Preço não
+  // escala com o número de imagens de ENTRADA (DOCUMENTADO — fal.ai cobra
+  // por imagem de SAÍDA, `num_images`, sempre 1 aqui), então isto não muda
+  // o custo previsto da etapa "compor".
+  const ladoDireitoUrl = input.photoUrls?.[1];
+  const ladoEsquerdoUrl = input.photoUrls?.[2];
+  if (ladoDireitoUrl) {
     entradasExtras.push({
-      rotulo: "cenario",
-      bytes: await readUpload(input.scenario),
-      mimeType: mimeDoUpload(input.scenario),
+      rotulo: "lado_direito",
+      bytes: await readUpload(ladoDireitoUrl),
+      mimeType: mimeDoUpload(ladoDireitoUrl),
+    });
+  } else if (ladoEsquerdoUrl) {
+    entradasExtras.push({
+      rotulo: "lado_esquerdo",
+      bytes: await readUpload(ladoEsquerdoUrl),
+      mimeType: mimeDoUpload(ladoEsquerdoUrl),
     });
   }
 

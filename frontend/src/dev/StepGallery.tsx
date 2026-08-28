@@ -21,7 +21,6 @@ import {
   setGalleryFlag,
   setGalleryVendorHonorsFormat,
 } from "./galleryFetch";
-import type { AssetDefaults } from "../pages/CreateVideo/types";
 
 /**
  * Galeria de passos: os componentes REAIS do fluxo de Criar vídeo, com
@@ -208,25 +207,6 @@ function GalleryStats() {
   );
 }
 
-const EMPTY_DEFAULTS: AssetDefaults = {
-  scenario: "",
-  scenarioName: "",
-  outfit: "",
-  scenarioPrompt: "",
-  outfitPrompt: "",
-};
-
-const FILLED_DEFAULTS: AssetDefaults = {
-  scenario: "/uploads/exemplo/cenario.jpg",
-  // O nome ORIGINAL, e não o do armazenamento: o `scenario` acima é
-  // `<uuid>.<ext>` na vida real, e é justamente por isso que o nome precisa ser
-  // guardado à parte.
-  scenarioName: "cenario-estudio.jpg",
-  outfit: "/uploads/exemplo/traje.jpg",
-  scenarioPrompt: "estúdio claro, fundo neutro, luz suave",
-  outfitPrompt: "blazer azul-marinho sobre camisa branca",
-};
-
 const SAMPLE_SCRIPT =
   "Se você tem uma pequena empresa e nunca gravou um vídeo por falta de tempo, " +
   "este é o atalho: escolha seu avatar, escreva o roteiro e publique em minutos.";
@@ -253,10 +233,13 @@ function StepUnderGlass({
     () => ({
       avatarId: state === "vazio" ? null : "gallery-avatar-1",
       script: state === "vazio" ? "" : SAMPLE_SCRIPT,
-      scenario: state === "vazio" ? "" : FILLED_DEFAULTS.scenario,
-      outfit: state === "vazio" ? "" : FILLED_DEFAULTS.outfit,
-      scenarioPrompt: state === "vazio" ? "" : FILLED_DEFAULTS.scenarioPrompt,
-      outfitPrompt: state === "vazio" ? "" : FILLED_DEFAULTS.outfitPrompt,
+      // Cenário e Traje são campos do WIZARD (por vídeo, Cena) desde 27/08 e
+      // 28/08 respectivamente — nenhum dos dois vem mais de `AssetDefaults`
+      // (Passo 1), tipo extinto.
+      scenario: state === "vazio" ? null : "/uploads/exemplo/cenario.jpg",
+      scenarioPrompt: state === "vazio" ? null : "estúdio claro, fundo neutro, luz suave",
+      outfit: state === "vazio" ? null : "/uploads/exemplo/traje.jpg",
+      outfitPrompt: state === "vazio" ? null : "blazer azul-marinho sobre camisa branca",
       estimatedSeconds: null,
       confirmAboveSeconds: null,
       // CENA preenchida no estado "preenchido": a galeria existe para mostrar
@@ -285,12 +268,7 @@ function StepUnderGlass({
   switch (step) {
     case "passo1-avatar":
       return (
-        <AvatarSetupStep
-          selectedAvatarId={state === "vazio" ? null : "gallery-avatar-1"}
-          onSelectAvatar={noop}
-          defaults={state === "vazio" ? EMPTY_DEFAULTS : FILLED_DEFAULTS}
-          onDefaultsChange={noop}
-        />
+        <AvatarSetupStep selectedAvatarId={state === "vazio" ? null : "gallery-avatar-1"} onSelectAvatar={noop} />
       );
     case "passo2-roteiro":
       return (
@@ -308,10 +286,23 @@ function StepUnderGlass({
       return (
         <SceneStep
           key={`scene-${vendorHonors}`}
+          avatarId={wizard.avatarId}
+          background={wizard.background}
+          onBackgroundChange={noop}
+          scenario={wizard.scenario}
+          onScenarioChange={noop}
+          scenarioPrompt={wizard.scenarioPrompt}
+          onScenarioPromptChange={noop}
+          outfit={wizard.outfit}
+          onOutfitChange={noop}
+          outfitPrompt={wizard.outfitPrompt}
+          onOutfitPromptChange={noop}
           motionPrompt={wizard.motionPrompt}
           onMotionPromptChange={noop}
           expressiveness={wizard.expressiveness}
           onExpressivenessChange={noop}
+          avatarLookId={wizard.avatarLookId}
+          onAvatarLookChange={noop}
           publishPlatform={state === "vazio" ? DEFAULT_PUBLISH_PLATFORM : "reels_tiktok"}
           onPublishPlatformChange={noop}
           tierVideo={wizard.tierVideo}

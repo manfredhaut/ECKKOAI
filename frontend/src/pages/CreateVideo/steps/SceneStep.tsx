@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
+import { MAX_IMAGE_BYTES, formatBytes } from "../../../uploadLimits";
 import { Field } from "../../../components/ui/Field";
 import { PublishStep } from "./PublishStep";
-import type { WizardState } from "../types";
-import type { Credential } from "../../../types";
+import type { SceneBackground, WizardState } from "../types";
+import type { AvatarLooksResponse, Credential } from "../../../types";
 
 /** Espelho de `formatConfidenceForTier` (`backend/src/services/providers/videoFormat.ts`). */
 type FormatConfidenceLevel = "vendor_response" | "documentation" | "unverified";
@@ -20,29 +21,43 @@ interface FormatSupport {
 }
 
 /**
- * O passo CENA: nível do vídeo, cenário/traje deste vídeo, interpretação e
- * formato.
+ * O passo CENA: nível do vídeo, fundo/traje NATIVOS do HeyGen, cenário deste
+ * vídeo (fal), traje deste vídeo (decorativo, fal), interpretação e formato.
  *
  * "Fundo" (background.type) e o dropdown "Traje" (avatar_look_id, o LOOK
- * pago do HeyGen) saíram em 25/08 — são conceitos de CONFIGURAÇÃO DO
- * AVATAR (Passo 1), não do vídeo, e nenhum dos dois é obrigatório no
- * payload do tier Simples (`buildHeygenVideoPayload`,
- * `providerAvatarIdParaGeracao`, confirmado por leitura antes da remoção).
- * "Cenário" e "Traje" (novos) são blocos EM PREPARAÇÃO, independentes do
- * Passo 1, sem persistência e sem entrar no corpo de `POST /videos` —
- * decisão registrada, aguardando o operador decidir a ligação funcional
- * depois de ver na tela.
+ * pago do HeyGen) saíram em 25/08 e VOLTAM em EXECUÇÃO (27/08) — o backend
+ * nunca deixou de suportar os dois (`buildHeygenVideoPayload`,
+ * `providerAvatarIdParaGeracao`, confirmados por leitura nesta rodada); o que
+ * faltava era só a UI que escreve `wizard.background`/`wizard.avatarLookId`,
+ * já consumidos por `corpoDaGeracao()` em GenerateStep.tsx.
  *
- * "AVATAR DESTE VÍDEO" saiu em 25/08 — não tinha razão de existir em
- * NENHUM nível: o avatar já é escolhido/criado no Passo 1, e este bloco (só
- * decorativo, "Em preparação: esta escolha ainda não entra no vídeo
- * gerado") não tinha consumidor em lugar nenhum — confirmado por grep no
- * repositório inteiro antes da remoção (`avatarDesteVideoId`,
- * `personagemImagemNome`, `avatarsDoVideo`: zero ocorrência fora deste
- * arquivo, e zero em `backend/src`).
+ * OS DOIS SÓ VALEM NO TIER SIMPLES (HeyGen) — decisão desta rodada, não do
+ * texto antigo. `providerAvatarId`/`background` não são lidos em NENHUM
+ * lugar de `generateVideoFal` (confirmado por leitura); mostrá-los sempre
+ * repetiria a classe de defeito que este projeto já pagou várias vezes —
+ * campo preenchido na tela, descartado em silêncio pelo servidor. Nos
+ * outros tiers, um aviso explica onde cenário/traje realmente entram.
  *
- * O que continua indo ao fornecedor:
+ * CENÁRIO virou campo REAL em 27/08 — deixou de ser decorativo e saiu do
+ * Passo 1 (onde era "padrão do avatar", editável só lá). TRAJE seguiu o
+ * MESMO caminho em 28/08 — era decorativo aqui (texto "Em preparação"), e o
+ * Passo 1 tinha voltado a mantê-lo como identidade fixa do avatar numa
+ * decisão que a própria sessão revogou na mesma rodada que tirou Cenário de
+ * lá. Os dois campos aceitam imagem (upload) e texto (Gerar via IA) desde
+ * as migrations 002/010 (`videos.scenario`/`scenario_prompt`/`outfit`/
+ * `outfit_prompt`); só a UI vivia no lugar errado. O valor salvo no avatar
+ * migra para cá como semente inicial — ver `WizardState.scenario`/`outfit`
+ * em `types.ts` e `handleSceneDefaultsSeed` em `CreateVideoPage.tsx`.
  *
+ * "AVATAR DESTE VÍDEO" saiu em 25/08 e CONTINUA fora — não tinha razão de
+ * existir em NENHUM nível: o avatar já é escolhido/criado no Passo 1.
+ *
+ * O que vai ao fornecedor, hoje:
+ *
+ *   fundo          →  background.type "color" | "image"     (só tier Simples)
+ *   traje (look)   →  qual look entra em avatar_id            (só tier Simples)
+ *   cenário        →  scenario (imagem) + scenario_prompt (texto)
+ *   traje          →  outfit (imagem) + outfit_prompt (texto)
  *   interpretação  →  motion_prompt + expressiveness
  *   formato        →  aspect_ratio + resolution
  */
@@ -89,20 +104,49 @@ interface CostReferenceResponse {
 const MOTION_PROMPT_MAX = 600;
 
 export function SceneStep({
+  avatarId,
+  background,
+  onBackgroundChange,
+  scenario,
+  onScenarioChange,
+  scenarioPrompt,
+  onScenarioPromptChange,
+  outfit,
+  onOutfitChange,
+  outfitPrompt,
+  onOutfitPromptChange,
   motionPrompt,
   onMotionPromptChange,
   expressiveness,
   onExpressivenessChange,
+  avatarLookId,
+  onAvatarLookChange,
   publishPlatform,
   onPublishPlatformChange,
   tierVideo,
   onTierVideoChange,
   targetDurationSeconds,
 }: {
+  /** O avatar do Passo 1 — usado só para buscar os looks dele (`/avatars/:id/looks`). */
+  avatarId: string | null;
+  background: SceneBackground | null;
+  onBackgroundChange: (value: SceneBackground | null) => void;
+  /** URL da imagem de cenário deste vídeo (upload), ou `null` sem escolha. */
+  scenario: string | null;
+  onScenarioChange: (value: string | null) => void;
+  scenarioPrompt: string | null;
+  onScenarioPromptChange: (value: string | null) => void;
+  /** URL da imagem de traje deste vídeo (upload), ou `null` sem escolha. */
+  outfit: string | null;
+  onOutfitChange: (value: string | null) => void;
+  outfitPrompt: string | null;
+  onOutfitPromptChange: (value: string | null) => void;
   motionPrompt: string;
   onMotionPromptChange: (value: string) => void;
   expressiveness: WizardState["expressiveness"];
   onExpressivenessChange: (value: WizardState["expressiveness"]) => void;
+  avatarLookId: string | null;
+  onAvatarLookChange: (value: string | null) => void;
   publishPlatform: string;
   onPublishPlatformChange: (value: string) => void;
   /** Mesmo padrão de `onCaptionsChange` — BLOCO A. Movido de GenerateStep.tsx: o nível é escolhido AQUI, na Cena, antes do resumo final. */
@@ -117,6 +161,61 @@ export function SceneStep({
   targetDurationSeconds: number | null;
 }) {
   const { t } = useTranslation();
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [looks, setLooks] = useState<AvatarLooksResponse | null>(null);
+
+  useEffect(() => {
+    if (!avatarId) {
+      setLooks(null);
+      return;
+    }
+    let cancelado = false;
+    api
+      .get<AvatarLooksResponse>(`/avatars/${avatarId}/looks`)
+      .then((r) => {
+        if (!cancelado) setLooks(r);
+      })
+      // Falha de leitura vira "um look só", que é o mesmo estado de quem não
+      // tem trajes: o passo inteiro não pode travar pelo controle menos
+      // importante dele.
+      .catch(() => {
+        if (!cancelado)
+          setLooks({ looks: [], pendentes: [], canChoose: false, simulated: false, lookCost: { units: 0, usd: 0 } });
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [avatarId]);
+
+  async function handleBackgroundImageUpload(file: File) {
+    setUploadError(null);
+    // Validação LOCAL antes de qualquer rede: tipo e tamanho. O servidor
+    // continua sendo quem recusa de verdade (ele confere os bytes), mas
+    // mandar 40 MB para receber um 413 gasta a banda de quem está numa
+    // conexão ruim, que é justamente quem menos pode pagar por isso.
+    if (!file.type.startsWith("image/")) {
+      setUploadError(t("createVideo.scene.backgroundNotImage"));
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setUploadError(
+        t("createVideo.avatarSetup.imageTooLarge", {
+          size: formatBytes(file.size),
+          max: formatBytes(MAX_IMAGE_BYTES),
+        }),
+      );
+      return;
+    }
+    try {
+      const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
+      onBackgroundChange({ type: "image", value: url });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : t("errors.generic"));
+    }
+  }
+
+  const listaLooks = looks?.looks ?? [];
+  const podeEscolherLookExistente = looks?.canChoose === true;
 
   /**
    * FASE C (multi-vendor de avatar) — "Simples" exige heygen; "Normal" e
@@ -257,16 +356,59 @@ export function SceneStep({
   }, [tierVideo]);
   const confiancaDoFormato = formatSupport?.perPlatformConfidence?.[publishPlatform] ?? null;
 
-  /**
-   * CENÁRIO e TRAJE deste vídeo — estado local, próprio, sem persistência e
-   * sem entrar em `corpoDaGeracao`. Upload OU descrição por texto — os dois
-   * convivem, não são mutuamente exclusivos, porque nenhum dos dois faz
-   * nada ainda.
-   */
-  const [cenarioImagemNome, setCenarioImagemNome] = useState<string | null>(null);
-  const [cenarioPrompt, setCenarioPrompt] = useState("");
-  const [trajeImagemNome, setTrajeImagemNome] = useState<string | null>(null);
-  const [trajePrompt, setTrajePrompt] = useState("");
+  const scenarioFileInput = useRef<HTMLInputElement | null>(null);
+  const [scenarioUploadError, setScenarioUploadError] = useState<string | null>(null);
+
+  async function handleScenarioImageUpload(file: File) {
+    setScenarioUploadError(null);
+    if (!file.type.startsWith("image/")) {
+      setScenarioUploadError(t("createVideo.scene.backgroundNotImage"));
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setScenarioUploadError(
+        t("createVideo.avatarSetup.imageTooLarge", {
+          size: formatBytes(file.size),
+          max: formatBytes(MAX_IMAGE_BYTES),
+        }),
+      );
+      return;
+    }
+    try {
+      const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
+      onScenarioChange(url);
+    } catch (err) {
+      setScenarioUploadError(err instanceof Error ? err.message : t("errors.generic"));
+    }
+  }
+
+  // TRAJE deste vídeo — MESMO mecanismo do Cenário acima, campo por campo.
+  // Virou real nesta rodada (28/08), seguindo Cenário (27/08) à risca.
+  const outfitFileInput = useRef<HTMLInputElement | null>(null);
+  const [outfitUploadError, setOutfitUploadError] = useState<string | null>(null);
+
+  async function handleOutfitImageUpload(file: File) {
+    setOutfitUploadError(null);
+    if (!file.type.startsWith("image/")) {
+      setOutfitUploadError(t("createVideo.scene.backgroundNotImage"));
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setOutfitUploadError(
+        t("createVideo.avatarSetup.imageTooLarge", {
+          size: formatBytes(file.size),
+          max: formatBytes(MAX_IMAGE_BYTES),
+        }),
+      );
+      return;
+    }
+    try {
+      const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
+      onOutfitChange(url);
+    } catch (err) {
+      setOutfitUploadError(err instanceof Error ? err.message : t("errors.generic"));
+    }
+  }
 
   return (
     <div className="card">
@@ -333,16 +475,149 @@ export function SceneStep({
         )}
       </fieldset>
 
+      {/* ---------------------------------------------------------- FUNDO */}
+      {/* NATIVO do HeyGen — só vale no tier Simples (ver o comentário do
+          topo do arquivo). Nos outros tiers, um aviso substitui o controle
+          em vez de deixá-lo visível e inerte: campo preenchido que o
+          servidor descarta em silêncio é a classe de defeito que este
+          projeto já pagou várias vezes. */}
+      {tierVideo === "simples" ? (
+        <Field label={t("createVideo.scene.backgroundLabel")} help={t("createVideo.scene.backgroundHelp")}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button
+              type="button"
+              className={`chip${background === null ? " selected" : ""}`}
+              onClick={() => onBackgroundChange(null)}
+            >
+              {t("createVideo.scene.backgroundNone")}
+            </button>
+            <button
+              type="button"
+              className={`chip${background?.type === "color" ? " selected" : ""}`}
+              onClick={() =>
+                onBackgroundChange({ type: "color", value: background?.type === "color" ? background.value : "#1B2A4A" })
+              }
+            >
+              {t("createVideo.scene.backgroundColor")}
+            </button>
+            <label className={`chip${background?.type === "image" ? " selected" : ""}`}>
+              {t("createVideo.scene.backgroundImage")}
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleBackgroundImageUpload(file);
+                }}
+              />
+            </label>
+          </div>
+
+          {background?.type === "color" && (
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
+              <input
+                type="color"
+                value={background.value}
+                onChange={(e) => onBackgroundChange({ type: "color", value: e.target.value })}
+                aria-label={t("createVideo.scene.backgroundColor")}
+              />
+              <code style={{ fontSize: 13 }}>{background.value}</code>
+            </div>
+          )}
+
+          {/* PRÉVIA do que foi escolhido. Um fundo escolhido e não mostrado é
+              indistinguível de nenhum fundo. */}
+          {background?.type === "image" && (
+            <div style={{ marginTop: 10 }}>
+              <img
+                src={background.value}
+                alt={t("createVideo.scene.backgroundPreview")}
+                style={{ maxWidth: 220, borderRadius: "var(--radius-card)", display: "block" }}
+              />
+            </div>
+          )}
+
+          {uploadError && (
+            <p className="alert-error" style={{ fontSize: 13, marginTop: 8 }}>
+              {uploadError}
+            </p>
+          )}
+        </Field>
+      ) : (
+        <p className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+          {t("createVideo.scene.backgroundTierNotice")}
+        </p>
+      )}
+
+      {/* ---------------------------------------------------------- TRAJE (LOOK) */}
+      {/* Mesma regra do Fundo: só vale no tier Simples. `providerAvatarId`
+          nunca é lido em `generateVideoFal` — confirmado por leitura. */}
+      {tierVideo === "simples" ? (
+        <Field label={t("createVideo.scene.lookLabel")} help={t("createVideo.scene.lookHelp")}>
+          <select
+            value={avatarLookId ?? ""}
+            disabled={!podeEscolherLookExistente}
+            onChange={(e) => onAvatarLookChange(e.target.value || null)}
+          >
+            <option value="">{t("createVideo.scene.lookDefault")}</option>
+            {listaLooks.map((look) => (
+              <option key={look.id} value={look.id}>
+                {look.name}
+              </option>
+            ))}
+          </select>
+          {!podeEscolherLookExistente && (
+            <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+              {t("createVideo.scene.lookSingle")}
+            </p>
+          )}
+        </Field>
+      ) : (
+        <p className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+          {t("createVideo.scene.lookTierNotice")}
+        </p>
+      )}
+
       {/* -------------------------------------------------------- CENÁRIO */}
+      {/* REAL desde esta rodada — deixou de ser decorativo e saiu do Passo 1
+          (onde era "Cenário padrão" do avatar, editável só lá). Upload OU
+          texto (Gerar via IA), os dois convivem — vão como `scenario`
+          (imagem) e `scenario_prompt` (texto) no corpo de `POST /videos`,
+          que já aceita os dois desde as migrations 002/010. */}
       <Field label={t("createVideo.scene.scenarioLabel")} help={t("createVideo.scene.scenarioHelp")}>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={(e) => setCenarioImagemNome(e.target.files?.[0]?.name ?? null)}
-        />
-        {cenarioImagemNome && (
-          <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-            {cenarioImagemNome}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-ghost" onClick={() => scenarioFileInput.current?.click()}>
+            {t("createVideo.avatarSetup.chooseFile")}
+          </button>
+          {scenario && (
+            <button type="button" className="btn btn-outline" onClick={() => onScenarioChange(null)}>
+              {t("createVideo.avatarSetup.removeImage")}
+            </button>
+          )}
+          <input
+            ref={scenarioFileInput}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleScenarioImageUpload(file);
+            }}
+          />
+        </div>
+        {scenario && (
+          <div style={{ marginTop: 10 }}>
+            <img
+              src={scenario}
+              alt={t("createVideo.scene.scenarioLabel")}
+              style={{ maxWidth: 220, borderRadius: "var(--radius-card)", display: "block" }}
+            />
+          </div>
+        )}
+        {scenarioUploadError && (
+          <p className="alert-error" style={{ fontSize: 13, marginTop: 8 }}>
+            {scenarioUploadError}
           </p>
         )}
         <div style={{ marginTop: 10 }}>
@@ -351,26 +626,53 @@ export function SceneStep({
           </label>
           <textarea
             rows={3}
-            value={cenarioPrompt}
+            value={scenarioPrompt ?? ""}
             placeholder={t("createVideo.scene.scenarioPromptPlaceholder")}
-            onChange={(e) => setCenarioPrompt(e.target.value)}
+            onChange={(e) => onScenarioPromptChange(e.target.value || null)}
           />
         </div>
-        <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
-          {t("createVideo.scene.scenarioPreparing")}
-        </p>
       </Field>
 
       {/* ---------------------------------------------------------- TRAJE */}
+      {/* REAL desde esta rodada (28/08) — seguiu Cenário à risca, saindo do
+          Passo 1 (onde tinha voltado a ser "Traje padrão", identidade fixa
+          do avatar — decisão revogada). Upload OU texto (Gerar via IA), os
+          dois convivem — vão como `outfit` (imagem) e `outfit_prompt`
+          (texto) no corpo de `POST /videos`, que já aceita os dois desde as
+          migrations 002/010. */}
       <Field label={t("createVideo.scene.outfitLabel")} help={t("createVideo.scene.outfitHelp")}>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={(e) => setTrajeImagemNome(e.target.files?.[0]?.name ?? null)}
-        />
-        {trajeImagemNome && (
-          <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-            {trajeImagemNome}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-ghost" onClick={() => outfitFileInput.current?.click()}>
+            {t("createVideo.avatarSetup.chooseFile")}
+          </button>
+          {outfit && (
+            <button type="button" className="btn btn-outline" onClick={() => onOutfitChange(null)}>
+              {t("createVideo.avatarSetup.removeImage")}
+            </button>
+          )}
+          <input
+            ref={outfitFileInput}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleOutfitImageUpload(file);
+            }}
+          />
+        </div>
+        {outfit && (
+          <div style={{ marginTop: 10 }}>
+            <img
+              src={outfit}
+              alt={t("createVideo.scene.outfitLabel")}
+              style={{ maxWidth: 220, borderRadius: "var(--radius-card)", display: "block" }}
+            />
+          </div>
+        )}
+        {outfitUploadError && (
+          <p className="alert-error" style={{ fontSize: 13, marginTop: 8 }}>
+            {outfitUploadError}
           </p>
         )}
         <div style={{ marginTop: 10 }}>
@@ -379,14 +681,11 @@ export function SceneStep({
           </label>
           <textarea
             rows={3}
-            value={trajePrompt}
+            value={outfitPrompt ?? ""}
             placeholder={t("createVideo.scene.outfitPromptPlaceholder")}
-            onChange={(e) => setTrajePrompt(e.target.value)}
+            onChange={(e) => onOutfitPromptChange(e.target.value || null)}
           />
         </div>
-        <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
-          {t("createVideo.scene.outfitPreparing")}
-        </p>
       </Field>
 
       {/* -------------------------------------------------- INTERPRETAÇÃO */}

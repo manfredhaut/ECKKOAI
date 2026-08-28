@@ -13,6 +13,13 @@ import {
 } from "../services/providers/avatarProvider.js";
 import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
 import type { AvatarProviderStatus } from "../services/providers/avatarProvider.js";
+// `getCredential` (o genérico) não é chamado por nenhuma rota deste arquivo
+// — as três que resolviam credencial de avatar por ele foram corrigidas para
+// `getCredentialForVendor` (27–28/08). O import fica de propósito: os
+// mutantes de `checkAvatarPreviewVendorPolicy.ts` revertem cada rota para
+// ele, simulando a regressão exata que já custou dinheiro — sem o import,
+// essa reversão não compila, e o mutante reprova por erro de TypeScript em
+// vez de provar a invariante de verdade.
 import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 import type { ResolvedCredential } from "../services/credentialLookup.js";
 import { VENDORS_WITH_TRAINING_PATH } from "../services/providers/vendorCatalog.js";
@@ -71,11 +78,21 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     const avatar = rows[0];
     if (!avatar) return reply.code(404).send({ error: "Avatar not found" });
 
-    const credential = await getCredential(req.tenantId, "avatar");
+    // O vendor CORRETO é quem treinou este avatar (`avatar.provider`), nunca
+    // o default genérico do tenant (`getCredential`) — mesma classe do bug
+    // corrigido no TREINO em 26/08: para um tenant com `fal` como
+    // `is_default` de `provider=avatar`, `getCredential` devolvia a chave da
+    // fal (guardada só para ANIMAÇÃO) e a HeyGen respondia 401, calado —
+    // a tela só via "sem prévia". `avatar.provider` é sempre gravado junto de
+    // `avatar.provider_avatar_id` na mesma UPDATE (rota de treino acima),
+    // nunca um sem o outro — daí o `&&`, não uma segunda checagem solta.
+    const credential = avatar.provider_avatar_id
+      ? await getCredentialForVendor(req.tenantId, "avatar", avatar.provider as AvatarVendor)
+      : null;
     if (!credential || !avatar.provider_avatar_id) {
       // SEM TRAJE POSSÍVEL, e é um estado legítimo: um avatar em treino ainda
-      // não tem `provider_avatar_id`, e um tenant sem credencial não tem a quem
-      // pedir. Os dois caem aqui.
+      // não tem `provider_avatar_id`, e um tenant sem credencial (para o
+      // vendor CERTO) não tem a quem pedir. Os dois caem aqui.
       //
       // `pendentes: []` é a correção de um defeito MEDIDO: este retorno omitia
       // o campo, a tela fazia `lookInfo.pendentes.length`, e o clique num card
@@ -156,7 +173,16 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       // `criarLook()`. A rota não decide nada sobre traje; se decidisse, a
       // recusa do live só seria alcançável subindo a aplicação, e uma regra que
       // custa US$ 1,00 por engano precisa ser exercitável no gate.
-      const credential = await getCredential(req.tenantId, "avatar");
+      //
+      // O vendor CORRETO é quem treinou este avatar (`avatar.provider`), nunca
+      // o default genérico do tenant (`getCredential`) — MESMO bug já
+      // corrigido em `/looks` (GET) e `/preview`, agora fechado aqui também
+      // (28/08). Sem isto, um tenant com `fal` como `is_default` de
+      // `provider=avatar` mandaria a chave da fal para a HeyGen ao CRIAR um
+      // traje — 401 calado, e o clique em "Criar traje" (US$ 1,00) falharia
+      // sempre para esse tenant, mesmo com a chave certa cadastrada na
+      // plataforma.
+      const credential = await getCredentialForVendor(req.tenantId, "avatar", avatar.provider as AvatarVendor);
       if (!credential) {
         return reply.code(400).send({
           error: "no_avatar_credential",
@@ -360,6 +386,61 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     if (!rows[0]) return reply.code(404).send({ error: "Avatar not found" });
     return rows[0];
   });
+
+  /**
+   * Remove UMA das fotos do rosto, pela posição na lista.
+   *
+   * Existe porque a captura era um caminho de mão única: uma vez enviada (pela
+   * câmera OU por arquivo), a foto não tinha como sair — só dava para preencher
+   * as vagas restantes. Uma foto tremida ou com o enquadramento errado obrigava
+   * a apagar o avatar inteiro e começar de novo.
+   *
+   * A remoção é por ÍNDICE e a lista é DENSA: quem vem depois sobe uma posição,
+   * e a próxima foto capturada ou enviada entra no FIM (`photo_urls || ...` no
+   * POST logo acima anexa, nunca grava por posição). Isso não é detalhe de
+   * apresentação — `videos.ts` usa `photo_urls[0]` como imagem base no caminho
+   * da fal —, então a tela precisa dizer isso a quem clica, e diz.
+   *
+   * O arquivo sai do disco junto. Sem isto, cada refazer deixaria um órfão em
+   * `uploads/`, que ninguém mais referencia e nada mais apaga (o `DELETE
+   * /avatars/:id` só varre o que estiver em `photo_urls` NA HORA).
+   */
+  app.delete<{ Params: { id: string; index: string } }>(
+    "/avatars/:id/photos/:index",
+    async (req, reply) => {
+      const { rows } = await pool.query<Avatar>(
+        "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
+        [req.params.id, req.tenantId],
+      );
+      const avatar = rows[0];
+      if (!avatar) return reply.code(404).send({ error: "Avatar not found" });
+
+      const index = Number(req.params.index);
+      if (!Number.isInteger(index) || index < 0 || index >= avatar.photo_urls.length) {
+        return reply.code(400).send({
+          error: "Photo index out of range",
+          message: "Essa foto não existe mais. Recarregue a página e tente de novo.",
+        });
+      }
+
+      const removida = avatar.photo_urls[index];
+      const restantes = avatar.photo_urls.filter((_, i) => i !== index);
+
+      const atualizado = await pool.query<Avatar>(
+        "UPDATE avatars SET photo_urls = $3::jsonb WHERE id = $1 AND tenant_id = $2 RETURNING *",
+        [req.params.id, req.tenantId, JSON.stringify(restantes)],
+      );
+      if (!atualizado.rows[0]) return reply.code(404).send({ error: "Avatar not found" });
+
+      // Depois do UPDATE, e com o erro engolido: o banco é a verdade sobre
+      // quais fotos existem. Um arquivo que resiste ao `unlink` (permissão,
+      // volume remoto) não pode fazer a remoção parecer ter falhado quando a
+      // lista já não o cita mais.
+      await unlink(path.join(config.uploadsDir, removida.replace("/uploads/", ""))).catch(() => {});
+
+      return atualizado.rows[0];
+    },
+  );
 
   // Upload a recorded or provided reference video, then kick off avatar
   // training (required credential) at HeyGen/D-ID. A clonagem de voz SAIU
@@ -601,7 +682,10 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
 
     let heygenPreviewUrl: string | null = null;
     if (avatar.provider_avatar_id) {
-      const credential = await getCredential(req.tenantId, "avatar");
+      // Mesmo vendor que treinou (`avatar.provider`), não o default genérico
+      // do tenant — mesma correção do `/looks` logo acima e do treino
+      // (26/08). Ver o comentário de lá para o defeito exato.
+      const credential = await getCredentialForVendor(req.tenantId, "avatar", avatar.provider as AvatarVendor);
       if (credential) {
         const doFornecedor = await listAvatarLooks(
           credential.apiKey,

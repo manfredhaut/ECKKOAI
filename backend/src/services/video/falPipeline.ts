@@ -530,7 +530,7 @@ export class FalPipelineError extends Error {
 /** Uma imagem de entrada da composição, já em bytes. Ver `entradasExtras`. */
 export interface EntradaDeComposicao {
   /** Aparece no diário e no log. Não vai ao fornecedor. */
-  rotulo: "rosto" | "traje" | "cenario";
+  rotulo: "rosto" | "traje" | "cenario" | "lado_direito" | "lado_esquerdo";
   bytes: Buffer;
   mimeType: string;
 }

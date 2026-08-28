@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { AvatarSetupStep } from "./steps/AvatarSetupStep";
@@ -6,7 +6,7 @@ import { ScriptStep } from "./steps/ScriptStep";
 import { SceneStep } from "./steps/SceneStep";
 import { GenerateStep } from "./steps/GenerateStep";
 import { DEFAULT_PUBLISH_PLATFORM } from "./publishPlatforms";
-import type { AssetDefaults, WizardState } from "./types";
+import type { WizardState } from "./types";
 
 /**
  * Criar vídeo, em QUATRO passos: Avatar · Roteiro · Cena · Gerar.
@@ -38,27 +38,6 @@ export function CreateVideoPage() {
     t("createVideo.steps.generate"),
   ];
   const [step, setStep] = useState(0);
-  /**
-   * HERANÇA do passo 1: cenário e traje "padrão" do avatar.
-   *
-   * ⚠️ **Deixou de ser coleta órfã no BLOCO B2.** Até então este estado não
-   * alimentava geração nenhuma: os arquivos subiam, a tela escrevia "Imagem
-   * salva", e `corpoDaGeracao` não os mandava — morriam aqui, a um passo do
-   * servidor. Agora eles descem para o passo 4 (`defaults={defaults}`) e saem
-   * no corpo de `POST /videos`.
-   *
-   * O que eles alimentam é a COMPOSIÇÃO da fal, que junta rosto, traje e
-   * cenário numa imagem-base. No caminho HeyGen eles continuam sem destino, e
-   * isso não é descuido: aquele contrato não tem campo para cenário nem para
-   * traje — traje lá é look, e fundo é o do passo Cena.
-   */
-  const [defaults, setDefaults] = useState<AssetDefaults>({
-    scenario: "",
-    scenarioName: "",
-    outfit: "",
-    scenarioPrompt: "",
-    outfitPrompt: "",
-  });
   const [wizard, setWizard] = useState<WizardState>({
     avatarId: null,
     script: "",
@@ -67,6 +46,16 @@ export function CreateVideoPage() {
     // "mais" — sem alvo escolhido. Ver o comentário do campo em `types.ts`.
     targetDurationSeconds: null,
     background: null,
+    // `undefined`-como-null não existe aqui: nasce `null` (sem cenário) e o
+    // efeito `handleSceneDefaultsSeed`, abaixo, sobrescreve com o padrão do
+    // avatar assim que ele é conhecido — ver o comentário lá para a migração.
+    scenario: null,
+    scenarioPrompt: null,
+    // MESMA regra do cenário acima: nasce `null` e o efeito
+    // `handleSceneDefaultsSeed` sobrescreve com o padrão do avatar assim
+    // que ele é conhecido.
+    outfit: null,
+    outfitPrompt: null,
     motionPrompt: "",
     // PRÉ-SELECIONADO, nunca null: sem escolha, o campo some do corpo enviado
     // ao fornecedor e ele aplica "low" em silêncio (doc: "Defaults to 'low'
@@ -92,6 +81,51 @@ export function CreateVideoPage() {
    */
   const [outfitPreparing, setOutfitPreparing] = useState(false);
   const handleOutfitPreparingChange = useCallback((p: boolean) => setOutfitPreparing(p), []);
+
+  /**
+   * MIGRAÇÃO NÃO DESTRUTIVA de Cenário E Traje — o padrão salvo no avatar
+   * (`avatar.scenario`/`scenario_prompt`/`outfit`/`outfit_prompt`) vira o
+   * valor INICIAL dos 4 campos por vídeo (`wizard.scenario`/`scenarioPrompt`/
+   * `outfit`/`outfitPrompt`) na primeira vez que aquele avatar é selecionado
+   * nesta visita — nunca de novo depois disso, mesmo que a pessoa volte ao
+   * Passo 1 e avance de novo, para não descartar uma edição já feita na
+   * Cena.
+   *
+   * TRAJE entrou nesta rodada (28/08), seguindo Cenário à risca — mesma
+   * função, mesmo `Set`, mesma regra de uma vez só. Antes desta rodada
+   * "Traje Padrão" tinha sido mantido no Passo 1 como identidade fixa do
+   * avatar — decisão revogada na mesma sessão, pelo mesmo motivo que já
+   * havia tirado Cenário de lá.
+   *
+   * `AvatarSetupStep.tsx` chama isto de DENTRO do mesmo efeito que já lia
+   * os 4 campos do avatar selecionado — o dado nunca deixou de estar
+   * disponível ali, só o destino mudou.
+   *
+   * `Set`, não um booleano só: trocar de avatar dentro da mesma visita
+   * semeia de novo para o avatar NOVO (correto — é o padrão dele que deve
+   * aparecer), e nunca mais para um avatar já visitado nesta sessão.
+   */
+  const seededSceneDefaultsAvatarIds = useRef<Set<string>>(new Set());
+  const handleSceneDefaultsSeed = useCallback(
+    (
+      avatarId: string,
+      scenario: string | null,
+      scenarioPrompt: string | null,
+      outfit: string | null,
+      outfitPrompt: string | null,
+    ) => {
+      if (seededSceneDefaultsAvatarIds.current.has(avatarId)) return;
+      seededSceneDefaultsAvatarIds.current.add(avatarId);
+      setWizard((w) => ({
+        ...w,
+        scenario: scenario || null,
+        scenarioPrompt: scenarioPrompt || null,
+        outfit: outfit || null,
+        outfitPrompt: outfitPrompt || null,
+      }));
+    },
+    [],
+  );
 
   function goNext() {
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -148,9 +182,8 @@ export function CreateVideoPage() {
         <AvatarSetupStep
           selectedAvatarId={wizard.avatarId}
           onSelectAvatar={(id) => setWizard((w) => ({ ...w, avatarId: id }))}
-          defaults={defaults}
-          onDefaultsChange={setDefaults}
           onOutfitPreparingChange={handleOutfitPreparingChange}
+          onSceneDefaultsSeed={handleSceneDefaultsSeed}
           nextButton={
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <button className="btn btn-primary" onClick={goNext} disabled={!canProceed}>
@@ -178,10 +211,23 @@ export function CreateVideoPage() {
       )}
       {step === 2 && (
         <SceneStep
+          avatarId={wizard.avatarId}
+          background={wizard.background}
+          onBackgroundChange={(background) => setWizard((w) => ({ ...w, background }))}
+          scenario={wizard.scenario}
+          onScenarioChange={(scenario) => setWizard((w) => ({ ...w, scenario }))}
+          scenarioPrompt={wizard.scenarioPrompt}
+          onScenarioPromptChange={(scenarioPrompt) => setWizard((w) => ({ ...w, scenarioPrompt }))}
+          outfit={wizard.outfit}
+          onOutfitChange={(outfit) => setWizard((w) => ({ ...w, outfit }))}
+          outfitPrompt={wizard.outfitPrompt}
+          onOutfitPromptChange={(outfitPrompt) => setWizard((w) => ({ ...w, outfitPrompt }))}
           motionPrompt={wizard.motionPrompt}
           onMotionPromptChange={(motionPrompt) => setWizard((w) => ({ ...w, motionPrompt }))}
           expressiveness={wizard.expressiveness}
           onExpressivenessChange={(expressiveness) => setWizard((w) => ({ ...w, expressiveness }))}
+          avatarLookId={wizard.avatarLookId}
+          onAvatarLookChange={(avatarLookId) => setWizard((w) => ({ ...w, avatarLookId }))}
           publishPlatform={wizard.publishPlatform}
           onPublishPlatformChange={(publishPlatform) => setWizard((w) => ({ ...w, publishPlatform }))}
           tierVideo={wizard.tierVideo}
@@ -190,14 +236,7 @@ export function CreateVideoPage() {
         />
       )}
       {step === 3 && (
-        <GenerateStep
-          wizard={wizard}
-          onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))}
-          // O passo 1 coleta cenário e traje; é aqui que eles atravessam até o
-          // corpo de `POST /videos`. Antes desta linha o bloco do passo 1 era o
-          // último resto de coleta que não ia a lugar nenhum.
-          defaults={defaults}
-        />
+        <GenerateStep wizard={wizard} onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))} />
       )}
 
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>

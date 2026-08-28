@@ -4,7 +4,7 @@
  * Três vetores, um tema: cada um fecha um lugar em que a tela ficava calada
  * exatamente no instante em que falar importava.
  *
- * 1. **O resumo dos seis campos, acima do botão Gerar.** Dois vídeos pagos
+ * 1. **O resumo dos sete campos, acima do botão Gerar.** Dois vídeos pagos
  *    saíram com campos vazios sem que desse para perceber antes de clicar — o
  *    corpo era válido, o fornecedor respondeu 200, e a ausência só apareceu no
  *    vídeo pronto. O passo Cena mostra cada controle na hora de preencher, mas
@@ -14,11 +14,16 @@
  *    (60 un, US$ 1,00 medidos) e ainda não está no seletor da Cena; passar
  *    adiante leva a gerar sem ele. São dois prejuízos no mesmo clique.
  *
- * 3. **O arquivo já salvo aparece pelo NOME.** Navegador nenhum repovoa um
- *    `<input type="file">` na remontagem, e o armazenamento renomeia para
- *    `<uuid>.<ext>` (medido em `uploads/`), então o nome original não sobrevive
- *    em lugar nenhum a não ser guardado à parte. O campo dizia "nenhum ficheiro
- *    selecionado" com a imagem salva e em uso.
+ * 3. ~~O arquivo já salvo aparece pelo NOME~~ — ESTREITADA na rodada de
+ *    Cenário-por-vídeo (27/08): media `defaults.scenarioName`, campo que
+ *    saiu de `AssetDefaults` junto com a UI de "Cenário padrão" do Passo 1.
+ *    O item saiu deste arquivo — mas a LINHA "Cenário" do resumo saiu JUNTO,
+ *    por engano, e ninguém a substituiu: o campo passou a chegar certinho ao
+ *    corpo de `POST /videos` (Cena, por vídeo) e ficou INVISÍVEL na tela de
+ *    conferência — o MESMO defeito de origem que este arquivo existe para
+ *    impedir. Achado numa varredura completa (28/08), fechado no mesmo dia:
+ *    a linha "Cenário" voltou ao resumo, lendo `corpo.scenario_prompt`/
+ *    `corpo.scenario` — mesmo padrão de "Traje" (ver `CAMPOS` abaixo).
  *
  * COMO ELA OLHA: lendo os arquivos como TEXTO. O gate roda em Node, sem DOM e
  * sem React, e importar um `.tsx` traria a árvore de componentes junto — mesma
@@ -39,15 +44,22 @@ const WIZARD = "frontend/src/pages/CreateVideo/CreateVideoPage.tsx";
 const PASSO1 = "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx";
 
 /**
- * Os SEIS campos, e de onde cada um sai no corpo de `POST /videos`.
+ * Os SETE campos, e de onde cada um sai no corpo de `POST /videos`.
  *
  * Declarados aqui em pares para que a guarda não aceite um resumo que mostre
- * seis linhas tiradas de outro lugar: o valor do resumo está em ele ser lido do
+ * sete linhas tiradas de outro lugar: o valor do resumo está em ele ser lido do
  * MESMO objeto que vai ao servidor. Um resumo que lê o formulário mostraria o
  * que a pessoa escolheu, e o defeito é justamente escolha que não chega.
  */
 const CAMPOS: { chave: string; corpo: string; oQueE: string }[] = [
   { chave: "avatar", corpo: "corpo.avatar_id", oQueE: "o avatar" },
+  // CENÁRIO — achado numa varredura completa (28/08): a linha saiu do resumo
+  // junto com `defaults.scenarioName` na rodada de Cenário-por-vídeo (27/08),
+  // sem que ninguém a substituísse pelo campo novo. O campo em si sempre
+  // chegou certo ao corpo (Cena, por vídeo) — só ficou invisível na tela de
+  // conferência. `scenario_prompt` (texto legível) tem prioridade sobre
+  // `scenario` (URL do arquivo), mesmo padrão de `outfit` logo abaixo.
+  { chave: "scenario", corpo: "corpo.scenario_prompt", oQueE: "o cenário" },
   // Fase A, item 3 (25/08): `corpo.avatar_look_id` era o campo do dropdown
   // "Traje", removido em 25/08 — desde então este campo é SEMPRE null, e a
   // linha do resumo mentia "Traje: nenhum" mesmo com o Traje Padrão do
@@ -61,10 +73,10 @@ const CAMPOS: { chave: string; corpo: string; oQueE: string }[] = [
 
 export const MUTANTS: Mutant[] = [
   {
-    guard: "gerar: o resumo mostra os seis campos antes de gastar",
-    name: "um dos seis campos some do resumo",
+    guard: "gerar: o resumo mostra os sete campos antes de gastar",
+    name: "um dos sete campos some do resumo",
     kind: "esperto",
-    // O resumo continua existindo, continua bonito, continua mostrando cinco
+    // O resumo continua existindo, continua bonito, continua mostrando seis
     // linhas — e a que sai é justamente a que ninguém confere de cabeça. É a
     // forma que a ausência silenciosa toma quando alguém "limpa" a lista.
     file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
@@ -73,10 +85,23 @@ export const MUTANTS: Mutant[] = [
     expect: "gerar: o resumo não mostra o formato",
   },
   {
-    guard: "gerar: o resumo mostra os seis campos antes de gastar",
+    guard: "gerar: o resumo mostra os sete campos antes de gastar",
+    name: "a linha Cenário some do resumo",
+    kind: "obvio",
+    // OBVIO, DE PROPÓSITO: é o defeito que acabou de acontecer de verdade —
+    // a linha Cenário saiu do resumo em 27/08 e ninguém percebeu até a
+    // varredura de 28/08. Um mutante que a remove de novo é a forma mais
+    // direta de garantir que ela não some outra vez do mesmo jeito, calada.
+    file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
+    find: '    { campo: "scenario", value: corpo.scenario_prompt || corpo.scenario || null },',
+    replace: "",
+    expect: "gerar: o resumo não mostra o cenário",
+  },
+  {
+    guard: "gerar: o resumo mostra os sete campos antes de gastar",
     name: "o resumo sai da tela de gerar",
     kind: "obvio",
-    // O componente continua no repositório, com os seis campos e as traduções
+    // O componente continua no repositório, com os sete campos e as traduções
     // todas — e deixa de ser renderizado. A guarda que só olhasse o arquivo do
     // resumo passaria verde com a tela vazia.
     //
@@ -95,7 +120,7 @@ export const MUTANTS: Mutant[] = [
     expect: "gerar: o resumo do que vai ser enviado não é mostrado",
   },
   {
-    guard: "gerar: o resumo mostra os seis campos antes de gastar",
+    guard: "gerar: o resumo mostra os sete campos antes de gastar",
     name: "o resumo passa a ler o formulário em vez do corpo enviado",
     kind: "esperto",
     // A diferença não aparece na tela na maioria das vezes — os dois coincidem
@@ -119,7 +144,7 @@ export const MUTANTS: Mutant[] = [
     guard: "gerar: a linha Traje do resumo lê o campo que realmente chega ao corpo (outfit/outfit_prompt), não o dropdown removido em 25/08 (avatar_look_id)",
     name: "a linha Traje do resumo volta a ler avatar_look_id",
     kind: "esperto",
-    // ESPERTO: o resumo continua existindo, continua com seis linhas, e a
+    // ESPERTO: o resumo continua existindo, continua com sete linhas, e a
     // linha "Traje" continua parecendo válida — só que lê um campo que o
     // dropdown removido em 25/08 nunca mais preenche. Resultado: "Traje:
     // nenhum" sempre, mesmo quando o Traje Padrão do Passo 1 está sendo
@@ -156,24 +181,6 @@ export const MUTANTS: Mutant[] = [
     replace: "  const outfitPreparing = lookPendentes.length > 0;",
     expect: "passo 1: a trava do Avançar deixou de distinguir preparo de falha",
   },
-  {
-    guard: "passo 1: o arquivo já salvo aparece pelo nome",
-    name: "o nome do arquivo salvo volta a sumir da tela",
-    kind: "esperto",
-    // A frase "Imagem salva." continua ali, então a tela não fica muda — ela
-    // fica ambígua: diz que há imagem salva, sem dizer qual. Reindentado em
-    // 26/08 quando o texto passou a ficar PRESO ao botão "Carregar arquivo"
-    // (dentro do mesmo `Field`), em vez de um parágrafo solto com margem
-    // negativa calculada para caber sob o `<input type="file">` nativo —
-    // aquele layout antigo é que produzia a ambiguidade original.
-    file: "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx",
-    find:
-      "                    {defaults.scenarioName\n" +
-      '                      ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })\n' +
-      '                      : t("createVideo.avatarSetup.imageSaved")}',
-    replace: '                    {t("createVideo.avatarSetup.imageSaved")}',
-    expect: "passo 1: o cenário já salvo não aparece pelo nome",
-  },
 ];
 
 async function ler(repoRoot: string, rel: string, failures: string[]): Promise<string> {
@@ -196,11 +203,11 @@ export async function checkPreflightSummaryPolicy(
     for (const c of CAMPOS) {
       // `campo:` e não `key:` — ver o comentário no próprio `GenerationSummary`:
       // a guarda de feature flags conta todo `key: "..."` do frontend como
-      // referência a flag, e seis linhas dessas acusavam seis flags fantasma.
+      // referência a flag, e sete linhas dessas acusavam sete flags fantasma.
       if (!resumo.includes(`campo: "${c.chave}"`)) {
         failures.push(
           `gerar: o resumo não mostra ${c.oQueE} — falta a linha \`campo: "${c.chave}"\` em ${RESUMO}. ` +
-            "Os seis campos existem porque dois vídeos pagos saíram com campo vazio sem que desse para " +
+            "Os sete campos existem porque dois vídeos pagos saíram com campo vazio sem que desse para " +
             "perceber antes de clicar; uma lista com cinco linhas não chama atenção nenhuma.",
         );
       }
@@ -312,59 +319,15 @@ export async function checkPreflightSummaryPolicy(
           `\`onOutfitPreparingChange\` sumiu de ${PASSO1}.`,
       );
     }
-
-    // ------------------------------------------------------------- 3 -------
-    //
-    // POR CONTAGEM, não por presença — corrigido no BLOCO B5c, MEDIDO pelo
-    // próprio arnês: `defaults.scenarioName` passou a ter DUAS instâncias
-    // legítimas do mesmo padrão (o bloco de "criar avatar novo", que já
-    // existia, e o bloco novo de "avatar existente"). Um `.test()` sem `g`
-    // pergunta só "existe em algum lugar?", e a passada `--affected` desta
-    // rodada pegou o resultado: um mutante que apaga a instância ANTIGA
-    // continuava achando a NOVA e o gate passava verde com o defeito
-    // aplicado — guarda INERTE. Contar exige as `minimoOcorrencias`
-    // conhecidas; cair abaixo é a única forma de reprovar de verdade.
-    //
-    // ⚠️ UI-PARIDADE-TRAJE (25/08): a entrada `["lookImageName", "a imagem
-    // do traje", 1]` SAIU deste laço. Ela media o nome do arquivo salvo
-    // dentro do bloco "Adicionar traje" (LOOK do fornecedor), removido nesta
-    // rodada — `lookImageName` não existe mais em `AvatarSetupStep.tsx`. Não
-    // é substituída por nada: o traje que sobra na tela ("Traje padrão"/
-    // "Traje deste vídeo") mostra "Imagem salva." GENÉRICO por decisão já
-    // registrada no próprio arquivo (`AssetDefaults` não tem `outfitName`,
-    // e adicioná-lo por simetria cosmética sem consumidor no backend não foi
-    // autorizado) — não há nome nenhum para esta guarda contar.
-    for (const [origem, oQueE, minimoOcorrencias] of [
-      ["defaults.scenarioName", "o cenário", 2],
-    ] as const) {
-      const usa = new RegExp(
-        `${origem.replace(".", "\\.")}\\s*\\?\\s*t\\("createVideo\\.avatarSetup\\.imageSavedNamed"`,
-        "g",
-      );
-      const ocorrencias = (passo1.match(usa) ?? []).length;
-      if (ocorrencias < minimoOcorrencias) {
-        failures.push(
-          `passo 1: ${oQueE} já salvo não aparece pelo nome — \`${origem}\` alimenta ` +
-            `\`imageSavedNamed\` em ${ocorrencias} lugar(es) de ${PASSO1}, esperado ao menos ` +
-            `${minimoOcorrencias}. O campo de arquivo volta vazio a cada remontagem (o navegador não ` +
-            "repõe arquivo escolhido, por segurança) e o armazenamento renomeia para `<uuid>.<ext>`, " +
-            "então sem o nome guardado à parte a tela diz \"nenhum ficheiro\" sobre uma imagem que está " +
-            "salva e em uso.",
-        );
-      }
-    }
-    if (!passo1.includes("scenarioName: file.name")) {
-      failures.push(
-        `passo 1: o nome do arquivo deixou de ser guardado no upload — \`scenarioName: file.name\` ` +
-          `sumiu de ${PASSO1}. É a única cópia do nome original que sobrevive.`,
-      );
-    }
+    // Item 3 (arquivo salvo aparece pelo nome, via `defaults.scenarioName`)
+    // SAIU nesta guarda na rodada de Cenário-por-vídeo (27/08) — ver o
+    // comentário do cabeçalho do arquivo.
   }
 
   // --------------------------------------------------------------- i18n ----
   //
   // Chave sem tradução vira o próprio nome da chave na tela — e num resumo de
-  // conferência isso é pior que não ter resumo: seis linhas de `createVideo.
+  // conferência isso é pior que não ter resumo: sete linhas de `createVideo.
   // generate.summary.avatar` não são conferíveis por ninguém.
   const CHAVES: { caminho: string[]; nome: string }[] = [
     ...CAMPOS.map((c) => ({ caminho: ["createVideo", "generate", "summary", c.chave], nome: c.chave })),
@@ -403,10 +366,7 @@ export async function checkPreflightSummaryPolicy(
       `  gerar: os ${CAMPOS.length} campos do resumo são derivados do corpo de POST /videos e aparecem ` +
         "acima do botão, com a ausência escrita como \"nenhum\"",
     );
-    notes.push(
-      "  passo 1: traje em preparo trava o Avançar e diz por quê; traje falho não trava; o arquivo já " +
-        "salvo aparece pelo nome nos dois campos",
-    );
+    notes.push("  passo 1: traje em preparo trava o Avançar e diz por quê; traje falho não trava");
   }
 
   return { failures, notes };

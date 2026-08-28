@@ -385,7 +385,16 @@ export const MUTANTS: Mutant[] = [
     file: "backend/src/routes/avatars.ts",
     find: "      `UPDATE avatars SET reference_video_url = $3, provider_avatar_id = $4, provider = $5, simulated = $6,\n                          provider_status = $7, provider_engines = $8\n       WHERE id = $1 AND tenant_id = $2 RETURNING *`,",
     replace: "      `UPDATE avatars SET reference_video_url = $3, provider_avatar_id = $4, provider = $5, simulated = $6,\n                          provider_status = $7, provider_engines = $8, voice_id = 'mutado'\n       WHERE id = $1 AND tenant_id = $2 RETURNING *`,",
-    expect: "reference-video voltou a escrever voice_id fora da rota dedicada",
+    // TRANSCRIÇÃO da mensagem real, não paráfrase dela. Escrito como
+    // "reference-video voltou a escrever voice_id fora da rota dedicada" em
+    // `bf82a95` (26/08), este `expect` descrevia o EFEITO da mutação com
+    // outras palavras — e a mensagem que a guarda emite é
+    // "voz: <arquivo> voltou a escrever `voice_id` num UPDATE". O mutante
+    // reprovava o gate por causa da própria guarda e mesmo assim saía
+    // INERTE, porque `output.includes(expect)` nunca casava. Passou
+    // despercebido porque nenhuma passada COMPLETA de mutação rodou desde
+    // que ele foi escrito.
+    expect: "voltou a escrever `voice_id` num UPDATE",
   },
 
   // --- GUARDA D: formato e tamanho ---------------------------------------

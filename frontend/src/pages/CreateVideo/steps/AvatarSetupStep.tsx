@@ -4,7 +4,6 @@ import { api } from "../../../api/client";
 import type { Avatar, AvatarLooksResponse, AvatarPreviewResponse } from "../../../types";
 import { useCamera } from "../hooks/useCamera";
 import { useMediaRecorderCapture } from "../hooks/useMediaRecorder";
-import type { AssetDefaults } from "../types";
 import { Field } from "../../../components/ui/Field";
 import { BACKGROUND_OPTIONS, DEFAULT_BACKGROUND_ID } from "../virtualBackground/backgroundOptions";
 import { applyQualityTreatment, DEFAULT_QUALITY } from "../imageQuality/applyQualityTreatment";
@@ -21,18 +20,33 @@ import { RecordingProgress } from "../RecordingProgress";
 import { VoiceSampleRecorder } from "../VoiceSampleRecorder";
 import { AvatarReadinessNotice } from "../AvatarReadinessNotice";
 
+/**
+ * A JANELA DE ESPERA DO TRAJE, e por que ela é declarada aqui em vez de virar
+ * um número solto dentro do laço.
+ *
+ * As duas conclusões MEDIDAS em live foram de 15 s e 50 s (06/08). 240 s são
+ * 4,8× a conclusão mais lenta medida — o custo de errar para menos é a pessoa
+ * achar que perdeu US$ 1,00 e criar o traje de novo, gastando outro; o custo
+ * de errar para mais é a tela seguir consultando um GET que não é tarifado.
+ * Os dois lados não são simétricos, e a folga fica do lado barato.
+ *
+ * Esgotar a janela NÃO é falha: a reconciliação vive na LISTAGEM do servidor
+ * (`services/avatar/looks.ts`), então o traje continua sendo preparado e
+ * aparece sozinho na próxima vez que alguém abrir a tela.
+ */
+const LOOK_POLL_INTERVAL_MS = 3_000;
+const LOOK_POLL_WINDOW_MS = 240_000;
+const LOOK_POLL_ATTEMPTS = LOOK_POLL_WINDOW_MS / LOOK_POLL_INTERVAL_MS;
+
 export function AvatarSetupStep({
   selectedAvatarId,
   onSelectAvatar,
-  defaults,
-  onDefaultsChange,
   onOutfitPreparingChange,
+  onSceneDefaultsSeed,
   nextButton,
 }: {
   selectedAvatarId: string | null;
   onSelectAvatar: (id: string | null) => void;
-  defaults: AssetDefaults;
-  onDefaultsChange: (defaults: AssetDefaults) => void;
   /**
    * Avisa o pai de que existe traje EM PREPARO neste avatar.
    *
@@ -43,6 +57,20 @@ export function AvatarSetupStep({
    * que o botão conhecia três condições e a rota recusava por sete.
    */
   onOutfitPreparingChange?: (preparing: boolean) => void;
+  /**
+   * MIGRAÇÃO do Cenário e do Traje padrão do avatar para os campos POR VÍDEO
+   * (Cena). Chamado com o que está gravado no avatar
+   * (`scenario`/`scenario_prompt`/`outfit`/`outfit_prompt`) assim que ele é
+   * conhecido — o pai decide, por `avatarId`, se ainda vale a pena aplicar
+   * (só na primeira vez que este avatar aparece na visita).
+   */
+  onSceneDefaultsSeed?: (
+    avatarId: string,
+    scenario: string | null,
+    scenarioPrompt: string | null,
+    outfit: string | null,
+    outfitPrompt: string | null,
+  ) => void;
   // Rendered by the parent (CreateVideoPage owns goNext/canProceed) — this
   // step is the one place the wizard's "next" button moves inline instead
   // of sitting in the shared footer, so the element is built once by the
@@ -85,12 +113,26 @@ export function AvatarSetupStep({
   // do avatar JÁ EXISTENTE — Item 2, fecha a lacuna de navegação (o bloco só
   // existia no assistente de criação).
   const [existingTargetLufsDraft, setExistingTargetLufsDraft] = useState(-16);
-  // A CRIAÇÃO de traje por esta tela saiu em UI-PARIDADE-TRAJE (25/08) — a
-  // LEITURA não: `lookInfo` continua vindo do servidor para saber se algum
-  // traje já existente segue em preparo, e travar o Avançar enquanto isso
-  // (`onOutfitPreparingChange` abaixo). Vídeos antigos e o que a listagem do
-  // fornecedor já criou continuam precisando ser lidos.
+  // A CRIAÇÃO de traje por esta tela saiu em UI-PARIDADE-TRAJE (25/08) e VOLTA
+  // aqui — a LEITURA nunca tinha saído: `lookInfo` já vinha do servidor para
+  // saber se algum traje já existente segue em preparo, e travar o Avançar
+  // enquanto isso (`onOutfitPreparingChange` abaixo). Vídeos antigos e o que a
+  // listagem do fornecedor já criou continuam precisando ser lidos.
   const [lookInfo, setLookInfo] = useState<AvatarLooksResponse | null>(null);
+  // "Adicionar traje": cria um look novo para o avatar já selecionado.
+  const [lookName, setLookName] = useState("");
+  const [lookPrompt, setLookPrompt] = useState("");
+  const [lookImageUrl, setLookImageUrl] = useState<string | null>(null);
+  // O nome do arquivo não sobrevive nem na URL (o armazenamento renomeia
+  // para `<uuid>.<ext>`) nem no campo de arquivo — por isso guardado à parte.
+  const [lookImageName, setLookImageName] = useState<string | null>(null);
+  // Só para PODER LIMPAR o `<input type="file">` ao remover a imagem — sem
+  // isto, escolher a MESMA imagem de novo depois de remover não dispara
+  // `change` (o navegador não repete evento para um valor que não mudou).
+  const lookImageFileInput = useRef<HTMLInputElement | null>(null);
+  const [lookSaving, setLookSaving] = useState(false);
+  const [lookMessage, setLookMessage] = useState<string | null>(null);
+  const [lookError, setLookError] = useState(false);
 
   const camera = useCamera();
   const recorder = useMediaRecorderCapture();
@@ -228,18 +270,10 @@ export function AvatarSetupStep({
 
   const referenceFileInput = useRef<HTMLInputElement | null>(null);
   const photoFileInput = useRef<HTMLInputElement | null>(null);
-  // Compartilhados entre o ramo "já treinado" (avatar existente) e o de
-  // captura (`avatarForTraining`) — os dois nunca montam ao mesmo tempo.
-  const scenarioFileInput = useRef<HTMLInputElement | null>(null);
-  const outfitFileInput = useRef<HTMLInputElement | null>(null);
-
-  // Arquivo ESCOLHIDO, ainda não enviado ao servidor — Cenário/Traje.
-  // Compartilhado entre o ramo "já treinado" e o de captura pelo mesmo motivo
-  // dos refs acima: os dois nunca montam ao mesmo tempo.
-  const [pendingScenarioFile, setPendingScenarioFile] = useState<File | null>(null);
-  const [pendingScenarioPreviewUrl, setPendingScenarioPreviewUrl] = useState<string | null>(null);
-  const [pendingOutfitFile, setPendingOutfitFile] = useState<File | null>(null);
-  const [pendingOutfitPreviewUrl, setPendingOutfitPreviewUrl] = useState<string | null>(null);
+  // Traje e Cenário tiveram seus pares de staging (upload pendente) removidos
+  // desta tela — os dois viraram campo POR VÍDEO, na Cena (`SceneStep.tsx`),
+  // não mais padrão do avatar aqui. Traje saiu nesta rodada (28/08),
+  // seguindo Cenário (27/08) à risca.
 
   useEffect(() => {
     refreshAvatars();
@@ -265,6 +299,10 @@ export function AvatarSetupStep({
   // receber traje).
   const lookPendentes = lookInfo?.pendentes ?? [];
   const outfitPreparing = lookPendentes.some((p) => p.status === "processing");
+  // O custo por traje vem do SERVIDOR, nunca digitado aqui: o número é o
+  // medido na conta (60 un / US$ 1,00 em 06/08), e um valor repetido na tela
+  // envelheceria sozinho na primeira mudança de tarifa.
+  const lookCostDoServidor = lookInfo?.lookCost ?? null;
   useEffect(() => {
     onOutfitPreparingChange?.(outfitPreparing);
   }, [outfitPreparing, onOutfitPreparingChange]);
@@ -310,33 +348,30 @@ export function AvatarSetupStep({
   }, [selectedAvatar?.id]);
 
   /**
-   * CENÁRIO/TRAJE PADRÃO — relê o que está salvo no avatar ao trocar a
-   * seleção. Fase A, item (a) da Seção 6 (25/08): o PUT já persistia
-   * `scenario`/`scenario_prompt`/`outfit`/`outfit_prompt` desde a rodada
-   * anterior, e o servidor já caía neles em `POST /videos` quando o vídeo
-   * não mandava valor próprio — só faltava a TELA reler o padrão salvo ao
-   * reabrir. Sem isto, o campo aparecia vazio até alguém editar de novo,
-   * contradizendo o que o banco já tinha.
+   * MIGRAÇÃO de Cenário e Traje — entrega ao pai o que está salvo no avatar
+   * (`scenario`/`scenario_prompt`/`outfit`/`outfit_prompt`) assim que ele é
+   * conhecido, para semear os campos POR VÍDEO na Cena
+   * (`onSceneDefaultsSeed`). Traje seguiu Cenário nesta rodada (28/08): até
+   * aqui o PUT persistia `outfit`/`outfit_prompt` como "padrão do avatar" e
+   * esta tela os relia de volta para `defaults` — os dois pontos foram
+   * removidos, e o dado passou a servir só de SEMENTE inicial da Cena, nunca
+   * mais editado a partir do Passo 1.
    *
    * MESMA regra dos ajustes de voz acima: resincroniza só na troca de
-   * `selectedAvatar.id`, nunca a cada `setAvatars` disparado por outra
-   * ação da tela. SOBRESCREVE sempre (não é `defaults.x || avatar.x`): ao
-   * trocar de avatar dentro da mesma visita, o padrão do avatar NOVO tem
-   * de vencer o que sobrou do anterior — sem isso, trocar de avatar
-   * manteria na tela um cenário/traje que não é mais o daquele avatar.
-   * `scenarioName` volta a `""` na troca: não há nome persistido (só a
-   * URL), e manter o nome do avatar anterior rotularia a imagem errada.
+   * `selectedAvatar.id`, nunca a cada `setAvatars` disparado por outra ação
+   * da tela. O PAI decide se ainda vale semear (só na primeira vez que este
+   * avatar aparece na visita); aqui só se entrega o dado assim que ele é
+   * conhecido.
    */
   useEffect(() => {
     if (!selectedAvatar) return;
-    onDefaultsChange({
-      ...defaults,
-      scenario: selectedAvatar.scenario || "",
-      scenarioName: "",
-      scenarioPrompt: selectedAvatar.scenario_prompt || "",
-      outfit: selectedAvatar.outfit || "",
-      outfitPrompt: selectedAvatar.outfit_prompt || "",
-    });
+    onSceneDefaultsSeed?.(
+      selectedAvatar.id,
+      selectedAvatar.scenario,
+      selectedAvatar.scenario_prompt,
+      selectedAvatar.outfit,
+      selectedAvatar.outfit_prompt,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAvatar?.id]);
 
@@ -364,8 +399,121 @@ export function AvatarSetupStep({
     };
   }, [selectedAvatarId]);
 
+  async function handleLookImage(file: File) {
+    const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
+    setLookImageUrl(url);
+    setLookImageName(file.name);
+  }
+
+  /**
+   * REMOVER a imagem escolhida para o traje NOVO, antes de criar — não
+   * chama o servidor (nada foi persistido ainda; a imagem só é gravada no
+   * traje quando "Criar traje" é clicado). Sem isto, escolher a imagem
+   * errada obrigava a recarregar a página inteira para tentar de novo.
+   */
+  function handleRemoveLookImage() {
+    setLookImageUrl(null);
+    setLookImageName(null);
+    if (lookImageFileInput.current) lookImageFileInput.current.value = "";
+  }
+
+  /**
+   * Cria o traje e o deixa disponível no passo Cena.
+   *
+   * O erro do servidor é mostrado como veio: em live esta rota devolve 501 com
+   * a explicação de que o endpoint de criação de look do fornecedor não é
+   * conhecido e que criar look custa cerca de US$ 1,00. Traduzir isso para um
+   * "algo deu errado" genérico esconderia justamente a informação que decide se
+   * vale insistir.
+   */
+  async function refreshLooks(avatarId: string): Promise<AvatarLooksResponse | null> {
+    try {
+      const info = await api.get<AvatarLooksResponse>(`/avatars/${avatarId}/looks`);
+      setLookInfo(info);
+      return info;
+    } catch {
+      // Falha aqui não derruba o passo 1: sem esta informação o bloco de traje
+      // some, e o resto da tela (avatar, voz, avançar) continua utilizável.
+      return null;
+    }
+  }
+
+  /**
+   * Cria o traje e acompanha até ele ficar pronto.
+   *
+   * A criação é ASSÍNCRONA no fornecedor — medido em 06/08: o 200 devolve
+   * `processing` e o look leva alguns segundos para ficar `completed`. Enquanto
+   * isso ele NÃO é escolhível, e é por isso que a tela mostra andamento em vez
+   * de dizer "criado" e deixar a pessoa procurar um traje que ainda não existe.
+   *
+   * A reconciliação acontece no servidor, na própria listagem; aqui basta
+   * pedi-la de novo até o pendente sumir. Sem `setInterval`: um intervalo que
+   * sobrevive à saída da tela continua consultando o fornecedor para ninguém.
+   */
+  async function handleCreateLook() {
+    if (!selectedAvatar) return;
+    setLookSaving(true);
+    setLookError(false);
+    setLookMessage(null);
+    try {
+      const criado = await api.post<{ look: { id: string; name: string }; status: string }>(
+        `/avatars/${selectedAvatar.id}/looks`,
+        { name: lookName.trim(), imageUrl: lookImageUrl, prompt: lookPrompt.trim() || undefined },
+      );
+      setLookName("");
+      setLookPrompt("");
+      setLookImageUrl(null);
+
+      if (criado.status === "completed") {
+        setLookMessage(t("createVideo.avatarSetup.addLookCreated", { name: criado.look.name }));
+        await refreshLooks(selectedAvatar.id);
+      } else {
+        setLookMessage(t("createVideo.avatarSetup.addLookPreparing", { name: criado.look.name }));
+        let concluiu = false;
+        for (let i = 0; i < LOOK_POLL_ATTEMPTS; i++) {
+          await new Promise((r) => setTimeout(r, LOOK_POLL_INTERVAL_MS));
+          const info = await refreshLooks(selectedAvatar.id);
+          const aindaEmPreparo = info?.pendentes.some((p) => p.status === "processing");
+          if (!aindaEmPreparo) {
+            const falhou = info?.pendentes.some((p) => p.status === "failed");
+            setLookError(Boolean(falhou));
+            setLookMessage(
+              falhou
+                ? t("createVideo.avatarSetup.addLookFailed")
+                : t("createVideo.avatarSetup.addLookCreated", { name: criado.look.name }),
+            );
+            concluiu = true;
+            break;
+          }
+        }
+        // A JANELA ACABOU E O TRAJE NÃO. Não é `setLookError`: nada falhou. O
+        // traje continua em preparo no fornecedor e a listagem o reconcilia na
+        // próxima abertura da tela — quem esperava via um traje que nunca
+        // chegava e concluía que os US$ 1,00 tinham sumido, e o conserto
+        // natural (criar de novo) gasta outro dólar por um traje que já
+        // estava vindo.
+        if (!concluiu) {
+          setLookMessage(t("createVideo.avatarSetup.addLookStillPreparing", { name: criado.look.name }));
+        }
+      }
+    } catch (err) {
+      setLookError(true);
+      setLookMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLookSaving(false);
+    }
+  }
+
   // "Ver avatar" — mesmo padrão do efeito de `lookInfo` acima: recarrega ao
   // trocar de avatar, e uma falha aqui não derruba o resto do passo 1.
+  //
+  // `provider_status`/`provider_avatar_id` nas dependências, ALÉM do id — sem
+  // eles, o treino terminando (via polling de `training-status`, acima) troca
+  // a seção de captura pelo bloco "Ver avatar" mas os TRÊS campos dele
+  // (imagem/voz, e o vídeo do PASSO 4 quando existir) continuavam vazios até
+  // reselecionar o avatar ou recarregar a página — o `avatarPreview` só era
+  // buscado quando `selectedAvatarId` mudava, e ele não muda nessa transição.
+  // GAP achado e registrado no desenho anterior; conserto aqui.
   const [avatarPreview, setAvatarPreview] = useState<AvatarPreviewResponse | null>(null);
   useEffect(() => {
     if (!selectedAvatarId) {
@@ -384,7 +532,7 @@ export function AvatarSetupStep({
     return () => {
       cancelado = true;
     };
-  }, [selectedAvatarId]);
+  }, [selectedAvatarId, selectedAvatar?.provider_status, selectedAvatar?.provider_avatar_id]);
 
   function refreshAvatars() {
     api.get<Avatar[]>("/avatars").then(setAvatars);
@@ -429,6 +577,24 @@ export function AvatarSetupStep({
     await guard(async () => {
       const updated = await api.upload<Avatar>(`/avatars/${avatarForTraining.id}/photos`, blob, "photo.jpg");
       updateAvatarForTraining(updated);
+    });
+  }
+
+  /**
+   * Excluir/refazer UMA foto do rosto — vale para a capturada pela câmera e
+   * para a enviada por arquivo, porque as duas terminam na MESMA lista
+   * (`photo_urls`) e a remoção é por posição, não por origem.
+   *
+   * `updateAvatarForTraining(atualizado)` não é enfeite: sem ele o servidor
+   * remove e a tela continua mostrando a miniatura até alguém recarregar — o
+   * pior desfecho, porque a pessoa clica de novo e recebe 400 ("essa foto não
+   * existe mais") sobre uma foto que ela ainda está vendo.
+   */
+  async function handleDeletePhoto(index: number) {
+    if (!avatarForTraining) return;
+    await guard(async () => {
+      const atualizado = await api.delete<Avatar>(`/avatars/${avatarForTraining.id}/photos/${index}`);
+      updateAvatarForTraining(atualizado);
     });
   }
 
@@ -594,24 +760,14 @@ export function AvatarSetupStep({
     setRetrainRequested(true);
   }
 
-  async function handleFinishSetup() {
+  function handleFinishSetup() {
     if (!avatarForTraining) return;
-    // Persistência de Cenário/Traje padrão — Fase A, item 5 (25/08). Até
-    // aqui `defaults.scenario/scenarioPrompt/outfit/outfitPrompt` viviam só
-    // no estado do wizard de vídeo (CreateVideoPage.tsx) e nunca
-    // sobreviviam entre visitas — o rótulo "padrão" prometia uma
-    // persistência que não existia. Falha aqui NÃO trava a conclusão do
-    // avatar (guard() já reporta o erro): o avatar treinado é o que
-    // importa nesta tela, e o pior caso de um PUT que falha é o mesmo
-    // estado de hoje (nada persiste).
-    await guard(async () => {
-      await api.put<Avatar>(`/avatars/${avatarForTraining.id}`, {
-        scenario: defaults.scenario || null,
-        scenario_prompt: defaults.scenarioPrompt || null,
-        outfit: defaults.outfit || null,
-        outfit_prompt: defaults.outfitPrompt || null,
-      });
-    });
+    // Traje seguiu Cenário nesta rodada (28/08): este clique persistia
+    // `outfit`/`outfit_prompt` como "padrão do avatar" — removido. O valor
+    // já salvo no avatar fica CONGELADO como está, servindo só de semente
+    // para o campo por vídeo na Cena (`onSceneDefaultsSeed`, acima); "Concluir
+    // configuração" não escreve mais nele.
+    //
     // Só reseta o assistente de CRIAÇÃO quando foi ele quem nos trouxe aqui.
     // Chegando por um avatar EXISTENTE ainda sem treino (a correção desta
     // rodada), não há "criação" para fechar — `creating` já era falso, e a
@@ -697,103 +853,6 @@ export function AvatarSetupStep({
       audio_treatment_target_lufs: value,
     });
     setAvatars((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-  }
-
-  async function handleAssetUpload(kind: "scenario" | "outfit", file: File) {
-    const { url } = await api.upload<{ url: string }>("/uploads", file, file.name);
-    // O nome vai junto porque é a única cópia dele que sobrevive: o
-    // armazenamento renomeia para `<uuid>.<ext>` (medido em `uploads/`) e o
-    // `<input type="file">` volta vazio a cada remontagem do passo.
-    onDefaultsChange({
-      ...defaults,
-      [kind]: url,
-      ...(kind === "scenario" ? { scenarioName: file.name } : {}),
-    });
-  }
-
-  /**
-   * Escolher um arquivo NÃO envia mais nada — só guarda o `File` e uma
-   * miniatura local (`URL.createObjectURL`) para exibição, até o clique em
-   * "Salvar". Antes desta rodada `handleAssetUpload` era chamado direto no
-   * `onChange` do `<input type="file">`, sem etapa de confirmação.
-   */
-  function stageAssetFile(kind: "scenario" | "outfit", file: File) {
-    const previewUrl = URL.createObjectURL(file);
-    if (kind === "scenario") {
-      if (pendingScenarioPreviewUrl) URL.revokeObjectURL(pendingScenarioPreviewUrl);
-      setPendingScenarioFile(file);
-      setPendingScenarioPreviewUrl(previewUrl);
-    } else {
-      if (pendingOutfitPreviewUrl) URL.revokeObjectURL(pendingOutfitPreviewUrl);
-      setPendingOutfitFile(file);
-      setPendingOutfitPreviewUrl(previewUrl);
-    }
-  }
-
-  function discardPendingAsset(kind: "scenario" | "outfit") {
-    if (kind === "scenario") {
-      if (pendingScenarioPreviewUrl) URL.revokeObjectURL(pendingScenarioPreviewUrl);
-      setPendingScenarioFile(null);
-      setPendingScenarioPreviewUrl(null);
-      if (scenarioFileInput.current) scenarioFileInput.current.value = "";
-    } else {
-      if (pendingOutfitPreviewUrl) URL.revokeObjectURL(pendingOutfitPreviewUrl);
-      setPendingOutfitFile(null);
-      setPendingOutfitPreviewUrl(null);
-      if (outfitFileInput.current) outfitFileInput.current.value = "";
-    }
-  }
-
-  // Erro NÃO passa por `guard()`: `guard()` engole a exceção, e aqui é
-  // preciso saber se falhou para decidir se o arquivo pendente continua
-  // selecionado (permitindo tentar de novo) ou é descartado (sucesso).
-  async function commitPendingAsset(kind: "scenario" | "outfit") {
-    const file = kind === "scenario" ? pendingScenarioFile : pendingOutfitFile;
-    if (!file) return;
-    setActionError(null);
-    try {
-      await handleAssetUpload(kind, file);
-      discardPendingAsset(kind);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("errors.generic"));
-    }
-  }
-
-  /**
-   * REMOVER a imagem de Cenário/Traje — avatar EXISTENTE.
-   *
-   * Chama o servidor IMEDIATAMENTE (`scenario_clear`/`outfit_clear`, o sinal
-   * que força NULL apesar do COALESCE — ver o comentário em avatars.ts), e
-   * não só limpa o estado local: este bloco (Cenário/Traje de avatar já
-   * criado) não tem NENHUM outro ponto de salvamento — diferente do ramo de
-   * avatar novo, que persiste tudo em `handleFinishSetup`. Um "remover" que
-   * só mexesse em `defaults` pareceria funcionar e não mudaria o banco.
-   */
-  async function commitExistingAssetClear(kind: "scenario" | "outfit") {
-    if (!selectedAvatar) return;
-    const updated = await api.put<Avatar>(
-      `/avatars/${selectedAvatar.id}`,
-      kind === "scenario" ? { scenario_clear: true } : { outfit_clear: true },
-    );
-    setAvatars((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-    onDefaultsChange({
-      ...defaults,
-      ...(kind === "scenario" ? { scenario: "", scenarioName: "" } : { outfit: "" }),
-    });
-  }
-
-  /** REMOVER a imagem de Cenário/Traje — avatar NOVO (ainda em criação). */
-  async function commitDraftAssetClear(kind: "scenario" | "outfit") {
-    if (!avatarForTraining) return;
-    const updated = await api.put<Avatar>(
-      `/avatars/${avatarForTraining.id}`,
-      kind === "scenario" ? { scenario_clear: true } : { outfit_clear: true },
-    );
-    updateAvatarForTraining(updated);
-    onDefaultsChange({
-      ...defaults,
-      ...(kind === "scenario" ? { scenario: "", scenarioName: "" } : { outfit: "" }),
-    });
   }
 
   // A LEITURA de looks (para o gate de `outfitPreparing` acima e para o bloco
@@ -1161,197 +1220,121 @@ export function AvatarSetupStep({
                 <button type="button" className="btn btn-outline" onClick={handleRequestRetrain}>
                   {t("createVideo.avatarSetup.retrainButton")}
                 </button>
+                {/* MESMO TEXTO do window.confirm() acima, agora também como
+                    rótulo estático — visível ANTES do clique, não só depois
+                    dele. O confirm() continua existindo (defesa em
+                    profundidade contra clique acidental); o rótulo é o que
+                    garante que o custo já era conhecido antes de clicar. */}
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                  {t("createVideo.avatarSetup.retrainConfirm")}
+                </p>
               </div>
             )}
           </div>
         )}
 
-        {/* CENÁRIO E TRAJE deste vídeo — BLOCO B5c.
-            Antes desta rodada, `defaults.scenario`/`scenarioPrompt` só eram
-            preenchíveis dentro de "criar avatar novo" — e `defaults.outfit`/
-            `outfitPrompt` não eram preenchíveis em lugar NENHUM: o campo
-            antigo tinha sido removido (ver o comentário perto de
-            `scenarioTitle`, mais abaixo) e nunca recolocado quando B2/B5
-            passaram a ligar os dois à fal de verdade. Um avatar existente,
-            que é o caminho normal de gerar um vídeo, não tinha onde preencher
-            nenhum dos dois.
-            Reaproveita EXATAMENTE o layout de baixo (upload + campo de texto,
-            `Field`, `handleAssetUpload`): nenhum componente novo, e os dois
-            escrevem nos MESMOS campos de `defaults` que `corpoDaGeracao()`
-            (GenerateStep.tsx) já lê — nada mudou do lado do corpo enviado.
-            `handleAssetUpload("outfit", …)` já aceitava esse `kind`; só
-            nunca tinha sido chamado com ele. */}
-        {selectedAvatar && (
+        {/* ADICIONAR TRAJE — volta em EXECUÇÃO (27/08), depois de sair em
+            UI-PARIDADE-TRAJE. Traje é LOOK do avatar, e look exige um avatar
+            já treinado no fornecedor — por isso este bloco (e não o de
+            criação) exige `provider_avatar_id`, igual ao "Ver avatar" acima.
+            Não debita nada até o clique em "Criar traje", e o custo (do
+            SERVIDOR, nunca digitado aqui) fica visível ANTES do clique —
+            mesmo padrão do aviso de retreino logo acima, sem window.confirm()
+            nenhum: o botão já nasce com o preço ao lado. */}
+        {selectedAvatar && selectedAvatar.provider_avatar_id && (
           <div className="card" style={{ marginTop: 16 }}>
-            <div className="grid grid-cols-2">
-              <div>
-                <div className="card-title">{t("createVideo.avatarSetup.scenarioTitle")}</div>
-                <Field
-                  label={t("createVideo.avatarSetup.uploadImageLabel")}
-                  help={t("createVideo.avatarSetup.scenarioHelp")}
+            <div className="card-title">{t("createVideo.avatarSetup.addLookTitle")}</div>
+            <p className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
+              {t("createVideo.avatarSetup.addLookHelp")}
+            </p>
+            <div style={{ maxWidth: 420 }}>
+              <Field label={t("createVideo.avatarSetup.lookNameLabel")}>
+                <input
+                  value={lookName}
+                  onChange={(e) => setLookName(e.target.value)}
+                  placeholder={t("createVideo.avatarSetup.lookNamePlaceholder")}
+                />
+              </Field>
+              <Field label={t("createVideo.avatarSetup.lookImageLabel")}>
+                <input
+                  ref={lookImageFileInput}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => e.target.files?.[0] && handleLookImage(e.target.files[0])}
+                />
+              </Field>
+              {lookImageUrl && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
+                  {lookImageName
+                    ? t("createVideo.avatarSetup.imageSavedNamed", { name: lookImageName })
+                    : t("createVideo.avatarSetup.imageSaved")}{" "}
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12, padding: "0 4px" }}
+                    onClick={handleRemoveLookImage}
+                  >
+                    {t("createVideo.avatarSetup.removeImage")}
+                  </button>
+                </p>
+              )}
+              <Field
+                label={t("createVideo.avatarSetup.lookPromptLabel")}
+                help={t("createVideo.avatarSetup.lookPromptHelp")}
+              >
+                <input
+                  value={lookPrompt}
+                  onChange={(e) => setLookPrompt(e.target.value)}
+                  placeholder={t("createVideo.avatarSetup.lookPromptPlaceholder")}
+                />
+              </Field>
+              {/* O CUSTO ANTES DO CLIQUE, e não no extrato depois.
+                  Um traje custa 60 unidades — US$ 1,00 medidos na conta real em
+                  06/08, o mesmo que 20 segundos de vídeo cobrados. O número vem
+                  do servidor; em simulação, o aviso é de que nada será cobrado. */}
+              {lookInfo?.simulated && (
+                <p className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+                  {t("createVideo.avatarSetup.lookCostSimulated")}
+                </p>
+              )}
+              {/* SEM CUSTO A DECLARAR é um estado próprio, e não um erro engolido.
+                  O servidor omite `lookCost` quando o avatar não pode receber traje
+                  — em treino, ou tenant sem credencial —, e ali a frase de preço
+                  não teria sujeito. O bloco simplesmente não existe nesse caso. */}
+              {!lookInfo?.simulated && lookCostDoServidor && (
+                <p className="text-muted" style={{ fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
+                  {t("createVideo.avatarSetup.lookCostLive", {
+                    usd: lookCostDoServidor.usd.toFixed(2).replace(".", ","),
+                    units: lookCostDoServidor.units,
+                  })}
+                </p>
+              )}
+              {lookPendentes.length > 0 && (
+                <ul className="text-muted" style={{ fontSize: 12, marginBottom: 12, paddingLeft: 18 }}>
+                  {lookPendentes.map((p) => (
+                    <li key={p.id}>
+                      {p.status === "processing"
+                        ? t("createVideo.avatarSetup.lookPending", { name: p.name })
+                        : t("createVideo.avatarSetup.lookFailedItem", { name: p.name })}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button
+                className="btn btn-outline"
+                onClick={handleCreateLook}
+                disabled={lookSaving || !lookName.trim() || (!lookPrompt.trim() && !lookImageUrl)}
+              >
+                {lookSaving ? t("createVideo.avatarSetup.addLookSaving") : t("createVideo.avatarSetup.addLookButton")}
+              </button>
+              {lookMessage && (
+                <p
+                  className="text-muted"
+                  style={{ fontSize: 12, marginTop: 10, color: lookError ? "var(--color-danger)" : undefined }}
                 >
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    {pendingScenarioFile ? (
-                      <>
-                        {pendingScenarioPreviewUrl && (
-                          <img
-                            src={pendingScenarioPreviewUrl}
-                            alt=""
-                            style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }}
-                          />
-                        )}
-                        <span className="text-muted" style={{ fontSize: 12 }}>{pendingScenarioFile.name}</span>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={() => commitPendingAsset("scenario")}
-                        >
-                          {t("createVideo.avatarSetup.saveImage")}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          onClick={() => discardPendingAsset("scenario")}
-                        >
-                          {t("createVideo.avatarSetup.discardImage")}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={() => scenarioFileInput.current?.click()}
-                        >
-                          {t("createVideo.avatarSetup.chooseFile")}
-                        </button>
-                        {defaults.scenario && (
-                          <button
-                            type="button"
-                            className="btn btn-outline"
-                            onClick={() => commitExistingAssetClear("scenario")}
-                          >
-                            {t("createVideo.avatarSetup.removeImage")}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  {/* Preso ao botão, dentro do MESMO Field — não mais uma
-                      margem negativa calculada para caber sob um input
-                      nativo de uma linha só. Com dois botões lado a lado, a
-                      margem antiga podia sobrepor o texto de ajuda do Field
-                      logo abaixo. */}
-                  {!pendingScenarioFile && defaults.scenario && (
-                    <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-                      {defaults.scenarioName
-                        ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
-                        : t("createVideo.avatarSetup.imageSaved")}
-                    </p>
-                  )}
-                  <input
-                    ref={scenarioFileInput}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) => e.target.files?.[0] && stageAssetFile("scenario", e.target.files[0])}
-                  />
-                </Field>
-                <Field
-                  label={t("createVideo.avatarSetup.generateViaAiLabel")}
-                  help={t("createVideo.avatarSetup.scenarioPromptHelp")}
-                  helpPrompt={t("createVideo.avatarSetup.scenarioHelpPrompt")}
-                >
-                  <input
-                    placeholder={t("createVideo.avatarSetup.scenarioPlaceholder")}
-                    value={defaults.scenarioPrompt}
-                    onChange={(e) => onDefaultsChange({ ...defaults, scenarioPrompt: e.target.value })}
-                  />
-                </Field>
-              </div>
-              <div>
-                <div className="card-title">{t("createVideo.avatarSetup.outfitTitle")}</div>
-                <Field
-                  label={t("createVideo.avatarSetup.uploadImageLabel")}
-                  help={t("createVideo.avatarSetup.outfitHelp")}
-                >
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    {pendingOutfitFile ? (
-                      <>
-                        {pendingOutfitPreviewUrl && (
-                          <img
-                            src={pendingOutfitPreviewUrl}
-                            alt=""
-                            style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }}
-                          />
-                        )}
-                        <span className="text-muted" style={{ fontSize: 12 }}>{pendingOutfitFile.name}</span>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={() => commitPendingAsset("outfit")}
-                        >
-                          {t("createVideo.avatarSetup.saveImage")}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          onClick={() => discardPendingAsset("outfit")}
-                        >
-                          {t("createVideo.avatarSetup.discardImage")}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={() => outfitFileInput.current?.click()}
-                        >
-                          {t("createVideo.avatarSetup.chooseFile")}
-                        </button>
-                        {defaults.outfit && (
-                          <button
-                            type="button"
-                            className="btn btn-outline"
-                            onClick={() => commitExistingAssetClear("outfit")}
-                          >
-                            {t("createVideo.avatarSetup.removeImage")}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  {/* Sem `outfitName`: `AssetDefaults` não tem esse campo (só
-                      `scenarioName`), e adicioná-lo por simetria cosmética sem
-                      consumidor no backend não foi autorizado nesta rodada.
-                      "Imagem salva." genérico é o estado honesto. Preso ao
-                      botão, dentro do MESMO Field — mesmo ajuste do Cenário. */}
-                  {!pendingOutfitFile && defaults.outfit && (
-                    <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-                      {t("createVideo.avatarSetup.imageSaved")}
-                    </p>
-                  )}
-                  <input
-                    ref={outfitFileInput}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) => e.target.files?.[0] && stageAssetFile("outfit", e.target.files[0])}
-                  />
-                </Field>
-                <Field
-                  label={t("createVideo.avatarSetup.generateViaAiLabel")}
-                  help={t("createVideo.avatarSetup.outfitPromptHelp")}
-                  helpPrompt={t("createVideo.avatarSetup.outfitHelpPrompt")}
-                >
-                  <input
-                    placeholder={t("createVideo.avatarSetup.outfitPlaceholder")}
-                    value={defaults.outfitPrompt}
-                    onChange={(e) => onDefaultsChange({ ...defaults, outfitPrompt: e.target.value })}
-                  />
-                </Field>
-              </div>
+                  {lookMessage}
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -1424,7 +1407,13 @@ export function AvatarSetupStep({
               {/* Contrato de feature flag: quando desligada, o recurso NÃO
                   some e NÃO vira um botão que dá erro — aparece inerte, com
                   o motivo que o admin cadastrou. Some sem explicação parece
-                  defeito; botão que falha parece descaso. */}
+                  defeito; botão que falha parece descaso.
+
+                  LIGADA por padrão desde 28/08 (migration 069) — o bloco
+                  abaixo é o caminho normal agora. O `!removableBackground
+                  .enabled` continua aqui só para o dia em que um admin
+                  desligar de novo: o contrato de flag não muda, só o
+                  default. */}
               {!removableBackground.enabled ? (
                 <div className="feature-unavailable">
                   <div className="feature-unavailable-title">
@@ -1433,6 +1422,12 @@ export function AvatarSetupStep({
                   {removableBackground.reason}
                 </div>
               ) : (
+              <>
+              {/* NÍVEL 1 — sem fundo virtual (câmera crua) ou com fundo
+                  virtual (composição local por MediaPipe). Separado do
+                  seletor de cor: escolher "Com fundo virtual" não obriga a
+                  pessoa a já saber qual cor quer — ela vê as opções no passo
+                  seguinte, ao vivo, sobre o próprio rosto. */}
               <Field
                 label={t("createVideo.avatarSetup.background.label")}
                 help={
@@ -1441,35 +1436,81 @@ export function AvatarSetupStep({
                     : t("createVideo.avatarSetup.background.help")
                 }
               >
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {BACKGROUND_OPTIONS.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className="btn btn-outline"
-                      disabled={option.color !== null && !!camera.segmentationError}
-                      onClick={() => setBackgroundId(option.id)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        borderColor: backgroundId === option.id ? "var(--color-primary)" : undefined,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 14,
-                          height: 14,
-                          borderRadius: "50%",
-                          border: "1px solid var(--color-border)",
-                          background: option.color ? `rgb(${option.color.join(",")})` : "transparent",
-                        }}
-                      />
-                      {t(option.labelKey)}
-                    </button>
-                  ))}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => setBackgroundId(DEFAULT_BACKGROUND_ID)}
+                    style={{
+                      borderColor: backgroundId === DEFAULT_BACKGROUND_ID ? "var(--color-primary)" : undefined,
+                    }}
+                  >
+                    {t("createVideo.avatarSetup.background.toggleOff")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    disabled={!!camera.segmentationError}
+                    // Só troca se ainda estiver em "none" — reabrir esta tela
+                    // já com uma cor escolhida não deve reiniciar a escolha.
+                    onClick={() =>
+                      setBackgroundId((atual) =>
+                        atual === DEFAULT_BACKGROUND_ID
+                          ? (BACKGROUND_OPTIONS.find((o) => o.color !== null)?.id ?? atual)
+                          : atual,
+                      )
+                    }
+                    style={{
+                      borderColor: backgroundId !== DEFAULT_BACKGROUND_ID ? "var(--color-primary)" : undefined,
+                    }}
+                  >
+                    {t("createVideo.avatarSetup.background.toggleOn")}
+                  </button>
                 </div>
               </Field>
+
+              {/* NÍVEL 2 — as cores, uma vez que "Com fundo virtual" foi
+                  escolhido. Compará-las é o ponto desta rodada: a
+                  pré-visualização ao vivo (o <canvas> acima, que já reflete
+                  `backgroundRef.current` a cada frame — ver useCamera.ts)
+                  muda na hora a cada clique, ANTES de capturar qualquer
+                  foto. */}
+              {backgroundId !== DEFAULT_BACKGROUND_ID && (
+                <Field
+                  label={t("createVideo.avatarSetup.background.colorLabel")}
+                  help={t("createVideo.avatarSetup.background.colorHelp")}
+                >
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {BACKGROUND_OPTIONS.filter((option) => option.color !== null).map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className="btn btn-outline"
+                        disabled={!!camera.segmentationError}
+                        onClick={() => setBackgroundId(option.id)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          borderColor: backgroundId === option.id ? "var(--color-primary)" : undefined,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 14,
+                            height: 14,
+                            borderRadius: "50%",
+                            border: "1px solid var(--color-border)",
+                            background: `rgb(${option.color!.join(",")})`,
+                          }}
+                        />
+                        {t(option.labelKey)}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              )}
+              </>
               )}
 
               {removableBackground.enabled && backgroundId !== "none" && (
@@ -1555,6 +1596,19 @@ export function AvatarSetupStep({
                   </Field>
                 </>
               )}
+
+              {/* TRAJE PADRÃO saiu desta coluna nesta rodada (28/08) — seguiu
+                  Cenário (removido em 27/08): virou campo POR VÍDEO, na
+                  Cena. Nenhum vestígio funcional fica aqui — ver
+                  `checkScenePerVideoPolicy.ts`. */}
+
+              <button
+                className="btn btn-primary"
+                onClick={handleFinishSetup}
+                disabled={!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0}
+              >
+                {t("createVideo.avatarSetup.finishSetup")}
+              </button>
             </div>
             <div>
               {/* O erro fica NESTA coluna, e não na da câmera, porque é aqui
@@ -1577,11 +1631,24 @@ export function AvatarSetupStep({
                       {slot}
                     </span>
                     {avatarForTraining.photo_urls[i] ? (
-                      <img
-                        src={avatarForTraining.photo_urls[i]}
-                        alt={slot}
-                        style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover" }}
-                      />
+                      <>
+                        <img
+                          src={avatarForTraining.photo_urls[i]}
+                          alt={slot}
+                          style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover" }}
+                        />
+                        {/* Excluir, e não "refazer": refazer prometeria que a
+                            nova foto volta para ESTA posição, e ela não volta
+                            — o backend anexa ao fim. O texto abaixo da lista
+                            diz isso; o rótulo do botão não pode contradizê-lo. */}
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => handleDeletePhoto(i)}
+                        >
+                          {t("createVideo.avatarSetup.deletePhoto")}
+                        </button>
+                      </>
                     ) : (
                       <button className="btn btn-outline" onClick={handleCapturePhoto} disabled={!camera.ready}>
                         {t("createVideo.avatarSetup.capture")}
@@ -1590,6 +1657,16 @@ export function AvatarSetupStep({
                   </div>
                 ))}
               </div>
+
+              {/* A consequência de excluir, dita ANTES de clicar: a lista é
+                  densa, quem vem depois sobe uma posição, e a próxima foto
+                  entra na última vaga. Não é detalhe cosmético — a primeira
+                  foto é a imagem base do caminho da fal. */}
+              {avatarForTraining.photo_urls.length > 0 && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                  {t("createVideo.avatarSetup.deletePhotoHint")}
+                </p>
+              )}
 
               {/* Fora dos slots, e não dentro de cada um, porque o backend
                   anexa ao fim da lista: um botão por slot prometeria escolher
@@ -1622,9 +1699,17 @@ export function AvatarSetupStep({
                   recusa por tamanho, ou pior, num avatar de qualidade ruim —
                   custa uma regravação inteira. */}
               {(!avatarForTraining.reference_video_url || replacingReferenceVideo) && (
-                <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 8 }}>
-                  {t("createVideo.avatarSetup.referenceGuidance")}
-                </p>
+                <>
+                  <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 4 }}>
+                    {t("createVideo.avatarSetup.referenceGuidance")}
+                  </p>
+                  {/* Fundo e luz — recomendação PÚBLICA da HeyGen (comunidade
+                      oficial), não invenção nossa. Só texto, sem validação:
+                      nada aqui bloqueia envio de um vídeo que não siga isso. */}
+                  <p className="text-muted" style={{ fontSize: 12, marginTop: 0, marginBottom: 8 }}>
+                    {t("createVideo.avatarSetup.referenceGuidanceEnvironment")}
+                  </p>
+                </>
               )}
 
               {avatarForTraining.reference_video_url && !replacingReferenceVideo ? (
@@ -1889,183 +1974,6 @@ export function AvatarSetupStep({
               </Field>
             </div>
           </div>
-
-          <div className="grid grid-cols-2" style={{ marginBottom: 20 }}>
-            <div>
-              <div className="card-title">{t("createVideo.avatarSetup.scenarioTitle")}</div>
-              <Field
-                label={t("createVideo.avatarSetup.uploadImageLabel")}
-                help={t("createVideo.avatarSetup.scenarioHelp")}
-              >
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  {pendingScenarioFile ? (
-                    <>
-                      {pendingScenarioPreviewUrl && (
-                        <img
-                          src={pendingScenarioPreviewUrl}
-                          alt=""
-                          style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }}
-                        />
-                      )}
-                      <span className="text-muted" style={{ fontSize: 12 }}>{pendingScenarioFile.name}</span>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => commitPendingAsset("scenario")}
-                      >
-                        {t("createVideo.avatarSetup.saveImage")}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={() => discardPendingAsset("scenario")}
-                      >
-                        {t("createVideo.avatarSetup.discardImage")}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        onClick={() => scenarioFileInput.current?.click()}
-                      >
-                        {t("createVideo.avatarSetup.chooseFile")}
-                      </button>
-                      {defaults.scenario && (
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          onClick={() => commitDraftAssetClear("scenario")}
-                        >
-                          {t("createVideo.avatarSetup.removeImage")}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-                {!pendingScenarioFile && defaults.scenario && (
-                  <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-                    {defaults.scenarioName
-                      ? t("createVideo.avatarSetup.imageSavedNamed", { name: defaults.scenarioName })
-                      : t("createVideo.avatarSetup.imageSaved")}
-                  </p>
-                )}
-                <input
-                  ref={scenarioFileInput}
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) => e.target.files?.[0] && stageAssetFile("scenario", e.target.files[0])}
-                />
-              </Field>
-              <Field
-                label={t("createVideo.avatarSetup.generateViaAiLabel")}
-                help={t("createVideo.avatarSetup.scenarioPromptHelp")}
-                helpPrompt={t("createVideo.avatarSetup.scenarioHelpPrompt")}
-              >
-                <input
-                  placeholder={t("createVideo.avatarSetup.scenarioPlaceholder")}
-                  value={defaults.scenarioPrompt}
-                  onChange={(e) => onDefaultsChange({ ...defaults, scenarioPrompt: e.target.value })}
-                />
-              </Field>
-            </div>
-            {/* TRAJE PADRÃO — UI-PARIDADE-TRAJE, 25/08.
-                Mesmo par upload+texto do Cenário padrão, ao lado, escrevendo
-                nos MESMOS `defaults.outfit`/`outfitPrompt` que o ramo de
-                avatar EXISTENTE já lê. Título PRÓPRIO (`outfitDefaultTitle`,
-                "Traje padrão") — desde esta rodada, `outfitTitle` (usado no
-                ramo de avatar existente) tem o MESMO texto: são a mesma
-                gravação, e o rótulo divergente ("Traje deste vídeo") já foi
-                a causa de confusão sobre se o campo persistia ou não. */}
-            <div>
-              <div className="card-title">{t("createVideo.avatarSetup.outfitDefaultTitle")}</div>
-              <Field
-                label={t("createVideo.avatarSetup.uploadImageLabel")}
-                help={t("createVideo.avatarSetup.outfitHelp")}
-              >
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  {pendingOutfitFile ? (
-                    <>
-                      {pendingOutfitPreviewUrl && (
-                        <img
-                          src={pendingOutfitPreviewUrl}
-                          alt=""
-                          style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }}
-                        />
-                      )}
-                      <span className="text-muted" style={{ fontSize: 12 }}>{pendingOutfitFile.name}</span>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => commitPendingAsset("outfit")}
-                      >
-                        {t("createVideo.avatarSetup.saveImage")}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={() => discardPendingAsset("outfit")}
-                      >
-                        {t("createVideo.avatarSetup.discardImage")}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        onClick={() => outfitFileInput.current?.click()}
-                      >
-                        {t("createVideo.avatarSetup.chooseFile")}
-                      </button>
-                      {defaults.outfit && (
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          onClick={() => commitDraftAssetClear("outfit")}
-                        >
-                          {t("createVideo.avatarSetup.removeImage")}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-                {!pendingOutfitFile && defaults.outfit && (
-                  <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-                    {t("createVideo.avatarSetup.imageSaved")}
-                  </p>
-                )}
-                <input
-                  ref={outfitFileInput}
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) => e.target.files?.[0] && stageAssetFile("outfit", e.target.files[0])}
-                />
-              </Field>
-              <Field
-                label={t("createVideo.avatarSetup.generateViaAiLabel")}
-                help={t("createVideo.avatarSetup.outfitPromptHelp")}
-                helpPrompt={t("createVideo.avatarSetup.outfitHelpPrompt")}
-              >
-                <input
-                  placeholder={t("createVideo.avatarSetup.outfitPlaceholder")}
-                  value={defaults.outfitPrompt}
-                  onChange={(e) => onDefaultsChange({ ...defaults, outfitPrompt: e.target.value })}
-                />
-              </Field>
-            </div>
-          </div>
-
-          <button
-            className="btn btn-primary"
-            onClick={handleFinishSetup}
-            disabled={!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0}
-          >
-            {t("createVideo.avatarSetup.finishSetup")}
-          </button>
         </>
       ) : null}
     </div>

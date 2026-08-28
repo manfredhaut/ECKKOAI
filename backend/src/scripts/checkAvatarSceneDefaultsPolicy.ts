@@ -1,38 +1,32 @@
 /**
- * CENÁRIO/TRAJE PADRÃO DO AVATAR PERSISTEM — migration 068, Fase A item 5
- * (25/08).
+ * CENÁRIO/TRAJE DO AVATAR — CONTRATO DE BACKEND, migration 068 (Fase A item
+ * 5, 25/08). ESTREITADA para só backend na rodada de Traje-por-vídeo
+ * (28/08): TRAJE seguiu CENÁRIO (27/08) para fora do Passo 1.
  *
- * ┌─ O gap que esta guarda fecha ─────────────────────────────────────────────┐
- * │ `defaults.scenario/scenarioPrompt/outfit/outfitPrompt` (Passo 1) sempre   │
- * │ viveram só no estado do wizard de CRIAÇÃO DE VÍDEO (CreateVideoPage.tsx)  │
- * │ — nunca na linha do avatar. Os rótulos "Cenário padrão"/"Traje padrão"    │
- * │ prometiam persistência que não existia (item (c) do fechamento de 25/08: │
- * │ os textos de ajuda foram corrigidos para dizer isso, mas o comportamento │
- * │ não mudou). Fechar o gap de VERDADE — e não só o texto — é este bloco.   │
+ * ┌─ O que mudou nesta rodada ─────────────────────────────────────────────────┐
+ * │ Esta guarda cobria os 4 campos como "padrão do avatar EDITÁVEL no Passo    │
+ * │ 1" — persistência (G-3) e releitura (G-5) incluídas. Traje seguiu Cenário  │
+ * │ para fora do Passo 1: `handleFinishSetup` PAROU de persistir `outfit`/     │
+ * │ `outfit_prompt` (mesma decisão já tomada para scenario/scenario_prompt em  │
+ * │ 27/08), e a tela PAROU de reler os 4 campos para `defaults` (tipo extinto  │
+ * │ — ver `types.ts`). G-3/G-5 (Passo 1, execução) SAÍRAM: não sobrou nada do  │
+ * │ Passo 1 para provar. O que fica é só o CONTRATO DE BACKEND — as colunas    │
+ * │ existem, o PUT aceita e faz COALESCE, e `POST /videos` cai para o valor    │
+ * │ congelado do avatar só quando o vídeo não manda o seu. A MIGRAÇÃO (semear  │
+ * │ os 4 campos em `wizard` uma vez por avatar) tem guarda própria em          │
+ * │ `checkScenePerVideoPolicy.ts`, que também prova que nenhum vestígio da UI  │
+ * │ de Passo 1 sobrevive para os dois campos.                                  │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  *  G-1  a migration 068 declara as 4 colunas em `avatars`.
  *  G-2  `PUT /avatars/:id` aceita e faz COALESCE dos 4 campos — mesmo padrão
  *       dos outros campos da rota (nome, provider, ajustes de voz): ausente
- *       no corpo não zera a coluna.
- *  G-3  "Concluir configuração" (`handleFinishSetup`, AvatarSetupStep.tsx)
- *       PERSISTE os defaults do rascunho antes de finalizar — por FORMA
- *       (recorte da função), não por execução: é um componente React com
- *       hooks, e subir a árvore inteira só para isto seria a mesma
- *       reorganização que os outros arquivos deste diretório evitam.
+ *       no corpo não zera a coluna. Nada mais escreve nestes 4 campos desde
+ *       o Passo 1 (a UI que os editava saiu inteira), mas o backend continua
+ *       aceitando-os — não há razão para recusar um PUT que os mande.
  *  G-4  `POST /videos` cai para o padrão do avatar SÓ quando o corpo do
  *       próprio vídeo não manda um valor — o vídeo que manda o SEU sempre
- *       vence. Os dois sentidos importam: sem o fallback, o padrão persistido
- *       nunca alcançaria um vídeo que não o repetisse; com o fallback na
- *       ordem errada, um vídeo que TENTA sobrescrever o padrão do avatar
- *       seria ignorado — pior que não ter fallback nenhum, porque pareceria
- *       funcionar.
- *  G-5  A tela do avatar EXISTENTE relê `scenario`/`scenario_prompt`/
- *       `outfit`/`outfit_prompt` do avatar selecionado e preenche
- *       `defaults` — item (a) da Seção 6 (25/08): o PUT de G-2/G-3 já
- *       gravava, mas a tela abria os campos vazios até alguém editar de
- *       novo. Sem isto, "Concluir configuração" prova persistência que a
- *       PRÓPRIA tela que a gravou não consegue mostrar de volta.
+ *       vence. Vale para os 4 campos (backend inalterado desde 25/08).
  *
  * Custo: ZERO. Nenhuma rede, nenhum banco — leitura de arquivo.
  */
@@ -43,33 +37,10 @@ import type { Mutant } from "./mutants.js";
 const MIGRATION = "backend/src/db/migrations/068_avatar_scene_defaults.sql";
 const ROTA_AVATARS = "backend/src/routes/avatars.ts";
 const ROTA_VIDEOS = "backend/src/routes/videos.ts";
-const PASSO1 = "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx";
 
 const CAMPOS = ["scenario", "scenario_prompt", "outfit", "outfit_prompt"] as const;
 
 export const MUTANTS: Mutant[] = [
-  {
-    guard: "passo 1: Concluir configuração persiste o cenário/traje padrão no avatar",
-    name: "handleFinishSetup para de persistir cenário/traje",
-    kind: "esperto",
-    // ESPERTO: o avatar continua sendo treinado, o botão continua
-    // funcionando, a tela continua avançando normalmente — só o PUT que
-    // grava scenario/outfit na linha do avatar deixa de acontecer. É
-    // indistinguível de "funciona" até a PRÓXIMA visita ao produto, quando
-    // o padrão que a pessoa configurou simplesmente não está mais lá.
-    file: PASSO1,
-    find:
-      "    await guard(async () => {\n" +
-      "      await api.put<Avatar>(`/avatars/${avatarForTraining.id}`, {\n" +
-      "        scenario: defaults.scenario || null,\n" +
-      "        scenario_prompt: defaults.scenarioPrompt || null,\n" +
-      "        outfit: defaults.outfit || null,\n" +
-      "        outfit_prompt: defaults.outfitPrompt || null,\n" +
-      "      });\n" +
-      "    });\n",
-    replace: "",
-    expect: "avatar-defaults: Concluir configuração não persiste mais o padrão do avatar",
-  },
   {
     guard: "vídeo: o valor do PRÓPRIO vídeo sempre vence o padrão persistido do avatar",
     name: "o padrão do avatar passa a vencer o valor que o vídeo manda",
@@ -85,32 +56,6 @@ export const MUTANTS: Mutant[] = [
     find: "    const scenarioParaGerar = scenario || avatar.scenario || null;",
     replace: "    const scenarioParaGerar = avatar.scenario || scenario || null;",
     expect: "a ORDEM inverteu (o padrão do avatar passaria a vencer o valor que o próprio vídeo manda)",
-  },
-  {
-    guard: "passo 1: tela do avatar existente relê cenário/traje padrão do banco ao selecionar",
-    name: "a tela para de reler cenário/traje padrão ao reabrir o avatar",
-    kind: "esperto",
-    // ESPERTO: a persistência (G-1/G-2/G-3) continua funcionando de ponta a
-    // ponta — o PUT grava certinho. Só o `useEffect` que RELÊ o avatar
-    // selecionado e preenche `defaults` some. A tela continua abrindo sem
-    // erro nenhum, só que sempre com os campos de Cenário/Traje vazios,
-    // contradizendo o que o banco já tem — exatamente o bug do item (a).
-    file: PASSO1,
-    find:
-      "  useEffect(() => {\n" +
-      "    if (!selectedAvatar) return;\n" +
-      "    onDefaultsChange({\n" +
-      "      ...defaults,\n" +
-      "      scenario: selectedAvatar.scenario || \"\",\n" +
-      "      scenarioName: \"\",\n" +
-      "      scenarioPrompt: selectedAvatar.scenario_prompt || \"\",\n" +
-      "      outfit: selectedAvatar.outfit || \"\",\n" +
-      "      outfitPrompt: selectedAvatar.outfit_prompt || \"\",\n" +
-      "    });\n" +
-      "    // eslint-disable-next-line react-hooks/exhaustive-deps\n" +
-      "  }, [selectedAvatar?.id]);\n",
-    replace: "",
-    expect: "avatar-defaults: a tela não relê mais o cenário/traje padrão salvo ao selecionar um avatar existente",
   },
 ];
 
@@ -164,42 +109,6 @@ export function checkAvatarSceneDefaultsPolicy(repoRoot: string): AvatarSceneDef
   }
 
   // ---------------------------------------------------------------------------
-  // G-3 — Concluir configuração persiste, por FORMA (recorte da função).
-  // ---------------------------------------------------------------------------
-  const passo1 = lerDaRaiz(repoRoot, PASSO1);
-  const inicioFinish = passo1.indexOf("async function handleFinishSetup() {");
-  const fimFinish = passo1.indexOf("\n  function updateQuality(", inicioFinish);
-  if (inicioFinish < 0 || fimFinish < 0) {
-    failures.push(
-      `avatar-defaults: não foi possível recortar \`handleFinishSetup\` em ${PASSO1} pelas âncoras ` +
-        "`async function handleFinishSetup() {` e `function updateQuality(`. A guarda não pode opinar " +
-        "sobre um trecho que não encontrou, e passar verde aqui seria o pior desfecho.",
-    );
-  } else {
-    const corpoFinish = passo1.slice(inicioFinish, fimFinish);
-    if (!corpoFinish.includes("await api.put<Avatar>(`/avatars/${avatarForTraining.id}`, {")) {
-      failures.push(
-        `avatar-defaults: Concluir configuração não persiste mais o padrão do avatar — o PUT a ` +
-          `/avatars/:id não está mais dentro de \`handleFinishSetup\` em ${PASSO1}. A pessoa configura ` +
-          "cenário/traje na tela, clica em Concluir, e na próxima visita o padrão não está mais lá.",
-      );
-    }
-    for (const [corpo, defaultsField] of [
-      ["scenario: defaults.scenario", "scenario"],
-      ["scenario_prompt: defaults.scenarioPrompt", "scenarioPrompt"],
-      ["outfit: defaults.outfit", "outfit"],
-      ["outfit_prompt: defaults.outfitPrompt", "outfitPrompt"],
-    ] as const) {
-      if (!corpoFinish.includes(corpo)) {
-        failures.push(
-          `avatar-defaults: Concluir configuração não envia \`${corpo}\` — falta em ${PASSO1}. O campo ` +
-            `\`defaults.${defaultsField}\` existe na tela do Passo 1 e não chega ao PUT que persiste.`,
-        );
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // G-4 — POST /videos: fallback existe, e o corpo do vídeo vence.
   // ---------------------------------------------------------------------------
   const videosRoute = lerDaRaiz(repoRoot, ROTA_VIDEOS);
@@ -239,46 +148,11 @@ export function checkAvatarSceneDefaultsPolicy(repoRoot: string): AvatarSceneDef
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // G-5 — a tela do avatar existente relê o padrão salvo ao selecionar.
-  // ---------------------------------------------------------------------------
-  const inicioReread = passo1.indexOf("CENÁRIO/TRAJE PADRÃO — relê o que está salvo no avatar");
-  if (inicioReread < 0) {
-    failures.push(
-      `avatar-defaults: não achei o bloco "CENÁRIO/TRAJE PADRÃO — relê o que está salvo no avatar" em ` +
-        `${PASSO1}. Sem ele, a tela do avatar existente não recarrega o padrão persistido ao selecionar, ` +
-        "e os campos de Cenário/Traje abrem vazios mesmo com valor salvo no banco — item (a) da Seção 6.",
-    );
-  } else {
-    const corpoReread = passo1.slice(inicioReread, inicioReread + 1600);
-    for (const [campoDefaults, campoAvatar] of [
-      ["scenario: selectedAvatar.scenario", "scenario"],
-      ["scenarioPrompt: selectedAvatar.scenario_prompt", "scenario_prompt"],
-      ["outfit: selectedAvatar.outfit", "outfit"],
-      ["outfitPrompt: selectedAvatar.outfit_prompt", "outfit_prompt"],
-    ] as const) {
-      if (!corpoReread.includes(campoDefaults)) {
-        failures.push(
-          `avatar-defaults: a tela não relê mais o cenário/traje padrão salvo ao selecionar um avatar ` +
-            `existente — falta \`${campoDefaults}\` perto do bloco de releitura em ${PASSO1}. O campo ` +
-            `\`avatar.${campoAvatar}\` foi persistido pelo PUT e não volta para \`defaults\` ao reabrir.`,
-        );
-      }
-    }
-    if (!corpoReread.includes("}, [selectedAvatar?.id]);")) {
-      failures.push(
-        `avatar-defaults: a releitura de cenário/traje padrão em ${PASSO1} não está mais presa a ` +
-          "`[selectedAvatar?.id]` — sem essa dependência ela roda a cada render (sobrescrevendo edição " +
-          "em andamento) ou nunca (voltando ao bug do item (a)).",
-      );
-    }
-  }
-
   if (failures.length === 0) {
     notes.push(
       "    avatar-defaults: migration 068 declara as 4 colunas, PUT /avatars/:id persiste com COALESCE, " +
-        "Concluir configuração grava o padrão, POST /videos cai para ele só quando o próprio vídeo não " +
-        "manda um valor seu, e a tela do avatar existente relê o padrão salvo ao selecionar",
+        "e POST /videos cai para o padrão congelado do avatar (dos 4 campos) só quando o próprio vídeo " +
+        "não manda um valor seu",
     );
   }
 
