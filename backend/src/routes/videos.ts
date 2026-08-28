@@ -60,6 +60,7 @@ import {
   isExpressiveness,
   normalizeScene,
   direcaoComExpressividade,
+  promptDeComposicaoComFeedback,
   type SceneBackground,
 } from "../services/providers/videoScene.js";
 import { isHeygenEngine } from "../services/providers/videoEngine.js";
@@ -2518,7 +2519,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           fotoBase: await readUpload(fotoUrl),
           fotoMimeType: mimeDoUpload(fotoUrl),
           entradasExtras: await entradasDaComposicao(video),
-          promptDeComposicao: promptDaComposicaoDaLinha(video),
+          // PRIORIDADE 2, 28/08 — o texto de "o que precisa mudar" deixa de
+          // só ser persistido (`refazerFeedback` abaixo) e passa a alterar o
+          // prompt de verdade: incorporado como ajuste sobre o cenário/traje
+          // já existente, nunca substituindo-o.
+          promptDeComposicao: promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video), refazerFeedback),
           tenantId: req.tenantId,
           aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
           // A recomposição para em `compor` (`PARAR_APOS_RECOMPOR`) e não chega

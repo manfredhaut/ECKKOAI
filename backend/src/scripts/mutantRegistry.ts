@@ -90,6 +90,7 @@ import { MUTANTS as mutantRegistryMutants } from "./checkMutantRegistryPolicy.js
 import { MUTANTS as scriptFractioningMutants } from "./checkScriptFractioningPolicy.js";
 import { MUTANTS as expressivenessDirectionMutants } from "./checkExpressivenessDirectionPolicy.js";
 import { MUTANTS as targetDurationCapMutants } from "./checkTargetDurationCapPolicy.js";
+import { MUTANTS as recomposeFeedbackMutants } from "./checkRecomposeFeedbackPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 
@@ -186,4 +187,5 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkScriptFractioningPolicy.ts", scriptFractioningMutants),
   ...de("backend/src/scripts/checkExpressivenessDirectionPolicy.ts", expressivenessDirectionMutants),
   ...de("backend/src/scripts/checkTargetDurationCapPolicy.ts", targetDurationCapMutants),
+  ...de("backend/src/scripts/checkRecomposeFeedbackPolicy.ts", recomposeFeedbackMutants),
 ];

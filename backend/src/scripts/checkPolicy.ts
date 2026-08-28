@@ -96,6 +96,7 @@ import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
 import { checkScriptFractioningPolicy } from "./checkScriptFractioningPolicy.js";
 import { checkExpressivenessDirectionPolicy } from "./checkExpressivenessDirectionPolicy.js";
 import { checkTargetDurationCapPolicy } from "./checkTargetDurationCapPolicy.js";
+import { checkRecomposeFeedbackPolicy } from "./checkRecomposeFeedbackPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
 import { checkAvatarTrainingVendorPolicy } from "./checkAvatarTrainingVendorPolicy.js";
@@ -893,6 +894,11 @@ async function main(): Promise<void> {
   const targetDurationCap = await checkTargetDurationCapPolicy(process.env.REPO_ROOT ?? "/repo");
   targetDurationCap.failures.forEach((f) => failures.push(f));
   targetDurationCap.notes.forEach((n) => note(n));
+
+  // --- PRIORIDADE 2, 28/08 — "Refazer" usa o feedback de verdade ----------
+  const recomposeFeedback = await checkRecomposeFeedbackPolicy(process.env.REPO_ROOT ?? "/repo");
+  recomposeFeedback.failures.forEach((f) => failures.push(f));
+  recomposeFeedback.notes.forEach((n) => note(n));
 
   // --- 24o-sexies. 0 fotos não recusa nem a rota, nem trainAvatar() -------
   //

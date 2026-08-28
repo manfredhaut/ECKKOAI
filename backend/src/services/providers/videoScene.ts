@@ -112,6 +112,35 @@ export function direcaoComExpressividade(motionPrompt: string, expressiveness: s
 }
 
 /**
+ * O prompt de COMPOSIÇÃO (cenário + traje) enviado a `fal-ai/nano-banana-2/edit`
+ * no "Refazer", com o feedback da pessoa incorporado — PRIORIDADE 2,
+ * 28/08/2026.
+ *
+ * ┌─ O defeito que isto fecha ────────────────────────────────────────────────┐
+ * │ `POST /videos/:id/recompose` já capturava e PERSISTIA o texto de          │
+ * │ feedback (`refazer_feedback`, migration 061) — mas só isso: o prompt      │
+ * │ enviado à fal continuava sendo `promptDaComposicaoDaLinha(video)` puro,   │
+ * │ o MESMO de sempre. A pessoa escrevia "tire os óculos" e a imagem nova     │
+ * │ saía idêntica à rejeitada, porque o pedido nunca chegou ao fornecedor —   │
+ * │ só ao banco.                                                              │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * NÃO recria o prompt do zero: incorpora o feedback como uma instrução
+ * ADICIONAL sobre o cenário/traje já existente — "tire os óculos" faz
+ * sentido como ajuste de "consultório claro. jaleco branco", não como
+ * substituto dele. Sem feedback (recomposição sem texto, ou primeira
+ * composição), o comportamento é EXATAMENTE o de antes: só a base.
+ */
+export function promptDeComposicaoComFeedback(
+  promptBase: string,
+  feedback: string | null | undefined,
+): string {
+  const feedbackLimpo = feedback?.trim();
+  if (!feedbackLimpo) return promptBase;
+  return [promptBase, `Ajuste solicitado pela pessoa: ${feedbackLimpo}`].filter(Boolean).join(". ");
+}
+
+/**
  * Normaliza o que veio da tela para o que pode ir ao fornecedor.
  *
  * **Campo vazio não é campo.** Um `motion_prompt: ""` é uma instrução de
