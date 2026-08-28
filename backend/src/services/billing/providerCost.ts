@@ -95,22 +95,58 @@ export { ELEVENLABS_VOICE_COST, custoVozUsd } from "./voiceCost.js";
  * Guardar os dois lado a lado permitiria que divergissem, e a divergência entre
  * duas cópias da mesma medição é o defeito original que este arquivo existe
  * para eliminar — só que desta vez dentro do próprio arquivo.
+ *
+ * ┌─ MUDANÇA DE PREÇO DO FORNECEDOR, 28/08/2026 — DECLARADO, NÃO REMEDIDO ──┐
+ * │ A HeyGen mudou a tarifa de Avatar IV (Photo Avatar) de US$ 0,05/s para  │
+ * │ US$ 0,0385/s (-23%) — confirmado por e-mail oficial do fornecedor e     │
+ * │ cruzado com developers.heygen.com/docs/pricing no mesmo dia. O número   │
+ * │ NÃO é medição nossa: é o preço que o fornecedor anuncia, e é isto que   │
+ * │ `unitsPerBilledSecond` passa a refletir (2,31 = 0,0385 × 60).           │
+ * │                                                                          │
+ * │ `unitsPerDollar: 60` NÃO mudou — é a razão carteira/cota (mecânica de   │
+ * │ conta do fornecedor), independente do preço de vídeo, e segue com as    │
+ * │ mesmas duas medições de 02/08 atrás dela.                               │
+ * │                                                                          │
+ * │ AS TRÊS MEDIÇÕES REAIS DO CABEÇALHO (9/48/99 unidades) SÃO HISTÓRICAS,  │
+ * │ da tarifa ANTIGA (até 27/08/2026) — elas não reproduzem mais o número   │
+ * │ que `costFor()` devolve hoje, e não deveriam: o fornecedor cobra outra  │
+ * │ coisa agora. `checkCostPolicy.ts` mantém a checagem delas contra a      │
+ * │ tarifa ANTIGA, como regressão histórica da regra de truncagem — não     │
+ * │ contra este objeto ao vivo.                                            │
+ * │                                                                          │
+ * │ NÃO VERIFICADO: nenhuma geração real rodou sob a tarifa nova ainda, e   │
+ * │ por isso não se sabe se `unitsPerBilledSecond` continua um número       │
+ * │ FIXO por segundo truncado (como era, 3 un/s exatas) ou se a nova        │
+ * │ tarifa quebra esse modelo (ex.: cobrança fracionária, mínimo por        │
+ * │ chamada). 2,31 é a MELHOR LEITURA hoje — dólar declarado ÷ conversão    │
+ * │ de carteira medida — não uma medição de quota-delta como as três de     │
+ * │ cima. Reconfirmar com uma geração real quando a próxima rodada live     │
+ * │ acontecer.                                                              │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
 export const HEYGEN_VIDEO_COST = {
-  /** Unidades de `remaining_quota` por dólar. Dois pares medidos, ambos 60,0. */
+  /** Unidades de `remaining_quota` por dólar. Dois pares medidos, ambos 60,0. Independente do preço de vídeo — não mudou em 28/08. */
   unitsPerDollar: 60,
   /**
-   * Unidades cobradas por segundo INTEIRO de vídeo entregue. Fecha exato nas
-   * três medições; ver a tabela no cabeçalho.
+   * Unidades cobradas por segundo INTEIRO de vídeo entregue.
+   *
+   * ATUAL (desde 28/08/2026): 2,31 = US$ 0,0385/s × 60 un/US$ — DECLARADO
+   * pelo fornecedor (e-mail oficial + developers.heygen.com/docs/pricing),
+   * NÃO reconfirmado por geração real. Ver o bloco acima.
+   *
+   * HISTÓRICO (até 27/08/2026): era 3 — fechava exato nas três medições reais
+   * do cabeçalho (`checkCostPolicy.ts` continua verificando essas três contra
+   * o valor 3, fixo, como regressão da regra de truncagem).
    */
-  unitsPerBilledSecond: 3,
-  /** Sob que condições isto foi medido. A UI mostra esta ressalva. */
+  unitsPerBilledSecond: 2.31,
+  /** Sob que condições isto foi medido/declarado. A UI mostra esta ressalva. */
   measuredUnder: { vendor: "heygen", aspectRatio: "16:9 e 9:16", resolution: "720p" },
-  measuredOn: "2026-08-01 e 2026-08-02",
-  /** Como foi medido, em uma linha — vai para a tela, não só para o log. */
+  measuredOn: "2026-08-28 (preço declarado pelo fornecedor; medição real anterior era de 2026-08-01/02, à tarifa antiga)",
+  /** Como foi medido/declarado, em uma linha — vai para a tela, não só para o log. */
   method:
-    "três gerações reais (3,372 s → 9 unidades, 16,972 s → 48, 33,696 s → 99), " +
-    "com a duração por ffprobe no arquivo baixado e as unidades pela variação de remaining_quota",
+    "tarifa declarada pela HeyGen em 28/08/2026 (US$ 0,0385/s, Avatar IV Photo Avatar) — e-mail oficial " +
+    "cruzado com developers.heygen.com/docs/pricing; NÃO reconfirmada por geração real (a régua antiga, " +
+    "3 un/s, foi medida em 3 gerações reais de 01–02/08 e valeu até 27/08)",
 } as const;
 
 /**
@@ -479,9 +515,9 @@ export function costBasisNote(vendor?: string): string {
   }
   const { aspectRatio, resolution } = HEYGEN_VIDEO_COST.measuredUnder;
   return (
-    `Estimativa baseada em medições reais (${HEYGEN_VIDEO_COST.measuredOn}): ` +
+    `Estimativa baseada em preço DECLARADO pelo fornecedor (${HEYGEN_VIDEO_COST.measuredOn}): ` +
     `${HEYGEN_VIDEO_COST.method}. A cobrança é por segundo inteiro — a fração do último segundo ` +
-    `não é cobrada. As medições são em ${aspectRatio} / ${resolution}; ` +
+    `não é cobrada, salvo reconfirmação futura. A categoria é ${aspectRatio} / ${resolution}; ` +
     "resoluções maiores nunca foram medidas por nós, embora o fornecedor documente preço igual " +
     "para 720p e 1080p."
   );

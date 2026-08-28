@@ -294,18 +294,31 @@ function checkAbsenceIsNeverZero(failures: string[], notes: string[]): void {
 // -------------------------------------------------------------------- 1b ---
 
 /**
- * As TRÊS medições reais são o caso de teste da conta de custo.
+ * As TRÊS medições reais são o caso de teste HISTÓRICO da regra de truncagem.
  *
- * Esta asserção existe porque a taxa anterior (US$ 0,045/s sobre a duração
- * fracionária) era plausível e errada: ela nunca reproduziu nenhuma das três
- * contagens de unidades que o fornecedor de fato debitou. A regra da truncagem
- * reproduz as três exatamente, e é isso que fica travado aqui — não o número,
- * mas a capacidade de prever o que já aconteceu.
+ * Esta asserção existe porque a taxa anterior a ela (US$ 0,045/s sobre a
+ * duração fracionária) era plausível e errada: ela nunca reproduziu nenhuma
+ * das três contagens de unidades que o fornecedor de fato debitou. A regra da
+ * truncagem reproduz as três exatamente, e é isso que fica travado aqui — não
+ * o número, mas a capacidade de prever o que já aconteceu.
+ *
+ * ⚠️ TAXA_HISTORICA_UNITS_PER_SECOND, NÃO `HEYGEN_VIDEO_COST.unitsPerBilledSecond` —
+ * mudança de preço do fornecedor, 28/08/2026. As três medições abaixo são de
+ * 01–02/08, sob a tarifa de Avatar IV vigente ATÉ 27/08 (3 un/s). Em 28/08 a
+ * HeyGen baixou o preço para US$ 0,0385/s (2,31 un/s) — `costFor()` usa esse
+ * valor NOVO agora, e não reproduziria mais estas três contagens antigas, e não
+ * deveria: o fornecedor cobra outra coisa hoje. Por isso este teste usa uma
+ * constante LOCAL, presa à tarifa que valia quando as três foram medidas — ela
+ * deixa de testar `costFor()` ao vivo e passa a testar só a ARITMÉTICA da
+ * truncagem contra o registro histórico, que é o que ainda pode ser afirmado
+ * sem uma geração nova sob o preço atual.
  *
  * Os números da política não estão no código de produção; estão AQUI, como
  * dado observado. Se estivessem lá, este teste compararia o código consigo
  * mesmo e não afirmaria coisa nenhuma.
  */
+const TAXA_HISTORICA_UNITS_PER_SECOND = 3;
+
 const MEDICOES_REAIS = [
   { deliveredSeconds: 3.372, vendorUnits: 9, quando: "2026-08-01, 16:9" },
   { deliveredSeconds: 16.972, vendorUnits: 48, quando: "2026-08-02, 9:16" },
@@ -314,47 +327,42 @@ const MEDICOES_REAIS = [
 
 function checkCostMatchesRealMeasurements(failures: string[], notes: string[]): void {
   for (const m of MEDICOES_REAIS) {
-    const c = costFor({
-      provider: "avatar",
-      vendor: "heygen",
-      unitType: "seconds",
-      unitCount: m.deliveredSeconds,
-    });
+    const unidadesPelaTaxaHistorica = Math.floor(m.deliveredSeconds) * TAXA_HISTORICA_UNITS_PER_SECOND;
 
-    if (!c.known) {
+    if (unidadesPelaTaxaHistorica !== m.vendorUnits) {
+      const fracionario = (m.deliveredSeconds * TAXA_HISTORICA_UNITS_PER_SECOND).toFixed(2);
       failures.push(
-        `custo: a medição real de ${m.deliveredSeconds} s (${m.quando}) passou a devolver ausência. ` +
-          "O caminho medido é o único número que o produto tem sobre dinheiro.",
-      );
-      continue;
-    }
-
-    if (c.vendorUnits !== m.vendorUnits) {
-      const fracionario = (m.deliveredSeconds * HEYGEN_VIDEO_COST.unitsPerBilledSecond).toFixed(2);
-      failures.push(
-        `custo: para ${m.deliveredSeconds} s (${m.quando}) a conta devolveu ${c.vendorUnits} unidades, ` +
-          `mas o fornecedor debitou ${m.vendorUnits}. A cobrança é por SEGUNDO INTEIRO truncado — ` +
-          `calcular sobre a duração fracionária daria ${fracionario}, que não bate com nenhuma das ` +
-          "três medições. Foi essa conta que produziu a taxa de US$ 0,045/s, plausível e errada.",
+        `custo: para ${m.deliveredSeconds} s (${m.quando}), truncar e multiplicar pela taxa HISTÓRICA ` +
+          `(${TAXA_HISTORICA_UNITS_PER_SECOND} un/s) dá ${unidadesPelaTaxaHistorica}, mas o fornecedor ` +
+          `debitou ${m.vendorUnits} naquela data. A cobrança era por segundo inteiro truncado — calcular ` +
+          `sobre a duração fracionária daria ${fracionario}, que não bate com nenhuma das três medições. ` +
+          "Foi essa conta que produziu a taxa de US$ 0,045/s, plausível e errada.",
       );
     }
   }
 
   // Contraponto: a truncagem não pode virar "arredonda para qualquer coisa".
-  // Uma implementação que devolvesse sempre zero, ou sempre o teto, passaria
-  // em alguma das medições por acaso — mas não nesta.
+  // Este contraponto usa a taxa AO VIVO (via costFor real), porque testa a
+  // FORMA da truncagem (segundo inteiro, nunca arredondado para cima), que
+  // não mudou com o preço — só o multiplicador mudou. É também o único ponto
+  // desta função que ainda chama `costFor()` de verdade — por isso carrega a
+  // frase "A cobrança é por SEGUNDO INTEIRO truncado", que dois mutantes
+  // acima (truncagem quebrada dentro de `providerCost.ts`) esperam encontrar
+  // aqui, já que o laço de MEDICOES_REAIS não chama mais `costFor()`.
   const meio = costFor({ provider: "avatar", vendor: "heygen", unitType: "seconds", unitCount: 10.999 });
   if (!meio.known || meio.billedSeconds !== 10) {
     failures.push(
       `custo: 10,999 s deveriam ser cobrados como 10 s inteiros, e a conta devolveu ` +
-        `${meio.known ? meio.billedSeconds : "ausência"}. Arredondar para cima inventa cobrança que o ` +
-        "fornecedor não fez; as três medições mostram truncagem, não arredondamento.",
+        `${meio.known ? meio.billedSeconds : "ausência"}. A cobrança é por SEGUNDO INTEIRO truncado — ` +
+        "arredondar para cima inventa cobrança que o fornecedor não fez.",
     );
   }
 
   notes.push(
     `custo: ${MEDICOES_REAIS.length} medição(ões) real(is) reproduzidas exatamente pela regra de ` +
-      `${HEYGEN_VIDEO_COST.unitsPerBilledSecond} unidades por segundo inteiro truncado`,
+      `truncagem à taxa HISTÓRICA de ${TAXA_HISTORICA_UNITS_PER_SECOND} un/s (vigente até 27/08/2026, ` +
+      `medida em 01–02/08); a taxa AO VIVO hoje é ${HEYGEN_VIDEO_COST.unitsPerBilledSecond} un/s, ` +
+      "declarada pelo fornecedor em 28/08, ainda não reconfirmada por geração real",
   );
 }
 
