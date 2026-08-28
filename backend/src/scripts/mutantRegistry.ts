@@ -88,6 +88,8 @@ import { MUTANTS as photoRemovalMutants } from "./checkPhotoRemovalPolicy.js";
 import { MUTANTS as virtualBackgroundComparatorMutants } from "./checkVirtualBackgroundComparatorPolicy.js";
 import { MUTANTS as mutantRegistryMutants } from "./checkMutantRegistryPolicy.js";
 import { MUTANTS as scriptFractioningMutants } from "./checkScriptFractioningPolicy.js";
+import { MUTANTS as expressivenessDirectionMutants } from "./checkExpressivenessDirectionPolicy.js";
+import { MUTANTS as targetDurationCapMutants } from "./checkTargetDurationCapPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 
@@ -182,4 +184,6 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkVirtualBackgroundComparatorPolicy.ts", virtualBackgroundComparatorMutants),
   ...de("backend/src/scripts/checkMutantRegistryPolicy.ts", mutantRegistryMutants),
   ...de("backend/src/scripts/checkScriptFractioningPolicy.ts", scriptFractioningMutants),
+  ...de("backend/src/scripts/checkExpressivenessDirectionPolicy.ts", expressivenessDirectionMutants),
+  ...de("backend/src/scripts/checkTargetDurationCapPolicy.ts", targetDurationCapMutants),
 ];

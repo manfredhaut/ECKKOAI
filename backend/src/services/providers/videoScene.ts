@@ -73,6 +73,45 @@ export function isExpressiveness(value: unknown): value is Expressiveness {
 }
 
 /**
+ * A frase de INTERPRETAÇÃO que representa cada nível de Expressividade, para
+ * motores que não têm campo estruturado `expressiveness` — Wan e Seedance
+ * (tier Normal/Premium). BLOCO EXPRESSIVIDADE-FAL, 28/08/2026.
+ *
+ * ┌─ Por que isto precisa existir, em uma frase ─────────────────────────────┐
+ * │ `expressiveness` só é lido pelo caminho HeyGen                          │
+ * │ (`buildHeygenVideoPayload`, avatarProvider.ts), condicional a           │
+ * │ `motorEfetivo === "avatar_iv"`. O Wan e o Seedance não têm esse campo no │
+ * │ schema — a única forma de o nível chegar até eles é como TEXTO dentro   │
+ * │ do prompt de direção, o mesmo canal que já carrega câmera/gesto/mão.    │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * Em INGLÊS — o mesmo idioma de `promptDeDirecao` (`comDefaultsDeDirecao`,
+ * falPipeline.ts), que chega já traduzido pela rota.
+ *
+ * `null`/inválido devolve string vazia: um vídeo sem expressividade
+ * escolhida não ganha uma frase inventada — mesma regra de "campo vazio não
+ * é campo" já usada para `motion_prompt` acima.
+ */
+export function expressividadeParaDirecao(nivel: string | null | undefined): string {
+  if (nivel === "low") return "subtle, restrained facial expressiveness, minimal emotion in delivery";
+  if (nivel === "medium") return "natural, moderate facial expressiveness";
+  if (nivel === "high") return "highly expressive, animated facial expressions and emotive delivery";
+  return "";
+}
+
+/**
+ * A DIREÇÃO completa que vai ao Wan/Seedance — Interpretação da pessoa +
+ * Expressividade, juntas. Extraída como função PURA e exportada
+ * separadamente de `routes/videos.ts` (onde é o único chamador de produto)
+ * justamente para poder ser exercitada por EXECUÇÃO direta numa guarda, sem
+ * precisar subir o Fastify — mesma razão de `expressividadeParaDirecao`
+ * viver aqui e não inline na rota.
+ */
+export function direcaoComExpressividade(motionPrompt: string, expressiveness: string | null | undefined): string {
+  return [motionPrompt.trim(), expressividadeParaDirecao(expressiveness)].filter(Boolean).join(". ");
+}
+
+/**
  * Normaliza o que veio da tela para o que pode ir ao fornecedor.
  *
  * **Campo vazio não é campo.** Um `motion_prompt: ""` é uma instrução de

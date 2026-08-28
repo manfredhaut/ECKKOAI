@@ -56,7 +56,12 @@ import {
   requiresLongVideoConfirmation,
   scriptDurationBasis,
 } from "../services/video/scriptDuration.js";
-import { isExpressiveness, normalizeScene, type SceneBackground } from "../services/providers/videoScene.js";
+import {
+  isExpressiveness,
+  normalizeScene,
+  direcaoComExpressividade,
+  type SceneBackground,
+} from "../services/providers/videoScene.js";
 import { isHeygenEngine } from "../services/providers/videoEngine.js";
 import {
   DailyGenerationLimitError,
@@ -92,6 +97,7 @@ import {
   type EntradaDeComposicao,
   type VideoTier,
 } from "../services/video/falPipeline.js";
+import { maxCharsForNormalTarget } from "../services/video/scriptFractioning.js";
 import {
   MAX_REFACOES_POR_VIDEO,
   abrirCorrida,
@@ -752,8 +758,27 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // e nesse caso os dois campos abaixo também são `null`: a tela não tem
         // com o que desenhar um segundo teto que não existe.
         targetDurationSeconds,
-        targetMaxChars: targetDurationSeconds != null ? maxScriptCharsFor(targetDurationSeconds) : null,
-        exceedsTarget: targetDurationSeconds != null ? estimatedSeconds > targetDurationSeconds : null,
+        // ITEM 1 do fechamento do tier Normal (28/08) — tier-aware desde
+        // aqui: para "normal", o teto de caracteres REAL não é o da HeyGen
+        // (`maxScriptCharsFor`, ~10,9 car/s à velocidade da voz) — é o do
+        // fracionamento da fal (`maxCharsForNormalTarget`, mesma régua de
+        // caracteres, sem o fator de velocidade de voz que só existe no
+        // caminho HeyGen). Sem isto, o campo "Mais" mostraria um teto de
+        // caracteres que NUNCA foi o que de fato decide a recusa em
+        // `fracionarRoteiro()`. Para "simples"/"premium"/sem tier, o
+        // comportamento é EXATAMENTE o de antes — `maxScriptCharsFor`.
+        targetMaxChars:
+          targetDurationSeconds == null
+            ? null
+            : tier === "normal"
+              ? maxCharsForNormalTarget(targetDurationSeconds)
+              : maxScriptCharsFor(targetDurationSeconds),
+        exceedsTarget:
+          targetDurationSeconds == null
+            ? null
+            : tier === "normal"
+              ? scriptChars > maxCharsForNormalTarget(targetDurationSeconds)
+              : estimatedSeconds > targetDurationSeconds,
         estimate: {
           costUsd: estimate.known ? estimate.usd : null,
           costUnknownReason: estimate.known ? null : estimate.explanation,
@@ -2125,8 +2150,30 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * mesmo texto — e faria uma etapa de US$ 1,44 depender de um segundo serviço
    * poder falhar.
    */
-  function promptDaDirecaoDaLinha(video: VideoRow): string {
+  function motionPromptDaLinha(video: VideoRow): string {
     return (video.motion_prompt_en ?? video.motion_prompt)?.trim() ?? "";
+  }
+
+  /**
+   * A DIREÇÃO COMPLETA que vai ao Wan/Seedance — Interpretação da pessoa +
+   * Expressividade, BLOCO EXPRESSIVIDADE-FAL (28/08/2026).
+   *
+   * Antes desta rodada, `expressiveness` só era lido pelo caminho HeyGen
+   * (`buildHeygenVideoPayload`) — no tier Normal/Premium o campo era
+   * coletado, persistido, e morria: o mesmo defeito de forma que já
+   * aconteceu com Cenário/Traje antes deles ganharem transporte. Wan e
+   * Seedance não têm campo estruturado para isto; o único canal é o texto
+   * de direção, via `expressividadeParaDirecao()` (videoScene.ts).
+   *
+   * A VALIDAÇÃO de "Interpretação vazia" (422 `empty_motion_prompt`, logo
+   * abaixo) continua olhando SÓ `motionPromptDaLinha(video)` — nunca esta
+   * função: expressividade tem default (a tela nasce com um chip
+   * selecionado) e faria a validação parar de disparar mesmo quando a
+   * pessoa nunca escreveu Interpretação nenhuma, mudando silenciosamente o
+   * que "vazio" significa.
+   */
+  function promptDaDirecaoDaLinha(video: VideoRow): string {
+    return direcaoComExpressividade(motionPromptDaLinha(video), video.expressiveness);
   }
 
   /** As entradas da composição, em bytes. A mesma ordem de `generateVideoFal`. */
@@ -2178,7 +2225,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // forma. A alternativa — deixar a fal devolver 422 — ainda seria
       // estornada pelo fix de `decidirEEstornar` acima, mas gastaria uma
       // chamada de rede real para chegar à mesma recusa que já se sabe aqui.
-      if (!promptDaDirecaoDaLinha(video)) {
+      // BLOCO EXPRESSIVIDADE-FAL, 28/08 — checa `motionPromptDaLinha`, NÃO
+      // `promptDaDirecaoDaLinha`: esta última agora sempre inclui a frase de
+      // Expressividade (a tela nasce com um chip selecionado), e checá-la
+      // aqui faria "Interpretação vazia" nunca mais disparar de verdade.
+      if (!motionPromptDaLinha(video)) {
         return reply.code(422).send({
           error: "empty_motion_prompt",
           message:

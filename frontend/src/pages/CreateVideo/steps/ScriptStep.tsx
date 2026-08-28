@@ -4,7 +4,7 @@ import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
 import { ScriptCounter } from "../ScriptCounter";
 import { DurationCostReference } from "../DurationCostReference";
-import { TARGET_DURATION_MAX_SECONDS, TARGET_DURATION_OPTIONS } from "../targetDuration";
+import { TARGET_DURATION_OPTIONS, targetDurationMaxSecondsForTier } from "../targetDuration";
 
 export function ScriptStep({
   script,
@@ -44,7 +44,15 @@ export function ScriptStep({
   // `temValorCustomizado` já reconstrói a visibilidade certa a partir do
   // valor que sobreviveu no wizard.
   const [maisClicado, setMaisClicado] = useState(false);
-  const mostrarCampoCustom = maisClicado || temValorCustomizado;
+  // ITEM 1 do fechamento do tier Normal (28/08) — para "normal", o campo
+  // numérico é O CONTROLE PRINCIPAL, não um "Mais" escondido atrás de um
+  // clique: ele já nasce visível, porque é neste tier que a duração
+  // realmente decide quantos blocos o roteiro vai precisar.
+  const mostrarCampoCustom = maisClicado || temValorCustomizado || tierVideo === "normal";
+  // O teto do campo MUDA por tier — 120s para Normal (8 blocos de 15s do
+  // fracionamento), 600s ("de dinheiro") para os outros. `targetDuration.ts`
+  // espelha `NORMAL_MAX_TARGET_SECONDS` do servidor.
+  const maxParaTier = targetDurationMaxSecondsForTier(tierVideo);
 
   function handleCustomDurationInput(raw: string) {
     if (raw.trim() === "") {
@@ -55,7 +63,7 @@ export function ScriptStep({
     }
     const n = Math.round(Number(raw));
     if (!Number.isFinite(n) || n <= 0) return; // entrada inválida: mantém o último valor válido
-    onTargetDurationChange(Math.min(n, TARGET_DURATION_MAX_SECONDS));
+    onTargetDurationChange(Math.min(n, maxParaTier));
   }
 
   async function handleGenerate() {
@@ -121,12 +129,12 @@ export function ScriptStep({
             <input
               type="number"
               min={1}
-              max={TARGET_DURATION_MAX_SECONDS}
+              max={maxParaTier}
               step={1}
               value={targetDurationSeconds ?? ""}
               onChange={(e) => handleCustomDurationInput(e.target.value)}
               placeholder={t("createVideo.script.durationTarget.customPlaceholder", {
-                max: TARGET_DURATION_MAX_SECONDS,
+                max: maxParaTier,
               })}
             />
           </div>
@@ -146,7 +154,7 @@ export function ScriptStep({
         {/* Sob o campo, e não no passo de geração: quando o custo só aparece
             no fim, quem escreve descobre que o roteiro é caro depois de já ter
             escrito. Aqui o número muda enquanto se digita. */}
-        <ScriptCounter script={script} targetDurationSeconds={targetDurationSeconds} />
+        <ScriptCounter script={script} targetDurationSeconds={targetDurationSeconds} tier={tierVideo} />
         <DurationCostReference tier={tierVideo} />
       </Field>
 

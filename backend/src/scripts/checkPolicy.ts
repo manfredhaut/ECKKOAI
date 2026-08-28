@@ -94,6 +94,8 @@ import { checkFalSceneWiringPolicy } from "./checkFalSceneWiringPolicy.js";
 import { checkFalFase0DefaultsPolicy } from "./checkFalFase0DefaultsPolicy.js";
 import { checkFalTierPolicy } from "./checkFalTierPolicy.js";
 import { checkScriptFractioningPolicy } from "./checkScriptFractioningPolicy.js";
+import { checkExpressivenessDirectionPolicy } from "./checkExpressivenessDirectionPolicy.js";
+import { checkTargetDurationCapPolicy } from "./checkTargetDurationCapPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
 import { checkAvatarTrainingVendorPolicy } from "./checkAvatarTrainingVendorPolicy.js";
@@ -881,6 +883,16 @@ async function main(): Promise<void> {
   const scriptFractioning = checkScriptFractioningPolicy();
   scriptFractioning.failures.forEach((f) => failures.push(f));
   scriptFractioning.notes.forEach((n) => note(n));
+
+  // --- BLOCO EXPRESSIVIDADE-FAL, 28/08 — nível chega ao prompt do Wan -----
+  const expressivenessDirection = await checkExpressivenessDirectionPolicy();
+  expressivenessDirection.failures.forEach((f) => failures.push(f));
+  expressivenessDirection.notes.forEach((n) => note(n));
+
+  // --- ITEM 1, fechamento tier Normal, 28/08 — teto do campo por tier -----
+  const targetDurationCap = await checkTargetDurationCapPolicy(process.env.REPO_ROOT ?? "/repo");
+  targetDurationCap.failures.forEach((f) => failures.push(f));
+  targetDurationCap.notes.forEach((n) => note(n));
 
   // --- 24o-sexies. 0 fotos não recusa nem a rota, nem trainAvatar() -------
   //

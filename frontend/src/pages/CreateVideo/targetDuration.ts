@@ -25,3 +25,21 @@ export const TARGET_DURATION_OPTIONS = [15, 30, 45, 60] as const;
  * check. Corrigido junto: agora existe de verdade.
  */
 export const TARGET_DURATION_MAX_SECONDS = 600;
+
+/**
+ * Espelho de `NORMAL_MAX_TARGET_SECONDS`
+ * (`backend/src/services/video/scriptFractioning.ts`) — ITEM 1 do
+ * fechamento do tier Normal, 28/08/2026.
+ *
+ * O tier Normal fraciona o roteiro em blocos de até 15s
+ * (`wan/v2.6/image-to-video/flash`), até 8 blocos — 120s é o teto REAL
+ * deste tier, bem menor que os 600s "de dinheiro" que valem para Simples.
+ * `checkTargetDurationCapPolicy.ts` reprova o build se as duas constantes
+ * divergirem.
+ */
+export const NORMAL_TARGET_DURATION_MAX_SECONDS = 120;
+
+/** O teto do campo de duração-alvo, PELO TIER. */
+export function targetDurationMaxSecondsForTier(tierVideo: "simples" | "normal" | "premium"): number {
+  return tierVideo === "normal" ? NORMAL_TARGET_DURATION_MAX_SECONDS : TARGET_DURATION_MAX_SECONDS;
+}

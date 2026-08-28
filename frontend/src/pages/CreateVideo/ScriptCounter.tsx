@@ -39,6 +39,7 @@ const secs = (v: number) => v.toFixed(1).replace(".", ",");
 export function ScriptCounter({
   script,
   targetDurationSeconds,
+  tier,
 }: {
   script: string;
   /**
@@ -47,6 +48,14 @@ export function ScriptCounter({
    * SERVIDOR calcular o teto correspondente; este componente nunca calcula.
    */
   targetDurationSeconds?: number | null;
+  /**
+   * O tier ATUAL do wizard — ITEM 1 do fechamento do tier Normal (28/08).
+   * Sem isto, o teto de caracteres mostrado para uma duração-alvo era
+   * SEMPRE o da HeyGen, mesmo com "Normal" escolhido — e o tier Normal
+   * fraciona, com um teto real bem mais apertado (`maxCharsForNormalTarget`,
+   * servidor). Opcional: sem tier, o comportamento é EXATAMENTE o de antes.
+   */
+  tier?: "simples" | "normal" | "premium";
 }) {
   const { t } = useTranslation();
   const [cost, setCost] = useState<CostResponse | null>(null);
@@ -65,8 +74,9 @@ export function ScriptCounter({
     let cancelado = false;
     const timer = setTimeout(() => {
       const alvo = targetDurationSeconds != null ? `&targetSeconds=${targetDurationSeconds}` : "";
+      const tierQuery = tier ? `&tier=${tier}` : "";
       api
-        .get<CostResponse>(`/video-cost-estimate?chars=${chars}${alvo}`)
+        .get<CostResponse>(`/video-cost-estimate?chars=${chars}${alvo}${tierQuery}`)
         .then((r) => {
           if (!cancelado) setCost(r);
         })
@@ -80,7 +90,7 @@ export function ScriptCounter({
       cancelado = true;
       clearTimeout(timer);
     };
-  }, [chars, targetDurationSeconds]);
+  }, [chars, targetDurationSeconds, tier]);
 
   if (chars === 0 && targetDurationSeconds == null) return null;
 

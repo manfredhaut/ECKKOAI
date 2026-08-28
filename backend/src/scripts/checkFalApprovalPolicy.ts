@@ -41,8 +41,8 @@
  * │ que a condição — os TOKENS que a decisão usa, não um comentário, nome    │
  * │ de variável ou texto de mensagem — está presente e vem ANTES de          │
  * │ `abrirCorrida`. Um mutante que troque a condição por uma que nunca casa  │
- * │ (`promptDaDirecaoDaLinha(video) === "impossivel-motion-prompt-vazio"`)   │
- * │ remove o `if (!promptDaDirecaoDaLinha(video))` do texto do arquivo, e é  │
+ * │ (`motionPromptDaLinha(video) === "impossivel-motion-prompt-vazio"`)      │
+ * │ remove o `if (!motionPromptDaLinha(video))` do texto do arquivo, e é     │
  * │ essa ausência — não uma menção — que a guarda enxerga.                   │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
@@ -88,8 +88,18 @@ const APROVACAO = "backend/src/services/video/falApproval.ts";
 const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
 const DIARIO_DO_PIPELINE = "backend/src/services/video/falPipelineJournal.ts";
 
-/** A condição, transcrita. É a forma que o mutante de G-D desfaz. */
-const CONDICAO_MOTION_PROMPT_VAZIO = "      if (!promptDaDirecaoDaLinha(video)) {";
+/**
+ * A condição, transcrita. É a forma que o mutante de G-D desfaz.
+ *
+ * BLOCO EXPRESSIVIDADE-FAL, 28/08: a checagem passou a ler
+ * `motionPromptDaLinha(video)` (SÓ a Interpretação escrita pela pessoa),
+ * não mais `promptDaDirecaoDaLinha(video)` — esta última agora SEMPRE inclui
+ * a frase de Expressividade (default de fábrica, nunca vazia), e checá-la
+ * aqui faria "Interpretação vazia" parar de disparar de verdade. A função
+ * ENRIQUECIDA (`promptDaDirecaoDaLinha`) continua sendo o que é enviado ao
+ * motor — só a VALIDAÇÃO de vazio mudou de fonte.
+ */
+const CONDICAO_MOTION_PROMPT_VAZIO = "      if (!motionPromptDaLinha(video)) {";
 
 export const MUTANTS: Mutant[] = [
   {
@@ -175,7 +185,7 @@ export const MUTANTS: Mutant[] = [
     // mensagem, o código de erro e o nome da função seguem intactos.
     file: ROTA_DE_VIDEOS,
     find: CONDICAO_MOTION_PROMPT_VAZIO,
-    replace: '      if (promptDaDirecaoDaLinha(video) === "impossivel-motion-prompt-vazio") {',
+    replace: '      if (motionPromptDaLinha(video) === "impossivel-motion-prompt-vazio") {',
     expect: "motion prompt vazio não é recusado antes de abrir a corrida",
   },
   {
@@ -194,7 +204,7 @@ export const MUTANTS: Mutant[] = [
     // `error: "empty_motion_prompt"` no recorte.
     file: ROTA_DE_VIDEOS,
     find:
-      "      if (!promptDaDirecaoDaLinha(video)) {\n" +
+      "      if (!motionPromptDaLinha(video)) {\n" +
       "        return reply.code(422).send({\n" +
       '          error: "empty_motion_prompt",\n' +
       "          message:\n" +
@@ -203,7 +213,7 @@ export const MUTANTS: Mutant[] = [
       "        });\n" +
       "      }",
     replace:
-      "      if (!promptDaDirecaoDaLinha(video)) {\n" +
+      "      if (!motionPromptDaLinha(video)) {\n" +
       "        // corpo esvaziado pelo mutante: a condição continua casando, mas nada recusa mais.\n" +
       "      }",
     expect: "a recusa `empty_motion_prompt` aparece 0x",
