@@ -49,7 +49,15 @@ export const MUTANTS: Mutant[] = [
       "      );\n" +
       "    }\n",
     replace: "",
-    expect: "fracionamento: uma frase de",
+    // MEDIDO ao aplicar este mutante à mão (28/08): a frase longa NÃO passa a
+    // integrar um bloco silenciosamente, como o comentário acima previa — ela
+    // ainda é recusada, só que por um caminho DIFERENTE e pior: o acumulado
+    // cresce além do que qualquer duração comporta, e `escolherDuracao`
+    // devolve `null`, disparando "estado interno inválido — bloco acumulado
+    // sem duração" (o `throw` de linha 137, defensivo). É esse texto — não
+    // "uma frase de" — que aparece na falha real, dentro do ramo "mensagem
+    // inesperada" do check abaixo.
+    expect: "a recusa da frase longa saiu com mensagem inesperada",
   },
   {
     guard: "fracionarRoteiro recusa roteiro que exige mais de NORMAL_MAX_BLOCOS blocos",
@@ -62,7 +70,13 @@ export const MUTANTS: Mutant[] = [
     file: "backend/src/services/video/scriptFractioning.ts",
     find: "  if (blocos.length > NORMAL_MAX_BLOCOS) {",
     replace: "  if (false as boolean) {",
-    expect: "fracionamento: o roteiro exige",
+    // MEDIDO ao aplicar este mutante à mão (28/08): com o `if` desligado,
+    // `fracionarRoteiro` nunca lança — quem detecta é o `!recusouTetoDeBlocos`
+    // do check abaixo ("NÃO foi recusado"), não o texto que a produção
+    // emitiria se o `throw` ainda existisse. "o roteiro exige" (sem "um")
+    // era a frase da mensagem de PRODUÇÃO, que neste mutante nunca chega a
+    // ser montada.
+    expect: "NÃO foi recusado",
   },
 ];
 

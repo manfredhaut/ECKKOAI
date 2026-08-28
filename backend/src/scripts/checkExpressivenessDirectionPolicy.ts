@@ -46,7 +46,9 @@ export const MUTANTS: Mutant[] = [
       '  if (nivel === "medium") return "natural, moderate facial expressiveness";\n' +
       '  if (nivel === "high") return "highly expressive, animated facial expressions and emotive delivery";\n',
     replace: '  if (nivel === "low" || nivel === "medium" || nivel === "high") return "natural expressiveness";\n',
-    expect: "expressividade: os 3 níveis produziram a MESMA frase",
+    // MEDIDO ao aplicar este mutante à mão (28/08): a mensagem real do G-1 diz
+    // "produziram N frase(s) única(s) — esperado 3", não "a MESMA frase".
+    expect: "os 3 níveis produziram 1 frase(s) única(s) — esperado 3",
   },
   {
     guard: "direcaoComExpressividade: a Interpretação da pessoa não é descartada",
@@ -58,7 +60,10 @@ export const MUTANTS: Mutant[] = [
     file: VIDEO_SCENE,
     find: "  return [motionPrompt.trim(), expressividadeParaDirecao(expressiveness)].filter(Boolean).join(\". \");",
     replace: "  return expressividadeParaDirecao(expressiveness);",
-    expect: "expressividade: a Interpretação da pessoa não chegou ao prompt final",
+    // MEDIDO ao aplicar este mutante à mão (28/08): a mensagem real do G-2 diz
+    // "descartou a Interpretação da pessoa — saiu ...", não "não chegou ao
+    // prompt final".
+    expect: "descartou a Interpretação da pessoa",
   },
 ];
 

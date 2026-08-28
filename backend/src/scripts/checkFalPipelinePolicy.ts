@@ -534,22 +534,36 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
 
   // 1 caractere acima do teto de 15 s: nenhuma duração comporta, então nenhuma
   // submissão pode sair — o pipeline não emenda clipes.
+  //
+  // ⚠️ BLOCO FRACOES-1, 28/08 — `correr()`/`runFalPipeline()` NÃO servem mais
+  // para este teste: sem `tier` explícito, `runFalPipeline` assume "normal"
+  // e passa a rotear por `conferirRoteiroENormal`/`fracionarRoteiro()`, que
+  // fraciona por FRASE — e "x".repeat(N), sem nenhum `.!?…`, vira UMA frase
+  // só, recusada pelo teto POR FRASE de `fracionarRoteiro` (que nunca chama
+  // `escolherDuracao` com um valor grande o bastante para observar `null`).
+  // MEDIDO em 28/08: com o mutante deste bloco aplicado (`escolherDuracao`
+  // nunca devolve `null`), o gate ficava VERDE mesmo assim — a rejeição por
+  // fracionamento mascarava o defeito que este teste existe para pegar.
+  // Chamar `conferirRoteiro()` (o caminho SEM fracionamento — tier Premium,
+  // função pura) direto restaura a exercitação exata do `escolherDuracao`
+  // que o mutante altera, sem depender de tier nem de rede simulada.
+  const { conferirRoteiro } = await import("../services/video/falPipeline.js");
   const roteiroDemais = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[15] + 1);
-  const demais = await correr({ script: roteiroDemais });
-  if (demais.corpos.length > 0) {
-    failures.push(
-      `pipeline: um roteiro de ${roteiroDemais.length} caracteres — 1 acima do teto de 15 s — não foi ` +
-        `recusado antes da 1a chamada paga: ${demais.corpos.length} submissão(ões) saíram. Este pipeline ` +
-        "não emenda clipes: o que não cabe em 15 s tem de ser recusado, não animado truncado.",
-    );
+  let erroRoteiroDemais: unknown = null;
+  try {
+    conferirRoteiro(roteiroDemais);
+  } catch (err) {
+    erroRoteiroDemais = err;
   }
   if (
-    !(demais.erro instanceof FalPipelineError) ||
-    !String(demais.erro).includes(`${PIPELINE_DURACAO_MAXIMA} s`)
+    !(erroRoteiroDemais instanceof FalPipelineError) ||
+    !String(erroRoteiroDemais).includes(`${PIPELINE_DURACAO_MAXIMA} s`)
   ) {
     failures.push(
-      "pipeline: um roteiro acima do teto de 15 s não foi recusado com o erro certo — veio " +
-        `${demais.erro === null ? "sucesso" : JSON.stringify(String(demais.erro).slice(0, 160))}.`,
+      `pipeline: um roteiro de ${roteiroDemais.length} caracteres — 1 acima do teto de 15 s — não foi ` +
+        "recusado com o erro certo por conferirRoteiro() (caminho sem fracionamento, tier Premium): veio " +
+        `${erroRoteiroDemais === null ? "sucesso" : JSON.stringify(String(erroRoteiroDemais).slice(0, 160))}. ` +
+        "Este pipeline não emenda clipes: o que não cabe em 15 s tem de ser recusado, não animado truncado.",
     );
   }
 

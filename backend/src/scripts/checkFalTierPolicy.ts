@@ -220,7 +220,17 @@ export async function checkFalTierPolicy(): Promise<FalTierCheckResult> {
   // AUSÊNCIA de uma linha, e ausência não se exercita chamando função).
   // ---------------------------------------------------------------------------
   const passoGerar = lerDaRaiz(PASSO_GERAR);
-  if (!/tier_video:\s*wizard\.tierVideo/.test(passoGerar)) {
+  // MEDIDO em 28/08: `tier_video: wizard.tierVideo,` aparece DUAS vezes no
+  // arquivo — no corpo real (`corpoDaGeracao`) e na consulta de prontidão,
+  // que só LÊ o campo. Um regex solto (`/tier_video:\s*wizard\.tierVideo/`
+  // sem âncora) continuava casando na segunda ocorrência mesmo depois de a
+  // PRIMEIRA (a que este teste existe para proteger) ser removida — INERTE,
+  // pego pelo arnês automático, não pela verificação manual. A âncora do
+  // comentário que precede `corpoDaGeracao` (a mesma que o mutante usa no
+  // `find`) desempata: ela só existe junto da ocorrência que interessa.
+  if (
+    !passoGerar.includes("ficariam com a mesma aparência no corpo.\n    tier_video: wizard.tierVideo,")
+  ) {
     failures.push(
       "tier: `tier_video` sumiu do corpo montado pela tela (`corpoDaGeracao`). O seletor continuaria " +
         "aparecendo e mudando de estado, e só o pedido é que nunca saberia — o mesmo defeito que " +

@@ -59,7 +59,10 @@ export const MUTANTS: Mutant[] = [
     file: SCRIPT_STEP_TSX,
     find: "  const maxParaTier = targetDurationMaxSecondsForTier(tierVideo);",
     replace: "  const maxParaTier = 600;",
-    expect: "duração: ScriptStep.tsx não chama targetDurationMaxSecondsForTier",
+    // A mensagem real usa o caminho INTEIRO (`SCRIPT_STEP_TSX`), não só o
+    // nome do arquivo — "duração: ScriptStep.tsx não chama..." nunca foi um
+    // substring do texto de verdade.
+    expect: "não chama `targetDurationMaxSecondsForTier(tierVideo)`",
   },
 ];
 
