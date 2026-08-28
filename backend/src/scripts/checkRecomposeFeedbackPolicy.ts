@@ -66,7 +66,10 @@ export const MUTANTS: Mutant[] = [
     file: ROTA_DE_VIDEOS,
     find: "          promptDeComposicao: promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video), refazerFeedback),",
     replace: "          promptDeComposicao: promptDaComposicaoDaLinha(video),",
-    expect: "/recompose não chama promptDeComposicaoComFeedback",
+    // A mensagem real usa o CAMINHO INTEIRO da constante `ROTA_DE_VIDEOS`,
+    // não o texto "/recompose" — mesma classe de erro já visto e corrigido
+    // em checkTargetDurationCapPolicy.ts (ScriptStep.tsx) nesta sessão.
+    expect: "não chama promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video), refazerFeedback)",
   },
 ];
 
