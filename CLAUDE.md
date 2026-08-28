@@ -455,3 +455,61 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > **Nenhuma chamada faturável de vídeo ocorreu hoje até o fechamento desta sessão** (contador em 0, MEDIDO — ver (b) acima). O passo acima É a primeira, e vai cobrar de verdade (síntese de voz + composição de imagem, na faixa de centavos a poucos dólares conforme já documentado neste arquivo).
 >
 > **Ambiente ao fechar esta sessão: ARMADO EM LIVE**, mesma configuração do fechamento de 26/08, reconfirmada sem divergência — ver tabela em (b).
+
+> ⚠️ **FECHAMENTO PARA TROCA DE CONTA (28/08/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão longa, encadeada a partir do commit `d4fece2` (fechamento de 27/08). Nove frentes de EXECUÇÃO mais uma varredura completa das 4 abas — ver (a) para a lista e (h) para o que a varredura confirmou. O item 2 da pendência (c) do bloco de 27/08 (bug de credencial nas rotas de leitura de avatar) está **FECHADO** nesta sessão — a frase "NÃO CORRIGIDA" daquele bloco não vale mais; ver (d).
+>
+> ### (a) HEAD e o que foi commitado
+>
+> **Commit de código: `f0a66c1`** — 26 arquivos, 2691 inserções / 1186 remoções. Dez frentes, todas com gate+tsc verdes e guarda nova provada REPROVANDO antes de cada afirmação de sucesso:
+>
+> 1. **Bug de credencial fechado nas três rotas de avatar** — `GET /avatars/:id/looks`, `GET /avatars/:id/preview` e `POST /avatars/:id/looks` (criar traje) resolviam a credencial pelo `is_default` genérico do tenant, não pelo vendor que treinou o avatar. Para `dev-c77a5b` (`is_default=fal`) isso mandava a chave da fal para a HeyGen e voltava 401 calado. As duas rotas de leitura já tinham sido corrigidas antes desta sessão; o POST (criar traje, US$ 1,00) fechou agora — `checkAvatarPreviewVendorPolicy.ts` estendida, 3 mutantes.
+> 2. Aviso de custo do retreino visível antes do clique (rótulo estático).
+> 3. Refetch automático da prévia do avatar (Ver avatar) quando o treino termina.
+> 4. Fundo e traje nativos da HeyGen devolvidos ao passo Cena (tier Simples).
+> 5. **Cenário e Traje viram campo POR VÍDEO** — os dois eram "padrão do avatar", editáveis só no Passo 1. Migração NÃO DESTRUTIVA: o valor salvo no avatar vira semente do campo por vídeo na primeira seleção da visita (`checkScenePerVideoPolicy.ts`, 9 mutantes). TRAJE PADRÃO saiu inteiro da aba 1; ADICIONAR TRAJE (Look pago da HeyGen) permanece. Ver (e) para o estado atual.
+> 6. Excluir/refazer foto do rosto, com remoção real no banco e no disco (`checkPhotoRemovalPolicy.ts`, 4 mutantes).
+> 7. Fundo virtual como escolha comparável — toggle Sem/Com, 4 cores com pré-visualização ao vivo (custo zero, MediaPipe local). Flag `removable_background` ligada por padrão (migration 069).
+> 8. Fotos laterais na composição da fal — prioridade fixa Frente → Cenário → Traje → 1 lateral, nunca as duas juntas, nunca mais de 4 imagens (`checkFalSceneWiringPolicy.ts`, 3 mutantes).
+> 9. Excluir imagem no bloco ADICIONAR TRAJE (Look) — não existia; fechado como pré-passo da varredura (h).
+> 10. **Resumo pré-pagamento (aba Gerar) volta a mostrar Cenário** — achado na varredura (h): a linha saiu do resumo junto com `defaults.scenarioName` na rodada do item 5 e ninguém a substituiu; o campo sempre chegou certo ao `POST /videos`, só ficou invisível na tela que existe exatamente para pegar isso. `checkPreflightSummaryPolicy.ts` estendida (7 campos, era 6), 2 mutantes novos.
+>
+> **Este próprio arquivo (CLAUDE.md) é commitado À PARTE, depois deste texto** — mesmo padrão dos dois fechamentos anteriores, para não criar uma auto-referência impossível.
+>
+> ### (b) Reconfirmação padrão
+>
+> | Verificação | Resultado |
+> |---|---|
+> | `tsc` (backend e frontend) | EXIT 0 nos dois |
+> | Gate estático (fixture) | EXIT 0 — 431 mutantes declarados (era 406 no fechamento de 27/08) |
+> | Containers | 4/4 healthy — backend **reiniciado nesta reconfirmação** (`RestartCount=0`, sem crash) para o processo passar a servir o código commitado; sem watch dentro do Docker, um `tsc`/gate verde no disco não garante o processo em memória atualizado, e várias edições desta sessão aconteceram depois do último restart anterior |
+> | Hash container × commit `f0a66c1` | bate nos 3 arquivos mais tocados de cada lado (`avatars.ts`, `GenerationSummary.tsx`, `avatarProvider.ts`), via `git show HEAD:...` comparado ao conteúdo lido de dentro dos containers, ignorando CRLF/LF |
+> | `PROVIDER_MODE` | `live`, `PROVIDER_LIVE_CONFIRM` len=28, `PROVIDER_LIVE_MAX_GENERATIONS=3` — processo e `docker compose config` concordam, sem divergência |
+> | Contador de vídeos pagos hoje | **0**, MEDIDO antes E depois de todo o trabalho desta sessão (inclusive depois do restart do backend) — nenhuma chamada faturável de vídeo ocorreu hoje |
+>
+> ### (c) O item que segue PARADO de propósito
+>
+> **Persistência da tela de aprovação do vídeo final via URL — NÃO TOCADA nesta sessão, mesma investigação do fechamento de 27/08 (item c.3 daquele bloco) segue valendo.** `video` em `GenerateStep.tsx` continua `useState` local, sem `useParams`. Fechar a aba do wizard antes de aprovar uma imagem composta ou um vídeo mudo perde o acesso à mesma tela de aprovação; o resíduo visível é o status "aguardando aprovação" em Conteúdo → Biblioteca de vídeos, sem botão de aprovar ali. Entra depois na sequência — não é bloqueio para o próximo passo (f), que não depende de fechar a aba.
+>
+> ### (d) "Teste de telas de confirmação" é avatar real — confirmado, não é mais dúvida
+>
+> Confirmado por **2 chamadas GET reais, não-tarifadas**, nesta sessão: `GET /v2/photo_avatar/c16953a03495c796aa8c092d28017e10` e `GET /v3/avatars/looks/c16953a03495c796aa8c092d28017e10` — as duas devolveram **200**, `status: "completed"`, `avatar_type: "photo_avatar"`. `provider_avatar_id` **não é** `fixture-*`. A rota de preview (corrigida no item 1 de (a)) já devolve `heygen_preview_url` real (`files2.heygen.ai/...`) e a imagem carrega de verdade na aba 1 — verificado ao vivo, `naturalWidth=640`, `complete=true`. **Nenhum retreino é necessário antes do teste pago.**
+>
+> ### (e) Estado atual de Cenário/Traje
+>
+> Os dois são **campo por vídeo, na Cena** — não mais "padrão do avatar" editável na aba 1. Para avatares com valor já salvo (ex.: "Teste de telas de confirmação" tem `outfit_prompt = "terno sofiticado e bem alinhado"`), a Cena chega **pré-preenchida** na primeira seleção do avatar na visita (migração não destrutiva, semente única) — editável dali em diante, só para aquele vídeo, sem tocar o valor congelado no avatar. Cenário deste avatar específico está vazio (nada salvo). Verificado ao vivo nesta sessão, incluindo a linha nova do resumo (item 10 de (a)).
+>
+> ### (f) PRÓXIMO PASSO EXATO
+>
+> 1. Passo 1 "Configurar avatar" → selecionar **"Teste de telas de confirmação"**.
+> 2. Avançar até o passo 3 **"Cena"**.
+> 3. Tier **"Normal" ou "Premium"** — **nunca "Simples"**.
+> 4. **Preencher Cenário e Traje na própria tela Cena** — não mais na aba 1, que não tem mais esses campos.
+> 5. Avançar até o passo 4 **"Gerar"**.
+> 6. **Conferir que o resumo mostra a linha "Cenário" corretamente** (item 10 de (a) — é exatamente o que esta sessão corrigiu).
+> 7. Gerar.
+>
+> **Resultado esperado: a corrida para na etapa "compor"** — uma IMAGEM composta aguardando aprovação (`awaiting_approval`), **não** o vídeo animado final. Isso é o comportamento correto e esperado do pipeline em duas aprovações, **não é erro** — mesma nota do fechamento de 27/08, ainda válida.
+>
+> **Nenhuma chamada faturável ocorreu hoje até o fechamento desta sessão** (contador em 0, MEDIDO — ver (b), inclusive depois do restart do backend). O passo acima É a primeira, e vai cobrar de verdade.
+>
+> **Ambiente ao fechar esta sessão: ARMADO EM LIVE**, mesma configuração dos fechamentos anteriores, reconfirmada sem divergência — ver tabela em (b).
