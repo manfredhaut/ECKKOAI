@@ -20,6 +20,22 @@ Always respond in Brazilian Portuguese.
 >   [RETOMAR-CENARIO-TRAJE.md](RETOMAR-CENARIO-TRAJE.md) é histórico.
 > - **HeyGen atende SÓ o tier Simples** — Normal e Premium usam o caminho
 >   da fal.
+> - **QUALQUER mudança futura que toque `avatarProvider.ts`/`routes/videos.ts`
+>   na região de montagem de `image_urls` (rosto/cenário/traje/lateral da
+>   composição fal) exige, no fechamento, uma PROVA VISUAL REAL — abrir a
+>   imagem composta de verdade e descrever o que se vê — antes de ser
+>   considerada pronta. Fixture não basta: prova por fixture só confere que
+>   o RÓTULO certo entrou no payload, nunca que o fornecedor de fato usou a
+>   imagem.** Origem, 29/08/2026: a lateral (`lado_direito`) já estava sendo
+>   enviada corretamente (nunca foi regressão), mas uma prova visual real
+>   pedida pelo operador revelou algo mais grave e NÃO corrigido — **cenário
+>   e traje, MEDIDOS por comparação pixel-a-pixel de duas composições reais
+>   independentes (US$ 0,16 no total), não aparecem no resultado nenhum das
+>   duas vezes: a saída reproduz o fundo/roupa da PRÓPRIA foto do avatar,
+>   ignorando as referências de cenário (corredor neon) e traje (jaqueta
+>   jeans com echarpe) por completo.** Ninguém tinha visto isso porque
+>   ninguém tinha aberto a imagem composta real ao lado das referências
+>   antes.
 
 > # 🚦 ABERTURA DE SESSÃO — antes de tudo, o healthcheck do frontend
 >
