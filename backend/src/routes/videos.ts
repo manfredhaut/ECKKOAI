@@ -2205,11 +2205,18 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    */
   async function entradasDaComposicao(video: VideoRow, avatar: Avatar): Promise<EntradaDeComposicao[]> {
     const extras: EntradaDeComposicao[] = [];
-    if (video.outfit) {
-      extras.push({ rotulo: "traje", bytes: await readUpload(video.outfit), mimeType: mimeDoUpload(video.outfit) });
-    }
+    // ORDEM corrigida em 29/08: era [traje, cenario], TROCADA em relação à
+    // ordem real de `avatarProvider.ts` ([cenario, traje]) — MEDIDO ao
+    // ligar `promptDeComposicaoPosicional` (videoScene.ts), que numera as
+    // imagens assumindo [rosto, cenario?, traje?, lateral?] fixo. Com a
+    // ordem antiga, "/recompose" mandaria um prompt dizendo "a segunda
+    // imagem é o cenário" apontando de fato para o TRAJE — pior que não
+    // amarrar posição nenhuma, porque afirma a coisa errada com confiança.
     if (video.scenario) {
       extras.push({ rotulo: "cenario", bytes: await readUpload(video.scenario), mimeType: mimeDoUpload(video.scenario) });
+    }
+    if (video.outfit) {
+      extras.push({ rotulo: "traje", bytes: await readUpload(video.outfit), mimeType: mimeDoUpload(video.outfit) });
     }
     const ladoDireitoUrl = avatar.photo_urls?.[1];
     const ladoEsquerdoUrl = avatar.photo_urls?.[2];
