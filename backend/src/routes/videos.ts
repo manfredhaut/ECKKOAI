@@ -2178,13 +2178,36 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
   }
 
   /** As entradas da composição, em bytes. A mesma ordem de `generateVideoFal`. */
-  async function entradasDaComposicao(video: VideoRow): Promise<EntradaDeComposicao[]> {
+  /**
+   * ACHADO em 29/08, ao investigar por que "Refazer" parecia ignorar a
+   * lateral: esta função nunca a incluía. `avatarProvider.ts` (caminho de
+   * CRIAÇÃO, `generateVideoFal`) manda `photoUrls[1]`/`[2]` (lado_direito
+   * ou lado_esquerdo) como referência de IDENTIDADE desde antes desta
+   * sessão — mas `/recompose` montava as entradas só com `video.outfit`/
+   * `video.scenario`, e a lateral nunca fazia parte da recomposição. Não é
+   * regressão desta sessão (a função nunca teve a lateral, em nenhum
+   * commit), mas é a mesma classe de defeito: um refazer que silenciosamente
+   * perde uma referência que a criação original tinha.
+   *
+   * MESMA prioridade de `avatarProvider.ts` (lado_direito antes de
+   * lado_esquerdo, no máximo um dos dois) — duplicada aqui de propósito:
+   * extrair um helper compartilhado tocaria o caminho de criação sem
+   * necessidade, e o teto de 4 entradas já é o mesmo dos dois lados.
+   */
+  async function entradasDaComposicao(video: VideoRow, avatar: Avatar): Promise<EntradaDeComposicao[]> {
     const extras: EntradaDeComposicao[] = [];
     if (video.outfit) {
       extras.push({ rotulo: "traje", bytes: await readUpload(video.outfit), mimeType: mimeDoUpload(video.outfit) });
     }
     if (video.scenario) {
       extras.push({ rotulo: "cenario", bytes: await readUpload(video.scenario), mimeType: mimeDoUpload(video.scenario) });
+    }
+    const ladoDireitoUrl = avatar.photo_urls?.[1];
+    const ladoEsquerdoUrl = avatar.photo_urls?.[2];
+    if (ladoDireitoUrl) {
+      extras.push({ rotulo: "lado_direito", bytes: await readUpload(ladoDireitoUrl), mimeType: mimeDoUpload(ladoDireitoUrl) });
+    } else if (ladoEsquerdoUrl) {
+      extras.push({ rotulo: "lado_esquerdo", bytes: await readUpload(ladoEsquerdoUrl), mimeType: mimeDoUpload(ladoEsquerdoUrl) });
     }
     return extras;
   }
@@ -2518,7 +2541,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           script: video.script,
           fotoBase: await readUpload(fotoUrl),
           fotoMimeType: mimeDoUpload(fotoUrl),
-          entradasExtras: await entradasDaComposicao(video),
+          entradasExtras: await entradasDaComposicao(video, avatar),
           // PRIORIDADE 2, 28/08 — o texto de "o que precisa mudar" deixa de
           // só ser persistido (`refazerFeedback` abaixo) e passa a alterar o
           // prompt de verdade: incorporado como ajuste sobre o cenário/traje

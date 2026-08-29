@@ -99,6 +99,7 @@ import { checkTargetDurationCapPolicy } from "./checkTargetDurationCapPolicy.js"
 import { checkRecomposeFeedbackPolicy } from "./checkRecomposeFeedbackPolicy.js";
 import { checkFalSpendLedgerPolicy } from "./checkFalSpendLedgerPolicy.js";
 import { checkScriptValidationStatusPolicy } from "./checkScriptValidationStatusPolicy.js";
+import { checkRecomposeLateralPhotoPolicy } from "./checkRecomposeLateralPhotoPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
 import { checkAvatarTrainingVendorPolicy } from "./checkAvatarTrainingVendorPolicy.js";
@@ -911,6 +912,11 @@ async function main(): Promise<void> {
   const scriptValidationStatus = checkScriptValidationStatusPolicy();
   scriptValidationStatus.failures.forEach((f) => failures.push(f));
   scriptValidationStatus.notes.forEach((n) => note(n));
+
+  // --- Achado 29/08 — /recompose também manda a foto lateral --------------
+  const recomposeLateralPhoto = checkRecomposeLateralPhotoPolicy(process.env.REPO_ROOT ?? "/repo");
+  recomposeLateralPhoto.failures.forEach((f) => failures.push(f));
+  recomposeLateralPhoto.notes.forEach((n) => note(n));
 
   // --- 24o-sexies. 0 fotos não recusa nem a rota, nem trainAvatar() -------
   //
