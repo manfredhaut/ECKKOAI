@@ -44,7 +44,11 @@ export const MUTANTS: Mutant[] = [
     file: DIARIO_DO_PIPELINE,
     find: "  await alertarSeGastoFalAcimaDoLimite(input.tenantId);",
     replace: "",
-    expect: "livro-caixa: abrirCorrida não chama alertarSeGastoFalAcimaDoLimite",
+    // A mensagem real usa o caminho INTEIRO da constante DIARIO_DO_PIPELINE,
+    // não "abrirCorrida" solto — mesma classe de erro já vista e corrigida
+    // 3 vezes nesta sessão (ScriptStep.tsx, o /recompose de
+    // checkRecomposeFeedbackPolicy.ts, e agora este).
+    expect: "não chama alertarSeGastoFalAcimaDoLimite(input.tenantId) dentro de abrirCorrida",
   },
 ];
 
