@@ -36,6 +36,30 @@ Always respond in Brazilian Portuguese.
 >   jeans com echarpe) por completo.** Ninguém tinha visto isso porque
 >   ninguém tinha aberto a imagem composta real ao lado das referências
 >   antes.
+>
+> **⚠️ ACHADO ACIMA — RESOLVIDO em 29/08/2026, MEDIDO por composição real.**
+> Causa raiz: `fal-ai/nano-banana-2/edit` recebe `image_urls` como LISTA
+> SIMPLES, sem papel/peso por imagem (confirmado na doc oficial da fal) — o
+> modelo só sabe o que cada imagem representa se o TEXTO do prompt disser
+> explicitamente "a primeira imagem é X, a segunda é Y". `promptDaComposicao`
+> (`avatarProvider.ts`) e `promptDaComposicaoDaLinha` (`routes/videos.ts`,
+> usada por `/recompose`) mandavam texto livre, sem essa amarração.
+> Corrigido por `promptDeComposicaoPosicional()` (nova, `videoScene.ts`), que
+> descreve cada posição de `image_urls` explicitamente, na MESMA ordem em
+> que é montada (rosto, cenário?, traje?, lateral?) — commits `7ee9c9b`
+> (função + wiring) e `481d1f5` (achado colateral: `entradasDaComposicao`,
+> só usada por `/recompose`, publicava `[traje, cenário]`, ORDEM INVERTIDA
+> em relação a `avatarProvider.ts`; corrigido para `[cenário, traje]` antes
+> do teste real, senão o prompt novo mentiria sobre qual imagem é qual
+> especificamente nesse caminho). **CONFIRMADO na 1ª tentativa (US$0,08,
+> mesmo avatar/cenário/traje das duas composições que falhavam): corredor
+> neon e jaqueta jeans com echarpe apareceram na composição, reconhecíveis
+> contra as referências.** Não foram necessárias as 2 tentativas de ajuste
+> de redação reservadas para esta rodada. **A regra permanente acima
+> continua valendo** — a fórmula validada hoje não é garantia de que o
+> fornecedor sempre obedecerá; qualquer mudança futura ao texto de
+> `promptDeComposicaoPosicional` exige nova prova visual real, e
+> `checkFalSceneWiringPolicy.ts` documenta essa limitação explicitamente.
 
 > # 🚦 ABERTURA DE SESSÃO — antes de tudo, o healthcheck do frontend
 >
