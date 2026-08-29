@@ -99,7 +99,12 @@ import {
   type EntradaDeComposicao,
   type VideoTier,
 } from "../services/video/falPipeline.js";
-import { maxCharsForNormalTarget } from "../services/video/scriptFractioning.js";
+import {
+  maxCharsForNormalTarget,
+  fracionarRoteiro,
+  janelasDosBlocos,
+  direcaoDoPrimeiroBloco,
+} from "../services/video/scriptFractioning.js";
 import {
   MAX_REFACOES_POR_VIDEO,
   abrirCorrida,
@@ -1538,6 +1543,25 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             "gerar sem ela. Nada foi cobrado.",
         });
       }
+      // AS JANELAS — RODADA 3, 29/08, só para o tier Normal. `readiness` acima
+      // já confirmou (via `evaluateGenerationReadiness`, MESMA função
+      // `fracionarRoteiro`) que este roteiro cabe no tier — chamar de novo
+      // aqui é reler o mesmo resultado, nunca inventar um novo. Simples nunca
+      // fraciona e Premium está fora do fracionamento por decisão de escopo:
+      // os dois SEMPRE chegam aqui com `blockWindows` indefinido, e por isso
+      // `translateDirection` nunca pede segmentação para eles — o texto que
+      // recebem é BYTE A BYTE o de antes desta rodada.
+      let blockWindows: ReturnType<typeof janelasDosBlocos> | undefined;
+      if (tierVideo === "normal") {
+        try {
+          const blocos = fracionarRoteiro(script);
+          if (blocos.length > 1) blockWindows = janelasDosBlocos(blocos);
+        } catch {
+          // Roteiro que não fraciona: a recusa de verdade já aconteceu em
+          // `readiness`, acima. Aqui só decidimos SE pedimos segmentação —
+          // seguir sem janelas é seguro e preserva o comportamento de sempre.
+        }
+      }
       try {
         const traducao = await translateDirection({
           tenantId: req.tenantId,
@@ -1545,6 +1569,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           vendor: scriptCredential.vendor as ScriptVendor,
           source: scene.motionPrompt,
           locale: interfaceLocale,
+          blockWindows,
         });
         motionPromptEn = traducao.english;
       } catch (err) {
@@ -2133,6 +2158,19 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * Recebe `avatar` (não só `video`) pela MESMA razão de `entradasDaComposicao`
    * logo abaixo: só o avatar sabe se há foto lateral, e a numeração da
    * posição tem de bater com o que `entradasDaComposicao` de fato publica.
+   *
+   * `direcaoTexto: direcaoDoPrimeiroBloco(video.script, motionPromptDaLinha(video))`
+   * — RODADA 2, 29/08 (cláusula de POSE, ver `direcaoTexto` em
+   * `promptDeComposicaoPosicional`, videoScene.ts) — CORRIGIDO na rodada
+   * seguinte de 29/08 (item 4, achado do linter determinístico): a mesma
+   * função que `promptDaDirecaoDaLinha` usa para o Wan devolve a
+   * Interpretação INTEIRA, com os marcadores `[mm:ss-mm:ss]` de TODOS os
+   * blocos de um vídeo Normal fracionado — a cláusula de pose citava os N
+   * planos emendados como "o instante antes desta ação", em vez de só o
+   * plano 0. `direcaoDoPrimeiroBloco` (scriptFractioning.ts) recorta para o
+   * bloco 0; sem fracionamento, devolve o texto inteiro sem alteração —
+   * mesmo comportamento de antes da correção. `promptDaDirecaoDaLinha`
+   * (usada por `animar()`) continua com o texto INTEIRO, sem recorte.
    */
   function promptDaComposicaoDaLinha(video: VideoRow, avatar: Avatar): string {
     return promptDeComposicaoPosicional({
@@ -2141,6 +2179,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       temTraje: Boolean(video.outfit),
       trajeTexto: video.outfit_prompt,
       temLateral: Boolean(avatar.photo_urls?.[1] || avatar.photo_urls?.[2]),
+      direcaoTexto: direcaoDoPrimeiroBloco(video.script, motionPromptDaLinha(video)),
     });
   }
 

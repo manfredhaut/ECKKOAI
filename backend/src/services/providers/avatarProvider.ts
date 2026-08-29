@@ -30,6 +30,7 @@ import {
 // onde a recusa por tamanho e `checkSampleDuration` passaram a sair da mesma
 // função justamente porque discordavam na faixa de 109 a 120 s.
 import { MAX_SCRIPT_SECONDS } from "../video/scriptDuration.js";
+import { direcaoDoPrimeiroBloco } from "../video/scriptFractioning.js";
 import type { AvatarVendor } from "./vendorCatalog.js";
 import type {
   DiarioDoPipeline,
@@ -1181,6 +1182,21 @@ async function checkDidConnection(apiKey: string): Promise<void> {
  * amarração. Os `tem*` espelham EXATAMENTE as mesmas condições que decidem
  * o que entra em `entradasExtras` logo abaixo — a mesma pergunta
  * ("`input.scenario` existe?"), respondida uma vez só.
+ *
+ * `direcaoTexto: direcaoDoPrimeiroBloco(input.script, promptDaDirecao(input))`
+ * — RODADA 2, 29/08 (cláusula de POSE, ver `direcaoTexto` em
+ * `promptDeComposicaoPosicional`, videoScene.ts) — CORRIGIDO na rodada de
+ * 29/08 seguinte (item 4, achado do linter determinístico): `promptDaDirecao`
+ * sozinha devolve a Interpretação INTEIRA, e para um vídeo Normal fracionado
+ * em N blocos isso inclui os N marcadores `[mm:ss-mm:ss]` e os N planos —
+ * a cláusula de pose ("o instante ANTES desta ação começar") ficava citando
+ * os N planos emendados como se fossem um só, em vez de só o plano 0 (o que
+ * a imagem composta de fato precisa mostrar). `direcaoDoPrimeiroBloco`
+ * (scriptFractioning.ts) recorta para o bloco 0 quando há mais de um; sem
+ * fracionamento (Simples, Premium, ou Normal de bloco único) devolve o texto
+ * inteiro sem alteração — comportamento idêntico ao de antes da correção.
+ * `promptDeDirecao` (usado por `animar()`) continua recebendo o texto
+ * INTEIRO, sem recorte — é ele que `wanOrchestration.ts` fatia por bloco.
  */
 function promptDaComposicao(input: GenerateVideoInput): string {
   return promptDeComposicaoPosicional({
@@ -1189,6 +1205,7 @@ function promptDaComposicao(input: GenerateVideoInput): string {
     temTraje: Boolean(input.outfit),
     trajeTexto: input.outfitPrompt,
     temLateral: Boolean(input.photoUrls?.[1] || input.photoUrls?.[2]),
+    direcaoTexto: direcaoDoPrimeiroBloco(input.script, promptDaDirecao(input)),
   });
 }
 

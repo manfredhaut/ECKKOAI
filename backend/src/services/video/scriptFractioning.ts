@@ -35,8 +35,15 @@ import {
   type PipelineDuration,
 } from "./pipelineDuration.js";
 
-/** 8 blocos de 15 s — o teto de duração do tier Normal com fracionamento. */
-export const NORMAL_MAX_BLOCOS = 8;
+/**
+ * 12 blocos de 10 s — o teto de duração do tier Normal com fracionamento.
+ *
+ * Era 8 blocos de 15s (`PIPELINE_DURACAO_MAXIMA` = 15) antes da migração para
+ * `wan/v2.6/reference-to-video/flash` (item 2, 29/08), que só aceita 5 ou 10s
+ * por bloco — ver `pipelineDuration.ts`. 12×10 preserva o MESMO teto de 120s
+ * do tier Normal; o bloco ficou menor, não o vídeo.
+ */
+export const NORMAL_MAX_BLOCOS = 12;
 
 /** `NORMAL_MAX_BLOCOS × PIPELINE_DURACAO_MAXIMA` — 120 s. Nunca digitado solto. */
 export const NORMAL_MAX_TARGET_SECONDS = NORMAL_MAX_BLOCOS * PIPELINE_DURACAO_MAXIMA;
@@ -164,4 +171,132 @@ export function fracionarRoteiro(script: string): BlocoDeAnimacao[] {
 /** Soma das durações escolhidas — o total de vídeo silencioso que os blocos produzem. */
 export function segundosTotaisDosBlocos(blocos: BlocoDeAnimacao[]): number {
   return blocos.reduce((soma, b) => soma + b.duracaoEscolhida, 0);
+}
+
+/**
+ * A JANELA de tempo (em segundos, acumulados) de um bloco — RODADA 3,
+ * 29/08/2026. Existe para dar à tradução da Interpretação (`motion_prompt_en`)
+ * algo concreto para segmentar: sem isto, pedir "divida em blocos" ao modelo
+ * não tem contra o que os blocos se alinharem.
+ */
+export interface JanelaDeTempo {
+  inicioSegundos: number;
+  fimSegundos: number;
+}
+
+/**
+ * As janelas de CADA bloco, cumulativas — bloco 0 começa em 0, bloco N começa
+ * onde o bloco N-1 termina. Pura: não lê nada além do array recebido.
+ */
+export function janelasDosBlocos(blocos: BlocoDeAnimacao[]): JanelaDeTempo[] {
+  let acumulado = 0;
+  return blocos.map((bloco) => {
+    const inicioSegundos = acumulado;
+    acumulado += bloco.duracaoEscolhida;
+    return { inicioSegundos, fimSegundos: acumulado };
+  });
+}
+
+/** `mm:ss`, sempre 2 dígitos em cada metade — o formato que se pede ao tradutor. */
+export function formatarJanela(janela: JanelaDeTempo): string {
+  const mmss = (segundos: number) => {
+    const m = Math.floor(segundos / 60);
+    const s = Math.floor(segundos % 60);
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
+  return `[${mmss(janela.inicioSegundos)}-${mmss(janela.fimSegundos)}]`;
+}
+
+const MARCADOR_DE_JANELA = /\[\d{1,2}:\d{2}-\d{1,2}:\d{2}\]/g;
+
+/**
+ * Fatiar a Interpretação TRADUZIDA em uma direção por bloco — BUG E, RODADA 3.
+ *
+ * ┌─ Por que existe ───────────────────────────────────────────────────────┐
+ * │ Antes desta função, `promptDeDirecao` (o texto INTEIRO) era repetido    │
+ * │ idêntico em todos os blocos de um vídeo Normal fracionado — o Wan do    │
+ * │ bloco 2 recebia de novo "comece com os braços cruzados", uma instrução  │
+ * │ de POSE INICIAL que não faz sentido para uma imagem de entrada que já   │
+ * │ está no meio do gesto (o último quadro do bloco 1). MEDIDO como causa   │
+ * │ plausível do Bug D (pose ignorada nos blocos 2+): o Wan recebe uma      │
+ * │ instrução que contradiz a imagem que ele já tem, e alguma coisa cede.   │
+ * └────────────────────────────────────────────────────────────────────────┘
+ *
+ * FRÁGIL DE PROPÓSITO: exige exatamente UM marcador `[mm:ss-mm:ss]` por
+ * janela esperada, NA ORDEM. Não confere se os números do marcador batem com
+ * a janela (a atribuição é por POSIÇÃO, não por valor) — um tradutor que
+ * arredondar "00:05" para "0:05" não deve fazer a fatia inteira cair no
+ * fallback por causa de um dígito. O que quebra o fallback é a CONTAGEM: nem
+ * mais, nem menos marcadores que blocos, e nenhuma fatia vazia depois do
+ * `trim()`.
+ *
+ * FALLBACK, sempre que a contagem não bate ou uma fatia sai vazia: devolve o
+ * texto INTEIRO para TODOS os blocos — o comportamento de antes desta função,
+ * nunca uma fatia inventada. Um tradutor que não seguiu o formato pedido
+ * (falha de modelo, não de código) não pode fazer um bloco animar sem direção
+ * nenhuma.
+ */
+export function direcaoPorJanela(textoTraduzido: string, janelas: JanelaDeTempo[]): string[] {
+  const textoCompleto = textoTraduzido.trim();
+  const fallback = () => janelas.map(() => textoCompleto);
+  if (janelas.length === 0) return [];
+
+  const marcadores = [...textoTraduzido.matchAll(MARCADOR_DE_JANELA)];
+  if (marcadores.length !== janelas.length) return fallback();
+
+  const fatias: string[] = [];
+  for (let i = 0; i < marcadores.length; i++) {
+    const inicio = marcadores[i].index! + marcadores[i][0].length;
+    const fim = marcadores[i + 1]?.index ?? textoTraduzido.length;
+    const fatia = textoTraduzido.slice(inicio, fim).trim();
+    if (!fatia) return fallback();
+    fatias.push(fatia);
+  }
+  return fatias;
+}
+
+/**
+ * A direção do PRIMEIRO bloco apenas — item 4 da rodada de 29/08 (achado do
+ * linter determinístico, não hipótese).
+ *
+ * ┌─ O BUG que esta função fecha ─────────────────────────────────────────────┐
+ * │ `promptDeComposicaoPosicional` (videoScene.ts) recebe `direcaoTexto` para │
+ * │ escrever a cláusula de POSE INICIAL da imagem composta — "a pose desta    │
+ * │ imagem deve refletir só o INSTANTE ANTES da ação começar". Os DOIS únicos │
+ * │ call sites que montam essa cláusula em produção (`promptDaComposicao` em  │
+ * │ avatarProvider.ts, e `promptDaComposicaoDaLinha` em routes/videos.ts)     │
+ * │ passavam a Interpretação TRADUZIDA INTEIRA — para um vídeo Normal         │
+ * │ fracionado em 3 blocos, isso é o texto dos TRÊS planos, com os TRÊS       │
+ * │ marcadores `[mm:ss-mm:ss]`, não só o primeiro. A cláusula de pose acabava │
+ * │ dizendo ao nano-banana "o instante antes de X" citando X = os três planos │
+ * │ emendados, em vez de só o plano 0. NUNCA testado por chamada real nesta   │
+ * │ linha de trabalho: todo teste pago desta sessão chamou `runFalPipeline`   │
+ * │ direto, com `promptDeComposicao` montado à mão já recortado no plano 0 —  │
+ * │ nenhum passou pelos dois call sites acima com um roteiro de verdade       │
+ * │ fracionado em mais de um bloco.                                          │
+ * └────────────────────────────────────────────────────────────────────────┘
+ *
+ * Sem marcadores (roteiro cabe num bloco só, Simples/Premium, ou o
+ * fracionamento falhar por qualquer razão): devolve `direcaoTraduzida` SEM
+ * alteração — byte a byte o comportamento de antes desta correção, para todo
+ * vídeo que nunca teve o defeito. Reaproveita `direcaoPorJanela`, então herda
+ * o MESMO fallback estrito dela (contagem de marcador não bate → texto
+ * inteiro) em vez de inventar uma segunda regra de recorte.
+ */
+export function direcaoDoPrimeiroBloco(script: string, direcaoTraduzida: string): string {
+  const texto = direcaoTraduzida.trim();
+  if (!texto) return direcaoTraduzida;
+  let blocos: BlocoDeAnimacao[];
+  try {
+    blocos = fracionarRoteiro(script);
+  } catch {
+    // O roteiro não fraciona (vazio, ou excede o teto) — a recusa de verdade
+    // é responsabilidade de quem chama ANTES de chegar aqui; esta função só
+    // decide se há o que recortar, e "não dá pra saber" cai no texto inteiro.
+    return direcaoTraduzida;
+  }
+  if (blocos.length <= 1) return direcaoTraduzida;
+  const janelas = janelasDosBlocos(blocos);
+  const fatias = direcaoPorJanela(texto, janelas);
+  return fatias[0] ?? direcaoTraduzida;
 }

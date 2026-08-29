@@ -35,11 +35,12 @@ import path from "node:path";
 import { falPoll, falResult, falSubmit, falUpload } from "../providers/falClient.js";
 import { synthesizeSpeech, type VoiceTuning } from "../providers/voiceProvider.js";
 import { isFixtureMode } from "../providers/providerMode.js";
-import { logEvent } from "../log/safeLog.js";
+import { logEvent, redactDeep } from "../log/safeLog.js";
+import { readUpload } from "../storage.js";
 import { PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd, tetoNormalUsd } from "../billing/providerCost.js";
 import { custoDe } from "../billing/providerPrices.js";
 import { HEYGEN_MAX_SCRIPT_CHARS, estimateSecondsFromChars } from "./scriptDuration.js";
-import { extractLastFrame, concatVideos } from "./ffmpeg.js";
+import { concatVideos, assertAspectRatio } from "./ffmpeg.js";
 import {
   fracionarRoteiro,
   segundosTotaisDosBlocos,
@@ -48,6 +49,7 @@ import {
   NORMAL_MAX_TARGET_SECONDS,
   type BlocoDeAnimacao,
 } from "./scriptFractioning.js";
+import { montarPlanoDosBlocosWan } from "./wanOrchestration.js";
 import type { AspectRatio } from "../providers/videoFormat.js";
 import type { AvatarVendor } from "../providers/vendorCatalog.js";
 
@@ -63,19 +65,26 @@ import type { AvatarVendor } from "../providers/vendorCatalog.js";
 export {
   PIPELINE_DURATION_OPTIONS,
   PIPELINE_DURACAO_MAXIMA,
+  PREMIUM_DURATION_OPTIONS,
+  PREMIUM_DURACAO_MAXIMA,
   PIPELINE_CHARS_PER_SECOND,
   PIPELINE_RITMO_DISPERSAO,
   PIPELINE_MAX_CHARS_POR_DURACAO,
+  PREMIUM_MAX_CHARS_POR_DURACAO,
   PIPELINE_MAX_CHARS,
+  PREMIUM_MAX_CHARS,
   escolherDuracao,
+  escolherDuracaoPremium,
   type PipelineDuration,
 } from "./pipelineDuration.js";
 import {
   PIPELINE_DURATION_OPTIONS,
   PIPELINE_DURACAO_MAXIMA,
+  PREMIUM_DURACAO_MAXIMA,
   PIPELINE_CHARS_PER_SECOND,
   PIPELINE_RITMO_DISPERSAO,
   escolherDuracao,
+  escolherDuracaoPremium,
   type PipelineDuration,
 } from "./pipelineDuration.js";
 
@@ -151,11 +160,13 @@ export function vendorRequiredByTier(tier: VideoTier): AvatarVendor {
  * 5.000 caracteres estimam ≈459 s, não 600. Um vídeo de 600 s não existe
  * neste tier hoje, mesmo o número aparecendo como teto "de dinheiro".
  *
- * "premium" (fal/Seedance): `PIPELINE_DURACAO_MAXIMA` (15 s) — o enum que o
+ * "premium" (fal/Seedance): `PREMIUM_DURACAO_MAXIMA` (15 s) — o enum que o
  * motor aceita POR CHAMADA, "não emenda clipes" (ver
- * `PIPELINE_DURATION_OPTIONS`). Fracionamento não foi estendido a este tier
+ * `PREMIUM_DURATION_OPTIONS`). Fracionamento não foi estendido a este tier
  * nesta rodada (BLOCO FRACOES-1, 28/08 — ver `docs-internal/plano-fracoes-2026-08-28.md`,
- * escopo explícito "só Normal por enquanto").
+ * escopo explícito "só Normal por enquanto"). PRÓPRIO desde a migração do
+ * Normal para `reference-to-video/flash` (item 2, 29/08) — o teto do Wan
+ * apertou para 10s; o do Premium (Seedance, endpoint diferente) não muda.
  *
  * "normal" (fal/Wan): `NORMAL_MAX_TARGET_SECONDS` (120 s = 8 blocos de 15 s)
  * desde o BLOCO FRACOES-1 — ANTES disso era o mesmo teto de UM bloco do
@@ -170,7 +181,7 @@ export function vendorRequiredByTier(tier: VideoTier): AvatarVendor {
  */
 export function maxReachableSecondsForTier(tier: VideoTier): number {
   if (tier === "simples") return estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS);
-  if (tier === "premium") return PIPELINE_DURACAO_MAXIMA;
+  if (tier === "premium") return PREMIUM_DURACAO_MAXIMA;
   return NORMAL_MAX_TARGET_SECONDS;
 }
 
@@ -224,6 +235,11 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  *    O default é `true` e segmenta o clipe em várias tomadas; um clipe curto
  *    de uma pessoa falando não tem cena para cortar, e a segmentação automática
  *    é o mesmo risco de qualidade do campo acima.
+ *  · `negative_prompt` (Wan) — RODADA 2, 29/08. O default do fornecedor é
+ *    string vazia (LIDO no schema, não suposto); sem o nosso valor fixo
+ *    (`NEGATIVE_PROMPT_ANIMAR_WAN`), o Wan fica livre para produzir os
+ *    artefatos comuns de vídeo por IA (traço de desenho, pele plástica,
+ *    legenda/marca d'água queimada no quadro) que o campo existe para conter.
  *  · `sync_mode` (lipsync) — ele decide o que acontece quando vídeo e áudio têm
  *    durações diferentes, que nesta fase é SEMPRE o caso. Enviá-lo explícito é o
  *    que impede o fornecedor de mudar esse comportamento sem aviso num pipeline
@@ -238,12 +254,13 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  */
 export const DEFAULTS_NUNCA_HERDADOS = {
   "fal-ai/nano-banana-2/edit": ["num_images", "resolution", "aspect_ratio"],
-  "wan/v2.6/image-to-video/flash": [
+  "wan/v2.6/reference-to-video/flash": [
     "generate_audio",
     "resolution",
     "duration",
     "enable_prompt_expansion",
     "multi_shots",
+    "negative_prompt",
   ],
   "fal-ai/sync-lipsync/v2": ["sync_mode", "model"],
 } as const;
@@ -297,6 +314,118 @@ export const COMPOSICAO_PELE_ATENUACAO_LEVE =
   "pele com atenuação leve de textura, suavização sutil e realista, preservando a identidade — sem retoque agressivo";
 
 /**
+ * O `negative_prompt` do Wan — RODADA 2, 29/08/2026.
+ *
+ * ┌─ Por que só aqui, e não nas outras duas etapas pagas ────────────────────┐
+ * │ Schema de cada endpoint LIDO por GET antes de tocar código (mesma regra  │
+ * │ de `RESOLUCAO_IMAGEM`/`ENDPOINT_ANIMAR`, nunca supor campo): o Wan       │
+ * │ documenta `negative_prompt` (string, até 500 caracteres, default vazio) │
+ * │ nos DOIS endpoints já usados nesta linha do tempo —                     │
+ * │ `wan/v2.6/image-to-video/flash` (RECONFIRMADO por `WebFetch` em 29/08   │
+ * │ ao investigar o Item 3 abaixo). `fal-ai/nano-banana-2/edit` (`compor`)  │
+ * │ e `fal-ai/sync-lipsync/v2` (`sincronizar`) NÃO têm este campo no schema │
+ * │ publicado — mandar um campo que o fornecedor não documenta é o mesmo    │
+ * │ risco já registrado em `checkFalUploadGuardPolicy`/                     │
+ * │ `additionalProperties`: nem sempre 4xx, às vezes aceito e ignorado em    │
+ * │ silêncio. `bytedance/seedance-2.5/reference-to-video` (`animar`, tier    │
+ * │ Premium) também não documenta o campo — por isso `corpoAnimarSeedance`   │
+ * │ fica de fora.                                                            │
+ * └────────────────────────────────────────────────────────────────────────┘
+ *
+ * Valor inicial fixo, sem UI para editá-lo: mesma categoria de
+ * `DIRECAO_CAMERA_FIXA` acima — regra de sistema contra artefato visual
+ * comum de vídeo por IA, não uma escolha da pessoa.
+ *
+ * **Termos de instabilidade de luz acrescentados em 29/08 — Item 3 da rodada
+ * de correções pós-vídeo-mudo.** MEDIDO: cintilação de luz DENTRO do bloco 1
+ * (7,0-8,3s, sem corte nem transição, mesma pose sentada o tempo todo — pico
+ * Bhattacharyya 0,21). Investigado por ELIMINAÇÃO, não por chamada nova: o
+ * `concatVideos` (`ffmpeg.ts`) só aplica `scale`/`setsar`/`xfade` nos limites
+ * ENTRE blocos (~9,85s e ~19,2s neste vídeo) — nenhuma operação do pipeline
+ * local atua no meio de um bloco único, então o artefato não pode ter sido
+ * introduzido pelo pós-processamento local. ⚠️ **NÃO É POSSÍVEL confirmar se
+ * é o Wan variando a luz durante a própria geração** (hipótese mais provável,
+ * dado que nenhuma outra causa sobra) **sem inspecionar o vídeo BRUTO do
+ * bloco 1 antes do ffmpeg — e essa URL bruta não foi salva nesta sessão** (só
+ * o vídeo final concatenado; o log da chamada mascara a URL do fornecedor por
+ * segurança). Confirmar exigiria uma nova geração paga, NÃO autorizada nesta
+ * rodada. Os termos abaixo são a única correção possível SEM gastar: mesma
+ * categoria de risco baixo dos termos de pele/cartoon já existentes, mas o
+ * EFEITO NÃO FOI VERIFICADO — cobre geometria (Bug F) já é insuficiente por
+ * si, e nada garante que o Wan trate "flickering"/"unstable lighting" como
+ * describe visual a evitar da mesma forma que trata "cartoon"/"plastic skin".
+ */
+export const NEGATIVE_PROMPT_ANIMAR_WAN =
+  "cartoon, 3D render, plastic skin, waxy skin, subtitles, captions, text overlay, watermark, garbled text, " +
+  "distorted face, flickering lighting, unstable lighting, sudden brightness or color changes, strobing";
+
+/**
+ * Camada 1 — LINTER DETERMINÍSTICO do prompt do Wan, item 4 da rodada de
+ * 29/08 seguinte. Existe porque o Item 4 dessa rodada, ao ser AVALIADO (não
+ * suposto), achou um bug real que nenhum mutante de fixture pegava: a
+ * cláusula de pose do compor citava os marcadores de TODOS os blocos, não
+ * só do primeiro (ver `direcaoDoPrimeiroBloco`, scriptFractioning.ts, e os
+ * dois call sites corrigidos — `promptDaComposicao` em avatarProvider.ts e
+ * `promptDaComposicaoDaLinha` em routes/videos.ts). Este linter é a segunda
+ * metade da correção: pega a MESMA classe de bug (texto errado chegou ao
+ * campo certo) se ela voltar por outro caminho, ANTES de gastar dinheiro
+ * descobrindo num vídeo pago — síncrono, sem chamada de rede, custo zero.
+ */
+export class WanPromptLintError extends Error {
+  constructor(readonly motivos: string[]) {
+    super(
+      `linter determinístico do prompt do Wan reprovou ANTES da chamada paga: ${motivos.join("; ")}. ` +
+        "Nada foi cobrado — a corrida é recusada aqui, não depois de um vídeo pago mostrar o mesmo defeito.",
+    );
+    this.name = "WanPromptLintError";
+  }
+}
+
+const MARCADOR_DE_JANELA_LINT = /\[\d{1,2}:\d{2}-\d{1,2}:\d{2}\]/;
+// Palavras funcionais do português, escolhidas por serem comuns em direção
+// de cena e por NÃO colidirem com palavras inglesas parecidas — "não"/
+// "está"/"você" têm diacrítico (nunca aparecem em inglês por acidente);
+// "com"/"para"/"ela"/"ele"/"ção" são checadas com fronteira de palavra
+// (`\b`) para não casar dentro de "come", "comfort" etc. Heurística, não
+// detecção de idioma real — ver `resolveInterfaceLocale` (directionTranslation.ts)
+// para por que detecção de idioma foi descartada como método neste projeto.
+// Falso positivo aceitável (recusa e não cobra); falso negativo é o que
+// este item existe para reduzir.
+const TERMOS_PT_HEURISTICA = [
+  /\bnão\b/i,
+  /\bvocê\b/i,
+  /\bestá\b/i,
+  /\bcom\b/i,
+  /\bela\b/i,
+  /\bele\b/i,
+  /ção\b/i,
+  /\bpara\b/i,
+];
+
+/**
+ * As quatro checagens pedidas: prompt vazio, marcador de janela vazado,
+ * português não traduzido, `negative_prompt` ausente. Roda sobre o corpo JÁ
+ * MONTADO de `animar()` — pega o bug de FIAÇÃO (conteúdo real de uma
+ * corrida real), que um mutante de fixture não alcança porque testa a
+ * função isolada com um valor de exemplo, nunca o texto que uma corrida de
+ * verdade produziu.
+ */
+export function lintarPromptDoBlocoWan(corpo: Record<string, unknown>): void {
+  const motivos: string[] = [];
+  const prompt = typeof corpo.prompt === "string" ? corpo.prompt : "";
+  if (!prompt.trim()) motivos.push("prompt vazio");
+  if (MARCADOR_DE_JANELA_LINT.test(prompt)) {
+    motivos.push("prompt contém marcador [mm:ss-mm:ss] não removido pelo fatiamento por bloco");
+  }
+  if (TERMOS_PT_HEURISTICA.some((re) => re.test(prompt))) {
+    motivos.push("prompt parece conter português não traduzido");
+  }
+  const negativePrompt = typeof corpo.negative_prompt === "string" ? corpo.negative_prompt : "";
+  if (!negativePrompt.trim()) motivos.push("negative_prompt ausente ou vazio");
+  if (motivos.length > 0) throw new WanPromptLintError(motivos);
+}
+
+/**
  * Aplicadas AQUI, no orquestrador, e não em quem monta `promptDeComposicao` /
  * `promptDeDirecao` (`avatarProvider.ts`, `routes/videos.ts`) — porque este é
  * o ÚNICO lugar por onde todo pedido converge antes de custar dinheiro:
@@ -335,8 +464,33 @@ export const ENDPOINT_COMPOR = "fal-ai/nano-banana-2/edit";
  * níveis de vídeo. A troca pro Seedance 2.5 (image_urls, end_user_id,
  * aspect_ratio) fica reservada pro tier "Premium", com teto de gasto
  * próprio (ainda não implementado) em vez do PIPELINE_TETO_USD global.
+ *
+ * ┌─ MIGRADO em 29/08 de `image-to-video/flash` para `reference-to-video/    ┐
+ * │ flash` — item 2 desta rodada. Schema LIDO por `WebFetch` antes de tocar   │
+ * │ código (mesma regra de sempre): o endpoint velho recebia `image_url`     │
+ * │ SINGULAR como quadro de PARTIDA — o vídeo era, literalmente, a           │
+ * │ animação daquela imagem. O novo recebe `image_urls` (lista, até 5) como  │
+ * │ REFERÊNCIA DE IDENTIDADE ("extracts appearance... generates new scenes  │
+ * │ maintaining... consistency", doc do fornecedor) — não fixa quadro de     │
+ * │ partida nenhum; cada bloco é uma cena NOVA, ancorada na mesma imagem.    │
+ * │                                                                          │
+ * │ Por isso o encadeamento por ÚLTIMO QUADRO (`imagemDeEntradaDoProximoBloco`,│
+ * │ Bug G) SAIU: com referência-de-identidade em vez de quadro-de-partida,   │
+ * │ encadear o último quadro degradado não faz mais sentido — TODO bloco     │
+ * │ agora referencia a MESMA imagem composta original, nunca um quadro       │
+ * │ anterior. Preço por segundo IDÊNTICO ao do endpoint antigo — `$0,10/s` a  │
+ * │ 720p é o "standard R2V", e o flash mudo (`generate_audio: false`) é 25%   │
+ * │ disso, os MESMOS `$0,025/s` de antes (LIDO: <https://fal.ai/models/wan/  │
+ * │ v2.6/reference-to-video/flash/api> + <https://fal.ai/models/wan/v2.6/    │
+ * │ reference-to-video> para o preço "standard").                            │
+ * │                                                                          │
+ * │ ⚠️ **NÃO VERIFICADO por chamada real ainda que a continuidade entre       │
+ * │ blocos (pose/posição do corpo de um bloco para o outro) se sustente sem  │
+ * │ quadro de partida fixo** — é exatamente o que o teste real desta rodada   │
+ * │ (o vídeo mudo) existe para responder.                                    │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
-export const ENDPOINT_ANIMAR = "wan/v2.6/image-to-video/flash";
+export const ENDPOINT_ANIMAR = "wan/v2.6/reference-to-video/flash";
 
 /**
  * O motor do tier "Premium" — BLOCO A, 21/08.
@@ -625,6 +779,14 @@ export interface FalPipelineInput {
   pararApos?: EtapaDoPipeline;
   /** Injetável para a guarda não esperar de verdade. */
   esperar?: (ms: number) => Promise<void>;
+  /**
+   * A checagem de formato (item 8, 29/08) roda `ffprobe` de VERDADE sobre a
+   * URL do vídeo mudo — mesmo com `fetch` substituído, o binário `ffmpeg`
+   * não é, e tentaria alcançar a URL fake de uma guarda pela rede real.
+   * `false` só para a guarda; o produto nunca desliga isto (default `true`
+   * quando ausente) — mesmo padrão de `pollTimeoutMs`/`esperar` acima.
+   */
+  verificarAspectRatio?: boolean;
 }
 
 export interface FalPipelineResult {
@@ -697,25 +859,31 @@ function tetoParaTier(
 /**
  * O roteiro cabe em UM bloco — e em qual duração?
  *
- * Escolhe a MENOR de `PIPELINE_DURATION_OPTIONS` que comporta o texto
- * (`escolherDuracao`) e recusa ANTES de qualquer chamada quando nem a maior
- * (15 s) comporta. **Só para tier "premium"** desde o BLOCO FRACOES-1
+ * Escolhe a MENOR de `PREMIUM_DURATION_OPTIONS` que comporta o texto
+ * (`escolherDuracaoPremium`) e recusa ANTES de qualquer chamada quando nem a
+ * maior (15 s) comporta. **Só para tier "premium"** desde o BLOCO FRACOES-1
  * (28/08) — para "normal", quem decide é `conferirRoteiroENormal()` logo
  * abaixo, que sabe fracionar. Mantida com este comportamento (e este nome)
  * porque é o que `probeFalPipeline.ts` e várias guardas do Premium/sonda já
  * chamam esperando exatamente isto: um roteiro, uma duração, ou uma recusa.
+ *
+ * Usa o vocabulário PRÓPRIO do Premium (`PREMIUM_*`) desde a migração do
+ * Normal para `reference-to-video/flash` (item 2, 29/08): o Wan apertou para
+ * 10s por bloco, mas o Seedance (endpoint diferente) continua aceitando até
+ * 15s por chamada — usar o vocabulário do Normal aqui encolheria o teto do
+ * Premium sem nenhum motivo do lado do Seedance.
  */
 export function conferirRoteiro(
   script: string,
 ): { chars: number; segundosEstimados: number; duracaoEscolhida: PipelineDuration } {
   const chars = script.length;
-  const duracaoEscolhida = escolherDuracao(chars);
+  const duracaoEscolhida = escolherDuracaoPremium(chars);
   if (duracaoEscolhida === null) {
     const segundosNecessarios = (chars / PIPELINE_CHARS_PER_SECOND) * (1 + PIPELINE_RITMO_DISPERSAO);
     throw new RoteiroInvalidoError(
       `O roteiro exige ${segundosNecessarios.toFixed(1)} s no pior caso do ritmo (${chars} caracteres a ` +
         `${PIPELINE_CHARS_PER_SECOND} car/s, margem de dispersão ${(PIPELINE_RITMO_DISPERSAO * 100).toFixed(2)}%), ` +
-        `acima do teto atual de ${PIPELINE_DURACAO_MAXIMA} s por vídeo desta fase. Nada foi pedido a ` +
+        `acima do teto atual de ${PREMIUM_DURACAO_MAXIMA} s por vídeo desta fase. Nada foi pedido a ` +
         "fornecedor nenhum: a recusa acontece antes da primeira chamada paga. Emendar clipes para roteiros " +
         "maiores não existe aqui — é outro bloco, ainda não desenhado.",
     );
@@ -986,6 +1154,38 @@ export async function publicarEntradas(input: FalPipelineInput): Promise<string[
   return urls;
 }
 
+/**
+ * NENHUM campo `*_url`/`*_urls` do corpo pode ser um caminho LOCAL — RODADA
+ * 1, 29/08/2026.
+ *
+ * ┌─ O defeito que esta guarda fecha ─────────────────────────────────────────┐
+ * │ `video_url: String(videoMudoUrl)` mandava `/uploads/tenant/arquivo.mp4`   │
+ * │ direto para `fal-ai/sync-lipsync/v2` — a fal não alcança o nosso disco, e │
+ * │ devolvia 422 `file_download_error` DEPOIS de já ter aceito e cobrado o    │
+ * │ job (o `provider_job_id` prova aceite). Esta função corta ANTES do        │
+ * │ `falSubmit`, então uma reintrodução do mesmo defeito — nesta etapa ou em  │
+ * │ qualquer outra que ainda vier a usar caminho local por engano — nunca     │
+ * │ chega a gastar um centavo: é a mesma checagem para as três etapas,        │
+ * │ porque `etapaNaFal` é o único lugar por onde todas passam.                │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ */
+function garantirUrlsPublicas(etapa: EtapaDoPipeline, endpointId: string, corpo: Record<string, unknown>): void {
+  for (const [chave, valor] of Object.entries(corpo)) {
+    if (!chave.endsWith("_url") && !chave.endsWith("_urls")) continue;
+    const valores = Array.isArray(valor) ? valor : [valor];
+    for (const v of valores) {
+      if (typeof v === "string" && v.startsWith("/")) {
+        throw new FalPipelineError(
+          `fal: o campo "${chave}" da etapa "${etapa}" (${endpointId}) é um caminho LOCAL ("${v}"), não ` +
+            "uma URL pública. O fornecedor não alcança o nosso disco — nada foi pedido a ele: a recusa " +
+            "acontece antes do submit, e nenhuma cota foi consumida. Publique o arquivo (fal.upload) " +
+            "antes de montar o corpo.",
+        );
+      }
+    }
+  }
+}
+
 async function etapaNaFal(
   input: FalPipelineInput,
   etapa: EtapaDoPipeline,
@@ -993,6 +1193,21 @@ async function etapaNaFal(
   endpointId: string,
   corpo: Record<string, unknown>,
 ): Promise<{ requestId: string; saida: any }> {
+  // RODADA 1 — corta ANTES de abrir a etapa no diário e antes de qualquer
+  // chamada de rede. Ver `garantirUrlsPublicas`.
+  garantirUrlsPublicas(etapa, endpointId, corpo);
+
+  // RODADA 1 — o evento de auditoria que faltava: sem ele não havia como
+  // saber o que de fato foi enviado a um fornecedor, em etapa nenhuma
+  // (`fal_pipeline_entradas_publicadas`, o mais próximo que existia, só
+  // registra rótulo e quantidade das imagens de `compor`, nunca o corpo).
+  // `redactDeep` é o MESMO sumidouro de todo log estruturado deste projeto.
+  logEvent("info", "fal_payload_enviado", {
+    etapa,
+    endpointId,
+    corpo: redactDeep(corpo),
+  });
+
   const stepId = await input.diario.abrirEtapa(etapa, ordem, "fal", endpointId);
 
   // ⚠️ LOG TEMPORÁRIO — evidência de runtime para o teste de precedência de
@@ -1223,36 +1438,96 @@ interface ContextoDaAnimacao {
  * `etapaNaFal`, e mover o texto para uma função dedicada, preservando-o
  * exatamente, é o que permite ramificar por tier sem os quebrar.
  */
+/**
+ * `direcaoDoBloco` — RODADA 3, BUG D/E. Antes daquela rodada este parâmetro
+ * não existia e a função lia `input.promptDeDirecao` (a Interpretação
+ * INTEIRA) direto, igual para todo bloco. Quem chama resolve a fatia certa
+ * por `wanOrchestration.ts`/`direcaoPorJanela` ANTES de chamar — esta função
+ * não sabe fatiar, só recebe o texto já pronto. Para um vídeo de bloco
+ * único, o chamador passa `input.promptDeDirecao` sem fatiar.
+ *
+ * `imagemDeReferencia` — RODADA 4, MIGRAÇÃO PARA reference-to-video/flash
+ * (item 2, 29/08). Renomeado de `imagemUrl`: no endpoint antigo essa imagem
+ * era o QUADRO DE PARTIDA; no novo é a REFERÊNCIA DE IDENTIDADE ("Character1"
+ * no prompt) — sempre a MESMA imagem composta original, em TODO bloco, nunca
+ * o último quadro do bloco anterior (ver `ENDPOINT_ANIMAR` para a razão e o
+ * que isto muda no Bug G).
+ *
+ * `seed` — item 1 da rodada de 29/08 seguinte (achado do linter/investigação,
+ * confirmado por LEITURA, não suposto): `seed` NUNCA era enviado, então cada
+ * bloco sorteava o seu por conta do fornecedor — candidato plausível para a
+ * deriva de cor/luz entre blocos já registrada como achado colateral em
+ * rodada anterior. `seedDoVideo` (ver `animarNarrarSincronizar`) é gerado UMA
+ * VEZ por corrida e passado a TODO bloco Wan da mesma corrida — mesma
+ * referência de identidade, mesmo seed, em toda chamada. NÃO VERIFICADO por
+ * vídeo real ainda que isto reduza a deriva — é candidato a teste isolado
+ * (Item 1 da lista de testes baratos), não correção comprovada.
+ */
 function corpoAnimarWan(
   input: FalPipelineInput,
-  imagemUrl: string,
+  imagemDeReferencia: string,
   duracaoEscolhida: PipelineDuration,
+  direcaoDoBloco: string,
+  seed: number,
 ): Record<string, unknown> {
   return {
-    // A DIREÇÃO, e não a composição. O Wan recebe a imagem pronta em
-    // `image_url` — repetir ali a descrição do traje e do cenário seria pedir a
-    // ele que redesenhasse o que já está no quadro. O que falta ao Wan é a única
-    // coisa que uma imagem parada não carrega: o que a pessoa FAZ. Ver
-    // `promptDeDirecao`.
+    // "Character1" nomeia a referência — MEDIDO no exemplo do próprio
+    // fornecedor ("Dance battle between Character1 and Character2"): sem um
+    // NOME para a imagem em `image_urls`, o texto livre não tem como apontar
+    // para ela. A frase final (preservar rosto/roupa/cenário) existe porque
+    // este endpoint NÃO fixa quadro de partida — ele pode redesenhar o que a
+    // referência mostra com mais liberdade que o antigo `image-to-video`, e
+    // isso é risco NOVO desta migração, não medido ainda por vídeo real.
     // FASE 0 — câmera fixa, gesto contido, mão longe do rosto: SEMPRE, mesmo
     // sem Interpretação nenhuma escrita. Ver `comDefaultsDeDirecao`.
-    prompt: comDefaultsDeDirecao(input.promptDeDirecao),
-    image_url: imagemUrl,
+    prompt:
+      `Character1: ${comDefaultsDeDirecao(direcaoDoBloco)} Keep Character1's face, outfit and the scene ` +
+      "background exactly as shown in the reference image — same person, same clothes, same location.",
+    // LISTA, não mais campo singular — MEDIDO por leitura do schema em 29/08:
+    // `reference-to-video/flash` usa `image_urls` (0-5 imagens, referência de
+    // identidade), nunca `image_url`. Só a imagem composta entra aqui — ver o
+    // comentário de `imagemDeReferencia` acima.
+    image_urls: [imagemDeReferencia],
     // `generate_audio: false` é o mais caro de omitir: o default sintetiza uma
     // trilha paga que a etapa 4 descartaria.
     generate_audio: false,
     resolution: RESOLUCAO_VIDEO,
+    // A proporção escolhida na tela de publicação. O endpoint ANTIGO não
+    // tinha este campo em `animar()` (herdava a proporção da imagem composta,
+    // ver o comentário de `aspectRatio` em `FalPipelineInput`); o NOVO aceita
+    // `aspect_ratio` explícito — MEDIDO no schema em 29/08. Omitido (deixa o
+    // default "16:9" do fornecedor) só quando `input.aspectRatio` não veio,
+    // que hoje só acontece na sonda de contrato.
+    ...(input.aspectRatio ? { aspect_ratio: input.aspectRatio } : {}),
     // STRING, não número — MEDIDO por leitura do schema (`DurationEnum`, ver
-    // `PIPELINE_DURATION_OPTIONS`): o fornecedor espera "5"/"10"/"15", não os
-    // números. `duracaoEscolhida` é a saída de `escolherDuracao`, sempre um
-    // dos três.
+    // `PIPELINE_DURATION_OPTIONS`): o fornecedor espera "5" ou "10", não os
+    // números, e NÃO aceita mais "15" (o antigo `image-to-video/flash`
+    // aceitava; o novo `reference-to-video/flash` não — MEDIDO em 29/08).
+    // `duracaoEscolhida` é a saída de `escolherDuracao`, sempre um dos dois.
     duration: String(duracaoEscolhida),
     // Ver DEFAULTS_NUNCA_HERDADOS: sem eles, o fornecedor reescreve a direção
     // e pode segmentar o clipe em tomadas — os dois aceitos sem erro de schema
-    // (MEDIDO em 14/08), então `false` explícito não corre risco de 422.
+    // no endpoint antigo (MEDIDO em 14/08); presentes no schema do novo
+    // também (MEDIDO em 29/08), então `false` explícito não corre risco de 422.
     enable_prompt_expansion: false,
     multi_shots: false,
+    // RODADA 2, 29/08 — LIDO no schema do Wan (só ele, entre as três etapas
+    // pagas, documenta este campo; RECONFIRMADO no schema do novo endpoint em
+    // 29/08). Ver `NEGATIVE_PROMPT_ANIMAR_WAN`.
+    negative_prompt: NEGATIVE_PROMPT_ANIMAR_WAN,
+    // Item 1, rodada de 29/08 seguinte — ver o comentário de `seed` acima.
+    seed,
   };
+}
+
+/**
+ * O `seed` de UMA corrida — item 1 da rodada de 29/08 seguinte. Gerado uma
+ * vez, no INÍCIO de `animarNarrarSincronizar`, e passado a todo bloco Wan
+ * daquela corrida (Seedance nunca o recebe — `corpoAnimarSeedance` não tem
+ * este parâmetro). Faixa do schema: inteiro 0-2147483647.
+ */
+function gerarSeedWan(): number {
+  return Math.floor(Math.random() * 2147483648);
 }
 
 /**
@@ -1294,6 +1569,22 @@ async function animarUmBloco(
   duracaoEscolhida: PipelineDuration,
   gastoAcumuladoUsd: number,
   teto: number,
+  /**
+   * RODADA 3 — a direção DESTE bloco, só usada pelo ramo Wan
+   * (`corpoAnimarWan`). O ramo Seedance (`corpoAnimarSeedance`) NUNCA lê
+   * este parâmetro — continua lendo `input.promptDeDirecao` direto, porque
+   * Premium nunca fraciona (sempre um bloco só) e está fora do escopo desta
+   * rodada. Para o caminho Wan de bloco único, quem chama passa
+   * `input.promptDeDirecao` sem fatiar — idêntico a antes.
+   */
+  direcaoDoBloco: string,
+  /**
+   * Item 1, rodada de 29/08 seguinte — o MESMO `seed` em todo bloco Wan da
+   * MESMA corrida (ver `gerarSeedWan`, gerado uma vez em
+   * `animarNarrarSincronizar`). O ramo Seedance (`corpoAnimarSeedance`) NUNCA
+   * lê este parâmetro — mesma razão de escopo de `direcaoDoBloco` acima.
+   */
+  seed: number,
 ): Promise<{ videoUrl: string; requestId: string; gastoPrevistoUsd: number }> {
   // O CUSTO e o ENDPOINT dependem do tier — ver `enderecoAnimarParaTier` e
   // `custoSeedanceUsd`. "normal" (Wan) é tarifado por segundo; "premium"
@@ -1312,7 +1603,13 @@ async function animarUmBloco(
   const corpoDeAnimar =
     tier === "premium"
       ? corpoAnimarSeedance(input, imagemDeEntrada, duracaoEscolhida)
-      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida);
+      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida, direcaoDoBloco, seed);
+
+  // Camada 1 — item 4 da rodada de 29/08 seguinte. Só o ramo Wan: Seedance
+  // não documenta `negative_prompt` (ver o comentário de `NEGATIVE_PROMPT_ANIMAR_WAN`)
+  // e nunca fraciona (sem marcador de janela para vazar), então as quatro
+  // checagens não se aplicam a ele.
+  if (tier !== "premium") lintarPromptDoBlocoWan(corpoDeAnimar);
 
   const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);
   const videoUrl = animacao.saida?.video?.url;
@@ -1325,37 +1622,6 @@ async function animarUmBloco(
 }
 
 /**
- * O ÚLTIMO QUADRO do bloco anterior, publicado na fal como nova imagem de
- * entrada — item 2 do plano (`docs-internal/plano-fracoes-2026-08-28.md`),
- * técnica PROVADA no POC (`POC-MOTORES/05-fracoes/`, 21/08): extrai
- * localmente (ffmpeg lê a URL remota direto), sobe via `falUpload`, limpa o
- * arquivo temporário SEMPRE (inclusive se o upload falhar).
- *
- * ⚠️ FIXTURE, ANTES do ffmpeg — mesmo princípio de toda função exportada de
- * `falClient.ts`: em fixture, `videoAnteriorUrl` é `FIXTURE_VIDEO_URL`
- * (`https://exemplo.fal.invalido/...`), um host que não existe de propósito
- * (ver o comentário de `FIXTURE_BASE`, falClient.ts) — `ffmpeg -i` sobre ele
- * falharia sempre, e falharia por um motivo que não tem nada a ver com o que
- * esta função testa. `falUpload` já é fixture-safe sozinho; chamá-lo direto
- * com um buffer mínimo obtém uma URL de fixture válida sem tocar ffmpeg nem
- * rede nenhuma.
- */
-async function imagemDeEntradaDoProximoBloco(apiKeyFal: string, videoAnteriorUrl: string): Promise<string> {
-  if (isFixtureMode()) {
-    return await falUpload(apiKeyFal, Buffer.from("fixture-ultimo-quadro"), "image/png");
-  }
-  const dir = await mkdtemp(path.join(tmpdir(), "fal-frame-"));
-  const framePath = path.join(dir, "ultimo-quadro.png");
-  try {
-    await extractLastFrame(videoAnteriorUrl, framePath);
-    const bytes = await readFile(framePath);
-    return await falUpload(apiKeyFal, bytes, "image/png");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
-/**
  * CONCATENA os N vídeos mudos dos blocos e devolve uma URL da fal — item 3
  * do plano. Sobe de volta para a fal (em vez de servir localmente) porque é
  * assim que o contrato de retorno desta função já funciona há muito tempo
@@ -1363,10 +1629,11 @@ async function imagemDeEntradaDoProximoBloco(apiKeyFal: string, videoAnteriorUrl
  * (routes/videos.ts) já sabe baixar e persistir qualquer URL que chegue
  * aqui, fal ou local, via `persistRemoteArtifact`.
  *
- * ⚠️ FIXTURE, ANTES do ffmpeg — mesma razão de `imagemDeEntradaDoProximoBloco`
- * acima: os N `videoUrls` em fixture são todos o MESMO `FIXTURE_VIDEO_URL`
- * (host que não existe de propósito), e `ffmpeg -filter_complex` sobre eles
- * falharia sempre, por um motivo alheio ao que se quer testar aqui.
+ * ⚠️ FIXTURE, ANTES do ffmpeg — mesmo princípio de toda função exportada de
+ * `falClient.ts`: os N `videoUrls` em fixture são todos o MESMO
+ * `FIXTURE_VIDEO_URL` (host que não existe de propósito), e
+ * `ffmpeg -filter_complex` sobre eles falharia sempre, por um motivo alheio
+ * ao que se quer testar aqui.
  */
 async function concatenarBlocosEPublicar(apiKeyFal: string, videoUrls: string[]): Promise<string> {
   if (isFixtureMode()) {
@@ -1389,6 +1656,9 @@ async function animarNarrarSincronizar(
 ): Promise<FalPipelineResult> {
   const { imagemUrl, teto, tier, segundosEstimados, duracaoEscolhida, composicaoRequestId, blocos } = contexto;
   let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
+  // Item 1, rodada de 29/08 seguinte — UM seed por corrida, o MESMO em todo
+  // bloco Wan dela (`corpoAnimarSeedance` nunca o lê). Ver `gerarSeedWan`.
+  const seedDoVideo = gerarSeedWan();
 
   // --- ANIMAR — UM bloco (Premium, ou Normal que já cabia em 1) ------------
   //
@@ -1397,8 +1667,23 @@ async function animarNarrarSincronizar(
   // que nenhum vídeo de 15 s ou menos (Normal ou Premium) muda de
   // comportamento com este bloco.
   if (blocos.length <= 1) {
-    const bloco = await animarUmBloco(input, tier, imagemUrl, duracaoEscolhida, gastoPrevistoUsd, teto);
+    // BLOCO ÚNICO: nada para fatiar — a direção INTEIRA vai para o único
+    // bloco que existe, exatamente como antes desta rodada. Cobre Premium
+    // (sempre um bloco só) e Normal quando o roteiro cabe num bloco só.
+    const bloco = await animarUmBloco(
+      input,
+      tier,
+      imagemUrl,
+      duracaoEscolhida,
+      gastoPrevistoUsd,
+      teto,
+      input.promptDeDirecao,
+      seedDoVideo,
+    );
     gastoPrevistoUsd = bloco.gastoPrevistoUsd;
+    if (input.aspectRatio && input.verificarAspectRatio !== false) {
+      await assertAspectRatio(bloco.videoUrl, input.aspectRatio);
+    }
 
     if (input.pararApos === "animar") {
       // --- PARADA DO MODO B — FASE 2, 21/08 -----------------------------
@@ -1429,14 +1714,51 @@ async function animarNarrarSincronizar(
   // --- ANIMAR — VÁRIOS blocos (Normal fracionado) --------------------------
   //
   // Item 2 do plano: `compor` já rodou UMA VEZ (a imagem aprovada, `imagemUrl`
-  // — nunca refeita aqui). O bloco 0 anima a partir DELA; cada bloco seguinte
-  // anima a partir do ÚLTIMO QUADRO do bloco anterior — nunca da imagem
-  // original de novo, nunca recomposta.
+  // — nunca refeita aqui). TODO bloco anima a partir DELA — MUDOU na
+  // migração para `reference-to-video/flash` (item 2, RODADA 4, 29/08):
+  // antes, cada bloco 2+ animava a partir do ÚLTIMO QUADRO do bloco
+  // anterior (`imagemDeEntradaDoProximoBloco`, removida nesta rodada — ver
+  // `wanOrchestration.ts` para a razão: o endpoint novo usa a imagem como
+  // REFERÊNCIA DE IDENTIDADE, não como quadro de partida, e encadear um
+  // quadro degradado deixou de fazer sentido nesse modelo). Isto é a
+  // tentativa de FECHAR o Bug G, não mais só documentá-lo — NÃO VERIFICADO
+  // por vídeo real ainda.
+  //
+  // BUG D/E, RODADA 3 — a TABELA decide a direção de cada bloco de uma vez
+  // só, ANTES do laço: `direcaoPorJanela` fatia `input.promptDeDirecao`
+  // pelos marcadores `[mm:ss-mm:ss]` que a tradução produz só para vídeos
+  // Normal fracionados (`directionTranslation.ts`). Sem marcadores, o
+  // FALLBACK dentro da própria função repete o texto inteiro — o
+  // comportamento de antes desta rodada.
+  const planoDosBlocos = montarPlanoDosBlocosWan({
+    blocos,
+    direcaoTraduzida: input.promptDeDirecao,
+    promptDeComposicaoUsado: input.promptDeComposicao,
+  });
+  logEvent("info", "fal_pipeline_plano_dos_blocos", {
+    blocos: planoDosBlocos.map((p) => ({
+      indice: p.indice,
+      janela: p.janela,
+      duracaoEscolhida: p.duracaoEscolhida,
+      direcaoChars: p.direcaoDoBloco.length,
+    })),
+  });
+
   const videoUrls: string[] = [];
   const requestIds: string[] = [];
   for (let i = 0; i < blocos.length; i++) {
-    const imagemDeEntrada = i === 0 ? imagemUrl : await imagemDeEntradaDoProximoBloco(input.apiKeyFal, videoUrls[i - 1]);
-    const bloco = await animarUmBloco(input, tier, imagemDeEntrada, blocos[i].duracaoEscolhida, gastoPrevistoUsd, teto);
+    // SEMPRE `imagemUrl` (a composta original) — nunca o último quadro do
+    // bloco anterior. Ver o comentário acima desta seção.
+    const bloco = await animarUmBloco(
+      input,
+      tier,
+      imagemUrl,
+      blocos[i].duracaoEscolhida,
+      gastoPrevistoUsd,
+      teto,
+      planoDosBlocos[i].direcaoDoBloco,
+      seedDoVideo,
+    );
     gastoPrevistoUsd = bloco.gastoPrevistoUsd;
     videoUrls.push(bloco.videoUrl);
     requestIds.push(bloco.requestId);
@@ -1451,6 +1773,13 @@ async function animarNarrarSincronizar(
     blocos: blocos.length,
     segundosTotais: blocos.reduce((soma, b) => soma + b.duracaoEscolhida, 0),
   });
+  // ITEM 8, 29/08 — o formato REAL do concatenado bate com o PEDIDO?
+  // Depois da concatenação (não de cada bloco isolado): é o arquivo final
+  // que a pessoa vê, e o `xfade`/`scale` do item 4 já normalizou geometria
+  // entre blocos — esta é a checagem sobre o resultado, não sobre insumos.
+  if (input.aspectRatio && input.verificarAspectRatio !== false) {
+    await assertAspectRatio(videoMudoUrl, input.aspectRatio);
+  }
 
   if (input.pararApos === "animar") {
     return pararAqui("animar", gastoPrevistoUsd, duracaoEscolhida, {
@@ -1529,6 +1858,21 @@ async function narrarSincronizar(
     });
   }
 
+  // RODADA 1, 29/08/2026 — `videoMudoUrl` pode ser um caminho LOCAL
+  // (`/uploads/tenant/arquivo.mp4`): `/approve` baixa a URL da fal e persiste
+  // uma cópia local para a Aprovação Nº2 poder tocar do NOSSO domínio (ver o
+  // comentário de `concatenarBlocosEPublicar`, mais acima) — mas a partir
+  // desse ponto a fal não alcança mais o arquivo pelo ponteiro que ficou
+  // gravado em `videos.fal_muted_video_url`. MEDIDO em 29/08: mandar o
+  // caminho local cru para `fal-ai/sync-lipsync/v2` custava um 422
+  // `file_download_error` DEPOIS de o job já ter sido aceito e cobrado.
+  // Publica de volta antes do custo — mesmo helper do áudio, dois passos
+  // acima — porque publicar não é etapa paga (mesma razão de
+  // `publicarEntradas`/`concatenarBlocosEPublicar`).
+  const videoUrlParaSincronizar = videoMudoUrl.startsWith("/")
+    ? await falUpload(input.apiKeyFal, await readUpload(videoMudoUrl), "video/mp4")
+    : videoMudoUrl;
+
   // O custo depende da duração REAL do áudio, que agora é conhecida. Quando a
   // medição falha, a estimativa pela régua entra no lugar — e para o TETO ela
   // tem de ser a MAIOR das duas, senão o freio afrouxa justamente no caso em
@@ -1543,7 +1887,7 @@ async function narrarSincronizar(
   gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoSincronizarUsd, teto, "sincronizar");
   await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);
   const sincronia = await etapaNaFal(input, "sincronizar", 4, ENDPOINT_SINCRONIZAR, {
-    video_url: String(videoMudoUrl),
+    video_url: videoUrlParaSincronizar,
     audio_url: audioUrl,
     // O que se corta aqui é o VÍDEO mudo do fim, não a fala: a duração
     // escolhida sempre tem folga sobre a fala. Ver `SYNC_MODE` — inclusive o
