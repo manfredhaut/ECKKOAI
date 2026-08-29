@@ -16,6 +16,7 @@
  */
 import { pool } from "../../db/pool.js";
 import { logEvent } from "../log/safeLog.js";
+import { alertarSeGastoFalAcimaDoLimite } from "../billing/falSpendLedger.js";
 import type { DiarioDoPipeline, EtapaDoPipeline } from "./falPipeline.js";
 
 /**
@@ -152,6 +153,11 @@ export async function abrirCorrida(input: AbrirCorridaInput): Promise<string> {
       gastoAcumuladoAnteriorUsd: Number((await gastoAcumuladoDoVideoUsd(input.videoId)).toFixed(4)),
     });
   }
+  // PRIORIDADE 3, 28/08 — livro-caixa interno por TENANT/mês (ver
+  // falSpendLedger.ts). Mesmo motivo do log acima: este é o único ponto por
+  // onde as cinco rotas de produto (criação, /approve, /recompose,
+  // /approve-video, /redo-video) passam.
+  await alertarSeGastoFalAcimaDoLimite(input.tenantId);
 
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem)

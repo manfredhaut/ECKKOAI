@@ -97,6 +97,7 @@ import { checkScriptFractioningPolicy } from "./checkScriptFractioningPolicy.js"
 import { checkExpressivenessDirectionPolicy } from "./checkExpressivenessDirectionPolicy.js";
 import { checkTargetDurationCapPolicy } from "./checkTargetDurationCapPolicy.js";
 import { checkRecomposeFeedbackPolicy } from "./checkRecomposeFeedbackPolicy.js";
+import { checkFalSpendLedgerPolicy } from "./checkFalSpendLedgerPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
 import { checkAvatarTrainingVendorPolicy } from "./checkAvatarTrainingVendorPolicy.js";
@@ -899,6 +900,11 @@ async function main(): Promise<void> {
   const recomposeFeedback = await checkRecomposeFeedbackPolicy(process.env.REPO_ROOT ?? "/repo");
   recomposeFeedback.failures.forEach((f) => failures.push(f));
   recomposeFeedback.notes.forEach((n) => note(n));
+
+  // --- PRIORIDADE 3, 28/08 — livro-caixa interno de gasto fal.ai ----------
+  const falSpendLedger = await checkFalSpendLedgerPolicy(process.env.REPO_ROOT ?? "/repo");
+  falSpendLedger.failures.forEach((f) => failures.push(f));
+  falSpendLedger.notes.forEach((n) => note(n));
 
   // --- 24o-sexies. 0 fotos não recusa nem a rota, nem trainAvatar() -------
   //

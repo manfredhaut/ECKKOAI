@@ -72,6 +72,12 @@ services:
       # o sintoma era "subi o limite e o sistema continua recusando em 5 de 5".
       # Ver services/billing/dailyGenerationLimit.ts.
       DAILY_PAID_GENERATION_LIMIT: ${DAILY_PAID_GENERATION_LIMIT:-5}
+      # Limiar de ALERTA (nunca freio) do livro-caixa interno de gasto
+      # estimado em fal.ai, por tenant/mês calendário — PRIORIDADE 3,
+      # 28/08/2026. Vazio = US$ 20,00 (arbitrário, sem medição atrás — ver
+      # services/billing/falSpendLedger.ts). ESTIMATIVA interna, nunca
+      # confirmação contra fatura real.
+      FAL_SPEND_ALERT_USD: ${FAL_SPEND_ALERT_USD:-}
       # Teto em DÓLARES do caminho de custo conhecido (hoje só HeyGen — T2,
       # 22/08/2026). Vazio = derivado de MAX_SCRIPT_SECONDS × USD_PER_BILLED_SECOND
       # (US$ 9,00). Ver services/billing/providerCost.ts (assertHeygenSpendBudget).
