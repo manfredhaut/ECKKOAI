@@ -141,6 +141,69 @@ export function promptDeComposicaoComFeedback(
 }
 
 /**
+ * O prompt de COMPOSIÇÃO amarrado por POSIÇÃO — 29/08/2026.
+ *
+ * ┌─ Por que isto precisa existir ────────────────────────────────────────────┐
+ * │ `fal-ai/nano-banana-2/edit` recebe `image_urls` como LISTA SIMPLES, sem   │
+ * │ campo de papel/peso por imagem (documentação oficial da fal, confirmada   │
+ * │ nesta rodada) — a única forma de o modelo saber o que cada imagem         │
+ * │ REPRESENTA é o texto do prompt dizer explicitamente "a primeira imagem é  │
+ * │ X, a segunda é Y". Antes desta função, `promptDaComposicao`/              │
+ * │ `promptDaComposicaoDaLinha` mandavam só o texto LIVRE de Cenário/Traje    │
+ * │ (`scenarioPrompt`/`outfitPrompt`), sem NENHUMA menção a imagem nenhuma.   │
+ * │                                                                            │
+ * │ MEDIDO em 29/08, duas composições reais independentes (US$ 0,16): sem     │
+ * │ a amarração por posição, cenário (corredor neon) e traje (jaqueta jeans   │
+ * │ com echarpe) foram IGNORADOS por completo — a saída reproduziu só a       │
+ * │ própria foto de rosto/lateral do avatar, com o fundo e a roupa dela.      │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * A ORDEM aqui tem de bater EXATAMENTE com `publicarEntradas()`
+ * (falPipeline.ts): `[rosto, cenario?, traje?, lado_direito|lado_esquerdo?]`.
+ * Um item presente aqui e ausente lá (ou vice-versa) numera errado, e "a
+ * segunda imagem" do prompt deixa de ser a segunda de verdade — por isso os
+ * três `tem*` são booleanos EXPLÍCITOS, nunca deduzidos de outra coisa: quem
+ * chama já sabe, no mesmo lugar, se vai publicar aquela entrada ou não.
+ */
+export function promptDeComposicaoPosicional(input: {
+  temCenario: boolean;
+  cenarioTexto: string | null | undefined;
+  temTraje: boolean;
+  trajeTexto: string | null | undefined;
+  temLateral: boolean;
+}): string {
+  const numeral = (n: number) => (n === 2 ? "segunda" : n === 3 ? "terceira" : "quarta");
+  const partes: string[] = [
+    "A primeira imagem mostra o ROSTO da pessoa — preserve a identidade dela na composição.",
+  ];
+  let posicao = 2;
+
+  if (input.temCenario) {
+    const texto = input.cenarioTexto?.trim();
+    partes.push(
+      `A ${numeral(posicao)} imagem mostra o CENÁRIO${texto ? ` (${texto})` : ""} — coloque a pessoa da ` +
+        "primeira imagem nesse ambiente, usando-o como fundo real da cena, não como decoração ao fundo.",
+    );
+    posicao += 1;
+  }
+  if (input.temTraje) {
+    const texto = input.trajeTexto?.trim();
+    partes.push(
+      `A ${numeral(posicao)} imagem mostra a ROUPA${texto ? ` (${texto})` : ""} — vista a pessoa da ` +
+        "primeira imagem com essa roupa, substituindo por completo a que ela está usando.",
+    );
+    posicao += 1;
+  }
+  if (input.temLateral) {
+    partes.push(
+      `A ${numeral(posicao)} imagem é só OUTRO ÂNGULO do MESMO rosto da primeira imagem — use-a apenas ` +
+        "como referência extra de identidade, nunca como cenário nem como roupa.",
+    );
+  }
+  return partes.join(" ");
+}
+
+/**
  * Normaliza o que veio da tela para o que pode ir ao fornecedor.
  *
  * **Campo vazio não é campo.** Um `motion_prompt: ""` é uma instrução de

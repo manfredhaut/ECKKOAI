@@ -39,6 +39,27 @@
  * │ Simular o TTS acrescentaria um segundo contrato falso para medir o       │
  * │ primeiro.                                                                │
  * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌─ ⚠️ LIMITAÇÃO DESTA PROVA, MEDIDA EM 29/08/2026 ─────────────────────────┐
+ * │ G-1 prova que o texto de `promptDeComposicao` CHEGA ao campo `prompt`   │
+ * │ enviado à fal — NUNCA que o fornecedor OBEDECE a ele. São perguntas      │
+ * │ diferentes, e só a segunda importa para o produto: duas composições      │
+ * │ REAIS (US$ 0,16, fora deste arquivo) mostraram cenário e traje sendo     │
+ * │ IGNORADOS por completo pelo `nano-banana-2/edit`, com o texto chegando   │
+ * │ certinho — G-1 continuava verde o tempo todo, porque verde é exatamente  │
+ * │ o que ela promete provar.                                               │
+ * │                                                                          │
+ * │ A causa raiz medida: `fal-ai/nano-banana-2/edit` recebe `image_urls`     │
+ * │ como LISTA SIMPLES, sem papel/peso por imagem (doc oficial da fal) — o   │
+ * │ texto do prompt PRECISA dizer "a primeira imagem é X, a segunda é Y"     │
+ * │ para o modelo saber o que cada imagem representa. A correção            │
+ * │ (`promptDeComposicaoPosicional`, videoScene.ts) amarra cada imagem à     │
+ * │ posição dela — mas ISSO SÓ SE PROVA COM UMA COMPOSIÇÃO REAL, olhando o   │
+ * │ resultado. Nenhum fixture, nenhum mutante, nenhuma execução em memória   │
+ * │ deste arquivo consegue provar "o modelo obedeceu" — só "o texto saiu     │
+ * │ certo", que é uma garantia bem mais fraca do que parece à primeira vez   │
+ * │ que se lê G-1 passando.                                                  │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -172,6 +193,33 @@ export const MUTANTS: Mutant[] = [
     find: "    prompt: comDefaultsDeDirecao(input.promptDeDirecao),\n    image_url: imagemUrl,",
     replace: "    prompt: comDefaultsDeDirecao(input.promptDeComposicao),\n    image_url: imagemUrl,",
     expect: "direção: o prompt do motor de animação não é a direção",
+  },
+  {
+    guard: "o prompt da composição amarra cada imagem à posição dela",
+    name: "promptDaComposicao volta a mandar texto livre, sem amarração por posição",
+    kind: "esperto",
+    // ESPERTO: nada reclama sozinho — o prompt continua saindo, ainda com o
+    // texto de cenário/traje (G-1 acima continuaria verde, por `.includes()`
+    // no texto CRU). Só a AMARRAÇÃO por posição desaparece, que é exatamente
+    // o defeito MEDIDO em 29/08 (US$ 0,16, duas composições reais): sem ela,
+    // `nano-banana-2/edit` não sabe que imagem é cenário e qual é traje, e
+    // ignora as duas por completo.
+    file: PROVIDER,
+    find:
+      "function promptDaComposicao(input: GenerateVideoInput): string {\n" +
+      "  return promptDeComposicaoPosicional({\n" +
+      "    temCenario: Boolean(input.scenario),\n" +
+      "    cenarioTexto: input.scenarioPrompt,\n" +
+      "    temTraje: Boolean(input.outfit),\n" +
+      "    trajeTexto: input.outfitPrompt,\n" +
+      "    temLateral: Boolean(input.photoUrls?.[1] || input.photoUrls?.[2]),\n" +
+      "  });\n" +
+      "}",
+    replace:
+      "function promptDaComposicao(input: GenerateVideoInput): string {\n" +
+      "  return [input.scenarioPrompt?.trim(), input.outfitPrompt?.trim()].filter(Boolean).join(\". \");\n" +
+      "}",
+    expect: "o prompt da composição não amarra a imagem à posição",
   },
 ];
 
@@ -500,6 +548,29 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
           `${rotulo}: escolhido na tela como TEXTO e ausente do prompt da composição — esperado ` +
             `${JSON.stringify(textoEsperado)} em \`prompt\`, que saiu ${JSON.stringify(prompt)}. A coluna ` +
             `\`videos.${campoDeTexto}\` é preenchida pelo passo 1 e some aqui sem nada reclamar.`,
+        );
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // G-1b — 29/08: o prompt AMARRA cada imagem à posição dela
+    // (`promptDeComposicaoPosicional`, videoScene.ts). Ver o cabeçalho deste
+    // arquivo ("LIMITAÇÃO DESTA PROVA") — isto prova que o TEXTO saiu certo,
+    // nunca que o fornecedor obedece. A prova de obediência é visual e real,
+    // fora deste arquivo (US$ 0,08 por tentativa).
+    // ---------------------------------------------------------------------
+    for (const frase of [
+      "A primeira imagem mostra o ROSTO",
+      "A segunda imagem mostra o CENÁRIO",
+      "A terceira imagem mostra a ROUPA",
+      "A quarta imagem é só OUTRO ÂNGULO",
+    ]) {
+      if (!prompt.includes(frase)) {
+        failures.push(
+          `cena: o prompt da composição não amarra a imagem à posição — esperava a frase ${JSON.stringify(frase)}, ` +
+            `saiu ${JSON.stringify(prompt)}. Sem essa amarração, \`nano-banana-2/edit\` não tem como saber o que ` +
+            "cada imagem representa (a API não tem campo de papel por imagem) — MEDIDO em 29/08 que sem isto " +
+            "cenário e traje são ignorados por completo.",
         );
       }
     }

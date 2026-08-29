@@ -61,6 +61,7 @@ import {
   normalizeScene,
   direcaoComExpressividade,
   promptDeComposicaoComFeedback,
+  promptDeComposicaoPosicional,
   type SceneBackground,
 } from "../services/providers/videoScene.js";
 import { isHeygenEngine } from "../services/providers/videoEngine.js";
@@ -2121,18 +2122,26 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
   }
 
   /**
-   * O texto da COMPOSIÇÃO — traje e cenário, e mais nada.
+   * O texto da COMPOSIÇÃO — traje, cenário e a amarração por POSIÇÃO das
+   * imagens (`promptDeComposicaoPosicional`, videoScene.ts) — 29/08/2026.
    *
-   * Extraído porque as duas rotas abaixo o montavam com a mesma expressão
-   * escrita duas vezes, e a direção (que agora sai por outro campo) tornaria a
+   * Extraído porque as rotas abaixo o montavam com a mesma expressão escrita
+   * várias vezes, e a direção (que agora sai por outro campo) tornaria a
    * divergência entre as cópias invisível: bastaria uma delas ganhar o novo
-   * texto para os dois botões passarem a compor imagens diferentes.
+   * texto para os botões passarem a compor imagens diferentes.
+   *
+   * Recebe `avatar` (não só `video`) pela MESMA razão de `entradasDaComposicao`
+   * logo abaixo: só o avatar sabe se há foto lateral, e a numeração da
+   * posição tem de bater com o que `entradasDaComposicao` de fato publica.
    */
-  function promptDaComposicaoDaLinha(video: VideoRow): string {
-    return [video.scenario_prompt, video.outfit_prompt]
-      .map((t) => t?.trim())
-      .filter(Boolean)
-      .join(". ");
+  function promptDaComposicaoDaLinha(video: VideoRow, avatar: Avatar): string {
+    return promptDeComposicaoPosicional({
+      temCenario: Boolean(video.scenario),
+      cenarioTexto: video.scenario_prompt,
+      temTraje: Boolean(video.outfit),
+      trajeTexto: video.outfit_prompt,
+      temLateral: Boolean(avatar.photo_urls?.[1] || avatar.photo_urls?.[2]),
+    });
   }
 
   /**
@@ -2307,7 +2316,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // `runFalPipelineDaImagem`.
                 fotoBase: Buffer.alloc(0),
                 fotoMimeType: "image/jpeg",
-                promptDeComposicao: promptDaComposicaoDaLinha(video),
+                promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
                 // Campo obrigatório do tipo; sem uso no Wan (`tenantId` só
                 // importaria como `end_user_id` do Seedance, tier "Premium" —
                 // não ligado, ver `ENDPOINT_ANIMAR` em falPipeline.ts).
@@ -2546,7 +2555,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           // só ser persistido (`refazerFeedback` abaixo) e passa a alterar o
           // prompt de verdade: incorporado como ajuste sobre o cenário/traje
           // já existente, nunca substituindo-o.
-          promptDeComposicao: promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video), refazerFeedback),
+          promptDeComposicao: promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, avatar), refazerFeedback),
           tenantId: req.tenantId,
           aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
           // A recomposição para em `compor` (`PARAR_APOS_RECOMPOR`) e não chega
@@ -2669,7 +2678,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // `runFalPipelineDoVideoMudo`.
                 fotoBase: Buffer.alloc(0),
                 fotoMimeType: "image/jpeg",
-                promptDeComposicao: promptDaComposicaoDaLinha(video),
+                promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
                 tenantId: req.tenantId,
                 aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
                 promptDeDirecao: promptDaDirecaoDaLinha(video),
@@ -2849,7 +2858,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             script: video.script,
             fotoBase: Buffer.alloc(0),
             fotoMimeType: "image/jpeg",
-            promptDeComposicao: promptDaComposicaoDaLinha(video),
+            promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
             tenantId: req.tenantId,
             aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
             promptDeDirecao: promptDaDirecaoDaLinha(video),

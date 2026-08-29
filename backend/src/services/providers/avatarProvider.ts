@@ -41,7 +41,7 @@ import { isFixtureMode } from "./providerMode.js";
 import { withLiveBudget } from "./liveGuard.js";
 import { vendorAcceptsFormat, type VideoFormat } from "./videoFormat.js";
 import { readSupportedEngines, selectEngine, type EngineReason, type HeygenEngine } from "./videoEngine.js";
-import { normalizeScene, type SceneInput } from "./videoScene.js";
+import { normalizeScene, promptDeComposicaoPosicional, type SceneInput } from "./videoScene.js";
 import {
   checkAvatarConnectionFixture,
   generateVideoFixture,
@@ -1170,15 +1170,26 @@ async function checkDidConnection(apiKey: string): Promise<void> {
 
 
 /**
- * O TEXTO da composição: o que veio por prompt, dos dois campos.
+ * O TEXTO da composição — 29/08/2026, amarrado por POSIÇÃO
+ * (`promptDeComposicaoPosicional`, videoScene.ts).
  *
- * Traje e cenário chegam de dois jeitos e os dois valem ao mesmo tempo — uma
- * imagem de referência E uma descrição. A imagem vira `image_urls`; o texto
- * vira este prompt. Quem mandou só texto continua descrevendo a cena inteira;
- * quem mandou só imagem manda um prompt vazio e deixa a imagem falar.
+ * ANTES: só concatenava `scenarioPrompt`/`outfitPrompt`, sem mencionar
+ * imagem nenhuma — "quem mandou só imagem manda um prompt vazio e deixa a
+ * imagem falar" era a premissa, e ela estava ERRADA: `nano-banana-2/edit`
+ * não infere papel de imagem sozinho. MEDIDO em 29/08 (duas composições
+ * reais, US$ 0,16): cenário e traje eram ignorados por completo sem essa
+ * amarração. Os `tem*` espelham EXATAMENTE as mesmas condições que decidem
+ * o que entra em `entradasExtras` logo abaixo — a mesma pergunta
+ * ("`input.scenario` existe?"), respondida uma vez só.
  */
 function promptDaComposicao(input: GenerateVideoInput): string {
-  return [input.scenarioPrompt?.trim(), input.outfitPrompt?.trim()].filter(Boolean).join(". ");
+  return promptDeComposicaoPosicional({
+    temCenario: Boolean(input.scenario),
+    cenarioTexto: input.scenarioPrompt,
+    temTraje: Boolean(input.outfit),
+    trajeTexto: input.outfitPrompt,
+    temLateral: Boolean(input.photoUrls?.[1] || input.photoUrls?.[2]),
+  });
 }
 
 /**
