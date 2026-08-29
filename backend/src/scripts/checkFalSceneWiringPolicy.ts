@@ -59,6 +59,18 @@
  * │ deste arquivo consegue provar "o modelo obedeceu" — só "o texto saiu     │
  * │ certo", que é uma garantia bem mais fraca do que parece à primeira vez   │
  * │ que se lê G-1 passando.                                                  │
+ * │                                                                          │
+ * │ ⚠️ CONFIRMADO POR COMPOSIÇÃO REAL EM 29/08/2026 (1ª tentativa, US$0,08,  │
+ * │ mesmo avatar/cenário/traje das duas composições que ignoravam os dois):  │
+ * │ com `promptDeComposicaoPosicional`, o corredor de neon e a jaqueta jeans │
+ * │ com echarpe ESTAMPADO apareceram na imagem composta, reconhecíveis      │
+ * │ contra as referências originais. A fórmula funcionou de primeira — não  │
+ * │ foi necessário ajustar a redação nem gastar as 2 tentativas restantes   │
+ * │ do orçamento (~US$0,24) reservado para esta rodada. Isto NÃO promove    │
+ * │ G-1/G-1b a prova de obediência do modelo — é só o registro de QUANDO e  │
+ * │ COM QUE composição a fórmula foi validada; qualquer mudança futura ao   │
+ * │ texto de `promptDeComposicaoPosicional` exige nova composição real,     │
+ * │ pela mesma regra permanente já registrada no CLAUDE.md.                 │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 import { readFileSync } from "node:fs";
