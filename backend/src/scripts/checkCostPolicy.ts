@@ -34,11 +34,15 @@ export const MUTANTS: Mutant[] = [
     kind: "obvio",
     file: "backend/src/routes/videos.ts",
     find: "    const vendor = video.provider_vendor ?? \"heygen\";",
-    replace: "    const vendor = video.provider_vendor ?? \"heygen\";\n    const usdPerSecond = 0.05;\n    void usdPerSecond;",
-    // Sem o valor no meio: a mensagem diz "o número de custo 0.045 fora de
-    // providerCost.ts", e prender o `expect` ao número faria o mutante virar
-    // AMBÍGUO no dia em que a medição fosse refeita — guarda saudável parecendo
-    // quebrada. Terceira vez que um `expect` mal recortado acusa guarda boa.
+    // 0.0385 — o valor VIGENTE de USD_PER_BILLED_SECOND desde o commit
+    // 23ba794 (correção de preço da HeyGen, 28/08/2026). Era 0.05: a guarda
+    // real (`checkNoCostNumbersOutsideConstant`) procura o literal ATUAL da
+    // constante, e um mutante que injeta o número ANTIGO fica INERTE assim
+    // que a medição muda — MEDIDO na passada completa de 28/08 (441
+    // mutantes, 440/441, este era o único sobrevivente). Isso não é reabrir
+    // a ambiguidade que o comentário anterior evitava: o `expect` continua
+    // sem o número — só o literal INJETADO precisa acompanhar a constante.
+    replace: "    const vendor = video.provider_vendor ?? \"heygen\";\n    const usdPerSecond = 0.0385;\n    void usdPerSecond;",
     expect: "fora de providerCost.ts",
   },
   {
