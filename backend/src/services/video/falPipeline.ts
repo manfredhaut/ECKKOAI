@@ -484,6 +484,27 @@ export class FalPipelineError extends Error {
   }
 }
 
+/**
+ * O ROTEIRO (ou a divisão em blocos que ele exige) não cabe no que este
+ * tier suporta — BUG 2, 29/08/2026.
+ *
+ * Subclasse PRÓPRIA, e não `FalPipelineError` genérica, porque
+ * `classifyVendorFailure` (vendorError.ts) precisa distinguir ESTAS duas
+ * recusas (`conferirRoteiro`/`conferirRoteiroENormal`, ambas por
+ * `instanceof` aqui) das outras ~8 razões que `FalPipelineError` cobre —
+ * timeout de poll, resposta sem URL, teto de gasto, upload falhou, preço
+ * ausente. Todas essas OUTRAS são sobre o FORNECEDOR ou sobre DINHEIRO;
+ * só estas duas são sobre o TEXTO que a pessoa escreveu, nunca chegam a
+ * cogitar uma chamada paga, e por isso são as únicas que fazem sentido
+ * sair como "mude o roteiro", não "tente de novo" nem "falha no serviço".
+ */
+export class RoteiroInvalidoError extends FalPipelineError {
+  constructor(message: string) {
+    super(message);
+    this.name = "RoteiroInvalidoError";
+  }
+}
+
 /** Uma imagem de entrada da composição, já em bytes. Ver `entradasExtras`. */
 export interface EntradaDeComposicao {
   /** Aparece no diário e no log. Não vai ao fornecedor. */
@@ -691,7 +712,7 @@ export function conferirRoteiro(
   const duracaoEscolhida = escolherDuracao(chars);
   if (duracaoEscolhida === null) {
     const segundosNecessarios = (chars / PIPELINE_CHARS_PER_SECOND) * (1 + PIPELINE_RITMO_DISPERSAO);
-    throw new FalPipelineError(
+    throw new RoteiroInvalidoError(
       `O roteiro exige ${segundosNecessarios.toFixed(1)} s no pior caso do ritmo (${chars} caracteres a ` +
         `${PIPELINE_CHARS_PER_SECOND} car/s, margem de dispersão ${(PIPELINE_RITMO_DISPERSAO * 100).toFixed(2)}%), ` +
         `acima do teto atual de ${PIPELINE_DURACAO_MAXIMA} s por vídeo desta fase. Nada foi pedido a ` +
@@ -734,7 +755,7 @@ export function conferirRoteiroENormal(script: string): RoteiroConferidoENormal 
     blocos = fracionarRoteiro(script);
   } catch (err) {
     if (err instanceof ScriptFractioningError) {
-      throw new FalPipelineError(err.message);
+      throw new RoteiroInvalidoError(err.message);
     }
     throw err;
   }

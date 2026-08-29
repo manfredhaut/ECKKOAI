@@ -92,6 +92,7 @@ import { MUTANTS as expressivenessDirectionMutants } from "./checkExpressiveness
 import { MUTANTS as targetDurationCapMutants } from "./checkTargetDurationCapPolicy.js";
 import { MUTANTS as recomposeFeedbackMutants } from "./checkRecomposeFeedbackPolicy.js";
 import { MUTANTS as falSpendLedgerMutants } from "./checkFalSpendLedgerPolicy.js";
+import { MUTANTS as scriptValidationStatusMutants } from "./checkScriptValidationStatusPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 
@@ -190,4 +191,5 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkTargetDurationCapPolicy.ts", targetDurationCapMutants),
   ...de("backend/src/scripts/checkRecomposeFeedbackPolicy.ts", recomposeFeedbackMutants),
   ...de("backend/src/scripts/checkFalSpendLedgerPolicy.ts", falSpendLedgerMutants),
+  ...de("backend/src/scripts/checkScriptValidationStatusPolicy.ts", scriptValidationStatusMutants),
 ];

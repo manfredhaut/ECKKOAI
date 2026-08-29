@@ -13,6 +13,7 @@
 
 import { scrubSecretsFromText } from "./vendorResponseLog.js";
 import { logEvent } from "../log/safeLog.js";
+import { RoteiroInvalidoError } from "../video/falPipeline.js";
 
 export type VendorKind = "script" | "voice" | "avatar";
 
@@ -21,6 +22,11 @@ export type VendorFailure =
   | "unavailable" // 5xx, timeout, rede
   | "auth" // 401/403 — chave inválida, revogada, sem permissão
   | "too_large" // 400/413 — o fornecedor recusou por TAMANHO do arquivo, não por infra
+  // BUG 2, 29/08/2026 — o ROTEIRO (ou os blocos que ele exige) não cabe no
+  // tier: `conferirRoteiro`/`conferirRoteiroENormal` (falPipeline.ts)
+  // recusaram ANTES de qualquer chamada paga. Nunca fala com fornecedor
+  // nenhum — é validação NOSSA, sobre o texto que a pessoa escreveu.
+  | "script_invalid"
   | "unknown";
 
 const VENDOR_LABEL: Record<VendorKind, string> = {
@@ -41,8 +47,23 @@ const VENDOR_LABEL: Record<VendorKind, string> = {
  * que devolve 502, o MESMO código de uma falha real de infraestrutura do
  * fornecedor. Um 502 aqui manda procurar problema no fornecedor quando o
  * problema é o arquivo que a pessoa enviou.
+ *
+ * `script_invalid` vem ANTES de tudo, por `instanceof`, não por regex —
+ * MEDIDO em 28-29/08 (INCIDENTE-502-1): um roteiro de 196 caracteres em
+ * tier "normal" bateu na imagem STALE (código de 27/08, sem o fracionamento)
+ * e disparou `conferirRoteiro()`, que recusa ANTES de qualquer chamada paga.
+ * `classifyVendorFailure` não tinha regra nenhuma para essa frase — caía no
+ * `"unknown"` do fim, e `vendorErrorStatus` devolvia 502: uma recusa de
+ * VALIDAÇÃO NOSSA saindo idêntica, para o navegador, a uma queda real de
+ * infraestrutura. `RoteiroInvalidoError` é lançada só pelas duas funções que
+ * decidem "este roteiro não cabe no tier" (`conferirRoteiro`,
+ * `conferirRoteiroENormal`) — nunca por nada que já tenha falado com a fal.
+ * Checar a CLASSE, e não o texto da mensagem, sobrevive à próxima vez que
+ * alguém reescrever a frase.
  */
 export function classifyVendorFailure(err: unknown): VendorFailure {
+  if (err instanceof RoteiroInvalidoError) return "script_invalid";
+
   const raw = err instanceof Error ? err.message : String(err);
 
   if (/\(429\)|RESOURCE_EXHAUSTED|rate.?limit|quota/i.test(raw)) return "rate_limited";
@@ -67,7 +88,7 @@ export function classifyVendorFailure(err: unknown): VendorFailure {
 export function vendorErrorMessage(
   kind: VendorKind,
   failure: VendorFailure,
-  opts?: { maxBytes?: number },
+  opts?: { maxBytes?: number; scriptDetail?: string },
 ): string {
   const what = VENDOR_LABEL[kind];
   switch (failure) {
@@ -77,6 +98,15 @@ export function vendorErrorMessage(
       return `O serviço ${what} está temporariamente indisponível. Tente novamente em alguns minutos.`;
     case "auth":
       return `O serviço ${what} não está configurado corretamente. Fale com o suporte.`;
+    case "script_invalid":
+      // A mensagem de `RoteiroInvalidoError` já é NOSSA, em pt-BR, sem nome
+      // de fornecedor nem segredo — escrita para ser lida por quem tem de
+      // agir (`conferirRoteiro`/`fracionarRoteiro`, falPipeline.ts). Repetir
+      // um texto genérico aqui jogaria fora a única informação que diz QUAL
+      // roteiro mudar e PARA QUÊ — o oposto de "tente novamente".
+      return opts?.scriptDetail
+        ? `O roteiro precisa mudar antes de gerar de novo: ${opts.scriptDetail}`
+        : "O roteiro não cabe no que este nível suporta. Ajuste o roteiro (encurte-o ou divida-o) e gere de novo.";
     case "too_large":
       // `opts.maxBytes` é o teto que O CHAMADOR conhece (ex.: `VOICE_SAMPLE_MAX_BYTES`
       // em routes/voice.ts) — o próprio fornecedor pode aceitar menos ou mais
@@ -119,7 +149,17 @@ export function toClientVendorError(
       // mascarado.
       detail: scrubSecretsFromText(err instanceof Error ? err.message : String(err)),
     });
-  return { failure, message: vendorErrorMessage(kind, failure, opts) };
+  // `scriptDetail` só para "script_invalid": a mensagem de `RoteiroInvalidoError`
+  // é NOSSA (nunca corpo de fornecedor), então não precisa da varredura de
+  // segredos acima — mas passa pela mesma, por uniformidade e porque
+  // `scrubSecretsFromText` é inócua sobre texto que não tem segredo nenhum.
+  return {
+    failure,
+    message: vendorErrorMessage(kind, failure, {
+      ...opts,
+      scriptDetail: failure === "script_invalid" ? scrubSecretsFromText(err instanceof Error ? err.message : String(err)) : undefined,
+    }),
+  };
 }
 
 /**
@@ -127,11 +167,13 @@ export function toClientVendorError(
  *
  * `too_large` → 422: é uma entrada inválida do CLIENTE (arquivo grande
  * demais), não uma falha do fornecedor — 502 (Bad Gateway) afirmaria o
- * contrário. `rate_limited` → 429. Todo o resto (infra real do fornecedor,
- * ou causa não classificada) continua 502.
+ * contrário. `script_invalid` → 422, mesmo raciocínio: BUG 2, 29/08 —
+ * o roteiro (ou os blocos que ele exige) é que está fora do que o tier
+ * suporta, nunca o fornecedor. `rate_limited` → 429. Todo o resto (infra
+ * real do fornecedor, ou causa não classificada) continua 502.
  */
 export function vendorErrorStatus(failure: VendorFailure): number {
   if (failure === "rate_limited") return 429;
-  if (failure === "too_large") return 422;
+  if (failure === "too_large" || failure === "script_invalid") return 422;
   return 502;
 }

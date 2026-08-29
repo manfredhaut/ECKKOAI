@@ -98,6 +98,7 @@ import { checkExpressivenessDirectionPolicy } from "./checkExpressivenessDirecti
 import { checkTargetDurationCapPolicy } from "./checkTargetDurationCapPolicy.js";
 import { checkRecomposeFeedbackPolicy } from "./checkRecomposeFeedbackPolicy.js";
 import { checkFalSpendLedgerPolicy } from "./checkFalSpendLedgerPolicy.js";
+import { checkScriptValidationStatusPolicy } from "./checkScriptValidationStatusPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
 import { checkAvatarTrainingVendorPolicy } from "./checkAvatarTrainingVendorPolicy.js";
@@ -905,6 +906,11 @@ async function main(): Promise<void> {
   const falSpendLedger = await checkFalSpendLedgerPolicy(process.env.REPO_ROOT ?? "/repo");
   falSpendLedger.failures.forEach((f) => failures.push(f));
   falSpendLedger.notes.forEach((n) => note(n));
+
+  // --- BUG 2, 29/08 — recusa de roteiro não sai como 502 ------------------
+  const scriptValidationStatus = checkScriptValidationStatusPolicy();
+  scriptValidationStatus.failures.forEach((f) => failures.push(f));
+  scriptValidationStatus.notes.forEach((n) => note(n));
 
   // --- 24o-sexies. 0 fotos não recusa nem a rota, nem trainAvatar() -------
   //
