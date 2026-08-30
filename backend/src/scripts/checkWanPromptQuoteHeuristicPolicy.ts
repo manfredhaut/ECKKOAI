@@ -17,13 +17,14 @@
  * heurística continua vigiando o resto do prompt por português esquecido
  * FORA das aspas.
  *
- * ACHADO NESTA RODADA, NÃO CORRIGIDO — `/\bvocê\b/i` e `/\bestá\b/i` NUNCA
- * CASAM NADA, com ou sem aspas, mesmo antes desta correção: o `\b` do
- * JavaScript exige fronteira de PALAVRA (`\w` = ASCII só), e as duas regexes
- * terminam exatamente no caractere acentuado ("ê", "á"), que não é `\w` —
- * então a fronteira final nunca se satisfaz. Os outros 6 termos terminam em
- * letra ASCII e não têm este problema. Fora do escopo pedido (só a exceção
- * de aspas), registrado para o operador decidir — ver `CASOS` mais abaixo.
+ * RODADA 9 (30/08/2026) — `/\bvocê\b/i` e `/\bestá\b/i` CORRIGIDAS. O achado
+ * da rodada anterior (nunca casavam nada, com ou sem aspas: o `\b` do
+ * JavaScript exige fronteira `\w` = ASCII só, e as duas regexes terminam no
+ * caractere acentuado "ê"/"á", que não é `\w`) foi resolvido trocando por
+ * lookaround Unicode-aware: `(?<!\p{L})termo(?!\p{L})` (flag `u`), que não
+ * depende de `\w` e reprova o termo cercado por espaço/pontuação/fim de
+ * string, sem casar dentro de outra palavra. Os outros 6 termos, que já
+ * funcionavam, não foram tocados. Agora os 8 têm as duas pontas provadas.
  *
  * ┌─ ANCORADA EM EXECUÇÃO REAL, não em texto ────────────────────────────────┐
  * │ Chama `lintarPromptDoBlocoWan` de verdade, duas vezes POR TERMO (16      │
@@ -81,24 +82,13 @@ interface CasoDeTeste {
 }
 
 // Uma frase por termo, escolhida para casar SÓ aquele termo (evita
-// depender de contaminação cruzada entre os 8 para provar cada um).
-//
-// ACHADO, RODADA 8b (30/08/2026) — "você" e "está" NÃO ENTRAM nesta lista,
-// e o motivo é um defeito PRÉ-EXISTENTE e NÃO RELACIONADO a esta correção:
-// `/\bvocê\b/i` e `/\bestá\b/i` NUNCA CASAM NADA, em qualquer string,
-// independente de aspas. `\b` do JavaScript usa `\w` = `[A-Za-z0-9_]`, que
-// NÃO inclui "ê" nem "á" — então a fronteira de palavra exigida IMEDIATAMENTE
-// DEPOIS da última letra de "você"/"está" nunca se satisfaz (o caractere
-// acentuado não é "palavra" nem o que vem depois é, então não há transição).
-// MEDIDO diretamente: `/\bvocê\b/i.test("você")` e variantes com ".", ",",
-// espaço e fim de string — todas `false`. Os outros 6 termos ("não", "com",
-// "ela", "ele", "ção", "para") terminam em letra ASCII e não têm este
-// problema — CONFIRMADO abaixo, os 6 casam normalmente fora de aspas.
-// Corrigir os dois regexes é FORA DO ESCOPO desta rodada (só pediu a mesma
-// técnica de aspas, não consertar a heurística em si) — registrado aqui,
-// não corrigido, para o operador decidir.
+// depender de contaminação cruzada entre os 8 para provar cada um). Os 8
+// termos agora têm as duas pontas provadas — "você"/"está" entraram nesta
+// rodada, depois da correção do lookaround (RODADA 9).
 const CASOS: CasoDeTeste[] = [
   { termo: "não", exemplo: "não vamos parar" },
+  { termo: "você", exemplo: "você já venceu" },
+  { termo: "está", exemplo: "tudo está pronto" },
   { termo: "com", exemplo: "converse com clareza" },
   { termo: "ela", exemplo: "ela chegou primeiro" },
   { termo: "ele", exemplo: "ele chegou depois" },
@@ -106,20 +96,11 @@ const CASOS: CasoDeTeste[] = [
   { termo: "para", exemplo: "olhe para frente" },
 ];
 
-// "você" e "está" continuam entrando no teste (a) — a exceção de aspas foi
-// aplicada aos 8 por uniformidade de código — mas SEM a asserção (b), que
-// seria impossível de satisfazer por um motivo que não tem nada a ver com
-// aspas (ver comentário acima).
-const TERMOS_ESTRUTURALMENTE_INERTES: CasoDeTeste[] = [
-  { termo: "você", exemplo: "você já venceu" },
-  { termo: "está", exemplo: "tudo está pronto" },
-];
-
 export async function checkWanPromptQuoteHeuristicPolicy(): Promise<WanPromptQuoteHeuristicCheckResult> {
   const failures: string[] = [];
   const notes: string[] = [];
 
-  for (const { termo, exemplo } of [...CASOS, ...TERMOS_ESTRUTURALMENTE_INERTES]) {
+  for (const { termo, exemplo } of CASOS) {
     // (a) falso positivo eliminado: o termo aparece DENTRO de uma fala
     // citada entre aspas retas, com direção em inglês fora delas.
     const corpoComFalaCitada = {
@@ -133,12 +114,9 @@ export async function checkWanPromptQuoteHeuristicPolicy(): Promise<WanPromptQuo
         `aspas: falso positivo voltou para o termo "${termo}" — fala citada em português entre aspas reprova o linter de novo (${(erro as Error).message})`,
       );
     }
-  }
 
-  for (const { termo, exemplo } of CASOS) {
     // (b) falso negativo continua pego: o MESMO termo, FORA de qualquer
-    // aspas — erro real de tradução esquecida. Só para os 6 termos cujo
-    // regex realmente funciona (ver TERMOS_ESTRUTURALMENTE_INERTES acima).
+    // aspas — erro real de tradução esquecida.
     const corpoComPortuguesEsquecido = {
       prompt: `Medium shot, ${exemplo}, hold a steady gaze throughout.`,
       negative_prompt: "cartoon, watermark",
@@ -156,10 +134,9 @@ export async function checkWanPromptQuoteHeuristicPolicy(): Promise<WanPromptQuo
 
   if (failures.length === 0) {
     notes.push(
-      "    aspas: os 8 termos da heurística passam quando citados entre aspas retas; os 6 cujo regex funciona " +
-        "(não, com, ela, ele, ção, para) continuam reprovando fora delas — MEDIDO por execução real de " +
-        "lintarPromptDoBlocoWan. \"você\" e \"está\" nunca casaram nada, com ou sem aspas — defeito PRÉ-EXISTENTE " +
-        "e não relacionado a esta correção, registrado e não corrigido nesta rodada (ver comentário no código).",
+      "    aspas: os 8 termos da heurística de português não traduzido passam quando citados entre aspas " +
+        "retas e continuam reprovando fora delas — MEDIDO por execução real de lintarPromptDoBlocoWan, " +
+        "16 corpos (8 termos × 2 pontas)",
     );
   }
 

@@ -432,11 +432,22 @@ const MARCADOR_DE_JANELA_LINT = /\[\d{1,2}:\d{2}-\d{1,2}:\d{2}\]/;
 // recusar demais do que deixar passar um trecho não fechado por engano). A
 // heurística continua vigiando o resto do prompt (a direção em inglês) por
 // português esquecido FORA das aspas, que é o caso real que ela existe para
-// pegar.
+// pegar. Nesta rodada foi ACHADO (não corrigido ainda) que `/\bvocê\b/i` e
+// `/\bestá\b/i` nunca casavam nada — ver RODADA 9 abaixo.
+//
+// RODADA 9 (30/08/2026) — `/\bvocê\b/i` e `/\bestá\b/i` NUNCA reprovavam
+// nada, com ou sem aspas: o `\b` do JavaScript exige fronteira `\w`
+// (`[A-Za-z0-9_]`, só ASCII), e as duas regexes terminam exatamente no
+// caractere acentuado ("ê", "á") — que não é `\w` — então a fronteira final
+// nunca fechava. Trocadas por lookaround com `\p{L}` (qualquer letra
+// Unicode, flag `u`), que não depende de `\w`: `(?<!\p{L})termo(?!\p{L})`
+// reprova "você"/"está" cercados por espaço, pontuação ou fim de string,
+// e continua sem casar dentro de outra palavra (ex.: "devocê"). Os outros 6
+// termos, que já funcionavam, não foram tocados.
 const TERMOS_PT_HEURISTICA = [
   /\bnão\b/i,
-  /\bvocê\b/i,
-  /\bestá\b/i,
+  /(?<!\p{L})você(?!\p{L})/iu,
+  /(?<!\p{L})está(?!\p{L})/iu,
   /\bcom\b/i,
   /\bela\b/i,
   /\bele\b/i,
