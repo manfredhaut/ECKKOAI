@@ -80,6 +80,7 @@ import type { Mutant } from "./mutants.js";
 const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
 const PROVIDER = "backend/src/services/providers/avatarProvider.ts";
 const PIPELINE = "backend/src/services/video/falPipeline.ts";
+const PROVIDER_VIDEO_SCENE = "backend/src/services/providers/videoScene.ts";
 
 /** O texto que só a composição deve ver. */
 const TEXTO_DA_COMPOSICAO = "consultorio claro e desfocado. jaleco branco abotoado";
@@ -198,12 +199,18 @@ export const MUTANTS: Mutant[] = [
     // `find` reescrito na FASE 0 (21/08): o `prompt` passou a ir envolto em
     // `comDefaultsDeDirecao(...)` (as 3 frases fixas de câmera/gesto/mão) —
     // ver `checkFalFase0DefaultsPolicy.ts`. A âncora precisa da chamada nova
-    // para continuar única no arquivo. O BLOCO SEEDANCE-1 (21/08) chegou a
-    // trocar `image_url` por `image_urls`, mas foi revertido no mesmo dia —
-    // ver `ENDPOINT_ANIMAR` em falPipeline.ts.
+    // para continuar única no arquivo.
+    //
+    // REESCRITO de novo na migração para `reference-to-video/flash` (item 2,
+    // 29/08): `image_url` singular virou `image_urls: [imagemDeReferencia]`
+    // (lista de referência de identidade, não mais quadro de partida — ver
+    // `ENDPOINT_ANIMAR` em falPipeline.ts), e o `prompt` ganhou o rótulo
+    // "Character1:" na frente da direção — a âncora usa só o INÍCIO do
+    // template (`` `Character1: ${comDefaultsDeDirecao(direcaoDoBloco)}` ``),
+    // que continua único no arquivo.
     file: PIPELINE,
-    find: "    prompt: comDefaultsDeDirecao(input.promptDeDirecao),\n    image_url: imagemUrl,",
-    replace: "    prompt: comDefaultsDeDirecao(input.promptDeComposicao),\n    image_url: imagemUrl,",
+    find: "    prompt:\n      `Character1: ${comDefaultsDeDirecao(direcaoDoBloco)}",
+    replace: "    prompt:\n      `Character1: ${comDefaultsDeDirecao(input.promptDeComposicao)}",
     expect: "direção: o prompt do motor de animação não é a direção",
   },
   {
@@ -225,6 +232,7 @@ export const MUTANTS: Mutant[] = [
       "    temTraje: Boolean(input.outfit),\n" +
       "    trajeTexto: input.outfitPrompt,\n" +
       "    temLateral: Boolean(input.photoUrls?.[1] || input.photoUrls?.[2]),\n" +
+      "    direcaoTexto: direcaoDoPrimeiroBloco(input.script, promptDaDirecao(input)),\n" +
       "  });\n" +
       "}",
     replace:
@@ -232,6 +240,79 @@ export const MUTANTS: Mutant[] = [
       "  return [input.scenarioPrompt?.trim(), input.outfitPrompt?.trim()].filter(Boolean).join(\". \");\n" +
       "}",
     expect: "o prompt da composição não amarra a imagem à posição",
+  },
+  {
+    guard: "o prompt da composição amarra cada imagem à posição dela",
+    name: "a cláusula de pose some do prompt de composição — direcaoTexto para de ser passado",
+    kind: "esperto",
+    // RODADA 2, 29/08 — ESPERTO: cenário/traje continuam amarrados por
+    // posição (G-1 e o mutante acima continuariam verdes), só a cláusula de
+    // POSE (derivada da Interpretação) some. Sem ela, a imagem composta pode
+    // sair numa pose que contradiz a ação que o Wan vai animar em seguida —
+    // o defeito que esta cláusula existe para conter, MEDIDO como risco (não
+    // como resultado ruim observado) nesta rodada.
+    //
+    // find/replace ATUALIZADOS em 29/08 (item 4, rodada seguinte) — o corpo
+    // ganhou `direcaoDoPrimeiroBloco()` ao redor de `promptDaDirecao(input)`
+    // (correção do BUG achado pelo linter determinístico: a cláusula de pose
+    // citava a Interpretação de TODOS os blocos, não só do primeiro — ver
+    // `direcaoDoPrimeiroBloco` em scriptFractioning.ts). O mutante continua
+    // testando a MESMA coisa (a cláusula de pose desaparecer por completo),
+    // só a linha exata mudou.
+    file: PROVIDER,
+    find:
+      "    temLateral: Boolean(input.photoUrls?.[1] || input.photoUrls?.[2]),\n" +
+      "    direcaoTexto: direcaoDoPrimeiroBloco(input.script, promptDaDirecao(input)),\n  });",
+    replace: "    temLateral: Boolean(input.photoUrls?.[1] || input.photoUrls?.[2]),\n  });",
+    expect: "a cláusula de pose não chegou ao prompt da composição",
+  },
+  {
+    guard: "o prompt da composição amarra cada imagem à posição dela",
+    name: "a cláusula de ROUPA volta a não proibir copiar pose/objetos da foto de traje",
+    kind: "esperto",
+    // BUG D REVISTO, 29/08 — ESPERTO: a roupa continua chegando (G-1 segue
+    // verde, por `.includes()` no texto cru), só a proibição explícita de
+    // copiar pose/postura/objetos da foto de referência desaparece — a
+    // REGRESSÃO literal para o texto de antes desta correção, MEDIDA como
+    // causa de uma bolsa vermelha da foto de traje aparecendo na composição.
+    file: PROVIDER_VIDEO_SCENE,
+    find:
+      "      `A ${numeral(posicao)} imagem mostra a ROUPA${texto ? ` (${texto})` : \"\"} — extraia dela SOMENTE ` +\n" +
+      '        "as peças de vestuário (jaqueta, blusa, cachecol, calça, etc.) e vista a pessoa da primeira " +\n' +
+      '        "imagem com elas, substituindo por completo o que ela está usando. NÃO copie a pose, a postura, " +\n' +
+      '        "o enquadramento nem qualquer objeto ou acessório que a pessoa desta imagem segura ou carrega " +\n' +
+      '        "(bolsa, mala, o que estiver em suas mãos) — nada disso é parte do traje, e nada disso deve " +\n' +
+      '        "aparecer na composição final. A pose final da pessoa vem só da instrução de pose abaixo (quando " +\n' +
+      '        "houver), nunca da pose desta foto de referência.",',
+    replace:
+      "      `A ${numeral(posicao)} imagem mostra a ROUPA${texto ? ` (${texto})` : \"\"} — vista a pessoa da ` +\n" +
+      '        "primeira imagem com essa roupa, substituindo por completo a que ela está usando.",',
+    expect: "a cláusula de ROUPA não proíbe copiar pose/objetos da foto de traje",
+  },
+  {
+    guard: "o prompt da composição amarra cada imagem à posição dela",
+    name: "a cláusula de pose deixa de VENCER a pose das referências",
+    kind: "esperto",
+    // BUG D REVISTO, 29/08 — ESPERTO: a cláusula de pose continua presente
+    // (o mutante irmão acima, que a remove inteira, continuaria verde), só a
+    // precedência explícita sobre a pose das referências de traje/cenário
+    // desaparece — a REGRESSÃO literal para a redação anterior, que dizia só
+    // "consistente com", ambígua o bastante para o modelo tratar a pose da
+    // FOTO de traje como igualmente válida.
+    file: PROVIDER_VIDEO_SCENE,
+    find:
+      '      "Initial pose and framing — this OVERRIDES any pose, posture, or held object/prop shown in the " +\n' +
+      '        "clothing or scenario reference images above (they only supply garments and background, never " +\n' +
+      '        "posture or props): the person\'s starting posture, arm and hand position, and framing in this " +\n' +
+      '        "still image must be consistent ONLY with the scene direction that will animate her right " +\n' +
+      '        "after, as its natural first instant — before the action begins, not the pose of any reference " +\n' +
+      "        `photo, and not a random resting pose: \"${direcao}\"`,",
+    replace:
+      '      "Initial pose and framing: the person\'s starting posture, arm and hand position, and framing in " +\n' +
+      '        "this still image must already be consistent with the scene direction that will animate her " +\n' +
+      "        `right after, as its natural first instant — before the action begins, not a random resting ` +\n" +
+      "        `pose: \"${direcao}\"`,",
+    expect: "a cláusula de POSE não se declara como a que VENCE a pose das referências",
   },
 ];
 
@@ -416,6 +497,11 @@ export async function corridaDeComposicao(): Promise<{
       outfit: "/uploads/.gitkeep",
       scenarioPrompt: "consultorio claro e desfocado",
       outfitPrompt: "jaleco branco abotoado",
+      // RODADA 2, 29/08 — a Interpretação, para exercitar a cláusula de pose
+      // (`direcaoTexto` em `promptDeComposicaoPosicional`). Reusa o mesmo
+      // texto que G-2 já usa para o motor de animação: são caminhos
+      // diferentes (este vai à COMPOSIÇÃO, G-2 vai ao Wan), sem colisão.
+      scene: { motionPrompt: TEXTO_DA_DIRECAO } as never,
       falDiario: criarDiario(estado.publicados) as never,
     } as never);
   } catch (err) {
@@ -587,6 +673,45 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
       }
     }
 
+    // ---------------------------------------------------------------------
+    // G-1c — 29/08 RODADA 2: a cláusula de POSE (derivada da Interpretação,
+    // `direcaoTexto` em `promptDeComposicaoPosicional`, videoScene.ts) chega
+    // ao prompt da composição. MESMA limitação de prova do G-1b acima: isto
+    // prova que o TEXTO saiu, nunca que o fornecedor obedece a pose alguma.
+    // ---------------------------------------------------------------------
+    if (!prompt.includes(TEXTO_DA_DIRECAO)) {
+      failures.push(
+        "cena: a cláusula de pose não chegou ao prompt da composição — esperava o texto da Interpretação " +
+          `(${JSON.stringify(TEXTO_DA_DIRECAO)}) embutido no \`prompt\` enviado a nano-banana-2/edit, e ` +
+          `saiu ${JSON.stringify(prompt)}. Sem ela, a imagem composta pode nascer numa pose que contradiz ` +
+          "a ação que o Wan vai animar em seguida — o defeito que esta cláusula existe para conter.",
+      );
+    }
+
+    // ---------------------------------------------------------------------
+    // G-1d — 29/08, BUG D REVISTO: a cláusula de ROUPA proíbe copiar pose/
+    // objetos da foto de traje, e a cláusula de POSE se declara como a que
+    // VENCE qualquer pose das referências. MESMA limitação de prova de G-1b/
+    // G-1c: prova que o TEXTO saiu, nunca que o fornecedor obedece.
+    // ---------------------------------------------------------------------
+    if (!prompt.includes("NÃO copie a pose")) {
+      failures.push(
+        'cena: a cláusula de ROUPA não proíbe copiar pose/objetos da foto de traje — esperava "NÃO copie ' +
+          `a pose" no \`prompt\`, saiu ${JSON.stringify(prompt)}. MEDIDO por comparação real (foto de ` +
+          "traje × frame 0s, 29/08): sem essa proibição explícita, a composição copiava a pose e os " +
+          "acessórios da própria foto de referência de traje (incluindo objetos que não são vestuário, " +
+          "como uma bolsa) em vez de vestir só a roupa.",
+      );
+    }
+    if (!prompt.includes("OVERRIDES any pose")) {
+      failures.push(
+        'cena: a cláusula de POSE não se declara como a que VENCE a pose das referências — esperava ' +
+          `"OVERRIDES any pose" no \`prompt\`, saiu ${JSON.stringify(prompt)}. Sem essa precedência ` +
+          'explícita, "consistente com" deixava espaço para o modelo tratar a pose da FOTO de traje ' +
+          "como igualmente válida.",
+      );
+    }
+
     // A ORDEM é significativa para o `nano-banana` (`[rosto, traje?, cenário?]`)
     // e não é observável em nenhum outro lugar: trocá-la não quebra nada e muda
     // a imagem que sai.
@@ -639,7 +764,7 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
     if (failures.length === 0) {
       notes.push(
         `    cena: cenário e traje chegam à composição — ${imagens.length} imagens em \`image_urls\` na ordem ` +
-          `[${criacao.publicados.map((p) => p.rotulo).join(", ")}] e o prompt leva os dois textos`,
+          `[${criacao.publicados.map((p) => p.rotulo).join(", ")}] e o prompt leva os dois textos e a cláusula de pose`,
       );
       notes.push(
         '    lateral: com Frente/Lado direito/Lado esquerdo todos presentes, só "Lado direito" entra em ' +
@@ -733,13 +858,15 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
           "voltou a morrer entre a linha de `videos` e o motor de animação, que é exatamente o defeito " +
           "do BLOCO B5.",
       );
-    } else if (!trecho.includes("promptDaDirecaoDaLinha(video)")) {
+    } else if (!trecho.includes("motionPromptDaLinha(video)")) {
       failures.push(
         "direção: a rota de aprovação passa um `promptDeDirecao` que não vem de " +
-          "`promptDaDirecaoDaLinha(video)` — a direção do fornecedor é a coluna VELADA " +
+          "`motionPromptDaLinha(video)` — a direção do fornecedor é a coluna VELADA " +
           "`motion_prompt_en`, e montá-la de outro jeito aqui mandaria o texto em português ao motor de " +
           "animação ou retraduziria no clique, fazendo uma etapa de ~US$ 1,44 depender de um segundo " +
-          "serviço.",
+          "serviço. ITEM 2, RODADA 6 (30/08/2026): `promptDeDirecao` passou a levar o texto CRU " +
+          "(`motionPromptDaLinha`), não mais `promptDaDirecaoDaLinha` — a Expressividade agora vai " +
+          "separada, aplicada por bloco dentro de `wanOrchestration.ts`.",
       );
     }
   }

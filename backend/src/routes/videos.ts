@@ -59,7 +59,6 @@ import {
 import {
   isExpressiveness,
   normalizeScene,
-  direcaoComExpressividade,
   promptDeComposicaoComFeedback,
   promptDeComposicaoPosicional,
   type SceneBackground,
@@ -2162,15 +2161,16 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * `direcaoTexto: direcaoDoPrimeiroBloco(video.script, motionPromptDaLinha(video))`
    * — RODADA 2, 29/08 (cláusula de POSE, ver `direcaoTexto` em
    * `promptDeComposicaoPosicional`, videoScene.ts) — CORRIGIDO na rodada
-   * seguinte de 29/08 (item 4, achado do linter determinístico): a mesma
-   * função que `promptDaDirecaoDaLinha` usa para o Wan devolve a
-   * Interpretação INTEIRA, com os marcadores `[mm:ss-mm:ss]` de TODOS os
-   * blocos de um vídeo Normal fracionado — a cláusula de pose citava os N
-   * planos emendados como "o instante antes desta ação", em vez de só o
-   * plano 0. `direcaoDoPrimeiroBloco` (scriptFractioning.ts) recorta para o
-   * bloco 0; sem fracionamento, devolve o texto inteiro sem alteração —
-   * mesmo comportamento de antes da correção. `promptDaDirecaoDaLinha`
-   * (usada por `animar()`) continua com o texto INTEIRO, sem recorte.
+   * seguinte de 29/08 (item 4, achado do linter determinístico): `animar()`
+   * devolvia a Interpretação INTEIRA, com os marcadores `[mm:ss-mm:ss]` de
+   * TODOS os blocos de um vídeo Normal fracionado — a cláusula de pose
+   * citava os N planos emendados como "o instante antes desta ação", em
+   * vez de só o plano 0. `direcaoDoPrimeiroBloco` (scriptFractioning.ts)
+   * recorta para o bloco 0; sem fracionamento, devolve o texto inteiro sem
+   * alteração — mesmo comportamento de antes da correção. `animar()`
+   * (via `motionPromptDaLinha`) continua com o texto INTEIRO, sem recorte —
+   * quem fatia por bloco é `wanOrchestration.ts`, do lado de dentro do
+   * pipeline.
    */
   function promptDaComposicaoDaLinha(video: VideoRow, avatar: Avatar): string {
     return promptDeComposicaoPosicional({
@@ -2203,27 +2203,19 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     return (video.motion_prompt_en ?? video.motion_prompt)?.trim() ?? "";
   }
 
-  /**
-   * A DIREÇÃO COMPLETA que vai ao Wan/Seedance — Interpretação da pessoa +
-   * Expressividade, BLOCO EXPRESSIVIDADE-FAL (28/08/2026).
-   *
-   * Antes desta rodada, `expressiveness` só era lido pelo caminho HeyGen
-   * (`buildHeygenVideoPayload`) — no tier Normal/Premium o campo era
-   * coletado, persistido, e morria: o mesmo defeito de forma que já
-   * aconteceu com Cenário/Traje antes deles ganharem transporte. Wan e
-   * Seedance não têm campo estruturado para isto; o único canal é o texto
-   * de direção, via `expressividadeParaDirecao()` (videoScene.ts).
-   *
-   * A VALIDAÇÃO de "Interpretação vazia" (422 `empty_motion_prompt`, logo
-   * abaixo) continua olhando SÓ `motionPromptDaLinha(video)` — nunca esta
-   * função: expressividade tem default (a tela nasce com um chip
-   * selecionado) e faria a validação parar de disparar mesmo quando a
-   * pessoa nunca escreveu Interpretação nenhuma, mudando silenciosamente o
-   * que "vazio" significa.
-   */
-  function promptDaDirecaoDaLinha(video: VideoRow): string {
-    return direcaoComExpressividade(motionPromptDaLinha(video), video.expressiveness);
-  }
+  // A EXPRESSIVIDADE (BLOCO EXPRESSIVIDADE-FAL, 28/08/2026, corrigida no
+  // ITEM 2 da RODADA 6, 30/08/2026) não é mais dobrada aqui, sobre o texto
+  // INTEIRO antes de fatiar por bloco — isso jogava a cláusula inteira no
+  // ÚLTIMO bloco de um vídeo Normal fracionado (medido no vídeo `effe03c6`:
+  // 3 blocos, só o bloco 2 recebia a frase). Os 4 call sites abaixo passam
+  // `motion_prompt_en` cru (`motionPromptDaLinha`) e `video.expressiveness`
+  // SEPARADOS — `wanOrchestration.ts` aplica `direcaoComExpressividade` em
+  // CADA fatia, depois de `direcaoPorJanela` já ter separado os blocos. A
+  // VALIDAÇÃO de "Interpretação vazia" (422 `empty_motion_prompt`, logo
+  // abaixo) continua olhando SÓ `motionPromptDaLinha(video)`: expressividade
+  // tem default (a tela nasce com um chip selecionado) e faria a validação
+  // parar de disparar mesmo quando a pessoa nunca escreveu Interpretação
+  // nenhuma, mudando silenciosamente o que "vazio" significa.
 
   /** As entradas da composição, em bytes. A mesma ordem de `generateVideoFal`. */
   /**
@@ -2376,7 +2368,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // único caminho que chega a submeter a animação, e o `prompt`
                 // dela é o que a pessoa escreveu na Interpretação. Sem esta
                 // linha o vídeo pago sai sem direção nenhuma.
-                promptDeDirecao: promptDaDirecaoDaLinha(video),
+                promptDeDirecao: motionPromptDaLinha(video),
+                // ITEM 2, RODADA 6 (30/08/2026) — separado de `promptDeDirecao`
+                // de propósito: dobrar antes do fatiamento por bloco jogava a
+                // cláusula inteira no ÚLTIMO bloco (medido no vídeo `effe03c6`,
+                // 3 blocos, só o bloco 2 recebia a frase). `wanOrchestration.ts`
+                // aplica por bloco, depois de fatiar.
+                expressiveness: isExpressiveness(video.expressiveness) ? video.expressiveness : null,
                 diario: criarDiarioNoBanco(runId),
                 // BLOCO A — relido da LINHA, não do formulário: a aprovação
                 // acontece numa requisição SEPARADA da criação, e o tier
@@ -2609,7 +2607,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           // assim: o dia em que `pararApos` mudar aqui, a animação receberia
           // direção VAZIA sem nada no código dizendo que ela foi perdida — e o
           // sintoma seria um vídeo pago e sem direção, não um erro.
-          promptDeDirecao: promptDaDirecaoDaLinha(video),
+          promptDeDirecao: motionPromptDaLinha(video),
+          // ITEM 2, RODADA 6 — ver o comentário equivalente na rota de
+          // aprovação da imagem.
+          expressiveness: isExpressiveness(video.expressiveness) ? video.expressiveness : null,
           diario: criarDiarioNoBanco(runId),
         });
         await fecharCorrida(runId, "completed");
@@ -2727,7 +2728,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
                 tenantId: req.tenantId,
                 aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
-                promptDeDirecao: promptDaDirecaoDaLinha(video),
+                promptDeDirecao: motionPromptDaLinha(video),
+                // ITEM 2, RODADA 6 — ver o comentário equivalente acima, na
+                // rota de aprovação da imagem.
+                expressiveness: isExpressiveness(video.expressiveness) ? video.expressiveness : null,
                 diario: criarDiarioNoBanco(runId),
                 tier: videoTierParaPipeline(video.tier_video),
               },
@@ -2907,7 +2911,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
             tenantId: req.tenantId,
             aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
-            promptDeDirecao: promptDaDirecaoDaLinha(video),
+            promptDeDirecao: motionPromptDaLinha(video),
+            // ITEM 2, RODADA 6 — ver o comentário equivalente na rota de
+            // aprovação da imagem.
+            expressiveness: isExpressiveness(video.expressiveness) ? video.expressiveness : null,
             diario: criarDiarioNoBanco(runId),
             tier: videoTierParaPipeline(video.tier_video),
             // O FREIO deste botão: para de novo em `animar`, e NÃO encadeia

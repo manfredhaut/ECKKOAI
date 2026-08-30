@@ -1344,6 +1344,12 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
     // indefinida) — vai à composição. Ver `aspectRatio` em `FalPipelineInput`.
     aspectRatio: input.format.aspectRatio,
     promptDeDirecao: promptDaDirecao(input),
+    // ITEM 2, RODADA 6 (30/08/2026) — a expressividade vai SEPARADA de
+    // `promptDeDirecao`: dobrá-la aqui, antes do fatiamento por bloco
+    // (`wanOrchestration.ts`), é o defeito medido no vídeo `effe03c6`
+    // (só o último bloco recebia a cláusula). O orquestrador aplica por
+    // bloco, depois de fatiar.
+    expressiveness: input.scene?.expressiveness ?? null,
     diario: input.falDiario,
     // O default é o FREIO, e não o pipeline inteiro: quem quiser ir além tem de
     // dizer isso explicitamente, e hoje ninguém diz.

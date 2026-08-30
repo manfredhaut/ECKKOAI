@@ -50,6 +50,7 @@ import {
   type BlocoDeAnimacao,
 } from "./scriptFractioning.js";
 import { montarPlanoDosBlocosWan } from "./wanOrchestration.js";
+import { direcaoComExpressividade, type Expressiveness } from "../providers/videoScene.js";
 import type { AspectRatio } from "../providers/videoFormat.js";
 import type { AvatarVendor } from "../providers/vendorCatalog.js";
 
@@ -294,24 +295,30 @@ export const DEFAULTS_NUNCA_HERDADOS_PREMIUM = {
 /**
  * As três correções de vídeo medidas na POC de composição por frações
  * (fora deste repositório, 21/08): câmera fixa, gesto contido, mão que nunca
- * cruza o rosto. Em INGLÊS, porque `promptDeDirecao` chega aqui já traduzido
- * (`directionTranslation.ts`, na rota) — concatenar em português produziria
- * um prompt bilíngue que o Seedance nunca viu.
+ * cruza o rosto — mais uma quarta, medida em produção na RODADA 6 (30/08,
+ * `DIRECAO_PLANO_UNICO` logo abaixo). Em INGLÊS, porque `promptDeDirecao`
+ * chega aqui já traduzido (`directionTranslation.ts`, na rota) — concatenar
+ * em português produziria um prompt bilíngue que o Seedance nunca viu.
  */
 export const DIRECAO_CAMERA_FIXA =
   "camera locked and fixed, no zoom, no pan, no camera movement of any kind — only the character moves";
 export const DIRECAO_GESTOS_CONTIDOS = "short, contained gestures kept at chest height";
 export const DIRECAO_MAO_NAO_CRUZA_ROSTO =
   "the hand never crosses in front of the face at any point in the clip";
-
 /**
- * A quarta correção, de pele — mesma POC. Em PORTUGUÊS: `promptDeComposicao`
- * nunca passa por `directionTranslation.ts` (só a direção é traduzida; ver o
- * cabeçalho daquele arquivo), então concatenar em inglês misturaria os dois
- * idiomas no mesmo campo, na ordem inversa do problema acima.
+ * A QUARTA regra — RODADA 6, item 5 (30/08/2026), DEFEITO MEDIDO. O quadro
+ * bruto do bloco 2 de uma corrida real de 3 blocos
+ * (`effe03c6-b896-4469-8880-c8286306d87b`) saiu como um TRÍPTICO — três
+ * painéis verticais da mesma pessoa — direto do Wan, antes de qualquer
+ * concat local. Cláusula explícita de plano único, na MESMA categoria das
+ * três acima (regra de sistema, não complemento de instrução do usuário).
+ * `negative_prompt` (`NEGATIVE_PROMPT_ANIMAR_WAN`) já ganhou os termos
+ * correspondentes no item 4 desta rodada — as duas mudanças cobrem o MESMO
+ * defeito medido por dois canais diferentes do payload. EFEITO NÃO
+ * VERIFICADO — nenhuma geração nova confirmou que a cláusula reduz a
+ * recorrência.
  */
-export const COMPOSICAO_PELE_ATENUACAO_LEVE =
-  "pele com atenuação leve de textura, suavização sutil e realista, preservando a identidade — sem retoque agressivo";
+export const DIRECAO_PLANO_UNICO = "single continuous shot, one person, full frame, no split screen";
 
 /**
  * O `negative_prompt` do Wan — RODADA 2, 29/08/2026.
@@ -354,10 +361,27 @@ export const COMPOSICAO_PELE_ATENUACAO_LEVE =
  * EFEITO NÃO FOI VERIFICADO — cobre geometria (Bug F) já é insuficiente por
  * si, e nada garante que o Wan trate "flickering"/"unstable lighting" como
  * describe visual a evitar da mesma forma que trata "cartoon"/"plastic skin".
+ *
+ * **Termos de tela dividida e expressão agressiva acrescentados em
+ * 30/08/2026 — RODADA 6, item 4, DEFEITO MEDIDO (não hipótese).** Baixado o
+ * arquivo BRUTO do bloco 2 de uma corrida real de 3 blocos
+ * (`effe03c6-b896-4469-8880-c8286306d87b`, direto da fal, antes de
+ * qualquer concat local) e extraído um quadro: o Wan devolveu um TRÍPTICO
+ * — três painéis verticais da mesma pessoa lado a lado — com expressão
+ * próxima de raivosa/carrancuda nos três. Os blocos 0 e 1 da MESMA
+ * corrida saíram como painel único e limpo — o defeito não é sistemático
+ * nem nasce do nosso pipeline de concat local (que só atua DEPOIS, na
+ * emenda entre blocos já prontos). `split screen`/`grid`/`collage`/
+ * `multiple panels`/`triptych`/`duplicate person` cobrem a FORMA medida do
+ * defeito; `angry`/`scowling`/`furrowed brow` cobrem a EXPRESSÃO medida no
+ * mesmo quadro. Lista curta de propósito: nenhum termo genérico sem
+ * defeito observado por trás. EFEITO NÃO VERIFICADO — nenhuma geração nova
+ * confirmou que estes termos reduzem a recorrência.
  */
 export const NEGATIVE_PROMPT_ANIMAR_WAN =
   "cartoon, 3D render, plastic skin, waxy skin, subtitles, captions, text overlay, watermark, garbled text, " +
-  "distorted face, flickering lighting, unstable lighting, sudden brightness or color changes, strobing";
+  "distorted face, flickering lighting, unstable lighting, sudden brightness or color changes, strobing, " +
+  "split screen, grid, collage, multiple panels, triptych, duplicate person, angry, scowling, furrowed brow";
 
 /**
  * Camada 1 — LINTER DETERMINÍSTICO do prompt do Wan, item 4 da rodada de
@@ -426,25 +450,37 @@ export function lintarPromptDoBlocoWan(corpo: Record<string, unknown>): void {
 }
 
 /**
- * Aplicadas AQUI, no orquestrador, e não em quem monta `promptDeComposicao` /
- * `promptDeDirecao` (`avatarProvider.ts`, `routes/videos.ts`) — porque este é
- * o ÚNICO lugar por onde todo pedido converge antes de custar dinheiro:
- * criação (`runFalPipeline`), retomada pós-aprovação (`runFalPipelineDaImagem`)
- * e a sonda (`probeFalPipeline.ts`) chamam todas `etapaNaFal` por baixo. Uma
- * regra concatenada no CALL SITE, em vez de aqui, teria de ser copiada em cada
- * um dos três — e é copiar-em-cada-lugar que já produziu drift antes neste
- * mesmo arquivo (ver `promptDaComposicaoDaLinha` em `routes/videos.ts`).
+ * Aplicada AQUI, no orquestrador, e não em quem monta `promptDeDirecao`
+ * (`avatarProvider.ts`, `routes/videos.ts`) — porque este é o ÚNICO lugar
+ * por onde todo pedido converge antes de custar dinheiro: criação
+ * (`runFalPipeline`), retomada pós-aprovação (`runFalPipelineDaImagem`) e
+ * a sonda (`probeFalPipeline.ts`) chamam todas `etapaNaFal` por baixo. Uma
+ * regra concatenada no CALL SITE, em vez de aqui, teria de ser copiada em
+ * cada um dos três — e é copiar-em-cada-lugar que já produziu drift antes
+ * neste mesmo arquivo (ver `promptDaComposicaoDaLinha` em `routes/videos.ts`).
  *
- * SEMPRE concatenam, mesmo com o texto da pessoa vazio: a regra de câmera e a
- * de pele não dependem de a pessoa ter escrito nada — são default do sistema,
- * não complemento de uma instrução.
+ * SEMPRE concatena, mesmo com o texto da pessoa vazio: as três regras não
+ * dependem de a pessoa ter escrito nada — são default do sistema, não
+ * complemento de uma instrução.
+ *
+ * ITEM 3, RODADA 6 (30/08/2026) — a composição (`comDefaultsDeComposicao`)
+ * foi REMOVIDA: a única regra que ela concatenava
+ * (`COMPOSICAO_PELE_ATENUACAO_LEVE`, "atenuação leve de textura,
+ * suavização sutil") CONTRADIZIA `NEGATIVE_PROMPT_ANIMAR_WAN` ("plastic
+ * skin, waxy skin") — um pedia suavização, o outro proibia pele
+ * artificial/encerada, no mesmo vídeo. Nenhuma imagem foi gerada para medir
+ * o efeito da contradição; a remoção é preventiva, não uma correção medida.
+ * `input.promptDeComposicao` volta a ir cru ao `compor()`, sem default de
+ * sistema nenhum — nada substituiu a regra.
  */
-export function comDefaultsDeComposicao(promptDaPessoa: string): string {
-  return [promptDaPessoa.trim(), COMPOSICAO_PELE_ATENUACAO_LEVE].filter(Boolean).join(". ");
-}
-
 export function comDefaultsDeDirecao(promptDaPessoa: string): string {
-  return [promptDaPessoa.trim(), DIRECAO_CAMERA_FIXA, DIRECAO_GESTOS_CONTIDOS, DIRECAO_MAO_NAO_CRUZA_ROSTO]
+  return [
+    promptDaPessoa.trim(),
+    DIRECAO_CAMERA_FIXA,
+    DIRECAO_GESTOS_CONTIDOS,
+    DIRECAO_MAO_NAO_CRUZA_ROSTO,
+    DIRECAO_PLANO_UNICO,
+  ]
     .filter(Boolean)
     .join(". ");
 }
@@ -750,6 +786,19 @@ export interface FalPipelineInput {
    * era gravada, e morria porque ninguém a passava adiante.
    */
   promptDeDirecao: string;
+  /**
+   * A EXPRESSIVIDADE escolhida — ITEM 2, RODADA 6 (30/08/2026). Separada de
+   * `promptDeDirecao` de propósito: o Wan não tem campo estruturado para
+   * isto (só HeyGen tem), então o único canal é dobrar a cláusula no texto
+   * de direção — mas SÓ depois de `promptDeDirecao` já ter sido fatiado por
+   * bloco (`wanOrchestration.ts`). Se `promptDeDirecao` já chegasse com a
+   * cláusula embutida, ela cairia inteira na ÚLTIMA fatia (depois do último
+   * marcador `[mm:ss-mm:ss]`) — o defeito medido no vídeo `effe03c6`
+   * (30/08): só o bloco 2 de 3 recebeu a frase de expressividade.
+   * `null`/ausente: nenhuma cláusula é acrescentada, byte a byte o
+   * comportamento de antes desta correção.
+   */
+  expressiveness?: Expressiveness | null;
   diario: DiarioDoPipeline;
   /**
    * O NÍVEL escolhido pelo tenant — BLOCO A. Default `"normal"` (Wan): é o
@@ -1286,9 +1335,10 @@ export async function runFalPipeline(input: FalPipelineInput): Promise<FalPipeli
   gastoPrevistoUsd = autorizarGasto(gastoPrevistoUsd, custoComporUsd, teto, "compor");
   await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);
   const composicao = await etapaNaFal(input, "compor", 1, ENDPOINT_COMPOR, {
-    // FASE 0 — a atenuação de pele vai SEMPRE, mesmo sem traje/cenário por
-    // texto. Ver `comDefaultsDeComposicao`.
-    prompt: comDefaultsDeComposicao(input.promptDeComposicao),
+    // SEM default de sistema — ITEM 3, RODADA 6 (30/08/2026): a atenuação de
+    // pele que ia aqui contradizia `NEGATIVE_PROMPT_ANIMAR_WAN` ("plastic
+    // skin, waxy skin"). Removida, nada substituiu.
+    prompt: input.promptDeComposicao,
     // `[rosto, traje?, cenário?]`, na ordem em que subiram. O que veio por
     // TEXTO não aparece aqui: está no `prompt` acima, que é o mesmo campo.
     image_urls: urlsDasEntradas,
@@ -1677,7 +1727,7 @@ async function animarNarrarSincronizar(
       duracaoEscolhida,
       gastoPrevistoUsd,
       teto,
-      input.promptDeDirecao,
+      direcaoComExpressividade(input.promptDeDirecao, input.expressiveness),
       seedDoVideo,
     );
     gastoPrevistoUsd = bloco.gastoPrevistoUsd;
@@ -1734,6 +1784,7 @@ async function animarNarrarSincronizar(
     blocos,
     direcaoTraduzida: input.promptDeDirecao,
     promptDeComposicaoUsado: input.promptDeComposicao,
+    expressiveness: input.expressiveness,
   });
   logEvent("info", "fal_pipeline_plano_dos_blocos", {
     blocos: planoDosBlocos.map((p) => ({
