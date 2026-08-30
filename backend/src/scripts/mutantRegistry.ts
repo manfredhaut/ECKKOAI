@@ -96,6 +96,7 @@ import { MUTANTS as scriptValidationStatusMutants } from "./checkScriptValidatio
 import { MUTANTS as recomposeLateralPhotoMutants } from "./checkRecomposeLateralPhotoPolicy.js";
 import { MUTANTS as wanBlockOrchestrationMutants } from "./checkWanBlockOrchestrationPolicy.js";
 import { MUTANTS as colorMatchDefaultMutants } from "./checkColorMatchDefaultPolicy.js";
+import { MUTANTS as wanPromptQuoteHeuristicMutants } from "./checkWanPromptQuoteHeuristicPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 
@@ -198,4 +199,5 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkRecomposeLateralPhotoPolicy.ts", recomposeLateralPhotoMutants),
   ...de("backend/src/scripts/checkWanBlockOrchestrationPolicy.ts", wanBlockOrchestrationMutants),
   ...de("backend/src/scripts/checkColorMatchDefaultPolicy.ts", colorMatchDefaultMutants),
+  ...de("backend/src/scripts/checkWanPromptQuoteHeuristicPolicy.ts", wanPromptQuoteHeuristicMutants),
 ];

@@ -415,8 +415,21 @@ const MARCADOR_DE_JANELA_LINT = /\[\d{1,2}:\d{2}-\d{1,2}:\d{2}\]/;
 // para por que detecção de idioma foi descartada como método neste projeto.
 // Falso positivo aceitável (recusa e não cobra); falso negativo é o que
 // este item existe para reduzir.
+//
+// RODADA 8 (30/08/2026) — `/\bnão\b/i` MEDIDO reprovando um caso real: a
+// direção traduzida cita a fala do roteiro entre aspas retas (ex.: `"Inovar
+// não é criar o futuro..."`, ver directionTranslation.ts), e a fala citada é
+// texto em português DE PROPÓSITO, não esquecimento de tradução. Por isso só
+// este termo é testado contra o prompt COM as aspas removidas
+// (`removerFalaEntreAspas` — só remove pares `"..."` fechados; aspa aberta
+// sem fechar não é removida, e continua visível de propósito, mais seguro
+// recusar demais do que deixar passar um trecho não fechado por engano). Os
+// outros 7 termos continuam testados contra o prompt INTEIRO, aspas
+// incluídas — eles têm, em teoria, o mesmo problema (uma fala citada podendo
+// conter "com"/"para"/"ela"/etc.), mas nenhum deles bloqueou uma corrida real
+// até agora, e a correção desta rodada é escopada só ao termo que bloqueou.
+const TERMO_NAO_PT = /\bnão\b/i;
 const TERMOS_PT_HEURISTICA = [
-  /\bnão\b/i,
   /\bvocê\b/i,
   /\bestá\b/i,
   /\bcom\b/i,
@@ -425,6 +438,10 @@ const TERMOS_PT_HEURISTICA = [
   /ção\b/i,
   /\bpara\b/i,
 ];
+
+function removerFalaEntreAspas(texto: string): string {
+  return texto.replace(/"[^"]*"/g, "");
+}
 
 /**
  * As quatro checagens pedidas: prompt vazio, marcador de janela vazado,
@@ -441,7 +458,8 @@ export function lintarPromptDoBlocoWan(corpo: Record<string, unknown>): void {
   if (MARCADOR_DE_JANELA_LINT.test(prompt)) {
     motivos.push("prompt contém marcador [mm:ss-mm:ss] não removido pelo fatiamento por bloco");
   }
-  if (TERMOS_PT_HEURISTICA.some((re) => re.test(prompt))) {
+  const promptSemFala = removerFalaEntreAspas(prompt);
+  if (TERMO_NAO_PT.test(promptSemFala) || TERMOS_PT_HEURISTICA.some((re) => re.test(prompt))) {
     motivos.push("prompt parece conter português não traduzido");
   }
   const negativePrompt = typeof corpo.negative_prompt === "string" ? corpo.negative_prompt : "";

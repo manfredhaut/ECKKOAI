@@ -110,6 +110,7 @@ import { checkPhotoRemovalPolicy } from "./checkPhotoRemovalPolicy.js";
 import { checkVirtualBackgroundComparatorPolicy } from "./checkVirtualBackgroundComparatorPolicy.js";
 import { checkWanBlockOrchestrationPolicy } from "./checkWanBlockOrchestrationPolicy.js";
 import { checkColorMatchDefaultPolicy } from "./checkColorMatchDefaultPolicy.js";
+import { checkWanPromptQuoteHeuristicPolicy } from "./checkWanPromptQuoteHeuristicPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -999,6 +1000,13 @@ async function main(): Promise<void> {
   const colorMatchDefault = await checkColorMatchDefaultPolicy(process.env.REPO_ROOT ?? "/repo");
   colorMatchDefault.failures.forEach((f) => failures.push(f));
   colorMatchDefault.notes.forEach((n) => note(n));
+
+  // --- 24o-septdecies. aspas retas protegem a fala citada do roteiro da
+  // heurística de "não" traduzido, sem deixar de pegar português esquecido
+  // fora delas (RODADA 8, item 3, 30/08) — execução real, sem rede.
+  const wanPromptQuoteHeuristic = await checkWanPromptQuoteHeuristicPolicy();
+  wanPromptQuoteHeuristic.failures.forEach((f) => failures.push(f));
+  wanPromptQuoteHeuristic.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //
