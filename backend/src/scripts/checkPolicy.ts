@@ -108,6 +108,8 @@ import { checkAvatarTabRestorePolicy } from "./checkAvatarTabRestorePolicy.js";
 import { checkScenePerVideoPolicy } from "./checkScenePerVideoPolicy.js";
 import { checkPhotoRemovalPolicy } from "./checkPhotoRemovalPolicy.js";
 import { checkVirtualBackgroundComparatorPolicy } from "./checkVirtualBackgroundComparatorPolicy.js";
+import { checkWanBlockOrchestrationPolicy } from "./checkWanBlockOrchestrationPolicy.js";
+import { checkColorMatchDefaultPolicy } from "./checkColorMatchDefaultPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
@@ -983,6 +985,20 @@ async function main(): Promise<void> {
   const virtualBackgroundComparator = checkVirtualBackgroundComparatorPolicy();
   virtualBackgroundComparator.failures.forEach((f) => failures.push(f));
   virtualBackgroundComparator.notes.forEach((n) => note(n));
+
+  // --- 24o-quindecies. BUGS D/E, RODADA 3 (29/08) — motion_prompt fatiado
+  // por bloco no caminho Wan, tradução ciente do tier
+  //
+  // `fetch` e `pool.query` substituídos — nenhuma rede, nenhum banco reais.
+  const wanBlockOrchestration = await checkWanBlockOrchestrationPolicy();
+  wanBlockOrchestration.failures.forEach((f) => failures.push(f));
+  wanBlockOrchestration.notes.forEach((n) => note(n));
+
+  // --- 24o-sexdecies. corrigirCor vira default no tier Normal, e só nele
+  // (RODADA 7, item 1, 30/08) — só leitura de arquivo, nenhuma rede.
+  const colorMatchDefault = await checkColorMatchDefaultPolicy(process.env.REPO_ROOT ?? "/repo");
+  colorMatchDefault.failures.forEach((f) => failures.push(f));
+  colorMatchDefault.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //

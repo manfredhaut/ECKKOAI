@@ -94,6 +94,8 @@ import { MUTANTS as recomposeFeedbackMutants } from "./checkRecomposeFeedbackPol
 import { MUTANTS as falSpendLedgerMutants } from "./checkFalSpendLedgerPolicy.js";
 import { MUTANTS as scriptValidationStatusMutants } from "./checkScriptValidationStatusPolicy.js";
 import { MUTANTS as recomposeLateralPhotoMutants } from "./checkRecomposeLateralPhotoPolicy.js";
+import { MUTANTS as wanBlockOrchestrationMutants } from "./checkWanBlockOrchestrationPolicy.js";
+import { MUTANTS as colorMatchDefaultMutants } from "./checkColorMatchDefaultPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 
@@ -194,4 +196,6 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkFalSpendLedgerPolicy.ts", falSpendLedgerMutants),
   ...de("backend/src/scripts/checkScriptValidationStatusPolicy.ts", scriptValidationStatusMutants),
   ...de("backend/src/scripts/checkRecomposeLateralPhotoPolicy.ts", recomposeLateralPhotoMutants),
+  ...de("backend/src/scripts/checkWanBlockOrchestrationPolicy.ts", wanBlockOrchestrationMutants),
+  ...de("backend/src/scripts/checkColorMatchDefaultPolicy.ts", colorMatchDefaultMutants),
 ];

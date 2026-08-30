@@ -1684,15 +1684,29 @@ async function animarUmBloco(
  * `FIXTURE_VIDEO_URL` (host que não existe de propósito), e
  * `ffmpeg -filter_complex` sobre eles falharia sempre, por um motivo alheio
  * ao que se quer testar aqui.
+ *
+ * `corrigirCor: tier === "normal"` — RODADA 7, item 1 (30/08/2026). MEDIDO
+ * na rodada anterior (item 6, mesmos 3 blocos pagos, reconcatenados de
+ * graça): sem correção, o bloco 2 de uma corrida real destoava ~28 pontos
+ * de RGB do bloco 0; com `corrigirCor: true`, a diferença caiu para ~1-2
+ * pontos. Só para Normal — é o ÚNICO tier que chega aqui com N>1 blocos
+ * (Premium nunca fraciona, `blocos.length` é sempre 1 para ele e a
+ * concatenação de verdade, com `xfade`, nunca roda — ver
+ * `ContextoDaAnimacao.tier`); a condição existe mesmo assim, explícita,
+ * para não depender dessa invariante silenciosa se ela mudar um dia.
  */
-async function concatenarBlocosEPublicar(apiKeyFal: string, videoUrls: string[]): Promise<string> {
+async function concatenarBlocosEPublicar(
+  apiKeyFal: string,
+  videoUrls: string[],
+  tier: PipelineTier,
+): Promise<string> {
   if (isFixtureMode()) {
     return await falUpload(apiKeyFal, Buffer.from(`fixture-concat-${videoUrls.length}-blocos`), "video/mp4");
   }
   const dir = await mkdtemp(path.join(tmpdir(), "fal-concat-"));
   const outputPath = path.join(dir, "concatenado.mp4");
   try {
-    await concatVideos(videoUrls, outputPath);
+    await concatVideos(videoUrls, outputPath, { corrigirCor: tier === "normal" });
     const bytes = await readFile(outputPath);
     return await falUpload(apiKeyFal, bytes, "video/mp4");
   } finally {
@@ -1819,7 +1833,7 @@ async function animarNarrarSincronizar(
   // segue como "o vídeo mudo" para o resto do pipeline — narrar+sincronizar
   // (Ponto 2 de aprovação) não sabem, e não precisam saber, que ela veio de
   // vários blocos.
-  const videoMudoUrl = await concatenarBlocosEPublicar(input.apiKeyFal, videoUrls);
+  const videoMudoUrl = await concatenarBlocosEPublicar(input.apiKeyFal, videoUrls, tier);
   logEvent("info", "fal_pipeline_blocos_concatenados", {
     blocos: blocos.length,
     segundosTotais: blocos.reduce((soma, b) => soma + b.duracaoEscolhida, 0),
