@@ -419,17 +419,22 @@ const MARCADOR_DE_JANELA_LINT = /\[\d{1,2}:\d{2}-\d{1,2}:\d{2}\]/;
 // RODADA 8 (30/08/2026) — `/\bnão\b/i` MEDIDO reprovando um caso real: a
 // direção traduzida cita a fala do roteiro entre aspas retas (ex.: `"Inovar
 // não é criar o futuro..."`, ver directionTranslation.ts), e a fala citada é
-// texto em português DE PROPÓSITO, não esquecimento de tradução. Por isso só
-// este termo é testado contra o prompt COM as aspas removidas
+// texto em português DE PROPÓSITO, não esquecimento de tradução. Naquela
+// rodada só `/\bnão\b/i` foi corrigido — os outros 7 termos ficaram como
+// estavam, por instrução explícita de corrigir só o que bloqueou de fato.
+//
+// RODADA 8b (30/08/2026) — os outros 7 têm o MESMO problema em tese (uma
+// fala citada pode conter "com"/"para"/"ela"/etc. tão facilmente quanto
+// "não"), e a mesma técnica se generaliza: TODOS os 8 termos agora são
+// testados contra o prompt COM as aspas removidas
 // (`removerFalaEntreAspas` — só remove pares `"..."` fechados; aspa aberta
 // sem fechar não é removida, e continua visível de propósito, mais seguro
-// recusar demais do que deixar passar um trecho não fechado por engano). Os
-// outros 7 termos continuam testados contra o prompt INTEIRO, aspas
-// incluídas — eles têm, em teoria, o mesmo problema (uma fala citada podendo
-// conter "com"/"para"/"ela"/etc.), mas nenhum deles bloqueou uma corrida real
-// até agora, e a correção desta rodada é escopada só ao termo que bloqueou.
-const TERMO_NAO_PT = /\bnão\b/i;
+// recusar demais do que deixar passar um trecho não fechado por engano). A
+// heurística continua vigiando o resto do prompt (a direção em inglês) por
+// português esquecido FORA das aspas, que é o caso real que ela existe para
+// pegar.
 const TERMOS_PT_HEURISTICA = [
+  /\bnão\b/i,
   /\bvocê\b/i,
   /\bestá\b/i,
   /\bcom\b/i,
@@ -459,7 +464,7 @@ export function lintarPromptDoBlocoWan(corpo: Record<string, unknown>): void {
     motivos.push("prompt contém marcador [mm:ss-mm:ss] não removido pelo fatiamento por bloco");
   }
   const promptSemFala = removerFalaEntreAspas(prompt);
-  if (TERMO_NAO_PT.test(promptSemFala) || TERMOS_PT_HEURISTICA.some((re) => re.test(prompt))) {
+  if (TERMOS_PT_HEURISTICA.some((re) => re.test(promptSemFala))) {
     motivos.push("prompt parece conter português não traduzido");
   }
   const negativePrompt = typeof corpo.negative_prompt === "string" ? corpo.negative_prompt : "";
