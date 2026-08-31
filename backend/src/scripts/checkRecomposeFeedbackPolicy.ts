@@ -99,7 +99,7 @@ async function submissaoDeComposicaoCom(promptDeComposicao: string): Promise<Sub
       fotoMimeType: "image/jpeg",
       promptDeComposicao,
       tenantId: "tenant-da-prova",
-      promptDeDirecao: "direção da prova em inglês",
+      promptDeDirecao: "test direction in english",
       diario: criarDiario(estado.publicados) as never,
     } as never);
   } catch {

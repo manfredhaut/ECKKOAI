@@ -458,7 +458,7 @@ async function refazer(): Promise<{ submetidos: string[]; erro: string }> {
       // valor igual faria "a animação recebeu a direção" e "a animação
       // recebeu a composição" produzirem exatamente o mesmo corpo, e a
       // guarda seguiria verde com os dois campos trocados.
-      promptDeDirecao: "direção da prova em inglês",
+      promptDeDirecao: "test direction in english",
       diario: diario as never,
       // Teto FOLGADO de propósito: com um teto apertado, quem barraria a
       // animação seria o dinheiro, e a guarda passaria a medir o teto em vez

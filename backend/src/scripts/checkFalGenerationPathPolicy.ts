@@ -273,7 +273,7 @@ async function correr(opcoes: { uploadQuebrado?: boolean; teto?: number }): Prom
       fotoMimeType: "image/jpeg",
       promptDeComposicao: "cena da prova",
       tenantId: "tenant-da-prova",
-      promptDeDirecao: "direção da prova em inglês",
+      promptDeDirecao: "test direction in english",
       diario: diario as never,
       tetoDeGastoUsd: opcoes.teto,
       pollTimeoutMs: 50,
