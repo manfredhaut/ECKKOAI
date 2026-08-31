@@ -57,8 +57,8 @@ export const MUTANTS: Mutant[] = [
     // direção cresce a cada geração, e na terceira ela é três instruções
     // empilhadas, contraditórias entre si.
     file: "backend/src/services/video/directionTranslation.ts",
-    find: "    return { english: jaFeita, origin: \"reused\" };",
-    replace: "    return { english: input.source + \" \" + jaFeita, origin: \"reused\" };",
+    find: "      return { english: jaFeita, origin: \"reused\", segmented: false };",
+    replace: "      return { english: input.source + \" \" + jaFeita, origin: \"reused\", segmented: false };",
     expect: "a tradução reaproveitada não é a tradução",
   },
   {
@@ -81,7 +81,7 @@ export const MUTANTS: Mutant[] = [
     // 200 e interpreta como puder.
     file: "backend/src/services/video/directionTranslation.ts",
     find: "    throw new DirectionTranslationError(err instanceof Error ? err.message : String(err));",
-    replace: "    return { english: input.source, origin: \"model\" };",
+    replace: "    return { english: input.source, origin: \"model\", segmented: false };",
     expect: "devolveu o texto de origem em vez de falhar",
   },
   {

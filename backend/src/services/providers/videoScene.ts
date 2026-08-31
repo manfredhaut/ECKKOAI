@@ -164,6 +164,41 @@ export function promptDeComposicaoComFeedback(
  * segunda imagem" do prompt deixa de ser a segunda de verdade — por isso os
  * três `tem*` são booleanos EXPLÍCITOS, nunca deduzidos de outra coisa: quem
  * chama já sabe, no mesmo lugar, se vai publicar aquela entrada ou não.
+ *
+ * ┌─ `direcaoTexto` — a cláusula de POSE, RODADA 2, 29/08/2026 ──────────────┐
+ * │ `falPipeline.ts` (linha ~572) documenta, de propósito, que composição e  │
+ * │ direção NUNCA se misturam — um descreve o que a imagem TEM, o outro o    │
+ * │ que a pessoa FAZ, e concatenar os dois faria um gerador de imagem       │
+ * │ ESTÁTICA tratar movimento como pose fixa errada. Esta cláusula é uma    │
+ * │ EXCEÇÃO deliberada a essa regra, decidida pelo operador nesta rodada:   │
+ * │ ela não pede à composição para representar a AÇÃO da Interpretação —   │
+ * │ pede só que a POSTURA/ENQUADRAMENTO INICIAIS já sejam compatíveis com o  │
+ * │ que vem a seguir, para o corte entre imagem parada e vídeo animado não   │
+ * │ começar com o corpo numa posição que a ação seguinte contradiz. Fonte    │
+ * │ escolhida: a INTERPRETAÇÃO (`motion_prompt`/`scene.motionPrompt`), não   │
+ * │ o roteiro/fala — é o mesmo texto que já vai ao Wan como `promptDeDirecao`│
+ * │ e chega aqui em INGLÊS (traduzido antes de custar, ver `promptDaDirecao`/│
+ * │ `motionPromptDaLinha`), então esta cláusula sai em inglês também, e o    │
+ * │ prompt de composição vira bilíngue de propósito — mistura aceita nesta   │
+ * │ rodada, não a mesma recusada em `COMPOSICAO_PELE_ATENUACAO_LEVE`.        │
+ * └────────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌─ BUG D REVISTO — 29/08/2026, comparação real (foto de traje × frame 0s) ─┐
+ * │ A cláusula de pose acima NÃO bastava: a composição estava copiando POSE, │
+ * │ POSTURA e ACESSÓRIOS inteiros da FOTO DE TRAJE (a pessoa encostada numa   │
+ * │ parede segurando uma bolsa vermelha — a bolsa não é peça de vestuário e   │
+ * │ não está no roteiro nenhum). O defeito: a cláusula de ROUPA pedia só      │
+ * │ "vista a pessoa com essa roupa", sem nunca dizer o que NÃO copiar — e a   │
+ * │ referência visual de traje é, ela mesma, uma foto de alguém em UMA pose   │
+ * │ segurando UM objeto, então o modelo tinha tanta razão para copiar aquilo  │
+ * │ quanto para copiar só o tecido. Duas mudanças: (1) a cláusula de ROUPA    │
+ * │ agora nomeia explicitamente o que EXTRAIR (peças de vestuário) e o que    │
+ * │ IGNORAR (pose, postura, objetos/acessórios que a pessoa segura); (2) a    │
+ * │ cláusula de POSE agora se declara como a que VENCE qualquer pose/objeto   │
+ * │ das referências de traje/cenário, não só como "consistente com" a        │
+ * │ direção — a ambiguidade de "consistente" deixava space para o modelo      │
+ * │ decidir que a pose da FOTO também era consistente.                       │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
 export function promptDeComposicaoPosicional(input: {
   temCenario: boolean;
@@ -171,6 +206,8 @@ export function promptDeComposicaoPosicional(input: {
   temTraje: boolean;
   trajeTexto: string | null | undefined;
   temLateral: boolean;
+  /** A Interpretação (já em inglês) — string vazia/ausente não gera cláusula. */
+  direcaoTexto?: string | null;
 }): string {
   const numeral = (n: number) => (n === 2 ? "segunda" : n === 3 ? "terceira" : "quarta");
   const partes: string[] = [
@@ -189,8 +226,13 @@ export function promptDeComposicaoPosicional(input: {
   if (input.temTraje) {
     const texto = input.trajeTexto?.trim();
     partes.push(
-      `A ${numeral(posicao)} imagem mostra a ROUPA${texto ? ` (${texto})` : ""} — vista a pessoa da ` +
-        "primeira imagem com essa roupa, substituindo por completo a que ela está usando.",
+      `A ${numeral(posicao)} imagem mostra a ROUPA${texto ? ` (${texto})` : ""} — extraia dela SOMENTE ` +
+        "as peças de vestuário (jaqueta, blusa, cachecol, calça, etc.) e vista a pessoa da primeira " +
+        "imagem com elas, substituindo por completo o que ela está usando. NÃO copie a pose, a postura, " +
+        "o enquadramento nem qualquer objeto ou acessório que a pessoa desta imagem segura ou carrega " +
+        "(bolsa, mala, o que estiver em suas mãos) — nada disso é parte do traje, e nada disso deve " +
+        "aparecer na composição final. A pose final da pessoa vem só da instrução de pose abaixo (quando " +
+        "houver), nunca da pose desta foto de referência.",
     );
     posicao += 1;
   }
@@ -198,6 +240,17 @@ export function promptDeComposicaoPosicional(input: {
     partes.push(
       `A ${numeral(posicao)} imagem é só OUTRO ÂNGULO do MESMO rosto da primeira imagem — use-a apenas ` +
         "como referência extra de identidade, nunca como cenário nem como roupa.",
+    );
+  }
+  const direcao = input.direcaoTexto?.trim();
+  if (direcao) {
+    partes.push(
+      "Initial pose and framing — this OVERRIDES any pose, posture, or held object/prop shown in the " +
+        "clothing or scenario reference images above (they only supply garments and background, never " +
+        "posture or props): the person's starting posture, arm and hand position, and framing in this " +
+        "still image must be consistent ONLY with the scene direction that will animate her right " +
+        "after, as its natural first instant — before the action begins, not the pose of any reference " +
+        `photo, and not a random resting pose: "${direcao}"`,
     );
   }
   return partes.join(" ");

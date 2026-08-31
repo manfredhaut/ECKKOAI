@@ -35,6 +35,7 @@ import { complete } from "../providers/providerRegistry.js";
 import type { ScriptVendor } from "../providers/vendorCatalog.js";
 import { recordProviderUsage } from "../billing/usageTracking.js";
 import { logEvent } from "../log/safeLog.js";
+import { formatarJanela, type JanelaDeTempo } from "./scriptFractioning.js";
 
 /**
  * O idioma da INTERFACE, que é o gatilho — e não o idioma detectado no texto.
@@ -79,13 +80,62 @@ export function needsTranslation(locale: InterfaceLocale): boolean {
  * campo do fornecedor, então um "Aqui está a tradução:" viraria instrução de
  * cena.
  */
-const SYSTEM = [
+const SYSTEM_BASE = [
   "You translate stage direction for an AI avatar video into English.",
   "Preserve the directing intent: gesture, posture, camera framing, energy and pacing.",
   "Do not translate word by word; write what a director would say to a performer.",
   "If the text is already in English, return it unchanged.",
   "Return only the direction text. No preamble, no quotes, no commentary, no explanation.",
-].join(" ");
+];
+
+/**
+ * A instrução, COMPLETA — RODADA 3, 29/08/2026, segmentação por janela.
+ *
+ * ┌─ Só existe quando `janelas.length > 1` — BUG D/E, tier Normal apenas ───┐
+ * │ Um vídeo Normal fracionado em vários blocos (`fracionarRoteiro`) hoje    │
+ * │ manda a MESMA direção inteira para cada bloco do Wan — o bloco 2 recebe  │
+ * │ de novo "comece com os braços cruzados", que não faz sentido para uma   │
+ * │ imagem de entrada que já está no meio do gesto (Bug D). As janelas vêm  │
+ * │ de `janelasDosBlocos` (scriptFractioning.ts), calculadas a partir do    │
+ * │ MESMO roteiro que `evaluateGenerationReadiness` já validou caber no     │
+ * │ tier — nunca inventadas aqui.                                           │
+ * │                                                                          │
+ * │ Simples (HeyGen) nunca fraciona, e Premium (Seedance) está fora do      │
+ * │ fracionamento por decisão de escopo — os dois SEMPRE chamam esta função │
+ * │ sem `blockWindows`, e por isso NUNCA veem esta instrução nem o formato   │
+ * │ `[mm:ss-mm:ss]`: o texto que chegaria ao `motion_prompt` deles          │
+ * │ continua saindo exatamente como antes desta rodada.                    │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+export function buildSystemPrompt(janelas?: JanelaDeTempo[]): string {
+  if (!janelas || janelas.length <= 1) return SYSTEM_BASE.join(" ");
+  const marcadores = janelas.map(formatarJanela).join(", ");
+  return [
+    ...SYSTEM_BASE,
+    `This direction will drive ${janelas.length} separate video segments, with these exact time windows: ${marcadores}.`,
+    "Split your direction into exactly one line per window, each line starting with its exact bracketed window " +
+      'copied verbatim (e.g. "[00:00-00:05] ...").',
+    "Describe only what happens during that window in its line.",
+    // MEDIDO em 29/08 (vídeo mudo de 3 blocos, plano 3): a instrução anterior
+    // ("keep pose continuous, don't reset") não bastou — cada linha é enviada
+    // SOZINHA a um gerador que não tem memória das linhas anteriores nem do
+    // vídeo já gerado, então uma linha que só narra a AÇÃO da janela (ex.
+    // "reaches out with one hand") deixa o modelo livre para herdar a pose da
+    // imagem de referência (que é sempre a mesma, fixa, em TODO bloco) em vez
+    // da pose que a narrativa já estabeleceu num bloco anterior. A correção é
+    // exigir que cada linha, exceto a primeira, ABRA restabelecendo o estado
+    // corporal atual, explicitamente — não é suficiente que a narrativa
+    // implique continuidade.
+    "Every line after the first is sent to the video generator ALONE, with no memory of earlier lines and no " +
+      "memory of previously generated video — it only sees this one line plus a fixed reference image. So every " +
+      "line after the first must OPEN by explicitly restating the character's current body position and stance " +
+      "(for example 'already standing, close to the camera' or 'still seated'), before describing the new action " +
+      "— never rely on the narrative alone to imply continuity, and never let a later window default back to the " +
+      "reference image's original pose unless the source direction explicitly says so.",
+    "Return exactly one line per window, in the same order as given, and nothing else — no blank lines, no extra " +
+      "commentary.",
+  ].join(" ");
+}
 
 /**
  * Teto de saída.
@@ -121,6 +171,13 @@ export interface TranslateDirectionInput {
   /** O texto do usuário, já normalizado (trim) por `normalizeScene`. */
   source: string;
   locale: InterfaceLocale;
+  /**
+   * As janelas de tempo dos blocos de animação — SÓ quando o vídeo vai
+   * fracionar em mais de um bloco (tier Normal, `fracionarRoteiro(script)`).
+   * Ausente ou com 1 elemento só: comportamento IDÊNTICO a antes desta
+   * rodada, para qualquer tier. Ver `buildSystemPrompt`.
+   */
+  blockWindows?: JanelaDeTempo[];
 }
 
 export interface TranslateDirectionResult {
@@ -128,6 +185,8 @@ export interface TranslateDirectionResult {
   english: string;
   /** De onde veio — para o log e para a guarda de "não rechamar". */
   origin: "locale_is_english" | "reused" | "model";
+  /** A tradução pediu segmentação por janela? Só true com >1 janela. */
+  segmented: boolean;
 }
 
 /**
@@ -172,17 +231,39 @@ export async function translateDirection(
   // de qualquer I/O — é o que torna "sem nenhuma chamada" observável pela
   // ausência de registro de tokens.
   if (!needsTranslation(input.locale)) {
-    return { english: input.source, origin: "locale_is_english" };
+    return { english: input.source, origin: "locale_is_english", segmented: false };
   }
 
-  const jaFeita = await reutilizar(input.tenantId, input.source);
-  if (jaFeita) {
-    logEvent("info", "direction_translation_reused", {
-      context: "video.directionTranslation",
-      sourceChars: input.source.length,
-      englishChars: jaFeita.length,
-    });
-    return { english: jaFeita, origin: "reused" };
+  // A segmentação depende da JANELA, não só de ela existir: uma corrida que
+  // cabe num bloco só (`blockWindows` com 0 ou 1 elemento) não tem o que
+  // segmentar, e é o MESMO caminho de Simples/Premium — sem instrução nova,
+  // sem marcador, texto corrido como sempre.
+  const segmentando = Boolean(input.blockWindows && input.blockWindows.length > 1);
+
+  // O CACHE não serve à tradução SEGMENTADA — RODADA 3, 29/08.
+  //
+  // `reutilizar` casa pelo TEXTO FONTE, sem olhar em quantos blocos o vídeo
+  // vai fracionar. Dois vídeos com a MESMA Interpretação e roteiros de
+  // tamanhos diferentes fracionam em números de blocos diferentes — as
+  // janelas mudam, e uma tradução com marcadores da corrida anterior sairia
+  // dessincronizada da nova. Pior: como a consulta não filtra por tier,
+  // reusar aqui poderia entregar texto com `[mm:ss-mm:ss]` literal para um
+  // vídeo Simples/Premium que nunca pediu segmentação nenhuma. Mais simples
+  // e mais seguro que filtrar a consulta: pular o cache inteiro quando for
+  // segmentar, e chamar o modelo de novo. Tradução é barata (não convertida
+  // em dólar, ver `recordProviderUsage` abaixo) — o preço de uma rechamada
+  // aqui é desprezível perto do preço de uma tradução errada chegando a
+  // um motor pago.
+  if (!segmentando) {
+    const jaFeita = await reutilizar(input.tenantId, input.source);
+    if (jaFeita) {
+      logEvent("info", "direction_translation_reused", {
+        context: "video.directionTranslation",
+        sourceChars: input.source.length,
+        englishChars: jaFeita.length,
+      });
+      return { english: jaFeita, origin: "reused", segmented: false };
+    }
   }
 
   let texto: string;
@@ -191,7 +272,7 @@ export async function translateDirection(
   try {
     const resposta = await complete(input.vendor, {
       apiKey: input.apiKey,
-      system: SYSTEM,
+      system: buildSystemPrompt(segmentando ? input.blockWindows : undefined),
       messages: [{ role: "user", content: input.source }],
       maxTokens: MAX_TOKENS,
     });
@@ -273,7 +354,8 @@ export async function translateDirection(
     englishChars: texto.length,
     tokensIn: usage?.inputTokens ?? null,
     tokensOut: usage?.outputTokens ?? null,
+    segmented: segmentando,
   });
 
-  return { english: texto, origin: "model" };
+  return { english: texto, origin: "model", segmented: segmentando };
 }
