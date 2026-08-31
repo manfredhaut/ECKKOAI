@@ -199,6 +199,26 @@ export function promptDeComposicaoComFeedback(
  * │ direção — a ambiguidade de "consistente" deixava space para o modelo      │
  * │ decidir que a pose da FOTO também era consistente.                       │
  * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌─ TEXTO SEM IMAGEM — achado no V23, corrigido no V24 ──────────────────────┐
+ * │ `temCenario`/`temTraje` significam "há IMAGEM de cenário/traje" — nunca   │
+ * │ "há cenário/traje", com ou sem imagem. Até esta correção, quem só         │
+ * │ preenchia `cenarioTexto`/`trajeTexto` (o campo "Gerar via IA" da tela,    │
+ * │ SEM subir arquivo) ficava com o texto descartado por completo: a cláusula│
+ * │ inteira vivia dentro do `if (input.temCenario)`, que só é `true` quando   │
+ * │ existe imagem. MEDIDO por leitura, dois call sites (`promptDaComposicao`,│
+ * │ avatarProvider.ts, e `promptDaComposicaoDaLinha`, routes/videos.ts) — os  │
+ * │ dois já calculam `temCenario`/`temTraje` como "existe imagem" (nunca      │
+ * │ "existe texto"), então a correção mora só AQUI: um ramo `else if` novo    │
+ * │ para o texto sozinho, que NÃO numera imagem nenhuma (não há o que         │
+ * │ numerar — `image_urls` não ganha entrada por texto, só por upload).       │
+ * │                                                                            │
+ * │ Os quatro casos, por campo: só imagem → cláusula de imagem, sem texto     │
+ * │ entre parênteses (ByteA a byte como antes — é o caso que já funcionava e  │
+ * │ não pode voltar a quebrar); só texto → cláusula NOVA, sem menção a        │
+ * │ imagem nenhuma; os dois → cláusula de imagem COM o texto entre            │
+ * │ parênteses (também como antes); nenhum → nenhuma cláusula (como antes).   │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
 export function promptDeComposicaoPosicional(input: {
   temCenario: boolean;
@@ -215,18 +235,23 @@ export function promptDeComposicaoPosicional(input: {
   ];
   let posicao = 2;
 
+  const cenarioTexto = input.cenarioTexto?.trim();
   if (input.temCenario) {
-    const texto = input.cenarioTexto?.trim();
     partes.push(
-      `A ${numeral(posicao)} imagem mostra o CENÁRIO${texto ? ` (${texto})` : ""} — coloque a pessoa da ` +
+      `A ${numeral(posicao)} imagem mostra o CENÁRIO${cenarioTexto ? ` (${cenarioTexto})` : ""} — coloque a pessoa da ` +
         "primeira imagem nesse ambiente, usando-o como fundo real da cena, não como decoração ao fundo.",
     );
     posicao += 1;
-  }
-  if (input.temTraje) {
-    const texto = input.trajeTexto?.trim();
+  } else if (cenarioTexto) {
     partes.push(
-      `A ${numeral(posicao)} imagem mostra a ROUPA${texto ? ` (${texto})` : ""} — extraia dela SOMENTE ` +
+      `O CENÁRIO desta cena é: ${cenarioTexto} — coloque a pessoa da primeira imagem nesse ambiente, ` +
+        "usando-o como fundo real da cena, não como decoração ao fundo.",
+    );
+  }
+  const trajeTexto = input.trajeTexto?.trim();
+  if (input.temTraje) {
+    partes.push(
+      `A ${numeral(posicao)} imagem mostra a ROUPA${trajeTexto ? ` (${trajeTexto})` : ""} — extraia dela SOMENTE ` +
         "as peças de vestuário (jaqueta, blusa, cachecol, calça, etc.) e vista a pessoa da primeira " +
         "imagem com elas, substituindo por completo o que ela está usando. NÃO copie a pose, a postura, " +
         "o enquadramento nem qualquer objeto ou acessório que a pessoa desta imagem segura ou carrega " +
@@ -235,6 +260,11 @@ export function promptDeComposicaoPosicional(input: {
         "houver), nunca da pose desta foto de referência.",
     );
     posicao += 1;
+  } else if (trajeTexto) {
+    partes.push(
+      `O TRAJE da pessoa nesta cena é: ${trajeTexto} — vista a pessoa da primeira imagem com essa roupa, ` +
+        "substituindo por completo o que ela está usando.",
+    );
   }
   if (input.temLateral) {
     partes.push(

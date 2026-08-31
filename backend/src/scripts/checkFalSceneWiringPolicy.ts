@@ -275,9 +275,13 @@ export const MUTANTS: Mutant[] = [
     // copiar pose/postura/objetos da foto de referência desaparece — a
     // REGRESSÃO literal para o texto de antes desta correção, MEDIDA como
     // causa de uma bolsa vermelha da foto de traje aparecendo na composição.
+    // ÂNCORA ATUALIZADA em 31/08 (V24) — `texto` (local a este `if`) virou
+    // `trajeTexto` (escopo da função inteira), para o ramo novo "só texto,
+    // sem imagem" poder reusá-lo sem recalcular `input.trajeTexto?.trim()`
+    // duas vezes. Mesma string, nome novo.
     file: PROVIDER_VIDEO_SCENE,
     find:
-      "      `A ${numeral(posicao)} imagem mostra a ROUPA${texto ? ` (${texto})` : \"\"} — extraia dela SOMENTE ` +\n" +
+      "      `A ${numeral(posicao)} imagem mostra a ROUPA${trajeTexto ? ` (${trajeTexto})` : \"\"} — extraia dela SOMENTE ` +\n" +
       '        "as peças de vestuário (jaqueta, blusa, cachecol, calça, etc.) e vista a pessoa da primeira " +\n' +
       '        "imagem com elas, substituindo por completo o que ela está usando. NÃO copie a pose, a postura, " +\n' +
       '        "o enquadramento nem qualquer objeto ou acessório que a pessoa desta imagem segura ou carrega " +\n' +
@@ -285,7 +289,7 @@ export const MUTANTS: Mutant[] = [
       '        "aparecer na composição final. A pose final da pessoa vem só da instrução de pose abaixo (quando " +\n' +
       '        "houver), nunca da pose desta foto de referência.",',
     replace:
-      "      `A ${numeral(posicao)} imagem mostra a ROUPA${texto ? ` (${texto})` : \"\"} — vista a pessoa da ` +\n" +
+      "      `A ${numeral(posicao)} imagem mostra a ROUPA${trajeTexto ? ` (${trajeTexto})` : \"\"} — vista a pessoa da ` +\n" +
       '        "primeira imagem com essa roupa, substituindo por completo a que ela está usando.",',
     expect: "a cláusula de ROUPA não proíbe copiar pose/objetos da foto de traje",
   },
@@ -313,6 +317,53 @@ export const MUTANTS: Mutant[] = [
       "        `right after, as its natural first instant — before the action begins, not a random resting ` +\n" +
       "        `pose: \"${direcao}\"`,",
     expect: "a cláusula de POSE não se declara como a que VENCE a pose das referências",
+  },
+  {
+    guard: "cena (só texto): cenário/traje sem imagem ainda chegam ao prompt",
+    name: "o cenário sem imagem volta a ser descartado (temCenario exige imagem)",
+    kind: "obvio",
+    // V24, 31/08 — remove o ramo `else if (cenarioTexto)` inteiro, voltando
+    // ao defeito medido no V23: o texto de "Gerar via IA" só entra no
+    // prompt quando TAMBÉM existe upload de imagem (`temCenario`), porque
+    // toda a cláusula — imagem E texto — vivia dentro do MESMO `if`.
+    file: PROVIDER_VIDEO_SCENE,
+    find:
+      "  } else if (cenarioTexto) {\n" +
+      "    partes.push(\n" +
+      "      `O CENÁRIO desta cena é: ${cenarioTexto} — coloque a pessoa da primeira imagem nesse ambiente, ` +\n" +
+      '        "usando-o como fundo real da cena, não como decoração ao fundo.",\n' +
+      "    );\n" +
+      "  }\n",
+    replace: "  }\n",
+    expect: "cena (só texto): cenário preenchido SÓ como texto",
+  },
+  {
+    guard: "cena (só texto): cenário/traje sem imagem ainda chegam ao prompt",
+    name: "o traje sem imagem volta a ser descartado (temTraje exige imagem)",
+    kind: "obvio",
+    // MESMA classe de defeito do mutante irmão acima, para o traje.
+    file: PROVIDER_VIDEO_SCENE,
+    find:
+      "  } else if (trajeTexto) {\n" +
+      "    partes.push(\n" +
+      "      `O TRAJE da pessoa nesta cena é: ${trajeTexto} — vista a pessoa da primeira imagem com essa roupa, ` +\n" +
+      '        "substituindo por completo o que ela está usando.",\n' +
+      "    );\n" +
+      "  }\n",
+    replace: "  }\n",
+    expect: "cena (só texto): traje preenchido SÓ como texto",
+  },
+  {
+    guard: "identidade: com fotoDeIdentidade, image_urls do Wan traz a foto real como segunda referência",
+    name: "a foto real do rosto deixa de ir a image_urls do Wan",
+    kind: "obvio",
+    // V24, 31/08/2026 — reverte exatamente a correção do item 7: `animar()`
+    // volta a receber só a imagem composta, ignorando `fotoDeIdentidadeUrl`
+    // mesmo quando a corrida a forneceu.
+    file: PIPELINE,
+    find: "image_urls: fotoDeIdentidadeUrl ? [imagemDeReferencia, fotoDeIdentidadeUrl] : [imagemDeReferencia],",
+    replace: "image_urls: [imagemDeReferencia],",
+    expect: "identidade: com a foto real do rosto disponível",
   },
 ];
 
@@ -516,6 +567,60 @@ export async function corridaDeComposicao(): Promise<{
 }
 
 /**
+ * G-1e — V24, 31/08/2026: a MESMA corrida de `corridaDeComposicao()`, mas
+ * SEM nenhuma imagem de cenário/traje — só os campos de texto ("Gerar via
+ * IA"). Existe porque `corridaDeComposicao()` preenche sempre os DOIS
+ * canais (imagem e texto) e por isso nunca exercitou o caso "só texto,
+ * nunca imagem", que é justamente onde `temCenario`/`temTraje` (booleanos
+ * que significam "há IMAGEM") escondiam o bug: o texto vivia inteiro dentro
+ * do `if` que só é `true` com imagem, e sumia sem imagem nenhuma — MEDIDO
+ * no V23, corrigido no V24 (`promptDeComposicaoPosicional`, videoScene.ts).
+ */
+export async function corridaDeComposicaoSoTexto(): Promise<{
+  submissoes: Submissao[];
+  erro: string;
+}> {
+  const { generateVideo } = await import("../services/providers/avatarProvider.js");
+  const estado = { submissoes: [] as Submissao[], publicados: [] as { rotulo: string; fileUrl: string }[] };
+  const restaurarFetch = instalarFetch(estado);
+  const modoOriginal = process.env.PROVIDER_MODE;
+  let erro = "";
+
+  try {
+    process.env.PROVIDER_MODE = "live";
+    await generateVideo({
+      apiKey: "chave-irrelevante-fetch-substituido",
+      vendor: "fal" as never,
+      providerAvatarId: "avatar-da-prova",
+      script: "Roteiro curto da prova.",
+      elevenLabsApiKey: "chave-irrelevante-fetch-substituido",
+      voiceId: "0hQuq0q2JEk1SY4lZaM9",
+      tenantId: "tenant-da-prova",
+      audioTreatmentEnabled: false,
+      audioTreatmentTargetLufs: -16,
+      format: { platform: "youtube", aspectRatio: "16:9", resolution: "720p" } as never,
+      engineEnabled: false,
+      photoUrls: ["/uploads/.gitkeep"],
+      // NEM `scenario` NEM `outfit` — a diferença que importa para esta
+      // guarda. `temCenario`/`temTraje` (avatarProvider.ts) têm de sair
+      // `false` os dois, e o texto abaixo tem de chegar mesmo assim.
+      scenarioPrompt: "corredor iluminado de neon",
+      outfitPrompt: "jaqueta jeans com echarpe",
+      scene: { motionPrompt: TEXTO_DA_DIRECAO } as never,
+      falDiario: criarDiario(estado.publicados) as never,
+    } as never);
+  } catch (err) {
+    erro = String(err);
+  } finally {
+    restaurarFetch();
+    if (modoOriginal === undefined) delete process.env.PROVIDER_MODE;
+    else process.env.PROVIDER_MODE = modoOriginal;
+  }
+
+  return { submissoes: estado.submissoes, erro };
+}
+
+/**
  * G-2: a corrida de ANIMAÇÃO, pela retomada real (`runFalPipelineDaImagem`).
  *
  * É a função que a rota de aprovação chama, e o único caminho do produto que
@@ -553,6 +658,55 @@ export async function corridaDeAnimacao(
         pollIntervalMs: 1,
         esperar: async () => {},
         tier,
+      },
+      "https://v3b.fal.media/imagem-aprovada.png",
+      "req-da-composicao",
+    );
+  } catch (err) {
+    erro = String(err);
+  } finally {
+    restaurarFetch();
+    if (modoOriginal === undefined) delete process.env.PROVIDER_MODE;
+    else process.env.PROVIDER_MODE = modoOriginal;
+  }
+
+  return { submissoes: estado.submissoes, erro };
+}
+
+/**
+ * G-2b — V24, 31/08/2026: a foto REAL do rosto vira SEGUNDA referência de
+ * identidade em `image_urls`, junto da imagem composta — até esta rodada o
+ * Wan só recebia a composta (as sondas V20/V22, que seguraram identidade
+ * melhor, mandaram DUAS referências). MESMA corrida de `corridaDeAnimacao`,
+ * só que com `fotoDeIdentidade` preenchido — o campo PRÓPRIO que
+ * `FalPipelineInput` ganhou nesta rodada, independente de `fotoBase` (que
+ * aqui continua `Buffer.alloc(0)`, porque `compor()` não roda de novo).
+ */
+export async function corridaDeAnimacaoComFotoDeIdentidade(): Promise<{ submissoes: Submissao[]; erro: string }> {
+  const { runFalPipelineDaImagem } = await import("../services/video/falPipeline.js");
+  const estado = { submissoes: [] as Submissao[], publicados: [] as { rotulo: string; fileUrl: string }[] };
+  const restaurarFetch = instalarFetch(estado);
+  const modoOriginal = process.env.PROVIDER_MODE;
+  let erro = "";
+
+  try {
+    process.env.PROVIDER_MODE = "live";
+    await runFalPipelineDaImagem(
+      {
+        apiKeyFal: "chave-irrelevante-fetch-substituido",
+        apiKeyElevenLabs: "chave-irrelevante-fetch-substituido",
+        voiceId: "0hQuq0q2JEk1SY4lZaM9",
+        script: "Roteiro curto da prova.",
+        fotoBase: Buffer.alloc(0),
+        fotoMimeType: "image/jpeg",
+        fotoDeIdentidade: { bytes: Buffer.from("foto-real-do-rosto-da-prova"), mimeType: "image/jpeg" },
+        promptDeComposicao: TEXTO_DA_COMPOSICAO,
+        tenantId: "tenant-da-prova",
+        promptDeDirecao: TEXTO_DA_DIRECAO,
+        diario: criarDiario(estado.publicados) as never,
+        pollTimeoutMs: 50,
+        pollIntervalMs: 1,
+        esperar: async () => {},
       },
       "https://v3b.fal.media/imagem-aprovada.png",
       "req-da-composicao",
@@ -774,6 +928,68 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
   }
 
   // ---------------------------------------------------------------------------
+  // G-1e — V24, 31/08/2026: cenário/traje SÓ TEXTO (sem imagem nenhuma) ainda
+  // chegam ao prompt da composição. `temCenario`/`temTraje` (avatarProvider.ts)
+  // significam "há IMAGEM" — G-1/G-1b acima só exercitam o caso em que os DOIS
+  // canais (imagem e texto) estão presentes, e por isso nunca pegariam o texto
+  // sendo descartado quando NENHUMA imagem acompanha ele. MEDIDO no V23: o
+  // texto vivia inteiro dentro do `if (input.temCenario)`, que só é `true`
+  // com imagem — sem imagem, a pessoa preenchia "Gerar via IA" e nada chegava
+  // ao fornecedor. Corrigido no V24 com um `else if` novo em
+  // `promptDeComposicaoPosicional` (videoScene.ts).
+  // ---------------------------------------------------------------------------
+  const soTexto = await corridaDeComposicaoSoTexto();
+  const composicaoSoTexto = soTexto.submissoes.find((s) => s.endpoint.includes("nano-banana"));
+  if (!composicaoSoTexto) {
+    failures.push(
+      "cena (só texto): nenhuma submissão de composição saiu — endpoints observados: " +
+        `${soTexto.submissoes.map((s) => s.endpoint).join(", ") || "(nenhum)"}; erro ` +
+        `${JSON.stringify(soTexto.erro.slice(0, 140))}.`,
+    );
+  } else {
+    const promptSoTexto = String(composicaoSoTexto.corpo.prompt ?? "");
+    const imagensSoTexto = Array.isArray(composicaoSoTexto.corpo.image_urls)
+      ? (composicaoSoTexto.corpo.image_urls as string[])
+      : [];
+
+    for (const [rotulo, textoEsperado] of [
+      ["cenário", "corredor iluminado de neon"],
+      ["traje", "jaqueta jeans com echarpe"],
+    ] as const) {
+      if (!promptSoTexto.includes(textoEsperado)) {
+        failures.push(
+          `cena (só texto): ${rotulo} preenchido SÓ como texto (sem upload de imagem) e ausente do ` +
+            `prompt da composição — esperado ${JSON.stringify(textoEsperado)} em \`prompt\`, saiu ` +
+            `${JSON.stringify(promptSoTexto)}. \`temCenario\`/\`temTraje\` significam "há imagem", e o ` +
+            "texto não pode depender de uma imagem que a pessoa nunca escolheu enviar.",
+        );
+      }
+    }
+    // A composta enviaria "a segunda imagem mostra o CENÁRIO" só se houvesse
+    // imagem — sem nenhuma, `image_urls` tem de ter exatamente 1 entrada (o
+    // rosto), e o prompt não pode numerar uma imagem que não existe.
+    if (imagensSoTexto.length !== 1) {
+      failures.push(
+        `cena (só texto): sem cenário/traje por imagem, \`image_urls\` deveria ter só o rosto (1 imagem) ` +
+          `e saiu com ${imagensSoTexto.length} — ${JSON.stringify(imagensSoTexto)}. Texto sozinho não deve ` +
+          "criar entrada nenhuma em `image_urls`.",
+      );
+    }
+    if (promptSoTexto.includes("A segunda imagem mostra o CENÁRIO") || promptSoTexto.includes("imagem mostra a ROUPA")) {
+      failures.push(
+        "cena (só texto): o prompt numerou uma imagem de cenário/traje que não existe — " +
+          `${JSON.stringify(promptSoTexto)}. Sem upload, não há posição nenhuma para amarrar.`,
+      );
+    }
+    if (failures.length === 0) {
+      notes.push(
+        "    cena (só texto): cenário e traje preenchidos só como texto (sem imagem) chegam ao prompt da " +
+          "composição, e `image_urls` não ganha entrada por eles",
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // G-2 — a direção no motor de animação, por EXECUÇÃO
   //
   // "wan" é o identificador estável do motor ATUAL (tier "Normal"). O BLOCO
@@ -807,6 +1023,69 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
           "defeito que NÃO aparece como campo vazio.",
       );
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // G-2b — V24, 31/08/2026: a foto REAL do rosto vira SEGUNDA referência em
+  // `image_urls`, junto da imagem composta — quando a corrida a fornece
+  // (`fotoDeIdentidade`). Sem ela (a corrida `corridaDeAnimacao` acima,
+  // `fotoDeIdentidade` ausente), `image_urls` continua com 1 entrada só —
+  // byte a byte o comportamento de antes desta rodada, e é por isso que G-2
+  // acima não muda de expectativa.
+  // ---------------------------------------------------------------------------
+  const animacaoComFoto = await corridaDeAnimacaoComFotoDeIdentidade();
+  const animarComFoto = animacaoComFoto.submissoes.find((s) => s.endpoint.includes("wan"));
+  if (!animarComFoto) {
+    failures.push(
+      "identidade: nenhuma submissão ao motor de animação saiu na corrida COM foto de identidade — " +
+        `endpoints observados: ${animacaoComFoto.submissoes.map((s) => s.endpoint).join(", ") || "(nenhum)"}; ` +
+        `erro ${JSON.stringify(animacaoComFoto.erro.slice(0, 140))}.`,
+    );
+  } else {
+    const imagensComFoto = Array.isArray(animarComFoto.corpo.image_urls)
+      ? (animarComFoto.corpo.image_urls as string[])
+      : [];
+    if (imagensComFoto.length !== 2) {
+      failures.push(
+        "identidade: com a foto real do rosto disponível, `image_urls` do motor de animação deveria " +
+          `trazer 2 entradas (composta + foto real) e saiu com ${imagensComFoto.length} — ` +
+          `${JSON.stringify(imagensComFoto)}. Sem a segunda referência, o Wan segura identidade só a ` +
+          "partir da imagem composta — MEDIDO como insuficiente nas sondas V20/V22.",
+      );
+    } else if (imagensComFoto[0] !== "https://v3b.fal.media/imagem-aprovada.png") {
+      failures.push(
+        `identidade: a PRIMEIRA entrada de \`image_urls\` deixou de ser a imagem composta — saiu ` +
+          `${JSON.stringify(imagensComFoto)}. A composta continua sendo a referência PRINCIPAL; a foto ` +
+          "real é um reforço, nunca uma substituta.",
+      );
+    } else if (imagensComFoto[1] === imagensComFoto[0]) {
+      failures.push(
+        "identidade: a segunda entrada de `image_urls` é IDÊNTICA à primeira — a foto real não foi " +
+          `subida separadamente. \`image_urls\`: ${JSON.stringify(imagensComFoto)}.`,
+      );
+    }
+  }
+  // Sem `fotoDeIdentidade` (corrida padrão de G-2), `image_urls` continua com
+  // 1 entrada só — o CONTRAPONTO que prova que o campo é opcional, nunca
+  // obrigatório, e que corridas antigas (sem a foto disponível) não mudam de
+  // comportamento.
+  if (animar) {
+    const imagensSemFoto = Array.isArray(animar.corpo.image_urls) ? (animar.corpo.image_urls as string[]) : [];
+    if (imagensSemFoto.length !== 1) {
+      failures.push(
+        "identidade: SEM `fotoDeIdentidade` (o caso de toda corrida antes desta rodada), `image_urls` " +
+          `deveria continuar com 1 entrada só e saiu com ${imagensSemFoto.length} — ` +
+          `${JSON.stringify(imagensSemFoto)}. O campo é opcional; sem ele o comportamento tem de ser ` +
+          "byte a byte o de antes.",
+      );
+    }
+  }
+  if (failures.length === 0) {
+    notes.push(
+      "    identidade: com `fotoDeIdentidade` disponível, `image_urls` do Wan traz 2 entradas " +
+        "(composta + foto real do rosto, nesta ordem); sem ela, continua com 1 — byte a byte o " +
+        "comportamento de antes desta rodada",
+    );
   }
 
   // ---------------------------------------------------------------------------
