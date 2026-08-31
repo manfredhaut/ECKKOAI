@@ -1334,6 +1334,12 @@ async function generateVideoFal(input: GenerateVideoInput): Promise<GenerateVide
     script: input.script,
     fotoBase,
     fotoMimeType: mimeDoUpload(fotoUrl),
+    // V24 — a MESMA foto real, como segunda referência de identidade em
+    // animar() (Wan). `fotoBase` já é este buffer; ver o comentário de
+    // `fotoDeIdentidade` em `FalPipelineInput` para por que é um campo
+    // PRÓPRIO e não um atalho para `fotoBase` (que nas retomadas/aprovações
+    // chega vazio, de propósito, porque `compor()` não roda de novo).
+    fotoDeIdentidade: { bytes: fotoBase, mimeType: mimeDoUpload(fotoUrl) },
     entradasExtras,
     // Campo obrigatório do tipo; sem uso no Wan (`tenantId` só importaria
     // como `end_user_id` do Seedance, tier "Premium" — não ligado, ver

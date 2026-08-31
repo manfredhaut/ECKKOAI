@@ -753,6 +753,28 @@ export interface FalPipelineInput {
   fotoBase: Buffer;
   fotoMimeType: string;
   /**
+   * A FOTO REAL do rosto, como SEGUNDA referência de identidade em
+   * `animar()` — V24, 31/08/2026. Até esta rodada o Wan só recebia a
+   * imagem COMPOSTA (`imagemUrl`/`imagemDeReferencia`); as sondas V20/V22
+   * (que seguraram identidade melhor) mandaram DUAS referências — foto real
+   * + composição.
+   *
+   * DISTINTA de `fotoBase`: aquele campo é lido só por `compor()` (a
+   * composição pode não ser refeita numa retomada/aprovação, e nesse caso
+   * `fotoBase` chega como `Buffer.alloc(0)`, de propósito — ver os call
+   * sites em `routes/videos.ts`). Este campo tem de continuar preenchido
+   * mesmo quando `compor()` não roda de novo, porque `animar()` PRECISA da
+   * foto real em toda corrida, não só na criação — por isso é um campo
+   * PRÓPRIO, nunca um atalho para `fotoBase`.
+   *
+   * `null`/ausente (ou bytes vazios): nenhuma segunda referência é enviada
+   * — byte a byte o comportamento de antes desta rodada. Consumido só pelo
+   * ramo Wan (`corpoAnimarWan`); o Seedance (`corpoAnimarSeedance`,
+   * `image_urls` de outro schema) não lê este campo, fora de escopo desta
+   * correção.
+   */
+  fotoDeIdentidade?: { bytes: Buffer; mimeType: string } | null;
+  /**
    * As outras imagens da composição — traje e cenário, quando vieram por
    * ARQUIVO. Já em bytes, pelo mesmo motivo de `fotoBase`: este módulo não lê
    * disco, e é essa ausência de I/O que permite exercitá-lo inteiro com
@@ -1546,6 +1568,14 @@ interface ContextoDaAnimacao {
  * referência de identidade, mesmo seed, em toda chamada. NÃO VERIFICADO por
  * vídeo real ainda que isto reduza a deriva — é candidato a teste isolado
  * (Item 1 da lista de testes baratos), não correção comprovada.
+ *
+ * `fotoDeIdentidadeUrl` — V24, 31/08/2026. SEGUNDA referência de
+ * identidade, além da composta: a URL já subida à fal do rosto REAL (foto
+ * original, não a composição). `null` quando a corrida não tem a foto real
+ * disponível (ver `FalPipelineInput.fotoDeIdentidade`) — nesse caso
+ * `image_urls` leva só a composta, byte a byte o comportamento de antes
+ * desta rodada. Gerada UMA VEZ por corrida em `animarNarrarSincronizar`
+ * (mesmo padrão de `seedDoVideo`), nunca reenviada/reuplodada por bloco.
  */
 function corpoAnimarWan(
   input: FalPipelineInput,
@@ -1553,6 +1583,7 @@ function corpoAnimarWan(
   duracaoEscolhida: PipelineDuration,
   direcaoDoBloco: string,
   seed: number,
+  fotoDeIdentidadeUrl: string | null,
 ): Record<string, unknown> {
   return {
     // "Character1" nomeia a referência — MEDIDO no exemplo do próprio
@@ -1569,9 +1600,11 @@ function corpoAnimarWan(
       "background exactly as shown in the reference image — same person, same clothes, same location.",
     // LISTA, não mais campo singular — MEDIDO por leitura do schema em 29/08:
     // `reference-to-video/flash` usa `image_urls` (0-5 imagens, referência de
-    // identidade), nunca `image_url`. Só a imagem composta entra aqui — ver o
-    // comentário de `imagemDeReferencia` acima.
-    image_urls: [imagemDeReferencia],
+    // identidade), nunca `image_url`. A composta vai SEMPRE; a foto REAL do
+    // rosto entra como SEGUNDA referência quando disponível — ver o
+    // comentário de `fotoDeIdentidadeUrl` acima. Bem dentro do teto de 5
+    // imagens do schema (LIDO por WebFetch em 31/08).
+    image_urls: fotoDeIdentidadeUrl ? [imagemDeReferencia, fotoDeIdentidadeUrl] : [imagemDeReferencia],
     // `generate_audio: false` é o mais caro de omitir: o default sintetiza uma
     // trilha paga que a etapa 4 descartaria.
     generate_audio: false,
@@ -1669,6 +1702,12 @@ async function animarUmBloco(
    * lê este parâmetro — mesma razão de escopo de `direcaoDoBloco` acima.
    */
   seed: number,
+  /**
+   * V24 — a URL (já subida à fal) da foto REAL do rosto, ou `null`. Só o
+   * ramo Wan a lê (`corpoAnimarWan`); ver o comentário de
+   * `fotoDeIdentidadeUrl` lá.
+   */
+  fotoDeIdentidadeUrl: string | null,
 ): Promise<{ videoUrl: string; requestId: string; gastoPrevistoUsd: number }> {
   // O CUSTO e o ENDPOINT dependem do tier — ver `enderecoAnimarParaTier` e
   // `custoSeedanceUsd`. "normal" (Wan) é tarifado por segundo; "premium"
@@ -1687,7 +1726,7 @@ async function animarUmBloco(
   const corpoDeAnimar =
     tier === "premium"
       ? corpoAnimarSeedance(input, imagemDeEntrada, duracaoEscolhida)
-      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida, direcaoDoBloco, seed);
+      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida, direcaoDoBloco, seed, fotoDeIdentidadeUrl);
 
   // Camada 1 — item 4 da rodada de 29/08 seguinte. Só o ramo Wan: Seedance
   // não documenta `negative_prompt` (ver o comentário de `NEGATIVE_PROMPT_ANIMAR_WAN`)
@@ -1757,6 +1796,16 @@ async function animarNarrarSincronizar(
   // Item 1, rodada de 29/08 seguinte — UM seed por corrida, o MESMO em todo
   // bloco Wan dela (`corpoAnimarSeedance` nunca o lê). Ver `gerarSeedWan`.
   const seedDoVideo = gerarSeedWan();
+  // V24 — a foto REAL do rosto sobe UMA VEZ por corrida (mesmo padrão do
+  // seed acima), nunca por bloco: os N blocos de um vídeo Normal fracionado
+  // reusam a MESMA URL, do mesmo jeito que já reusam a MESMA imagem
+  // composta. `null` quando a corrida não trouxe a foto real (ver
+  // `FalPipelineInput.fotoDeIdentidade`) — nesse caso nenhum bloco ganha a
+  // segunda referência, byte a byte o comportamento de antes desta rodada.
+  const fotoDeIdentidadeUrl =
+    input.fotoDeIdentidade && input.fotoDeIdentidade.bytes.length > 0
+      ? await falUpload(input.apiKeyFal, input.fotoDeIdentidade.bytes, input.fotoDeIdentidade.mimeType)
+      : null;
 
   // --- ANIMAR — UM bloco (Premium, ou Normal que já cabia em 1) ------------
   //
@@ -1777,6 +1826,7 @@ async function animarNarrarSincronizar(
       teto,
       direcaoComExpressividade(input.promptDeDirecao, input.expressiveness),
       seedDoVideo,
+      fotoDeIdentidadeUrl,
     );
     gastoPrevistoUsd = bloco.gastoPrevistoUsd;
     if (input.aspectRatio && input.verificarAspectRatio !== false) {
@@ -1857,6 +1907,7 @@ async function animarNarrarSincronizar(
       teto,
       planoDosBlocos[i].direcaoDoBloco,
       seedDoVideo,
+      fotoDeIdentidadeUrl,
     );
     gastoPrevistoUsd = bloco.gastoPrevistoUsd;
     videoUrls.push(bloco.videoUrl);

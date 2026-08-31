@@ -128,6 +128,10 @@ export const MUTANTS: Mutant[] = [
     // precisou incluir as linhas novas para continuar contígua. E de novo
     // (item 1, mesma rodada) — `corpoAnimarWan` ganhou o parâmetro `seed`
     // (seed compartilhado entre blocos da mesma corrida).
+    //
+    // ÂNCORA ATUALIZADA de novo em 31/08 (V24) — `corpoAnimarWan` ganhou o
+    // parâmetro `fotoDeIdentidadeUrl` (segunda referência de identidade em
+    // `image_urls`, ver `FalPipelineInput.fotoDeIdentidade`).
     file: PIPELINE,
     find:
       '  const gastoPrevistoUsd = autorizarGasto(gastoAcumuladoUsd, custoAnimarUsd, teto, "animar");\n' +
@@ -136,7 +140,7 @@ export const MUTANTS: Mutant[] = [
       "  const corpoDeAnimar =\n" +
       "    tier === \"premium\"\n" +
       "      ? corpoAnimarSeedance(input, imagemDeEntrada, duracaoEscolhida)\n" +
-      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida, direcaoDoBloco, seed);\n" +
+      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida, direcaoDoBloco, seed, fotoDeIdentidadeUrl);\n" +
       "\n" +
       "  // Camada 1 — item 4 da rodada de 29/08 seguinte. Só o ramo Wan: Seedance\n" +
       "  // não documenta `negative_prompt` (ver o comentário de `NEGATIVE_PROMPT_ANIMAR_WAN`)\n" +
@@ -149,7 +153,7 @@ export const MUTANTS: Mutant[] = [
       "  const corpoDeAnimar =\n" +
       "    tier === \"premium\"\n" +
       "      ? corpoAnimarSeedance(input, imagemDeEntrada, duracaoEscolhida)\n" +
-      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida, direcaoDoBloco, seed);\n" +
+      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida, direcaoDoBloco, seed, fotoDeIdentidadeUrl);\n" +
       "\n" +
       '  if (tier !== "premium") lintarPromptDoBlocoWan(corpoDeAnimar);\n' +
       "\n" +

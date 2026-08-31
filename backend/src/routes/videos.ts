@@ -2259,6 +2259,36 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     return extras;
   }
 
+  /**
+   * A foto REAL do rosto do avatar, pronta para ir a `animar()` como
+   * SEGUNDA referência de identidade — V24, 31/08/2026. Ver o comentário de
+   * `FalPipelineInput.fotoDeIdentidade` (falPipeline.ts) para o porquê deste
+   * campo ser PRÓPRIO e não um atalho para `fotoBase` (que nas rotas de
+   * aprovação/refazer chega vazio, de propósito, porque `compor()` não roda
+   * de novo aqui).
+   *
+   * FALHA FECHADA: `null` quando o avatar não tem foto registrada (não
+   * deveria acontecer — `compor()` já exigiu isto na criação) ou quando o
+   * arquivo sumiu do disco desde então (avatar com foto excluída, ver
+   * `checkPhotoRemovalPolicy.ts`). Nos dois casos a animação segue só com a
+   * imagem composta, byte a byte o comportamento de antes desta correção —
+   * nunca recusa a aprovação por causa disto.
+   */
+  async function fotoDeIdentidadeDoAvatar(avatar: Avatar): Promise<{ bytes: Buffer; mimeType: string } | null> {
+    const fotoUrl = avatar.photo_urls?.[0];
+    if (!fotoUrl) return null;
+    try {
+      return { bytes: await readUpload(fotoUrl), mimeType: mimeDoUpload(fotoUrl) };
+    } catch (err) {
+      logEvent("error", "fal_foto_identidade_indisponivel", {
+        context: "videos.fotoDeIdentidadeDoAvatar",
+        avatarId: avatar.id,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+  }
+
   app.post<{ Params: { id: string } }>(
     "/videos/:id/approve",
     { preHandler: requireActiveTenant },
@@ -2318,6 +2348,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
         origem: "aprovacao",
       });
+      const fotoDeIdentidade = await fotoDeIdentidadeDoAvatar(avatar);
 
       try {
         const r = await aprovarEAnimar({
@@ -2354,6 +2385,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // `runFalPipelineDaImagem`.
                 fotoBase: Buffer.alloc(0),
                 fotoMimeType: "image/jpeg",
+                // V24 — SEGUNDA referência de identidade em animar() (Wan),
+                // independente de `fotoBase` acima. Ver `fotoDeIdentidadeDoAvatar`.
+                fotoDeIdentidade,
                 promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
                 // Campo obrigatório do tipo; sem uso no Wan (`tenantId` só
                 // importaria como `end_user_id` do Seedance, tier "Premium" —
@@ -2897,6 +2931,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
         origem: "refazer_video",
       });
+      const fotoDeIdentidade = await fotoDeIdentidadeDoAvatar(avatar);
 
       try {
         const corrida = await runFalPipelineDaImagem(
@@ -2908,6 +2943,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             script: video.script,
             fotoBase: Buffer.alloc(0),
             fotoMimeType: "image/jpeg",
+            // V24 — SEGUNDA referência de identidade em animar() (Wan),
+            // independente de `fotoBase` acima. Ver `fotoDeIdentidadeDoAvatar`.
+            fotoDeIdentidade,
             promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
             tenantId: req.tenantId,
             aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
