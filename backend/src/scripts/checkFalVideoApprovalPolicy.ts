@@ -118,10 +118,26 @@ export const MUTANTS: Mutant[] = [
     // `ROTEIRO_DA_PROVA` (acima) é curto de propósito e sempre cabe num
     // bloco só, então esta guarda mede o caminho de UM bloco — a âncora
     // agora inclui `bloco.gastoPrevistoUsd`, que só existe nele.
+    // ÂNCORA ESTENDIDA de novo — item 8, 29/08: a checagem de formato
+    // (`assertAspectRatio`) entrou entre a atribuição de gasto e o `if` de
+    // parada, e sem incluí-la a âncora curta voltaria a casar 2x (a mesma
+    // ambiguidade de bloco único vs. vários blocos que a extensão do BLOCO
+    // FRACOES-1 já corrigia uma vez).
     file: PIPELINE,
-    find: '    gastoPrevistoUsd = bloco.gastoPrevistoUsd;\n\n    if (input.pararApos === "animar") {',
+    find:
+      '    gastoPrevistoUsd = bloco.gastoPrevistoUsd;\n' +
+      '    if (input.aspectRatio && input.verificarAspectRatio !== false) {\n' +
+      '      await assertAspectRatio(bloco.videoUrl, input.aspectRatio);\n' +
+      '    }\n' +
+      '\n' +
+      '    if (input.pararApos === "animar") {',
     replace:
-      '    gastoPrevistoUsd = bloco.gastoPrevistoUsd;\n\n    if (String(input.pararApos) === "impossivel-pararApos-nenhuma-corrida-tem") {',
+      '    gastoPrevistoUsd = bloco.gastoPrevistoUsd;\n' +
+      '    if (input.aspectRatio && input.verificarAspectRatio !== false) {\n' +
+      '      await assertAspectRatio(bloco.videoUrl, input.aspectRatio);\n' +
+      '    }\n' +
+      '\n' +
+      '    if (String(input.pararApos) === "impossivel-pararApos-nenhuma-corrida-tem") {',
     expect: "a corrida não parou em animar — sincronizar foi alcançado",
   },
   {
@@ -515,7 +531,7 @@ export async function checkFalVideoApprovalPolicy(): Promise<FalVideoApprovalChe
         fotoMimeType: "image/jpeg",
         promptDeComposicao: "traje e cenário da prova",
         tenantId: "tenant-da-prova",
-        promptDeDirecao: "direção da prova em inglês",
+        promptDeDirecao: "test direction in english",
         diario: diarioEmMemoria(),
         tetoDeGastoUsd: 99,
         pollTimeoutMs: 50,
@@ -566,7 +582,7 @@ export async function checkFalVideoApprovalPolicy(): Promise<FalVideoApprovalChe
         fotoMimeType: "image/jpeg",
         promptDeComposicao: "traje e cenário da prova",
         tenantId: "tenant-da-prova",
-        promptDeDirecao: "direção da prova em inglês",
+        promptDeDirecao: "test direction in english",
         diario: diarioEmMemoria(),
         tetoDeGastoUsd: 99,
         pollTimeoutMs: 50,

@@ -121,6 +121,13 @@ export const MUTANTS: Mutant[] = [
     // ÂNCORA — BLOCO FRACOES-1, 28/08, mesma extração de `animarUmBloco()`
     // do mutante irmão acima; `imagemUrl` (parâmetro da função antiga) virou
     // `imagemDeEntrada` (parâmetro de `animarUmBloco`) nesta rodada.
+    //
+    // ÂNCORA ATUALIZADA em 29/08 (item 4, rodada seguinte) — o linter
+    // determinístico (`lintarPromptDoBlocoWan`, Camada 1) entrou ENTRE a
+    // montagem de `corpoDeAnimar` e a submissão (`etapaNaFal`); a âncora
+    // precisou incluir as linhas novas para continuar contígua. E de novo
+    // (item 1, mesma rodada) — `corpoAnimarWan` ganhou o parâmetro `seed`
+    // (seed compartilhado entre blocos da mesma corrida).
     file: PIPELINE,
     find:
       '  const gastoPrevistoUsd = autorizarGasto(gastoAcumuladoUsd, custoAnimarUsd, teto, "animar");\n' +
@@ -129,14 +136,22 @@ export const MUTANTS: Mutant[] = [
       "  const corpoDeAnimar =\n" +
       "    tier === \"premium\"\n" +
       "      ? corpoAnimarSeedance(input, imagemDeEntrada, duracaoEscolhida)\n" +
-      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida);\n" +
+      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida, direcaoDoBloco, seed);\n" +
+      "\n" +
+      "  // Camada 1 — item 4 da rodada de 29/08 seguinte. Só o ramo Wan: Seedance\n" +
+      "  // não documenta `negative_prompt` (ver o comentário de `NEGATIVE_PROMPT_ANIMAR_WAN`)\n" +
+      "  // e nunca fraciona (sem marcador de janela para vazar), então as quatro\n" +
+      "  // checagens não se aplicam a ele.\n" +
+      '  if (tier !== "premium") lintarPromptDoBlocoWan(corpoDeAnimar);\n' +
       "\n" +
       '  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);\n',
     replace:
       "  const corpoDeAnimar =\n" +
       "    tier === \"premium\"\n" +
       "      ? corpoAnimarSeedance(input, imagemDeEntrada, duracaoEscolhida)\n" +
-      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida);\n" +
+      "      : corpoAnimarWan(input, imagemDeEntrada, duracaoEscolhida, direcaoDoBloco, seed);\n" +
+      "\n" +
+      '  if (tier !== "premium") lintarPromptDoBlocoWan(corpoDeAnimar);\n' +
       "\n" +
       '  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);\n' +
       '  const gastoPrevistoUsd = autorizarGasto(gastoAcumuladoUsd, custoAnimarUsd, teto, "animar");\n' +
@@ -297,7 +312,7 @@ const ENTRADA_COMUM = {
   fotoMimeType: "image/jpeg",
   promptDeComposicao: "traje e cenário da prova",
   tenantId: "tenant-da-prova",
-  promptDeDirecao: "direção da prova em inglês",
+  promptDeDirecao: "test direction in english",
   tetoDeGastoUsd: 99,
   pollTimeoutMs: 50,
   pollIntervalMs: 1,
