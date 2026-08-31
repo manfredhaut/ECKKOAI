@@ -87,6 +87,20 @@ export const MUTANTS: Mutant[] = [
     expect: "pipeline: um default do fornecedor foi herdado em silêncio",
   },
   {
+    guard: "pipeline: nenhum default do fornecedor é herdado",
+    name: "negative_prompt sai do payload do Wan e volta a ser vazio",
+    kind: "esperto",
+    // RODADA 2, 29/08 — sem o campo, o Wan volta ao default vazio (LIDO no
+    // schema) e fica livre para produzir os artefatos que
+    // `NEGATIVE_PROMPT_ANIMAR_WAN` existe para conter. Some do payload sem
+    // quebrar nada visível no código — o vídeo continua saindo, só que sem a
+    // única defesa contra traço de desenho/pele plástica/legenda queimada.
+    file: "backend/src/services/video/falPipeline.ts",
+    find: "    multi_shots: false,\n    // RODADA 2, 29/08 — LIDO no schema do Wan (só ele, entre as três etapas\n    // pagas, documenta este campo; RECONFIRMADO no schema do novo endpoint em\n    // 29/08). Ver `NEGATIVE_PROMPT_ANIMAR_WAN`.\n    negative_prompt: NEGATIVE_PROMPT_ANIMAR_WAN,",
+    replace: "    multi_shots: false,",
+    expect: "pipeline: um default do fornecedor foi herdado em silêncio",
+  },
+  {
     guard: "pipeline: nenhuma etapa paga sai acima do teto de gasto",
     name: "o porteiro do teto de gasto some do caminho",
     kind: "obvio",
@@ -129,9 +143,15 @@ export const MUTANTS: Mutant[] = [
     // lugares ao mesmo tempo, então nunca vazou por aqui). Este mutante
     // desalinha só a CHAVE, mantendo `ENDPOINT_ANIMAR` correto, para provar
     // que corrigir dois de três lugares não passa despercebido.
+    //
+    // A CHAVE ERRADA injetada é `image-to-video/flash` — o endpoint ANTIGO,
+    // de antes da migração para `reference-to-video/flash` (item 2, 29/08):
+    // reintroduzir literalmente o id de antes é o defeito mais plausível
+    // (alguém reverte só este mapa, sem querer, num merge ou num revert
+    // parcial), e continua desalinhado de `ENDPOINT_ANIMAR` do mesmo jeito.
     file: "backend/src/services/video/falPipeline.ts",
-    find: '  "wan/v2.6/image-to-video/flash": [',
-    replace: '  "wan/v2.6/reference-to-video/flash": [',
+    find: '  "wan/v2.6/reference-to-video/flash": [',
+    replace: '  "wan/v2.6/image-to-video/flash": [',
     expect: "pipeline: um default do fornecedor foi herdado em silêncio",
   },
   {
@@ -142,9 +162,12 @@ export const MUTANTS: Mutant[] = [
     // roda de verdade dentro desta guarda (só o `fetch` é substituído) — se o
     // catálogo não bater com `ENDPOINT_ANIMAR`, `runFalPipeline` lança antes
     // de completar as 3 submissões pagas, e é essa contagem que acusa.
+    // A CHAVE ERRADA injetada é `image-to-video/flash` — o endpoint ANTIGO,
+    // de antes da migração para `reference-to-video/flash` (item 2, 29/08) —
+    // mesmo raciocínio do mutante irmão em DEFAULTS_NUNCA_HERDADOS.
     file: "backend/src/services/providers/endpointCatalog.ts",
-    find: '    path: "/wan/v2.6/image-to-video/flash",',
-    replace: '    path: "/wan/v2.6/reference-to-video/flash",',
+    find: '    path: "/wan/v2.6/reference-to-video/flash",',
+    replace: '    path: "/wan/v2.6/image-to-video/flash",',
     expect: "pipeline: com teto folgado saíram",
   },
   {
@@ -173,9 +196,27 @@ export const MUTANTS: Mutant[] = [
     // `pipelineDuration.ts` (para `scriptFractioning.ts` poder importá-la
     // sem criar ciclo com `falPipeline.ts`) e é REEXPORTADA de lá — o corpo
     // da função, e portanto este mutante, mudou de endereço junto.
+    //
+    // ALVO trocado para `escolherDuracaoPremium` na migração do item 2
+    // (29/08): `conferirRoteiro` (o único chamador que produz a mensagem
+    // "pipeline: um roteiro de..." testada abaixo) passou a usar o teto
+    // PRÓPRIO do Premium (15s), não mais o do Normal (10s, apertado pela
+    // migração do Wan para `reference-to-video/flash`) — ver
+    // `pipelineDuration.ts`. Âncora estendida para incluir a linha do laço:
+    // as duas funções (`escolherDuracao`/`escolherDuracaoPremium`) terminam
+    // com o mesmo `return null;\n}`, e sem a linha do `if` a âncora casaria
+    // 2x.
     file: "backend/src/services/video/pipelineDuration.ts",
-    find: "  return null;\n}",
-    replace: "  return PIPELINE_DURACAO_MAXIMA;\n}",
+    find:
+      "    if (chars <= PREMIUM_MAX_CHARS_POR_DURACAO[duracao]) return duracao;\n" +
+      "  }\n" +
+      "  return null;\n" +
+      "}",
+    replace:
+      "    if (chars <= PREMIUM_MAX_CHARS_POR_DURACAO[duracao]) return duracao;\n" +
+      "  }\n" +
+      "  return PREMIUM_DURACAO_MAXIMA;\n" +
+      "}",
     expect: "pipeline: um roteiro de",
   },
 ];
@@ -335,12 +376,15 @@ async function correr(
       promptDeComposicao: "traje e cenário da prova",
       aspectRatio: "16:9",
       tenantId: "tenant-da-prova",
-      promptDeDirecao: "direção da prova em inglês",
+      promptDeDirecao: "test direction in english",
       diario: diario as never,
       tetoDeGastoUsd: opcoes.tetoDeGastoUsd,
       pollTimeoutMs: 50,
       pollIntervalMs: 1,
       esperar: async () => {},
+      // Item 8, 29/08 — `assertAspectRatio` roda `ffprobe` DE VERDADE, e a
+      // URL do vídeo aqui é fake (`fetch` substituído, o binário não é).
+      verificarAspectRatio: false,
     });
     gastoPrevistoUsd = r.gastoPrevistoUsd;
   } catch (err) {
@@ -502,17 +546,19 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
   }
 
   // -------------------------------------------------------------------------
-  // 4. A DURAÇÃO É ESCOLHIDA A PARTIR DO ROTEIRO — {5, 10, 15} s, e um
-  //    roteiro acima do teto de 15 s é RECUSADO antes de qualquer submissão.
-  //    Ver `escolherDuracao`/`conferirRoteiro`, falPipeline.ts.
+  // 4. A DURAÇÃO É ESCOLHIDA A PARTIR DO ROTEIRO — {5, 10} s no tier Normal
+  //    (apertado de {5, 10, 15} na migração para `reference-to-video/flash`,
+  //    item 2, 29/08 — ver `pipelineDuration.ts`). O Premium (`conferirRoteiro`,
+  //    caminho sem fracionamento) mantém {5, 10, 15}, vocabulário PRÓPRIO
+  //    desde a mesma migração. Ver `escolherDuracao`/`escolherDuracaoPremium`.
   // -------------------------------------------------------------------------
-  const { PIPELINE_MAX_CHARS_POR_DURACAO, PIPELINE_DURACAO_MAXIMA } = await import(
+  const { PIPELINE_MAX_CHARS_POR_DURACAO, PREMIUM_MAX_CHARS_POR_DURACAO, PREMIUM_DURACAO_MAXIMA } = await import(
     "../services/video/falPipeline.js"
   );
 
   const roteiroPara5s = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[5]);
   const curto = await correr({ script: roteiroPara5s });
-  const animarCurto = curto.corpos.find((c) => c.endpoint === "wan/v2.6/image-to-video/flash");
+  const animarCurto = curto.corpos.find((c) => c.endpoint === "wan/v2.6/reference-to-video/flash");
   if (animarCurto?.corpo.duration !== "5") {
     failures.push(
       `pipeline: a duração não foi escolhida a partir do roteiro — ${roteiroPara5s.length} caracteres ` +
@@ -521,19 +567,20 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
     );
   }
 
-  const roteiroPara15s = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[15]);
-  const longo = await correr({ script: roteiroPara15s });
-  const animarLongo = longo.corpos.find((c) => c.endpoint === "wan/v2.6/image-to-video/flash");
-  if (animarLongo?.corpo.duration !== "15") {
+  const roteiroPara10s = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[10]);
+  const longo = await correr({ script: roteiroPara10s });
+  const animarLongo = longo.corpos.find((c) => c.endpoint === "wan/v2.6/reference-to-video/flash");
+  if (animarLongo?.corpo.duration !== "10") {
     failures.push(
-      `pipeline: a duração não foi escolhida a partir do roteiro — ${roteiroPara15s.length} caracteres ` +
-        `(o teto exato de 15 s) deveriam pedir "duration": "15" ao Wan, e o corpo trouxe ` +
-        `${JSON.stringify(animarLongo?.corpo.duration ?? null)}. Passos: ${longo.passos.join(" → ") || "(nenhum)"}.`,
+      `pipeline: a duração não foi escolhida a partir do roteiro — ${roteiroPara10s.length} caracteres ` +
+        `(o teto exato de 10 s, o maior bloco do Wan desde a migração do item 2) deveriam pedir ` +
+        `"duration": "10", e o corpo trouxe ${JSON.stringify(animarLongo?.corpo.duration ?? null)}. Passos: ` +
+        `${longo.passos.join(" → ") || "(nenhum)"}.`,
     );
   }
 
-  // 1 caractere acima do teto de 15 s: nenhuma duração comporta, então nenhuma
-  // submissão pode sair — o pipeline não emenda clipes.
+  // 1 caractere acima do teto de 15 s DO PREMIUM: nenhuma duração comporta,
+  // então nenhuma submissão pode sair — o pipeline não emenda clipes.
   //
   // ⚠️ BLOCO FRACOES-1, 28/08 — `correr()`/`runFalPipeline()` NÃO servem mais
   // para este teste: sem `tier` explícito, `runFalPipeline` assume "normal"
@@ -545,10 +592,10 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
   // nunca devolve `null`), o gate ficava VERDE mesmo assim — a rejeição por
   // fracionamento mascarava o defeito que este teste existe para pegar.
   // Chamar `conferirRoteiro()` (o caminho SEM fracionamento — tier Premium,
-  // função pura) direto restaura a exercitação exata do `escolherDuracao`
+  // função pura) direto restaura a exercitação exata do `escolherDuracaoPremium`
   // que o mutante altera, sem depender de tier nem de rede simulada.
   const { conferirRoteiro } = await import("../services/video/falPipeline.js");
-  const roteiroDemais = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[15] + 1);
+  const roteiroDemais = "x".repeat(PREMIUM_MAX_CHARS_POR_DURACAO[15] + 1);
   let erroRoteiroDemais: unknown = null;
   try {
     conferirRoteiro(roteiroDemais);
@@ -557,12 +604,12 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
   }
   if (
     !(erroRoteiroDemais instanceof FalPipelineError) ||
-    !String(erroRoteiroDemais).includes(`${PIPELINE_DURACAO_MAXIMA} s`)
+    !String(erroRoteiroDemais).includes(`${PREMIUM_DURACAO_MAXIMA} s`)
   ) {
     failures.push(
-      `pipeline: um roteiro de ${roteiroDemais.length} caracteres — 1 acima do teto de 15 s — não foi ` +
-        "recusado com o erro certo por conferirRoteiro() (caminho sem fracionamento, tier Premium): veio " +
-        `${erroRoteiroDemais === null ? "sucesso" : JSON.stringify(String(erroRoteiroDemais).slice(0, 160))}. ` +
+      `pipeline: um roteiro de ${roteiroDemais.length} caracteres — 1 acima do teto de 15 s do Premium — ` +
+        "não foi recusado com o erro certo por conferirRoteiro() (caminho sem fracionamento, tier Premium): " +
+        `veio ${erroRoteiroDemais === null ? "sucesso" : JSON.stringify(String(erroRoteiroDemais).slice(0, 160))}. ` +
         "Este pipeline não emenda clipes: o que não cabe em 15 s tem de ser recusado, não animado truncado.",
     );
   }
@@ -585,9 +632,10 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
         "estão explícitos nos 3 corpos enviados",
     );
     notes.push(
-      `  duração: ${roteiroPara5s.length} e ${roteiroPara15s.length} caracteres escolheram "5" e "15" ` +
-        `junto ao motor de animação; ${roteiroDemais.length} caracteres (1 acima do teto de 15 s) ` +
-        "recusados antes de qualquer submissão",
+      `  duração: ${roteiroPara5s.length} e ${roteiroPara10s.length} caracteres escolheram "5" e "10" ` +
+        `junto ao motor de animação (teto do Wan desde a migração do item 2); ${roteiroDemais.length} ` +
+        'caracteres (1 acima do teto de 15 s do PREMIUM, `conferirRoteiro`) recusados antes de qualquer ' +
+        "submissão",
     );
   }
 

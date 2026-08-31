@@ -26,7 +26,12 @@ import {
 import type { Mutant } from "./mutants.js";
 
 const FRASE_CURTA = "Frase curta.";
-/** 143 caracteres — 1 acima do teto de um bloco de 15 s (142). */
+/**
+ * 143 caracteres — acima do teto de um bloco Normal, HOJE 95 (10 s), desde a
+ * migração para `reference-to-video/flash` (item 2, 29/08). Era 142 (15 s)
+ * antes; o número (143) não mudou porque só precisa exceder o teto atual, e
+ * 143 excede os dois.
+ */
 const FRASE_LONGA_DEMAIS = "x".repeat(143) + ".";
 
 export const MUTANTS: Mutant[] = [
@@ -136,10 +141,14 @@ export function checkScriptFractioningPolicy(): ScriptFractioningCheckResult {
   }
 
   // --- G-4 -------------------------------------------------------------
-  // Um bloco de texto que sozinho já ocuparia o teto de 15s, repetido
-  // NORMAL_MAX_BLOCOS + 1 vezes — garante estourar o teto de blocos mesmo
-  // com folga de arredondamento.
-  const blocoCheio = "y".repeat(140) + ".";
+  // Um "bloco" de texto que sozinho já ocupa o teto de UM bloco Normal —
+  // HOJE 95 caracteres (10s), desde a migração para `reference-to-video/
+  // flash` (item 2, 29/08; era 142/15s antes) — repetido NORMAL_MAX_BLOCOS + 1
+  // vezes, para estourar o teto de blocos mesmo com folga de arredondamento.
+  // PRECISA caber no teto de UMA frase (senão dispara G-3 em vez de G-4) e
+  // ainda assim ocupar o bloco inteiro sozinho — 93 + "." = 94, 1 abaixo do
+  // teto de 95.
+  const blocoCheio = "y".repeat(93) + ".";
   const roteiroDemais = Array(NORMAL_MAX_BLOCOS + 1).fill(blocoCheio).join(" ");
   let recusouTetoDeBlocos = false;
   let mensagemTetoDeBlocos = "";
