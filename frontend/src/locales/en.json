@@ -720,6 +720,7 @@
         "unverified": "This format hasn't been verified at this tier — it may not come out as expected."
       },
       "captionsLabel": "Captions",
+      "captionsTierNotice": "Captions only apply to the Simple tier (HeyGen) — Normal/Premium (Wan/Seedance) don't have this feature, and the video always comes out without captions.",
       "captionsOff": "No captions",
       "captionsOn": "With captions",
       "captionsUnverified": "Captions are burned into the video by the provider. The field is in their documentation, but no generation from this system has sent it yet — if it is rejected, the attempt fails at validation, before billing, and nothing is charged.",

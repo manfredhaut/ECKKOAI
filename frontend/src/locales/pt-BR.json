@@ -734,6 +734,7 @@
         "unverified": "Este formato não foi verificado neste nível — pode não sair como esperado."
       },
       "captionsLabel": "Legenda",
+      "captionsTierNotice": "A legenda só vale no nível Simples (HeyGen) — Normal/Premium (Wan/Seedance) não têm esse recurso, e o vídeo sai sempre sem legenda.",
       "captionsOff": "Sem legenda",
       "captionsOn": "Com legenda",
       "captionsUnverified": "A legenda é queimada no vídeo pelo fornecedor. O campo está na documentação dele, mas nenhuma geração deste sistema o enviou ainda — se ele for recusado, a tentativa falha na validação, antes da cobrança, e nada é debitado.",

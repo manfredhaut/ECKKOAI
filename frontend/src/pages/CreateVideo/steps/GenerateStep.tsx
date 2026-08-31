@@ -406,56 +406,72 @@ export function GenerateStep({
               onde mudar: o vídeo já foi debitado.
 
               Os dois estados são botões, e não um checkbox, para que "Sem
-              legenda" seja uma escolha visível e não a ausência de uma. */}
-          <fieldset className="caption-choice" style={{ border: 0, padding: 0, margin: "12px 0 0" }}>
-            <legend style={{ fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 6 }}>
-              {t("createVideo.generate.captionsLabel")}
-            </legend>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                className={wizard.captions ? "btn btn-secondary" : "btn btn-primary"}
-                aria-pressed={!wizard.captions}
-                onClick={() => onCaptionsChange(false)}
-              >
-                {t("createVideo.generate.captionsOff")}
-              </button>
-              <button
-                type="button"
-                className={wizard.captions ? "btn btn-primary" : "btn btn-secondary"}
-                aria-pressed={wizard.captions}
-                onClick={() => onCaptionsChange(true)}
-              >
-                {t("createVideo.generate.captionsOn")}
-              </button>
-            </div>
-            {/* IRREVERSÍVEL, e dito SEMPRE — nas duas escolhas, não só em
-                "Com legenda".
+              legenda" seja uma escolha visível e não a ausência de uma.
 
-                A base é medida: um vídeo gerado sem `caption` volta do
-                fornecedor sem `subtitle_url` e sem `captioned_video_url`
-                (medido em 10/08 no vídeo `dca10724`). Não existe versão
-                legendada para ligar depois, nem arquivo de legenda para juntar:
-                a única forma de mudar de ideia é gerar outro vídeo, e outro
-                vídeo custa outra vez.
+              GATEADA POR TIER desde o V24 — mesmo padrão de Fundo/Look em
+              SceneStep.tsx. `input.captions` só é lido por
+              `buildHeygenVideoPayload` (avatarProvider.ts); o caminho fal
+              (Normal/Premium) nunca o consulta, e o `negative_prompt` fixo do
+              Wan ainda instrui o modelo a NÃO gerar legenda/texto sobreposto
+              (`NEGATIVE_PROMPT_ANIMAR_WAN`, falPipeline.ts). Mostrar o toggle
+              igual nos três níveis prometia um recurso que dois deles nunca
+              entregam — campo preenchido que o servidor descarta em silêncio
+              é a classe de defeito que este projeto já pagou várias vezes. */}
+          {wizard.tierVideo === "simples" ? (
+            <fieldset className="caption-choice" style={{ border: 0, padding: 0, margin: "12px 0 0" }}>
+              <legend style={{ fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 6 }}>
+                {t("createVideo.generate.captionsLabel")}
+              </legend>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  className={wizard.captions ? "btn btn-secondary" : "btn btn-primary"}
+                  aria-pressed={!wizard.captions}
+                  onClick={() => onCaptionsChange(false)}
+                >
+                  {t("createVideo.generate.captionsOff")}
+                </button>
+                <button
+                  type="button"
+                  className={wizard.captions ? "btn btn-primary" : "btn btn-secondary"}
+                  aria-pressed={wizard.captions}
+                  onClick={() => onCaptionsChange(true)}
+                >
+                  {t("createVideo.generate.captionsOn")}
+                </button>
+              </div>
+              {/* IRREVERSÍVEL, e dito SEMPRE — nas duas escolhas, não só em
+                  "Com legenda".
 
-                Sob os dois botões porque é aqui que a decisão acontece. Um
-                aviso que só aparecesse depois de escolher "Com legenda" deixaria
-                quem manteve o padrão sem saber que também estava decidindo. */}
-            <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-              {t("createVideo.generate.captionsIrreversible")}
-            </p>
-            {/* O que está sendo aguardado, escrito. O campo `caption` está no
-                schema do fornecedor (lido em 06/08 e relido em 10/08), mas
-                nenhuma geração deste projeto o enviou — então o ACEITE é
-                suposição, e a tela não finge o contrário. Só aparece na escolha
-                que muda o corpo. */}
-            {wizard.captions && (
+                  A base é medida: um vídeo gerado sem `caption` volta do
+                  fornecedor sem `subtitle_url` e sem `captioned_video_url`
+                  (medido em 10/08 no vídeo `dca10724`). Não existe versão
+                  legendada para ligar depois, nem arquivo de legenda para juntar:
+                  a única forma de mudar de ideia é gerar outro vídeo, e outro
+                  vídeo custa outra vez.
+
+                  Sob os dois botões porque é aqui que a decisão acontece. Um
+                  aviso que só aparecesse depois de escolher "Com legenda" deixaria
+                  quem manteve o padrão sem saber que também estava decidindo. */}
               <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-                {t("createVideo.generate.captionsUnverified")}
+                {t("createVideo.generate.captionsIrreversible")}
               </p>
-            )}
-          </fieldset>
+              {/* O que está sendo aguardado, escrito. O campo `caption` está no
+                  schema do fornecedor (lido em 06/08 e relido em 10/08), mas
+                  nenhuma geração deste projeto o enviou — então o ACEITE é
+                  suposição, e a tela não finge o contrário. Só aparece na escolha
+                  que muda o corpo. */}
+              {wizard.captions && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                  {t("createVideo.generate.captionsUnverified")}
+                </p>
+              )}
+            </fieldset>
+          ) : (
+            <p className="text-muted" style={{ fontSize: 12, margin: "12px 0 0" }}>
+              {t("createVideo.generate.captionsTierNotice")}
+            </p>
+          )}
 
           <button
             className="btn btn-primary"

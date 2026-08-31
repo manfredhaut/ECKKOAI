@@ -85,6 +85,27 @@ export const MUTANTS: Mutant[] = [
     // reprovação que não se consegue atribuir à guarda não prova nada.
     expect: "Servir a versão legendada sem que ela tivesse sido pedida",
   },
+  {
+    guard: "legenda: o toggle só aparece no tier Simples (HeyGen)",
+    name: "a legenda volta a aparecer para Normal/Premium também",
+    kind: "obvio",
+    // V24, 31/08/2026 — `input.captions` só é lido por `buildHeygenVideoPayload`
+    // (HeyGen, tier Simples); o caminho fal (Normal/Premium) nunca o consulta,
+    // e o `negative_prompt` fixo do Wan ainda instrui o modelo a NÃO gerar
+    // legenda/texto sobreposto (`NEGATIVE_PROMPT_ANIMAR_WAN`, falPipeline.ts).
+    // Mostrar o toggle igual nos três níveis promete um recurso que dois deles
+    // nunca entregam — o mesmo defeito de campo preenchido e descartado em
+    // silêncio que este projeto já pagou várias vezes (cenário/traje antes
+    // de terem campo real).
+    file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
+    find:
+      '          {wizard.tierVideo === "simples" ? (\n' +
+      '            <fieldset className="caption-choice" style={{ border: 0, padding: 0, margin: "12px 0 0" }}>',
+    replace:
+      "          {true ? (\n" +
+      '            <fieldset className="caption-choice" style={{ border: 0, padding: 0, margin: "12px 0 0" }}>',
+    expect: "legenda: o toggle apareceu fora do tier Simples",
+  },
 ];
 
 export interface CaptionCheckResult {
@@ -255,6 +276,33 @@ export function checkCaptionPolicy(repoRoot: string): CaptionCheckResult {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // 5. V24, 31/08/2026 — o toggle só aparece no tier Simples (HeyGen).
+  //
+  // `input.captions` só é lido por `buildHeygenVideoPayload`; o caminho fal
+  // (Normal/Premium) nunca o consulta, e o `negative_prompt` fixo do Wan
+  // ainda instrui o modelo a NÃO gerar legenda. Por LEITURA, mesma técnica do
+  // item 4 acima: o defeito é um controle aparecendo FORA de uma condição, e
+  // ausência de gate não se exercita chamando função.
+  // ---------------------------------------------------------------------------
+  if (
+    !/\{wizard\.tierVideo === "simples" \? \(\s*<fieldset className="caption-choice"/.test(passoGerar)
+  ) {
+    failures.push(
+      'legenda: o toggle apareceu fora do tier Simples — esperava `{wizard.tierVideo === "simples" ? (` ' +
+        'imediatamente antes de `<fieldset className="caption-choice"`, e não achei. `input.captions` só ' +
+        "é lido por `buildHeygenVideoPayload` (HeyGen); o caminho fal (Normal/Premium) nunca o consulta, " +
+        "e o `negative_prompt` fixo do Wan ainda instrui o modelo a NÃO gerar legenda — mostrar o " +
+        "controle fora do tier Simples promete um recurso que o vídeo nunca entrega.",
+    );
+  }
+  if (!/captionsTierNotice/.test(passoGerar)) {
+    failures.push(
+      "legenda: o aviso `captionsTierNotice` não aparece em GenerateStep.tsx — sem ele, Normal/Premium " +
+        "ficam sem nenhum texto explicando por que o controle de legenda sumiu.",
+    );
+  }
+
   // Os dois idiomas. Um botão que só existe em português é um botão quebrado
   // para metade do produto.
   for (const idioma of ["pt-BR", "en"]) {
@@ -262,7 +310,14 @@ export function checkCaptionPolicy(repoRoot: string): CaptionCheckResult {
       readFileSync(path.join(repoRoot, `frontend/src/locales/${idioma}.json`), "utf8"),
     ) as { createVideo?: { generate?: Record<string, string> } };
     const gerar = textos.createVideo?.generate ?? {};
-    for (const chave of ["captionsLabel", "captionsOn", "captionsOff", "captionsUnverified", "captionsMissing"]) {
+    for (const chave of [
+      "captionsLabel",
+      "captionsOn",
+      "captionsOff",
+      "captionsUnverified",
+      "captionsMissing",
+      "captionsTierNotice",
+    ]) {
       if (!gerar[chave]) {
         failures.push(`legenda: falta \`createVideo.generate.${chave}\` em ${idioma}.json.`);
       }
