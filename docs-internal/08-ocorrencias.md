@@ -57,6 +57,38 @@ Nenhuma das três foi executada nesta rodada — o EXPOSICAO-1 era de LEITURA E
 MEDIÇÃO, e a única escrita autorizada foi corrigir a lista e abrir este
 arquivo. **Escolher entre as três é do operador.**
 
+### 4ª vez (31/08/2026, V24) — a maior distância medida, e um gap deste próprio arquivo
+
+**47 commits de atraso** — quase cinco vezes a distância da 3ª (nove). O
+ESTADO.md §1 abria com `bc38394` (fechamento de 24/08); o HEAD no início da
+sessão V24 era `ff79467`, seis sessões inteiras depois (W1, B0/V0/W2/W3, W4,
+e toda a linha de trabalho do tier Normal de 29-31/08 — migração para
+`wan/v2.6/reference-to-video/flash`, Bugs D/E, RODADA 6). Corrigido no mesmo
+commit que fecha esta sessão; detalhe completo na nota "SÉTIMA divergência"
+dentro do próprio ESTADO.md §1.
+
+**Nenhuma das três saídas da 3ª vez foi adotada** nas seis sessões entre
+14/08 e 31/08 — nem regeneração por comando, nem conferência no início da
+sessão, nem guarda de gate. `npm run estado` (`tools/estadoAnchor.mjs`)
+passou a existir em 24/08 (saída 2, adotada em parte — vira SCRIPT, não
+GUARDA DE GATE) e mesmo assim a lista ficou 47 commits atrás: o script existe
+e não é chamado automaticamente por nada, então depende de alguém lembrar de
+rodá-lo — o mesmo freio que já tinha falhado três vezes antes dele existir.
+
+**Gap deste próprio arquivo:** o ESTADO.md registrou inline mais TRÊS
+divergências entre a 3ª (14/08) e esta (31/08) — chamadas "QUARTA", "QUINTA"
+e "SEXTA divergência" na §1, a última datada de 23/08 — e nenhuma delas foi
+propagada para cá. Este arquivo existe para que a contagem de repetições seja
+visível num lugar só; um contador que fica para trás do que ele mesmo deveria
+contar é a mesma classe de defeito que ele documenta. **Não reconstruído
+retroativamente nesta rodada** (fora do escopo pedido) — fica registrado como
+lacuna, não preenchido com números inventados.
+
+**O que isto muda na lista de saídas:** a saída 3 (guarda de gate que compare
+o topo com `HEAD~1`) segue sendo a única que não depende de lembrança — e
+agora tem quatro instâncias medidas, não três, sustentando que "lembrar" não
+é o freio que este processo precisa.
+
 ---
 
 ## Ocorrência 2 · O autofill de dev injeta a credencial da ZONA ERRADA em `/admin/login`

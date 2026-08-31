@@ -15,10 +15,15 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **23/08/2026**. HEAD **`b00b744`**, árvore limpa. Dois commits
-nesta sessão: `b679ea2` (I1 — 4 guardas inertes eram texto de prova
-desalinhado) e `b00b744` (L1 — frescor do Vite vira healthcheck). Ver §15
-abaixo para o detalhe.
+Atualizado em **31/08/2026 (V24)**. HEAD **`0493235`**, árvore limpa. Esta
+sessão NÃO abriu trabalho novo de produto — commitou, em 7 commits nomeados,
+o trabalho de tier Normal de 6 sessões anteriores (29-31/08: migração para
+`wan/v2.6/reference-to-video/flash`, Bugs D/E, RODADA 6, guarda de upload/
+payload) que tinha ficado pendente na árvore (12 modificados + 15 untracked)
+por sessões interrompidas sem commit. **Esta §1 estava 47 commits atrás**
+antes desta escrita — ver a nota de SÉTIMA divergência logo abaixo. O
+parágrafo anterior a este (I1/L1, `b679ea2`/`b00b744`, 23/08) é histórico e
+está coberto por §15 mais abaixo.
 
 > ⚠️ **TROCA DE CONTA: o gatilho é `RETOMAR-P7`.** Numa conta nova, digite
 > **RETOMAR-P7** — [RETOMAR-P7.md](RETOMAR-P7.md) traz o estado completo do
@@ -547,15 +552,37 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 > ponteiro velho. Roda também no começo de toda passada do arnês. Ver §17.
 
 ```
-bc38394  Os cartoes de nivel destravam para tenant zerado (W4.1)
-e2c9179  BACKLOG: proxima prioridade (CSV da fal) e o achado do W4
-413fe4a  O botao de Refazer desabilita na tela ao esgotar o limite (W3.1b)
-1890730  ESTADO.md 19: B0/V0/W2/W3 e a afetada 89/89 em paralelo
-58aaec2  B0, V0, W2 e W3: backlog versionado, arnês 3x mais rápido, preços em tabela, teto de refações
-86d98cf  ESTADO.md 1: reancorada, oitava vez, e a conferencia pegou as duas
-543a821  ESTADO.md 18: a afetada do W1 fechou 37/37
-b974136  ESTADO.md: 18 do W0/W1 e a 1 reancorada
+0493235  Scripts de sondagem manual (RODADA 4-20, 29-31/08) — preservados, não removidos
+fd222d8  docs-internal: composição de referência oficial do avatar de teste (31/08)
+ca91495  Guardas: texto de prova em inglês, para não disparar o linter do Wan
+cab08cb  Guarda: URL local não vaza à fal, e o payload enviado fica auditável (RODADA 1, 29/08)
+44003a8  Bugs D/E: direção por janela em Normal fracionado + cláusula de pose/roupa (RODADA 2/3, 29/08)
+cd43ec3  Guardas: seed compartilhado, linter do Wan e aspect_ratio por bloco (29/08)
+a2c4be3  Tier Normal migra para wan/v2.6/reference-to-video/flash (item 2, 29/08)
+ff79467  Linter do Wan: corrige /\bvocê\b/i e /\bestá\b/i, que nunca reprovavam nada
 ```
+
+⚠️ **SÉTIMA divergência, MEDIDA em 31/08/2026 (V24) — a maior distância já
+registrada: 47 commits, não 4 ou 8.** O topo da lista acima estava em
+`bc38394` (fechamento de 24/08); entre ele e o início desta sessão (HEAD
+`ff79467`) o repositório recebeu 6 sessões inteiras não refletidas aqui —
+W1 (herança de credencial por plataforma), B0/V0/W2/W3, W4, e toda a linha
+de trabalho do tier Normal registrada só no CLAUDE.md (§6, fechamentos de
+25 a 28/08) e em comentários de código datados de 29-31/08 (migração para
+`wan/v2.6/reference-to-video/flash`, Bugs D/E, RODADA 6). **Também estava
+VELHA no início desta MESMA sessão** (banner do topo do arquivo dizia
+`23/08`/`b00b744`, HEAD real já era `ff79467`) — a divergência não nasceu
+nesta sessão, só foi medida e corrigida nela. `npm run estado` (existe
+desde 24/08, ver comentário abaixo) não rodou em nenhuma das 6 sessões
+intermediárias, ou rodou e o aviso não virou correção — as duas hipóteses
+têm a mesma consequência e nenhuma foi investigada aqui. **Reforça o padrão
+que a ferramenta já registrava: o commit de fechamento é estruturalmente o
+mais fácil de esquecer**, e agora com um agravante — passou a valer também
+entre CONTAS diferentes, não só entre sessões da mesma conta. Registrado em
+[docs-internal/08-ocorrencias.md](docs-internal/08-ocorrencias.md).
+`BACKLOG.md` estava na MESMA situação — `revisado-em` 45 commits atrás,
+fora da janela desta §1 — e não foi tocado nesta rodada (fora do escopo
+pedido).
 
 ⚠️ **A conferência do R8 acusou a §1 mais DUAS vezes em 24/08** — sempre no
 mesmo ponto: o fechamento escreve o commit do ESTADO.md, e o commit SEGUINTE
