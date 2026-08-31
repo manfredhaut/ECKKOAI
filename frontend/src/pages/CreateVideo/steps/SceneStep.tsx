@@ -335,6 +335,25 @@ export function SceneStep({
   }, [credentials, podeEscolherSimples, podeEscolherFal, tierVideo, onTierVideoChange]);
 
   /**
+   * O 4:5 (`instagram_feed`) não existe no enum de `aspect_ratio` do Wan
+   * (`wan/v2.6/reference-to-video/flash`, MEDIDO por leitura do schema no
+   * V24) — V25, 31/08/2026. Se alguém escolheu 4:5 num tier onde ele era
+   * válido (Simples/Premium) e depois troca para Normal, a seleção velha não
+   * pode sobreviver: sem isto, o PublishStep bloqueia o CLIQUE no chip, mas
+   * o valor já escolhido continuaria no `wizard` e chegaria a `POST /videos`
+   * do mesmo jeito — o mesmo defeito de "campo escolhido, não gateado no
+   * envio" que este projeto já pagou (Fundo/Look, antes de ganharem gate).
+   * Troca para "9:16" (o único formato com medição real neste tier, ver
+   * `VENDOR_FORMAT_SUPPORT.fal` em videoFormat.ts) — nunca silencioso: o chip
+   * destacado na tela muda junto.
+   */
+  useEffect(() => {
+    if (tierVideo === "normal" && publishPlatform === "instagram_feed") {
+      onPublishPlatformChange("reels_tiktok");
+    }
+  }, [tierVideo, publishPlatform, onPublishPlatformChange]);
+
+  /**
    * A CONFIANÇA do formato escolhido nesta mesma tela, NO TIER escolhido
    * aqui do lado. Refeita a cada troca de tier, porque é exatamente o que
    * muda a resposta (`?tier=`, Fase C).
@@ -736,7 +755,7 @@ export function SceneStep({
       </Field>
 
       {/* -------------------------------------------------------- FORMATO */}
-      <PublishStep platform={publishPlatform} onChange={onPublishPlatformChange} />
+      <PublishStep platform={publishPlatform} onChange={onPublishPlatformChange} tierVideo={tierVideo} />
     </div>
   );
 }

@@ -72,6 +72,7 @@ import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
 import { checkTierAvailabilityPolicy } from "./checkTierAvailabilityPolicy.js";
+import { checkNormalAspectRatioPolicy } from "./checkNormalAspectRatioPolicy.js";
 import { checkAvatarMultiVendorPolicy } from "./checkAvatarMultiVendorPolicy.js";
 import { checkTierVendorPolicy } from "./checkTierVendorPolicy.js";
 import { checkVendorProbePolicy } from "./checkVendorProbePolicy.js";
@@ -1007,6 +1008,13 @@ async function main(): Promise<void> {
   const wanPromptQuoteHeuristic = await checkWanPromptQuoteHeuristicPolicy();
   wanPromptQuoteHeuristic.failures.forEach((f) => failures.push(f));
   wanPromptQuoteHeuristic.notes.forEach((n) => note(n));
+
+  // --- 24o-octodecies. 4:5 (Feed do Instagram) some do tier Normal — o enum
+  // de aspect_ratio do Wan não tem 4:5 (V25, item 1, 31/08) — só leitura de
+  // arquivo, nenhuma rede.
+  const normalAspectRatio = checkNormalAspectRatioPolicy(process.env.REPO_ROOT ?? "/repo");
+  normalAspectRatio.failures.forEach((f) => failures.push(f));
+  normalAspectRatio.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //

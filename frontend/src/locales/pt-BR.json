@@ -690,7 +690,8 @@
         "linkedin": "LinkedIn"
       },
       "notVerified": "A proporção escolhida é enviada ao serviço de vídeo em toda geração. Até agora só o formato vertical (9:16) foi conferido em vídeos reais — os demais ainda não passaram por uma geração de verdade.",
-      "notHonored": "O provedor de vídeo conectado à sua conta não aceita escolha de proporção."
+      "notHonored": "O provedor de vídeo conectado à sua conta não aceita escolha de proporção.",
+      "instagramFeedTierNotice": "Indisponível no nível Normal — o motor de animação (Wan) não aceita esta proporção."
     },
     "generate": {
       "title": "Gerar e revisar",

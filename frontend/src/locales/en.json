@@ -676,7 +676,8 @@
         "linkedin": "LinkedIn"
       },
       "notVerified": "The chosen aspect ratio is sent to the video service on every generation. So far only the vertical format (9:16) has been checked against real videos — the others have not been through an actual generation yet.",
-      "notHonored": "The video provider connected to your account does not accept an aspect ratio choice."
+      "notHonored": "The video provider connected to your account does not accept an aspect ratio choice.",
+      "instagramFeedTierNotice": "Unavailable at the Normal tier — the animation engine (Wan) doesn't accept this aspect ratio."
     },
     "generate": {
       "title": "Generate & review",

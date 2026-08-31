@@ -26,13 +26,28 @@ interface FormatSupport {
  * geração de verdade. Afirmar que eles saem como pedido seria prometer o que
  * não foi verificado — o mesmo contrato das feature flags, que mostram o
  * recurso e dizem o que falta.
+ *
+ * ┌─ 4:5 bloqueado no tier Normal — V25, 31/08/2026 ──────────────────────────┐
+ * │ MEDIDO por leitura do schema oficial (WebFetch, V24): o enum de           │
+ * │ `aspect_ratio` de `wan/v2.6/reference-to-video/flash` (o motor do tier    │
+ * │ Normal) é EXATAMENTE `["16:9","9:16","1:1","4:3","3:4"]` — 4:5 não está   │
+ * │ nele. `nano-banana-2/edit` (o `compor`) aceita 4:5 — a composição sairia  │
+ * │ cobrada e só a animação (mais cara, e a que já foi paga na composição)    │
+ * │ seria recusada pelo fornecedor. Bloquear ANTES é o mesmo raciocínio de    │
+ * │ Fundo/Look (SceneStep.tsx): campo escolhido que o servidor rejeitaria     │
+ * │ depois de cobrar é pior que campo ausente. Escopo: só o tier NORMAL — o   │
+ * │ enum do HeyGen (tier Simples) inclui 4:5, e o Premium (Seedance) não foi  │
+ * │ medido nesta rodada.                                                      │
+ * └────────────────────────────────────────────────────────────────────────┘
  */
 export function PublishStep({
   platform,
   onChange,
+  tierVideo,
 }: {
   platform: string;
   onChange: (value: string) => void;
+  tierVideo: string;
 }) {
   const { t } = useTranslation();
 
@@ -49,6 +64,8 @@ export function PublishStep({
       .catch(() => setSupport(null));
   }, []);
   const naoHonra = support !== null && !support.supported;
+  // Só o 4:5 (`instagram_feed`), só no tier Normal — ver o comentário acima.
+  const feed45BloqueadoNoNormal = tierVideo === "normal";
 
   return (
     <div className="card">
@@ -70,13 +87,16 @@ export function PublishStep({
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, opacity: naoHonra ? 0.55 : 1 }}>
         {PUBLISH_PLATFORMS.map((option) => {
           const selected = platform === option.id;
+          // Só o 4:5 (instagram_feed) é afetado, e só no tier Normal — ver o
+          // comentário no topo do arquivo. Nenhum outro destino muda.
+          const bloqueadoPeloTier = option.id === "instagram_feed" && feed45BloqueadoNoNormal;
           return (
             <button
               key={option.id}
               type="button"
               className={`chip${selected ? " selected" : ""}`}
               aria-pressed={selected}
-              disabled={naoHonra}
+              disabled={naoHonra || bloqueadoPeloTier}
               onClick={() => onChange(option.id)}
               style={{
                 display: "flex",
@@ -85,6 +105,7 @@ export function PublishStep({
                 height: "auto",
                 padding: "10px 14px",
                 textAlign: "left",
+                opacity: bloqueadoPeloTier ? 0.55 : 1,
               }}
             >
               {/* A proporção desenhada, e não só escrita: "4:5" e "1:1" são
@@ -102,6 +123,14 @@ export function PublishStep({
               <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3 }}>
                 <strong>{t(`createVideo.publish.platforms.${option.id}`)}</strong>
                 <span style={{ fontSize: 12, opacity: 0.75 }}>{option.aspectRatio}</span>
+                {/* O motivo, ANEXADO ao próprio chip — não um banner separado
+                    que só se lê depois de já ter clicado. Só o 4:5 no Normal
+                    ganha esta segunda linha. */}
+                {bloqueadoPeloTier && (
+                  <span style={{ fontSize: 11, opacity: 0.85 }}>
+                    {t("createVideo.publish.instagramFeedTierNotice")}
+                  </span>
+                )}
               </span>
             </button>
           );
