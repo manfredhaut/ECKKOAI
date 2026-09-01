@@ -6,7 +6,7 @@ import { runMonthlyGrantSweep } from "./services/billing/monthlyGrant.js";
 import { recordAuditLog } from "./services/auditLog.js";
 import { logEvent } from "./services/log/safeLog.js";
 import { recoverInFlightVideos } from "./services/video/recovery.js";
-import { rearmVideoPolling } from "./routes/videos.js";
+import { rearmVideoPolling, reacompanharFal } from "./routes/videos.js";
 
 const GRANT_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -59,7 +59,7 @@ async function main() {
   //
   // Nunca lança (o `catch` é interno): um processo que não sobe não acompanha
   // nada, que é exatamente o oposto do que esta varredura existe para garantir.
-  const recuperacao = await recoverInFlightVideos(rearmVideoPolling);
+  const recuperacao = await recoverInFlightVideos(rearmVideoPolling, reacompanharFal);
   if (recuperacao.encontrados > 0) {
     await recordAuditLog({
       tenantId: null,

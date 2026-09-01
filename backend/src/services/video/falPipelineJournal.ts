@@ -215,6 +215,57 @@ export async function requestIdDaEtapa(runId: string, etapa: EtapaDoPipeline): P
   return rows[0]?.request_id ?? null;
 }
 
+/**
+ * A etapa PRESA por um request_id — V28, item 3.
+ *
+ * `recoverInFlightVideos` (recovery.ts) recebe da linha de `videos` só o
+ * `provider_job_id` (o request_id) — não o `run_id`. Esta função é a ponte:
+ * acha a linha de `fal_pipeline_steps` que tem esse request_id (índice
+ * implícito por ser praticamente único — a fal não repete) e devolve o que a
+ * recuperação precisa para consultar a fila de novo: as URLs REAIS gravadas
+ * no submit (migration 071), não reconstruídas por fórmula — ver o comentário
+ * da migration para o porquê de reconstruir ser arriscado.
+ */
+export interface EtapaPresa {
+  id: string;
+  runId: string;
+  etapa: EtapaDoPipeline;
+  endpointId: string | null;
+  statusUrl: string | null;
+  responseUrl: string | null;
+  status: string | null;
+}
+
+export async function etapaPorRequestId(requestId: string): Promise<EtapaPresa | null> {
+  const { rows } = await pool.query<{
+    id: string;
+    run_id: string;
+    etapa: EtapaDoPipeline;
+    endpoint_id: string | null;
+    status_url: string | null;
+    response_url: string | null;
+    status: string | null;
+  }>(
+    `SELECT id, run_id, etapa, endpoint_id, status_url, response_url, status
+       FROM fal_pipeline_steps
+      WHERE request_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [requestId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    runId: r.run_id,
+    etapa: r.etapa,
+    endpointId: r.endpoint_id,
+    statusUrl: r.status_url,
+    responseUrl: r.response_url,
+    status: r.status,
+  };
+}
+
 export function criarDiarioNoBanco(runId: string): DiarioDoPipeline {
   return {
     async abrirEtapa(
@@ -236,6 +287,13 @@ export function criarDiarioNoBanco(runId: string): DiarioDoPipeline {
       await pool.query(
         "UPDATE fal_pipeline_steps SET request_id = $2, updated_at = now() WHERE id = $1",
         [stepId, requestId],
+      );
+    },
+
+    async gravarUrlsDaFila(stepId: string, statusUrl: string, responseUrl: string): Promise<void> {
+      await pool.query(
+        "UPDATE fal_pipeline_steps SET status_url = $2, response_url = $3, updated_at = now() WHERE id = $1",
+        [stepId, statusUrl, responseUrl],
       );
     },
 

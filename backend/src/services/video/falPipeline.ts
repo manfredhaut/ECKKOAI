@@ -186,8 +186,25 @@ export function maxReachableSecondsForTier(tier: VideoTier): number {
   return NORMAL_MAX_TARGET_SECONDS;
 }
 
-/** Teto do laço de polling. Ver `aguardarConclusao`. */
-export const PIPELINE_POLL_TIMEOUT_MS = 300_000;
+/**
+ * Teto do laço de polling. Ver `aguardarConclusao`.
+ *
+ * 600.000 ms (10 min) — V28, item 4, MEDIDO, não chutado: `SELECT
+ * EXTRACT(EPOCH FROM (raw_response_at - request_at))` sobre toda etapa
+ * `animar`/`compor`/`sincronizar` já completada no banco (31/08) deu o pior
+ * caso real em **248,6 s** (dois blocos `animar` consecutivos da mesma
+ * corrida, 29/08 17:3x — fila congestionada, não o `inference_time` do
+ * fornecedor, que é bem menor). Isso já é 83% do teto ANTIGO de 300 s — e o
+ * vídeo `c8f9ff46` (31/08) mediu o caso em que o teto antigo estourou DE
+ * VERDADE enquanto o trabalho continuava vivo na fila (`status: "COMPLETED"`
+ * minutos depois, confirmado por GET gratuito). 600 s dá ~2,4× de folga sobre
+ * o pior caso já observado, e reusa a MESMA ordem de grandeza que
+ * `DEFAULT_VENDOR_DOWNLOAD_TIMEOUT_MS` (vendorTimeout.ts) já usa para
+ * "operações que legitimamente demoram minutos" — dois números diferentes
+ * para o mesmo fenômeno seria a pergunta sem resposta que aquele arquivo já
+ * evita.
+ */
+export const PIPELINE_POLL_TIMEOUT_MS = 600_000;
 
 /** Intervalo entre leituras de status. */
 export const PIPELINE_POLL_INTERVAL_MS = 5_000;
@@ -682,6 +699,15 @@ export interface DiarioDoPipeline {
   abrirEtapa(etapa: EtapaDoPipeline, ordem: number, vendor: string, endpointId: string | null): Promise<string>;
   /** O PONTEIRO para o trabalho pago. Chamado antes de qualquer interpretação. */
   gravarRequestId(stepId: string, requestId: string): Promise<void>;
+  /**
+   * As URLs REAIS da fila (status/resultado) que a fal devolve no submit —
+   * V28, item 3, migration 071. OPCIONAL (`?`): guardas/sondas com diário em
+   * memória não precisam implementá-la, e `etapaNaFal` só a chama quando
+   * existe (`input.diario.gravarUrlsDaFila?.(...)`). Sem ela, um timeout de
+   * poll preserva o request_id mas não como a recuperação consultaria a fila
+   * depois sem reconstruir a URL por fórmula — arriscado, ver a migration.
+   */
+  gravarUrlsDaFila?(stepId: string, statusUrl: string, responseUrl: string): Promise<void>;
   /** O corpo BRUTO, antes de qualquer parsing. */
   gravarRespostaCrua(stepId: string, raw: string): Promise<void>;
   fecharEtapa(stepId: string, status: "completed" | "failed", motivo?: string): Promise<void>;
@@ -705,6 +731,37 @@ export class FalPipelineError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "FalPipelineError";
+  }
+}
+
+/**
+ * O poll ESTOUROU — mas o trabalho foi ACEITO pela fal. V28, item 3.
+ *
+ * ┌─ Por que é uma classe própria, e não FalPipelineError genérica ─────────┐
+ * │ MEDIDO em 31/08 (V27): um vídeo real (`c8f9ff46`) estourou este mesmo   │
+ * │ teto, foi marcado `status='error'`/`vendor_rejected` (rótulo ERRADO —   │
+ * │ não foi o fornecedor que rejeitou, foi o NOSSO poll que desistiu), e o  │
+ * │ bloco em questão tinha COMPLETADO na fal minutos depois — MEDIDO por    │
+ * │ GET de status/resultado, gratuito, contra o `request_id` gravado:       │
+ * │ `status: "COMPLETED"`, vídeo de 4,97s pronto, nunca buscado. `error`     │
+ * │ terminal escondia isso: `routes/videos.ts` tratava qualquer exceção     │
+ * │ deste laço do mesmo jeito que uma recusa de schema (nada a recuperar).  │
+ * │                                                                          │
+ * │ Com uma classe própria, quem chama pode distinguir "a fal recusou o     │
+ * │ trabalho" (terminal, sem o que buscar depois) de "a fal aceitou e eu    │
+ * │ desisti de esperar" (recuperável — `requestId` é a chave de tudo que    │
+ * │ falta) SEM ter de fazer parsing de mensagem.                            │
+ * └────────────────────────────────────────────────────────────────────────┘
+ */
+export class FalPollTimeoutError extends FalPipelineError {
+  constructor(
+    message: string,
+    public readonly requestId: string,
+    public readonly statusUrl: string,
+    public readonly etapa: EtapaDoPipeline,
+  ) {
+    super(message);
+    this.name = "FalPollTimeoutError";
   }
 }
 
@@ -755,9 +812,15 @@ export interface FalPipelineInput {
   /**
    * A FOTO REAL do rosto, como SEGUNDA referência de identidade em
    * `animar()` — V24, 31/08/2026. Até esta rodada o Wan só recebia a
-   * imagem COMPOSTA (`imagemUrl`/`imagemDeReferencia`); as sondas V20/V22
-   * (que seguraram identidade melhor) mandaram DUAS referências — foto real
-   * + composição.
+   * imagem COMPOSTA (`imagemUrl`/`imagemDeReferencia`). Decisão do
+   * operador, sem medição registrada NESTE repositório: o pedido original
+   * citava "sondas V20/V22" como precedente de que duas referências
+   * seguram identidade melhor — `git log -S "V20"` e `-S "V22"` não acham
+   * nada aqui (V27, 31/08), e a única sonda de Wan 3.0 já encontrada
+   * (RODADA 20, `probeWan3Prime.ts`) não é sobre isto. A referência dupla
+   * está implementada porque o schema do fornecedor permite (até 5 imagens
+   * em `image_urls`, LIDO por WebFetch) e o pedido foi explícito — não
+   * porque um teste MEDIDO comprovou a melhora.
    *
    * DISTINTA de `fotoBase`: aquele campo é lido só por `compor()` (a
    * composição pode não ser refeita numa retomada/aprovação, e nesse caso
@@ -1059,6 +1122,14 @@ export async function aguardarConclusao(
   statusUrl: string,
   requestId: string,
   opcoes: { timeoutMs: number; intervalMs: number; esperar: (ms: number) => Promise<void> },
+  /**
+   * V28, item 3 — QUAL etapa está sendo aguardada, só para o
+   * `FalPollTimeoutError` carregar a informação sem quem lê o erro precisar
+   * adivinhar pela URL. Opcional e por último: as guardas que já chamam esta
+   * função sem o parâmetro continuam compilando — o timeout delas cai no
+   * `"animar"` default, que é o único caminho medido a estourar até hoje.
+   */
+  etapa: EtapaDoPipeline = "animar",
 ): Promise<void> {
   const limite = Date.now() + opcoes.timeoutMs;
   let tentativas = 0;
@@ -1084,11 +1155,14 @@ export async function aguardarConclusao(
         tentativas,
         timeoutMs: opcoes.timeoutMs,
       });
-      throw new FalPipelineError(
+      throw new FalPollTimeoutError(
         `fal: o teto de ${opcoes.timeoutMs} ms de espera se esgotou em ${statusUrl} depois de ` +
           `${tentativas} leitura(s) de status. O trabalho NÃO foi perdido e NÃO deve ser refeito: ` +
           `ele já foi aceito e já custa, e o request_id ${requestId} está gravado — a recuperação é ` +
           "por ele. Repetir a etapa paga duas vezes pelo mesmo resultado.",
+        requestId,
+        statusUrl,
+        etapa,
       );
     }
     await opcoes.esperar(opcoes.intervalMs);
@@ -1333,11 +1407,24 @@ async function etapaNaFal(
     await input.diario.gravarRequestId(stepId, id);
   });
 
-  await aguardarConclusao(input.apiKeyFal, statusUrl, requestId, {
-    timeoutMs: input.pollTimeoutMs ?? PIPELINE_POLL_TIMEOUT_MS,
-    intervalMs: input.pollIntervalMs ?? PIPELINE_POLL_INTERVAL_MS,
-    esperar: input.esperar ?? dormir,
-  });
+  // V28, item 3 — as URLs REAIS da fila, gravadas ANTES do poll (que é
+  // exatamente o que pode estourar). Sem isto, um timeout preservava o
+  // request_id mas não como recuperar o resultado depois sem reconstruir a
+  // URL por fórmula — ver a migration 071. Opcional na interface: guardas com
+  // diário em memória simplesmente não gravam nada aqui.
+  await input.diario.gravarUrlsDaFila?.(stepId, statusUrl, responseUrl);
+
+  await aguardarConclusao(
+    input.apiKeyFal,
+    statusUrl,
+    requestId,
+    {
+      timeoutMs: input.pollTimeoutMs ?? PIPELINE_POLL_TIMEOUT_MS,
+      intervalMs: input.pollIntervalMs ?? PIPELINE_POLL_INTERVAL_MS,
+      esperar: input.esperar ?? dormir,
+    },
+    etapa,
+  );
 
   const saida = await falResult(input.apiKeyFal, responseUrl);
 

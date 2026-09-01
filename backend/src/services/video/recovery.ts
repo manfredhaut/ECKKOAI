@@ -142,6 +142,16 @@ export interface VideoEmVoo {
  * Quem re-arma o acompanhamento. Injetado em vez de importado para que a
  * varredura possa ser exercitada com um duplo — a guarda precisa contar quem
  * foi reacompanhado sem subir a aplicação nem tocar a rede.
+ *
+ * DOIS calhaus, não um — V28, item 3. `reacompanhar` (heygen/did) despacha
+ * por `pollVideoJob`, cujo ternário (`avatarProvider.ts`) não tem ramo para
+ * `fal` — ele cairia no `else` e mandaria a chave da fal, em claro, para
+ * `api.heygen.com`. `reacompanharFal` existe para nunca deixar isso
+ * acontecer: quando `linha.provider_vendor === "fal"`, é ELA que é chamada,
+ * nunca a genérica. Um vídeo fal só chega a `queued`/`processing` com
+ * `provider_job_id` presente depois desta rodada (poll-timeout recuperável,
+ * ver `routes/videos.ts`) — antes dela, nenhuma linha fal jamais passava por
+ * aqui, e por isso o risco nunca tinha disparado.
  */
 export type Reacompanhar = (linha: VideoEmVoo) => void | Promise<void>;
 
@@ -261,7 +271,17 @@ async function encerrar(
  * que não sobe não acompanha nada, que é o oposto do que este arquivo existe
  * para garantir.
  */
-export async function recoverInFlightVideos(reacompanhar: Reacompanhar): Promise<RecoveryResult> {
+export async function recoverInFlightVideos(
+  reacompanhar: Reacompanhar,
+  /**
+   * V28, item 3 — o calhau FAL, separado do genérico acima. Opcional só para
+   * não quebrar chamadores antigos (guardas) que não passam o segundo
+   * argumento; o produto (`index.ts`) sempre passa os dois. Sem ele, uma
+   * linha fal encontrada cai no ramo de log de baixo (nunca no `reacompanhar`
+   * genérico) — falha FECHADA, nunca o vazamento de chave.
+   */
+  reacompanharFal?: Reacompanhar,
+): Promise<RecoveryResult> {
   const resultado: RecoveryResult = {
     encontrados: 0,
     reacompanhados: 0,
@@ -351,6 +371,26 @@ export async function recoverInFlightVideos(reacompanhar: Reacompanhar): Promise
         const r = await encerrar(linha, "recovery_stale", MENSAGEM_VELHO);
         if (r.encerrado) resultado.encerradosVelhos += 1;
         if (r.estornado) resultado.estornados += 1;
+        continue;
+      }
+      // O DESPACHO POR VENDOR — V28, item 3. `fal` NUNCA passa pelo
+      // `reacompanhar` genérico (heygen/did) — ver o comentário do tipo
+      // `Reacompanhar` acima para o vazamento de chave que isso evitaria.
+      // Sem `reacompanharFal` injetada (chamador antigo, ex.: guarda que só
+      // testa o caminho heygen/did), a linha fica onde está e o log diz por
+      // quê — falha FECHADA, nunca silenciosa e nunca o vazamento.
+      if (linha.provider_vendor === "fal") {
+        if (!reacompanharFal) {
+          logEvent("error", "video_recovery_fal_sem_callback", {
+            context: "video.recovery",
+            videoId: linha.id,
+            consequence: "reacompanharFal não foi injetada — linha fal continua pendente, NÃO foi tratada pelo caminho heygen/did",
+          });
+          resultado.falhas += 1;
+          continue;
+        }
+        await reacompanharFal(linha);
+        resultado.reacompanhados += 1;
         continue;
       }
       await reacompanhar(linha);

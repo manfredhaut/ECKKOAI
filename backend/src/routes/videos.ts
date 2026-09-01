@@ -13,6 +13,7 @@ import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCat
 import { hasGenerationPath } from "../services/providers/vendorCatalog.js";
 import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 import { resolveTenantAvatarFalKey } from "../services/providers/platformKeys.js";
+import { falPoll, falResult } from "../services/providers/falClient.js";
 import { assertLookUsavel, LookInvalidoError, providerAvatarIdParaGeracao } from "../services/avatar/lookSelection.js";
 import { createNotification } from "../services/notifications.js";
 import { recordFailedProviderUsage, recordProviderUsage, type KeySource } from "../services/billing/usageTracking.js";
@@ -95,6 +96,7 @@ import {
   runFalPipelineDoVideoMudo,
   videoTierParaPipeline,
   vendorRequiredByTier,
+  FalPollTimeoutError,
   type EntradaDeComposicao,
   type VideoTier,
 } from "../services/video/falPipeline.js";
@@ -112,6 +114,7 @@ import {
   criarDiarioNoBanco,
   fecharCorrida,
   requestIdDaEtapa,
+  etapaPorRequestId,
 } from "../services/video/falPipelineJournal.js";
 import { aprovarEAnimar, recompor } from "../services/video/falApproval.js";
 import { materializeFalFixtureImage } from "../services/providers/fixtureProvider.js";
@@ -513,6 +516,102 @@ export async function rearmVideoPolling(linha: VideoEmVoo): Promise<void> {
     resolvida.source,
     endpointDeCriacaoPara(vendorDoJob),
   );
+}
+
+/**
+ * Re-arma o acompanhamento de UM registro FAL preso — V28, item 3.
+ *
+ * `rearmVideoPolling` (acima) despacha por `pollVideoJob`, cujo ternário
+ * (`avatarProvider.ts`) é `did ? pollDidTalk : pollHeygenVideo` — SEM ramo
+ * para `fal`. Chamá-la com um vídeo fal mandaria a CHAVE DA FAL em claro
+ * para `api.heygen.com` (o mesmo vazamento que o comentário de
+ * `recoverInFlightVideos`, em recovery.ts, já registrava para o estado
+ * `awaiting_approval*`, mas nunca fora dele). `recoverInFlightVideos` por
+ * isso despacha para ESTA função, nunca para `rearmVideoPolling`, quando
+ * `linha.provider_vendor === "fal"`.
+ *
+ * Só CONSULTA (GET, grátis — `falPoll`/`falResult` nunca são chamadas de
+ * escrita) e GRAVA o que descobre. NÃO reenvia a etapa (repetir cobraria de
+ * novo pelo mesmo trabalho) e NÃO continua o pipeline sozinha para os
+ * blocos/etapas seguintes seja lá do que for — completar exige gastar de
+ * novo, e quem decide gastar é uma pessoa, nunca uma varredura de boot. O
+ * que ela fecha é a lacuna MEDIDA no V27: o vídeo `c8f9ff46` estourou o poll
+ * de `animar`, foi marcado `error` terminal, e o bloco estava `COMPLETED` na
+ * fal minutos depois — pago, pronto, e perdido de vista por nunca mais
+ * ninguém ter perguntado.
+ */
+export async function reacompanharFal(linha: VideoEmVoo): Promise<void> {
+  if (!linha.provider_job_id) {
+    throw new Error("reacompanharFal chamado sem provider_job_id — a varredura deveria ter encerrado a linha");
+  }
+
+  const etapa = await etapaPorRequestId(linha.provider_job_id);
+  if (!etapa || !etapa.statusUrl) {
+    // Vídeo de ANTES da migration 071 (URLs nunca gravadas) — sem elas não
+    // há o que consultar sem reconstruir por fórmula, que é o risco que a
+    // migration existe para evitar (ver o comentário dela). A linha fica
+    // onde está; não é regressão, é o alcance real de um dado que só passou
+    // a ser gravado a partir desta rodada.
+    logEvent("error", "fal_recovery_sem_url", {
+      context: "video.reacompanharFal",
+      videoId: linha.id,
+      requestId: linha.provider_job_id.slice(0, 8) + "…",
+      consequence: "sem status_url gravada (anterior à migration 071, ou etapa não encontrada) — linha continua pendente",
+    });
+    return;
+  }
+
+  const credential = await getCredentialForVendor(linha.tenant_id, "avatar", "fal");
+  if (!credential) {
+    logEvent("error", "fal_recovery_sem_credencial", {
+      context: "video.reacompanharFal",
+      videoId: linha.id,
+      consequence: "sem credencial fal para o tenant; a linha continua em acompanhamento pendente",
+    });
+    return;
+  }
+  const { apiKey } = await resolveTenantAvatarFalKey(credential.apiKey);
+
+  const { status } = await falPoll(apiKey, etapa.statusUrl);
+  if (status === "queued" || status === "processing") {
+    logEvent("info", "fal_recovery_ainda_processando", { context: "video.reacompanharFal", videoId: linha.id, status });
+    return; // a próxima varredura de boot tenta de novo — nunca um laço aqui
+  }
+
+  if (status === "failed") {
+    // AGORA é terminal de verdade, com informação REAL — não mais "nosso
+    // poll desistiu", e sim "a fal confirmou falha". A regra de estorno não
+    // muda (job aceito → indeterminado → não estorna, ver videoFailure.ts);
+    // só a decisão deixa de ser tomada às cegas.
+    const decisao = decidirEstorno("vendor_reported_error", true);
+    await pool.query(
+      "UPDATE videos SET status = 'error', error_message = $2, failure_reason = $3 WHERE id = $1 AND status = 'processing'",
+      [
+        linha.id,
+        "O serviço de vídeo reportou falha neste trabalho depois de tê-lo aceitado. O que já foi cobrado não volta.",
+        "vendor_reported_error",
+      ],
+    );
+    logEvent("error", "fal_recovery_falhou_confirmado", { context: "video.reacompanharFal", videoId: linha.id, gasto: decisao.gasto });
+    return;
+  }
+
+  // status === "completed" — o achado do V27, agora tratado pela rotina.
+  const responseUrl = etapa.responseUrl ?? etapa.statusUrl.replace(/\/status$/, "");
+  const saida = await falResult(apiKey, responseUrl);
+  await pool.query(
+    "UPDATE fal_pipeline_steps SET raw_response = $2, raw_response_at = now(), status = 'completed', updated_at = now() WHERE id = $1",
+    [etapa.id, JSON.stringify(saida)],
+  );
+  logEvent("info", "fal_recovery_resultado_recuperado", {
+    context: "video.reacompanharFal",
+    videoId: linha.id,
+    etapa: etapa.etapa,
+    consequence: "resultado gravado; vídeo continua em processing — completar o pipeline é decisão paga, não automática",
+  });
+  // O vídeo CONTINUA em 'processing': o resultado deste bloco/etapa está a
+  // salvo (não se perde mais), mas terminar o vídeo (blocos restantes, ou
+  // narrar+sincronizar) significa gastar de novo — decisão de uma pessoa.
 }
 
 /**
@@ -1907,11 +2006,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       );
     } catch (err) {
       if (falRunId) {
-        await fecharCorrida(
-          falRunId,
-          "failed",
-          err instanceof Error ? err.message.slice(0, 200) : String(err),
-        );
+        await fecharCorrida(falRunId, "failed", err instanceof Error ? err.message : String(err));
       }
       // O job nunca foi aceito pelo fornecedor — nada foi renderizado, nenhuma
       // cota gasta. Este é o ÚLTIMO ponto do fluxo de vídeo em que o estorno
@@ -2492,7 +2587,46 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         await createNotification(req.tenantId, "video_muted_awaiting_approval", "Your muted video is ready for approval.");
         return reply.send(withDeliveredSeconds(aguardandoVideo[0] as VideoRow));
       } catch (err) {
-        await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
+        // V28, item 3 — o poll estourou, mas a fal ACEITOU o trabalho
+        // (`FalPollTimeoutError` só existe para este caso — ver o comentário
+        // da classe, falPipeline.ts). MEDIDO em 31/08 (V27): o vídeo
+        // `c8f9ff46` estourou este mesmo teto e o bloco tinha `COMPLETED` na
+        // fal minutos depois, com um vídeo pronto nunca buscado, porque o
+        // caminho abaixo marcava `error`/`vendor_rejected` terminal — rótulo
+        // ERRADO (a fal não rejeitou nada) e sem volta (a varredura de boot
+        // só olha `queued`/`processing`/`awaiting_approval*`).
+        //
+        // A CORREÇÃO: não vira 'error'. Fica em 'processing' (o valor que
+        // `marcarAprovado`, acima, já gravou) — um dos ESTADOS_NAO_TERMINAIS
+        // que `recovery.ts` já varre no próximo boot. `provider_job_id` passa
+        // a apontar para o request_id DESTA etapa (animar), não mais o da
+        // composição — é ele que a recuperação fal-aware vai consultar (ver
+        // `reacompanharFal`). `failure_reason='poll_timeout'` é só uma
+        // ANOTAÇÃO — o enum já previa o valor (`videos_failure_reason_check`),
+        // nunca tinha sido escrito. Não passa por `decidirEEstornar`: nada
+        // terminou ainda, não há o que decidir, e decidir cedo demais seria
+        // o mesmo erro que motivou este item.
+        if (err instanceof FalPollTimeoutError) {
+          await pool.query(
+            "UPDATE videos SET provider_job_id = $2, failure_reason = $3 WHERE id = $1 AND status = 'processing'",
+            [video.id, err.requestId, "poll_timeout"],
+          );
+          logEvent("warn", "fal_poll_timeout_recuperavel", {
+            context: "videos.approve",
+            videoId: video.id,
+            etapa: err.etapa,
+            requestId: err.requestId.slice(0, 8) + "…",
+            consequence: "vídeo continua em processing; a varredura de boot consulta o request_id depois",
+          });
+          return reply.code(202).send({
+            status: "processing",
+            message:
+              "O serviço de vídeo aceitou o trabalho e ainda está processando — mais tempo do que o " +
+              "esperado, mas nada foi perdido. O sistema vai verificar o resultado automaticamente. Nada " +
+              "foi cobrado a mais e nada precisa ser refeito.",
+          });
+        }
+        await fecharCorrida(runId, "failed", err instanceof Error ? err.message : String(err));
         const { failure, message } = toClientVendorError("avatar", "videos.approve", err);
 
         // O estorno da ANIMAÇÃO desta corrida, não da composição.
@@ -2679,7 +2813,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         }
         return reply.send(withDeliveredSeconds(recomposto[0] as VideoRow));
       } catch (err) {
-        await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
+        await fecharCorrida(runId, "failed", err instanceof Error ? err.message : String(err));
         const { failure, message } = toClientVendorError("avatar", "videos.recompose", err);
         // A linha CONTINUA em `awaiting_approval`: a imagem anterior segue
         // válida e aprovável. Uma recomposição que falha não pode destruir a
@@ -2853,22 +2987,56 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         await createNotification(req.tenantId, "video_ready", "Your video is ready.");
         return reply.send(withDeliveredSeconds(pronto[0] as VideoRow));
       } catch (err) {
-        await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
+        // V28, item 3 — mesmo raciocínio de `/approve`: um poll que estoura
+        // aqui é sobre NARRAR ou SINCRONIZAR, não sobre a fal ter rejeitado.
+        if (err instanceof FalPollTimeoutError) {
+          await pool.query(
+            "UPDATE videos SET provider_job_id = $2, failure_reason = $3 WHERE id = $1 AND status = 'processing'",
+            [video.id, err.requestId, "poll_timeout"],
+          );
+          logEvent("warn", "fal_poll_timeout_recuperavel", {
+            context: "videos.approveVideo",
+            videoId: video.id,
+            etapa: err.etapa,
+            requestId: err.requestId.slice(0, 8) + "…",
+            consequence: "vídeo continua em processing; a varredura de boot consulta o request_id depois",
+          });
+          return reply.code(202).send({
+            status: "processing",
+            message:
+              "O serviço de vídeo aceitou o trabalho e ainda está processando — mais tempo do que o " +
+              "esperado, mas nada foi perdido. O sistema vai verificar o resultado automaticamente. Nada " +
+              "foi cobrado a mais e nada precisa ser refeito.",
+          });
+        }
+        await fecharCorrida(runId, "failed", err instanceof Error ? err.message : String(err));
         const { failure, message } = toClientVendorError("avatar", "videos.approveVideo", err);
 
-        // NUNCA estorna. `animar` (a etapa mais cara já vista até aqui, e a
-        // única sempre paga: US$ 0,25 no Wan, ~US$ 4,60+ no Seedance) já foi
-        // aceita e cobrada numa corrida ANTERIOR — `video.provider_job_id`
-        // é a prova disso, capturado ANTES desta tentativa. Uma falha em
-        // narrar ou sincronizar não desfaz esse gasto, e `decidirEEstornar`
-        // com um `providerJobId` presente devolve `indeterminado`, nunca
-        // `nao_saiu` — a mesma postura conservadora que `/approve` já tem
-        // para falhas depois de `animar` ter sido aceito.
+        // `animar` (a etapa mais cara já vista até aqui) já foi aceita e
+        // cobrada numa corrida ANTERIOR, e `video.provider_job_id` é prova
+        // disso — mas usar ESSE id aqui responde a pergunta ERRADA. A
+        // pergunta certa é sobre a etapa que ACABOU de falhar NESTA corrida:
+        // sincronizar (lipsync) ou narrar (TTS, sem request_id de fila —
+        // `requestIdDaEtapa` devolve `null` para ela, o que já é a resposta
+        // certa: sem job na fal, nada saiu POR ELA).
+        //
+        // BUG V28, item 5, MEDIDO: antes desta correção, o código usava
+        // `video.provider_job_id` (o id de `animar`, sempre presente aqui) —
+        // então TODA falha depois de `animar` virava `indeterminado`
+        // (não estorna), inclusive quando `sincronizar` levava um 422 ANTES
+        // de a fal aceitar o job (ex.: vídeo `134bc164`, RODADA 1/29-08: URL
+        // local inacessível — `checkFalUploadGuardPolicy.ts` fechou a CAUSA
+        // desse 422 depois, mas o gasto continuou classificado errado). Com
+        // `requestIdDaEtapa(runId, "sincronizar")`, o mesmo caso agora dá
+        // `nao_saiu` e ESTORNA — sem mudar a regra já fechada ("depois do
+        // aceite, não estorna": aqui continua valendo, só a PERGUNTA usa a
+        // etapa certa).
+        const sincronizarRequestId = await requestIdDaEtapa(runId, "sincronizar");
         const estornado = await decidirEEstornar({
           videoId: video.id,
           tenantId: req.tenantId,
           reason: "vendor_rejected",
-          providerJobId: video.provider_job_id,
+          providerJobId: sincronizarRequestId,
         });
 
         // O vídeo NÃO volta para `awaiting_approval_video`: a etapa paga pode
@@ -3004,7 +3172,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         }
         return reply.send(withDeliveredSeconds(refeito[0] as VideoRow));
       } catch (err) {
-        await fecharCorrida(runId, "failed", err instanceof Error ? err.message.slice(0, 200) : String(err));
+        await fecharCorrida(runId, "failed", err instanceof Error ? err.message : String(err));
         const { failure, message } = toClientVendorError("avatar", "videos.redoVideo", err);
         // A linha CONTINUA em `awaiting_approval_video`: o vídeo mudo anterior
         // segue válido e aprovável. Um refazer que falha não pode destruir o
