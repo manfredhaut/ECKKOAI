@@ -42,13 +42,7 @@ import { corpoDaGeracao } from "./steps/GenerateStep";
  */
 
 /**
- * Os OITO campos, nesta ordem — a do passo Cena/Roteiro, de cima para baixo.
- *
- * A 8ª — "targetDuration" — entrou em 01/09/2026 (V34, item 2): a
- * duração-alvo do passo Roteiro chegava ao servidor desde antes, mas nunca
- * aparecia aqui, e é justamente o parâmetro que o pipeline passou a
- * recusar-antes-de-gastar quando a fala real diverge dele (ver
- * `compararAlvoComFala`, falPipeline.ts).
+ * Os SETE campos, nesta ordem — a do passo Cena, de cima para baixo.
  *
  * Eram seis até 28/08: Cenário tinha rastreio próprio (`defaults.scenarioName`,
  * um nome de arquivo — ver o histórico abaixo), ele foi removido quando
@@ -116,13 +110,6 @@ export function resumoDaGeracao(
     { campo: "motionPrompt", value: corpo.motion_prompt },
     { campo: "expressiveness", value: corpo.expressiveness },
     { campo: "format", value: plataforma ? plataforma.aspectRatio : null },
-    // ALVO DE DURAÇÃO — V34, item 2. `null` (Mais sem número, ou nenhuma
-    // escolha) mostra "nenhum" como as outras linhas opcionais — mesmo
-    // motivo do cabeçalho: uma ausência silenciosa já custou dois vídeos.
-    {
-      campo: "targetDuration",
-      value: corpo.target_duration_seconds != null ? `${corpo.target_duration_seconds}s` : null,
-    },
   ];
 }
 

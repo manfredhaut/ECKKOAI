@@ -209,3 +209,51 @@ Saídas possíveis, nenhuma escolhida ainda:
 Nenhuma das três foi adotada como regra fixa nesta rodada — fica registrado
 como o primeiro dado de um padrão que só a próxima ocorrência (se houver)
 vai confirmar ou não.
+
+---
+
+## Ocorrência 4 · `git stash create` ignora arquivo NÃO RASTREADO, e a passada `--guard`/completa reprova com guardas novas ambíguas
+
+**Contagem: 2ª vez — a segunda é DECLARADA pelo operador, não medida por mim
+(não fui atrás da primeira nesta rodada); a que está MEDIDA abaixo é a
+segunda instância.**
+
+**MEDIDO no fechamento do V34 (01/09/2026).** `tools/run-mutants.mjs`
+(`prepararArvores`) ancora a passada em paralelo com `git stash create` +
+`git worktree add` quando a árvore está suja — o próprio comentário do
+arquivo descreve isso como "commit temporário da árvore suja". O que o
+comentário NÃO diz, e que só apareceu medindo: **`git stash create` (ao
+contrário de `git stash` sem `create`) NÃO inclui arquivo NÃO RASTREADO no
+commit que produz** — é comportamento documentado do próprio git, não bug
+do `run-mutants.mjs`. Três arquivos novos desta rodada
+(`checkAlvoDeDuracaoPolicy.ts`, `checkTrimOvershootPolicy.ts`,
+`checkFixtureFormatEnsaioPolicy.ts`) ainda não tinham passado por `git add`
+quando a primeira passada `--guard` rodou. Resultado: as 6 cópias de
+worktree foram criadas a partir de um commit em que esses três arquivos
+**não existiam**, `checkPolicy.ts`/`mutantRegistry.ts` (que já os
+importavam, porque essas edições ESTAVAM na árvore de trabalho, só não no
+stash) quebravam a importação dentro de cada worktree, e TODOS os mutantes
+da passada — inclusive os de guardas antigas, sem relação nenhuma com os
+três arquivos novos — saíram com o mesmo veredito: `reprovou (2)`, sem a
+mensagem esperada. A leitura fácil seria "26 guardas inertes"; era uma
+única causa, e nenhuma delas.
+
+### O que fechou a dúvida
+
+`git add` dos três arquivos novos (sem commitar) imediatamente antes de
+relançar a passada — o próximo `git stash create` passou a incluí-los, e os
+mesmos 26 mutantes que antes davam `reprovou (2)` uniformemente passaram a
+reprovar com a mensagem certa (ou, nos casos em que ainda não reprovavam,
+com uma causa específica e diagnosticável — ver os outros achados do
+fechamento do V34 no `CLAUDE.md`, Seção 6).
+
+### A regra, agora fixa
+
+**Todo arquivo NOVO (nunca commitado) precisa passar por `git add` — sem
+commitar — ANTES de rodar `npm run check:mutants`, filtrado ou completo.**
+Isso vale tanto para arquivos de guarda (`backend/src/scripts/check*.ts`)
+quanto para qualquer arquivo de produto novo que uma guarda nova referencie.
+`git status --short` mostrando `??` (não `A `/`M `) num arquivo tocado nesta
+sessão é o sinal de que a próxima passada vai mentir. Isto não substitui
+"nunca commitar sem pedido explícito do operador" — `git add` sozinho não
+commita nada, só torna o arquivo visível para `git stash create`.
