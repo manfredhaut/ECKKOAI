@@ -103,9 +103,13 @@ export async function checkWanPromptQuoteHeuristicPolicy(): Promise<WanPromptQuo
   for (const { termo, exemplo } of CASOS) {
     // (a) falso positivo eliminado: o termo aparece DENTRO de uma fala
     // citada entre aspas retas, com direção em inglês fora delas.
+    // V33, item 4 (01/09/2026) — `negative_prompt` saiu do contrato do Wan
+    // 3.0; o linter agora checa uma âncora do bloco anti-artefato DENTRO do
+    // prompt (`ANCORA_ANTI_ARTEFATO_LINT`, falPipeline.ts). "Avoid: cartoon
+    // style..." precisa estar presente para não confundir o teste ALVO desta
+    // guarda (exceção de aspas) com o defeito de outra guarda.
     const corpoComFalaCitada = {
-      prompt: `Medium shot, speak with an inspiring tone while looking into the lens: "${exemplo}." Hold a steady gaze.`,
-      negative_prompt: "cartoon, watermark",
+      prompt: `Medium shot, speak with an inspiring tone while looking into the lens: "${exemplo}." Hold a steady gaze. Avoid: cartoon style, watermark.`,
     };
     try {
       lintarPromptDoBlocoWan(corpoComFalaCitada);
@@ -118,8 +122,7 @@ export async function checkWanPromptQuoteHeuristicPolicy(): Promise<WanPromptQuo
     // (b) falso negativo continua pego: o MESMO termo, FORA de qualquer
     // aspas — erro real de tradução esquecida.
     const corpoComPortuguesEsquecido = {
-      prompt: `Medium shot, ${exemplo}, hold a steady gaze throughout.`,
-      negative_prompt: "cartoon, watermark",
+      prompt: `Medium shot, ${exemplo}, hold a steady gaze throughout. Avoid: cartoon style, watermark.`,
     };
     let reprovouComoEsperado = false;
     try {

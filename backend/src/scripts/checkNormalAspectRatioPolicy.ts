@@ -6,11 +6,19 @@
  *
  * MEDIDO por leitura do schema oficial da fal (WebFetch, V24): o enum de
  * `aspect_ratio` de `wan/v2.6/reference-to-video/flash` — o motor de animação
- * do tier Normal — é EXATAMENTE `["16:9","9:16","1:1","4:3","3:4"]`. **4:5 não
- * está nele.** `fal-ai/nano-banana-2/edit` (o `compor`, primeira etapa paga)
- * TEM 4:5 no próprio enum — então, sem este bloqueio, um vídeo Normal com
- * "Feed do Instagram (4:5)" pagaria a composição (~US$ 0,08) e só então
- * levaria a recusa do fornecedor na animação, a etapa mais cara.
+ * do tier Normal NAQUELA data — era EXATAMENTE `["16:9","9:16","1:1","4:3","3:4"]`.
+ * **4:5 não estava nele.** `fal-ai/nano-banana-2/edit` (o `compor`, primeira
+ * etapa paga) TEM 4:5 no próprio enum — então, sem este bloqueio, um vídeo
+ * Normal com "Feed do Instagram (4:5)" pagaria a composição (~US$ 0,08) e só
+ * então levaria a recusa do fornecedor na animação, a etapa mais cara.
+ *
+ * ⚠️ RECONFIRMADO em 01/09/2026 (V33, item 10) depois da migração do motor
+ * de animação para `alibaba/wan-3.0/reference-to-video`: o enum NOVO, LIDO
+ * por WebFetch (V32, Parte A), é `adaptive|16:9|4:3|1:1|3:4|9:16` — **4:5
+ * também não está nele.** A CONCLUSÃO desta guarda (bloquear 4:5 no tier
+ * Normal) continua correta; o motivo mudou de endpoint, não de resultado —
+ * o texto acima ("wan/v2.6/reference-to-video/flash") é histórico, mantido
+ * porque foi a medição que originou este bloqueio, não a medição atual.
  *
  * O mesmo raciocínio de Fundo/Look (SceneStep.tsx, BLOCO A): um controle que
  * o servidor vai rejeitar depois de cobrar é pior que um controle ausente.

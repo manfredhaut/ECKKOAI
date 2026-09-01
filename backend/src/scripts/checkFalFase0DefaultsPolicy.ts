@@ -59,18 +59,14 @@ export const MUTANTS: Mutant[] = [
     guard: "câmera fixa, gesto contido, mão longe do rosto e plano único chegam SEMPRE ao prompt da animação",
     name: "as quatro regras fixas de vídeo deixam de ir à animação",
     kind: "obvio",
-    // REESCRITO na migração para `reference-to-video/flash` (item 2, 29/08):
-    // `prompt` virou um template multi-linha com o rótulo "Character1:" na
-    // frente — ver `checkFalSceneWiringPolicy.ts` para a mesma âncora usada
-    // do outro lado.
+    // REESCRITO na migração para Wan 3.0 (V33, item 1, 01/09/2026): `prompt`
+    // virou uma LISTA de trechos unida por espaço (identidade + direção +
+    // regras novas do Wan 3.0 + anti-artefato), e `comDefaultsDeDirecao`
+    // entra como um elemento seu — ver `checkFalSceneWiringPolicy.ts` para a
+    // mesma âncora usada do outro lado.
     file: PIPELINE,
-    find: "    // FASE 0 — câmera fixa, gesto contido, mão longe do rosto: SEMPRE, mesmo\n" +
-      "    // sem Interpretação nenhuma escrita. Ver `comDefaultsDeDirecao`.\n" +
-      "    prompt:\n" +
-      "      `Character1: ${comDefaultsDeDirecao(direcaoDoBloco)} Keep Character1's face, outfit and the scene ` +",
-    replace:
-      "    prompt:\n" +
-      "      `Character1: ${direcaoDoBloco} Keep Character1's face, outfit and the scene ` +",
+    find: "  const prompt = [\n    clausulaDeReferencia,\n    comDefaultsDeDirecao(direcaoDoBloco),",
+    replace: "  const prompt = [\n    clausulaDeReferencia,\n    direcaoDoBloco,",
     expect: "fase 0: a animação enviada à fal não leva as regras fixas de câmera/gesto/mão/plano",
   },
 ];

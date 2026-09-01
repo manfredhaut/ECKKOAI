@@ -185,25 +185,24 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
   },
   {
     vendor: "fal",
-    // SEM prefixo `fal-ai/` — MEDIDO por fusível em 14/08 (ENDPOINTS-3). Wan
-    // 2.6 é Partner e mora direto em `wan/`; ver o comentário de
-    // `ENDPOINT_ANIMAR` em falPipeline.ts para a causa raiz dos dois 404
-    // anteriores.
+    // SEM prefixo `fal-ai/` — mesma convenção de modelo Partner do Wan 2.6
+    // (MEDIDO por fusível em 14/08, ENDPOINTS-3), NÃO reconfirmada por
+    // fusível para este id específico. Ver o comentário de `ENDPOINT_ANIMAR`
+    // em falPipeline.ts.
     //
-    // Motor do tier "Normal". MIGRADO em 29/08 de `image-to-video/flash`
-    // para `reference-to-video/flash` (item 2) — ver `ENDPOINT_ANIMAR` em
-    // falPipeline.ts para o porquê. Seedance 2.5 (`bytedance/seedance-2.5/
-    // reference-to-video`) foi pesquisado e ligado brevemente no BLOCO
-    // SEEDANCE-1 (21/08), revertido no mesmo dia — reservado pro tier
-    // "Premium", ver `ENDPOINT_ANIMAR_PREMIUM` em falPipeline.ts.
-    path: "/wan/v2.6/reference-to-video/flash",
+    // Motor do tier "Normal". MIGRADO em 01/09/2026 (V33, item 1) de
+    // `wan/v2.6/reference-to-video/flash` para `alibaba/wan-3.0/reference-
+    // to-video` — ver `ENDPOINT_ANIMAR` em falPipeline.ts para o porquê.
+    // Seedance 2.5 (`bytedance/seedance-2.5/reference-to-video`) segue
+    // reservado pro tier "Premium", ver `ENDPOINT_ANIMAR_PREMIUM`.
+    path: "/alibaba/wan-3.0/reference-to-video",
     method: "POST",
     billable: true,
     note:
-      "animação por referência de identidade — a camada ANIMAÇÃO. Tarifação por segundo gerado " +
-      "(US$ 0,025/s mudo, LIDO por schema em 29/08 — ver migration 070/provider_prices), e a régua " +
-      "única de 3 unidades/s do providerCost.ts NÃO vale aqui: as três medições que a sustentam " +
-      "são todas de photo avatar 720p na HeyGen.",
+      "animação por referência de identidade — a camada ANIMAÇÃO. Tarifação por segundo gerado, POR " +
+      "RESOLUÇÃO (US$ 0,05/s a 480p, a resolução em uso — LIDO por schema em 01/09/2026, ver migration " +
+      "073/provider_prices). A régua única de 3 unidades/s do providerCost.ts NÃO vale aqui: as três " +
+      "medições que a sustentam são todas de photo avatar 720p na HeyGen.",
   },
   {
     vendor: "fal",

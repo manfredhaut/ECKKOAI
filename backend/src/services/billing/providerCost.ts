@@ -549,19 +549,24 @@ export const PRECOS_FAL = {
   /** por imagem, `nano-banana-2/edit` */
   comporUsd: 0.08,
   /**
-   * Por segundo de vídeo gerado, `wan/v2.6/image-to-video/flash` 720p, COM
-   * `generate_audio: false` — que é o que este pipeline sempre manda.
+   * Por segundo de vídeo gerado, `alibaba/wan-3.0/reference-to-video`, na
+   * resolução EM USO (480p — ver `RESOLUCAO_VIDEO`, falPipeline.ts).
    *
-   * ⚠️ **DOCUMENTADO (não MEDIDO), com URL — corrigido em 14/08 (ENDPOINTS-3),
-   * o valor anterior (0,10) era o preço do tier PADRÃO (não-flash) do Wan, não
-   * o do flash com áudio mudo.** Citação verbatim da doc:
-   * <https://fal.ai/models/wan/v2.6/image-to-video/flash/api> — "Audio video
-   * (generate_audio=True, default) is billed at half the standard I2V rate;
-   * silent video (generate_audio=False) at 25%." O "standard I2V rate" é
-   * US$ 0,10/s a 720p (tier não-flash, `wan/v2.6/reference-to-video`
-   * <https://fal.ai/models/wan/v2.6/reference-to-video/api>) — as duas
-   * porcentagens (50% e 25%) são do MESMO número-base, não uma da outra.
-   * `0,10 × 0,25 = 0,025`.
+   * ⚠️ **MIGRADO em 01/09/2026 (V33, item 11) de `wan/v2.6/reference-to-
+   * video/flash` (US$ 0,025/s) para `alibaba/wan-3.0/reference-to-video`.**
+   * LIDO por WebFetch na doc do fornecedor (V32, Parte A, item 1g): preço
+   * por RESOLUÇÃO, não um único número — **US$ 0,05/s a 480p, US$ 0,10/s a
+   * 720p, US$ 0,20/s a 1080p** (cada degrau dobra o anterior). 480p é a
+   * resolução mínima pedida nesta rodada (item 7) e a que o produto usa; se
+   * 720p/1080p forem ligados no futuro, ESTE número precisa trocar junto —
+   * `provider_prices` (migration 073) tem a mesma amarra, e os dois
+   * precisam concordar (`custoDaEtapa` usa o da tabela quando existe; este
+   * aqui é só o fallback "pelo código", ver `custoDaEtapa`).
+   *
+   * Ao contrário do Wan 2.6 (que tinha uma variante "flash" com 25% de
+   * desconto para `generate_audio: false`), o Wan 3.0 NÃO documenta desconto
+   * por desligar o áudio nativo (`audio: false`) — é o MESMO preço da
+   * resolução, com ou sem áudio. NÃO VERIFICADO por fatura real.
    *
    * ⚠️ **Motor do tier "Premium" (pesquisado, NÃO ligado): Seedance 2.5.**
    * O BLOCO SEEDANCE-1 (21/08) mediu, por leitura de doc pública, que
@@ -572,15 +577,15 @@ export const PRECOS_FAL = {
    * <https://fal.ai/models/bytedance/seedance-2.5/reference-to-video>.
    * Aplicando para 720p sem vídeo de entrada, 10 s de saída: tokens =
    * (720 × 1280 × 10 × 24) ÷ 1024 = 216.000 → **US$ 4,6224 para 10 s** →
-   * **~US$ 0,462/s — ~18,5× este número.** NÃO VERIFICADO por chamada real
-   * nem por fusível. Revertido em 21/08 (decisão de produto: Wan é o motor
-   * do tier "Normal"); a conversão fica registrada aqui para quando o tier
+   * **~US$ 0,462/s.** NÃO VERIFICADO por chamada real nem por fusível.
+   * Revertido em 21/08 (decisão de produto: Wan é o motor do tier
+   * "Normal"); a conversão fica registrada aqui para quando o tier
    * "Premium" for implementado, com teto de gasto PRÓPRIO em vez do
    * `PIPELINE_TETO_USD` global abaixo — reusar o teto global recusaria a
    * etapa `animar` do Premium antes de qualquer chamada, como aconteceu
    * durante o BLOCO SEEDANCE-1.
    */
-  animarUsdPorSegundo: 0.025,
+  animarUsdPorSegundo: 0.05,
   /** por segundo de ÁUDIO, `sync-lipsync/v2` — o áudio é que define a duração */
   sincronizarUsdPorSegundoDeAudio: 0.05,
 } as const;
@@ -659,10 +664,16 @@ export const NORMAL_TETO_MARGEM = 1.2;
  * agora oferece.
  *
  * SEGURO para o caminho de UM bloco só (comportamento de antes desta
- * rodada): para 15 s, `custoNormalEstimadoUsd(15)` ≈ US$ 1,205, × 1,2 ≈
- * US$ 1,45 — MAIOR que o pior caso real (US$ 1,205), então nenhuma geração
- * de um bloco só que passava pelo teto fixo de US$ 2,00 passa a ser recusada
- * por este teto mais apertado.
+ * rodada): para 15 s, `custoNormalEstimadoUsd(15)` = 0,08 + 0,05×15 +
+ * 0,05×15 = **US$ 1,58**, × 1,2 = **US$ 1,896 (arredondado, US$ 1,90)** —
+ * MAIOR que o custo real que ele autoriza, então nenhuma geração de um
+ * bloco só é recusada por este teto.
+ *
+ * ⚠️ RECALCULADO em 01/09/2026 (V33, item 11) para o preço do Wan 3.0 a
+ * 480p (US$ 0,05/s — ver `PRECOS_FAL.animarUsdPorSegundo`). Antes desta
+ * rodada, com o Wan 2.6 a US$ 0,025/s, o mesmo cálculo dava
+ * `custoNormalEstimadoUsd(15)` ≈ US$ 1,205 × 1,2 ≈ US$ 1,45 — texto
+ * histórico, superado.
  *
  * ⚠️ O tier "Premium" (Seedance 2.5) usa `PIPELINE_TETO_USD_PREMIUM` abaixo,
  * inalterado — o preço por segundo dele é ~18,5× maior, e reusar esta mesma

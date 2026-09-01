@@ -201,16 +201,12 @@ export const MUTANTS: Mutant[] = [
     // ver `checkFalFase0DefaultsPolicy.ts`. A âncora precisa da chamada nova
     // para continuar única no arquivo.
     //
-    // REESCRITO de novo na migração para `reference-to-video/flash` (item 2,
-    // 29/08): `image_url` singular virou `image_urls: [imagemDeReferencia]`
-    // (lista de referência de identidade, não mais quadro de partida — ver
-    // `ENDPOINT_ANIMAR` em falPipeline.ts), e o `prompt` ganhou o rótulo
-    // "Character1:" na frente da direção — a âncora usa só o INÍCIO do
-    // template (`` `Character1: ${comDefaultsDeDirecao(direcaoDoBloco)}` ``),
-    // que continua único no arquivo.
+    // REESCRITO de novo na migração para Wan 3.0 (V33, item 1, 01/09/2026):
+    // `prompt` virou uma LISTA de trechos unida por espaço — a âncora usa o
+    // elemento que carrega a direção, que continua único no arquivo.
     file: PIPELINE,
-    find: "    prompt:\n      `Character1: ${comDefaultsDeDirecao(direcaoDoBloco)}",
-    replace: "    prompt:\n      `Character1: ${comDefaultsDeDirecao(input.promptDeComposicao)}",
+    find: "    clausulaDeReferencia,\n    comDefaultsDeDirecao(direcaoDoBloco),",
+    replace: "    clausulaDeReferencia,\n    comDefaultsDeDirecao(input.promptDeComposicao),",
     expect: "direção: o prompt do motor de animação não é a direção",
   },
   {
@@ -359,10 +355,11 @@ export const MUTANTS: Mutant[] = [
     kind: "obvio",
     // V24, 31/08/2026 — reverte exatamente a correção do item 7: `animar()`
     // volta a receber só a imagem composta, ignorando `fotoDeIdentidadeUrl`
-    // mesmo quando a corrida a forneceu.
+    // mesmo quando a corrida a forneceu. RENOMEADO `image_urls` →
+    // `reference_image_urls` na migração para Wan 3.0 (V33, item 1).
     file: PIPELINE,
-    find: "image_urls: fotoDeIdentidadeUrl ? [imagemDeReferencia, fotoDeIdentidadeUrl] : [imagemDeReferencia],",
-    replace: "image_urls: [imagemDeReferencia],",
+    find: "  const referencias = fotoDeIdentidadeUrl ? [imagemDeReferencia, fotoDeIdentidadeUrl] : [imagemDeReferencia];",
+    replace: "  const referencias = [imagemDeReferencia];",
     expect: "identidade: com a foto real do rosto disponível",
   },
 ];
@@ -428,9 +425,26 @@ export function instalarFetch(estado: {
     }
     if (url.includes("fal.invalido")) return new Response("", { status: 200 });
 
-    // ElevenLabs: deixado FALHAR de propósito. Ver o cabeçalho — a corrida da
-    // animação morre aqui, depois de o corpo dela já ter sido submetido.
-    if (url.includes("elevenlabs")) return new Response("sem TTS nesta prova", { status: 500 });
+    // ElevenLabs — V33, item 2 (01/09/2026): PASSOU A SUCEDER. Até esta
+    // rodada era deixado FALHAR de propósito, porque `narrar()` só rodava
+    // DEPOIS de `animar()` — a corrida morria aqui, mas só depois de o corpo
+    // de `animar` já ter sido submetido e capturado. Desde a migração para
+    // Wan 3.0, roteiros curtos (o `"Roteiro curto da prova."` usado abaixo,
+    // ≤`LIMITE_TAKE_UNICO_SEGUNDOS`) narram ANTES de animar
+    // (`animarTomadaUnicaComAudioReal`) — uma falha aqui agora impediria
+    // `animar` de sequer ser chamado, e é exatamente o corpo de `animar` que
+    // estas guardas existem para inspecionar. `audio_base64`/`alignment` de
+    // mentira bastam: nenhuma guarda que usa esta simulação lê o áudio em
+    // si, só o corpo submetido a `animar`/`compor`.
+    if (url.includes("elevenlabs")) {
+      return new Response(
+        JSON.stringify({
+          audio_base64: Buffer.from("audio-de-mentira").toString("base64"),
+          alignment: { character_end_times_seconds: [0.1, 1.8] },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
 
     // Fila: status e resultado vêm por URL devolvida, nunca montada.
     if (url.includes("/status")) {
@@ -1045,41 +1059,45 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
         `erro ${JSON.stringify(animacaoComFoto.erro.slice(0, 140))}.`,
     );
   } else {
-    const imagensComFoto = Array.isArray(animarComFoto.corpo.image_urls)
-      ? (animarComFoto.corpo.image_urls as string[])
+    // RENOMEADO `image_urls` → `reference_image_urls` na migração para Wan
+    // 3.0 (V33, item 1, 01/09/2026) — mesmo campo, nome novo.
+    const imagensComFoto = Array.isArray(animarComFoto.corpo.reference_image_urls)
+      ? (animarComFoto.corpo.reference_image_urls as string[])
       : [];
     if (imagensComFoto.length !== 2) {
       failures.push(
-        "identidade: com a foto real do rosto disponível, `image_urls` do motor de animação deveria " +
-          `trazer 2 entradas (composta + foto real) e saiu com ${imagensComFoto.length} — ` +
+        "identidade: com a foto real do rosto disponível, `reference_image_urls` do motor de animação " +
+          `deveria trazer 2 entradas (composta + foto real) e saiu com ${imagensComFoto.length} — ` +
           `${JSON.stringify(imagensComFoto)}. Sem a segunda referência, o Wan segura identidade só a ` +
           "partir da imagem composta — decisão do operador de reforçar com a foto real, não uma " +
           "melhora medida neste repositório.",
       );
     } else if (imagensComFoto[0] !== "https://v3b.fal.media/imagem-aprovada.png") {
       failures.push(
-        `identidade: a PRIMEIRA entrada de \`image_urls\` deixou de ser a imagem composta — saiu ` +
-          `${JSON.stringify(imagensComFoto)}. A composta continua sendo a referência PRINCIPAL; a foto ` +
-          "real é um reforço, nunca uma substituta.",
+        `identidade: a PRIMEIRA entrada de \`reference_image_urls\` deixou de ser a imagem composta — ` +
+          `saiu ${JSON.stringify(imagensComFoto)}. A composta continua sendo a referência PRINCIPAL; a ` +
+          "foto real é um reforço, nunca uma substituta.",
       );
     } else if (imagensComFoto[1] === imagensComFoto[0]) {
       failures.push(
-        "identidade: a segunda entrada de `image_urls` é IDÊNTICA à primeira — a foto real não foi " +
-          `subida separadamente. \`image_urls\`: ${JSON.stringify(imagensComFoto)}.`,
+        "identidade: a segunda entrada de `reference_image_urls` é IDÊNTICA à primeira — a foto real " +
+          `não foi subida separadamente. \`reference_image_urls\`: ${JSON.stringify(imagensComFoto)}.`,
       );
     }
   }
-  // Sem `fotoDeIdentidade` (corrida padrão de G-2), `image_urls` continua com
-  // 1 entrada só — o CONTRAPONTO que prova que o campo é opcional, nunca
-  // obrigatório, e que corridas antigas (sem a foto disponível) não mudam de
-  // comportamento.
+  // Sem `fotoDeIdentidade` (corrida padrão de G-2), `reference_image_urls`
+  // continua com 1 entrada só — o CONTRAPONTO que prova que o campo é
+  // opcional, nunca obrigatório, e que corridas antigas (sem a foto
+  // disponível) não mudam de comportamento.
   if (animar) {
-    const imagensSemFoto = Array.isArray(animar.corpo.image_urls) ? (animar.corpo.image_urls as string[]) : [];
+    const imagensSemFoto = Array.isArray(animar.corpo.reference_image_urls)
+      ? (animar.corpo.reference_image_urls as string[])
+      : [];
     if (imagensSemFoto.length !== 1) {
       failures.push(
-        "identidade: SEM `fotoDeIdentidade` (o caso de toda corrida antes desta rodada), `image_urls` " +
-          `deveria continuar com 1 entrada só e saiu com ${imagensSemFoto.length} — ` +
-          `${JSON.stringify(imagensSemFoto)}. O campo é opcional; sem ele o comportamento tem de ser ` +
+        "identidade: SEM `fotoDeIdentidade` (o caso de toda corrida antes desta rodada), " +
+          `\`reference_image_urls\` deveria continuar com 1 entrada só e saiu com ${imagensSemFoto.length} ` +
+          `— ${JSON.stringify(imagensSemFoto)}. O campo é opcional; sem ele o comportamento tem de ser ` +
           "byte a byte o de antes.",
       );
     }

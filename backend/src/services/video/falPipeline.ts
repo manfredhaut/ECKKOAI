@@ -272,14 +272,13 @@ export const PIPELINE_POLL_INTERVAL_MS = 5_000;
  */
 export const DEFAULTS_NUNCA_HERDADOS = {
   "fal-ai/nano-banana-2/edit": ["num_images", "resolution", "aspect_ratio"],
-  "wan/v2.6/reference-to-video/flash": [
-    "generate_audio",
-    "resolution",
-    "duration",
-    "enable_prompt_expansion",
-    "multi_shots",
-    "negative_prompt",
-  ],
+  // MIGRADO em 01/09/2026 (V33, item 1) de `wan/v2.6/reference-to-video/
+  // flash` para `alibaba/wan-3.0/reference-to-video`. `multi_shots` e
+  // `negative_prompt` SAÍRAM da lista — o schema novo não tem esses campos
+  // (confirmado por WebFetch, V32); o que eles evitavam agora é texto dentro
+  // do próprio prompt, sem default de fornecedor para fechar. `generate_audio`
+  // virou `audio` (mesmo papel, nome novo).
+  "alibaba/wan-3.0/reference-to-video": ["audio", "resolution", "duration", "enable_prompt_expansion"],
   "fal-ai/sync-lipsync/v2": ["sync_mode", "model"],
 } as const;
 
@@ -336,6 +335,41 @@ export const DIRECAO_MAO_NAO_CRUZA_ROSTO =
  * recorrência.
  */
 export const DIRECAO_PLANO_UNICO = "single continuous shot, one person, full frame, no split screen";
+
+/**
+ * TRÊS regras NOVAS, só do Wan 3.0 (V33, item 6, 01/09/2026) — por isso NÃO
+ * entram em `comDefaultsDeDirecao` (compartilhada com o Seedance/Premium,
+ * fora de escopo desta rodada): são concatenadas só dentro de
+ * `corpoAnimarWan`. As três existem por exigência DOCUMENTADA do
+ * `sync-lipsync` (etapa 4, sempre depois de `animar`), não por preferência
+ * estética — a doc do fornecedor mede detecção de rosto pior em perfil
+ * extremo e em rosto pequeno no quadro, e o pipeline inteiro depende dessa
+ * detecção para o lábio sincronizar depois.
+ */
+export const DIRECAO_ROSTO_FRONTAL_WAN3 =
+  "the face stays frontal or near-frontal to the camera at all times, never in extreme profile";
+export const DIRECAO_ENQUADRAMENTO_ROSTO_WAN3 =
+  "the face occupies roughly 20 to 40 percent of the frame height, close enough for clear lip detail";
+export const DIRECAO_FALANDO_NATURALMENTE_WAN3 =
+  "the person is speaking naturally, mouth already moving as if mid-sentence from the first frame";
+
+/**
+ * O EQUIVALENTE, em texto positivo, do `negative_prompt` do Wan 2.6
+ * (`NEGATIVE_PROMPT_ANIMAR_WAN` logo abaixo) — V33, item 4, 01/09/2026.
+ * `alibaba/wan-3.0/reference-to-video` NÃO documenta `negative_prompt`
+ * (MEDIDO por WebFetch, V32, Parte A) — o único canal que sobra para os
+ * mesmos artefatos que aquele campo evitava é o próprio `prompt`, escrito
+ * como instrução do que EVITAR em vez de uma lista de termos a excluir.
+ * MESMO conteúdo, forma diferente: nenhum termo foi acrescentado nem
+ * removido nesta conversão. `lintarPromptDoBlocoWan` verifica que este texto
+ * (ou uma frase-âncora dele) chegou ao prompt final, no lugar de exigir o
+ * campo `negative_prompt` que este endpoint não tem mais.
+ */
+export const ANTI_ARTEFATO_WAN3 =
+  "Avoid: cartoon style, 3D render look, plastic or waxy skin, any subtitles, captions, text overlay or " +
+  "watermark burned into the frame, garbled text, distorted face, flickering or unstable lighting, sudden " +
+  "brightness or color changes, strobing, split screen, grid, collage, multiple panels, triptych, duplicate " +
+  "person, angry or scowling expression, furrowed brow.";
 
 /**
  * O `negative_prompt` do Wan — RODADA 2, 29/08/2026.
@@ -484,6 +518,15 @@ function removerFalaEntreAspas(texto: string): string {
  * função isolada com um valor de exemplo, nunca o texto que uma corrida de
  * verdade produziu.
  */
+/**
+ * ÂNCORA curta do texto de `ANTI_ARTEFATO_WAN3` — usada só para o linter
+ * confirmar que o bloco anti-artefato chegou ao prompt final, sem comparar a
+ * frase inteira (uma reformulação futura do texto não quebraria este
+ * linter à toa). V33, item 4: substitui a checagem antiga de campo
+ * `negative_prompt`, que não existe mais no corpo do Wan 3.0.
+ */
+const ANCORA_ANTI_ARTEFATO_LINT = "cartoon style";
+
 export function lintarPromptDoBlocoWan(corpo: Record<string, unknown>): void {
   const motivos: string[] = [];
   const prompt = typeof corpo.prompt === "string" ? corpo.prompt : "";
@@ -495,8 +538,14 @@ export function lintarPromptDoBlocoWan(corpo: Record<string, unknown>): void {
   if (TERMOS_PT_HEURISTICA.some((re) => re.test(promptSemFala))) {
     motivos.push("prompt parece conter português não traduzido");
   }
-  const negativePrompt = typeof corpo.negative_prompt === "string" ? corpo.negative_prompt : "";
-  if (!negativePrompt.trim()) motivos.push("negative_prompt ausente ou vazio");
+  // V33, item 4 — o Wan 3.0 não tem campo `negative_prompt` (schema LIDO por
+  // WebFetch, V32): o que antes era um campo separado agora é texto DENTRO
+  // do próprio prompt (`ANTI_ARTEFATO_WAN3`). Checa a âncora em vez do
+  // campo — mesma garantia (o bloco anti-artefato não pode faltar), canal
+  // diferente.
+  if (!prompt.includes(ANCORA_ANTI_ARTEFATO_LINT)) {
+    motivos.push("prompt sem o bloco anti-artefato (ANTI_ARTEFATO_WAN3 não chegou ao texto final)");
+  }
   if (motivos.length > 0) throw new WanPromptLintError(motivos);
 }
 
@@ -576,8 +625,29 @@ export const ENDPOINT_COMPOR = "fal-ai/nano-banana-2/edit";
  * │ quadro de partida fixo** — é exatamente o que o teste real desta rodada   │
  * │ (o vídeo mudo) existe para responder.                                    │
  * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * MIGRADO em 01/09/2026 de `wan/v2.6/reference-to-video/flash` para
+ * `alibaba/wan-3.0/reference-to-video` — V33, item 1. Schema LIDO por
+ * WebFetch (V32, Parte A): o campo de imagens de referência foi RENOMEADO
+ * `image_urls` → `reference_image_urls` (mesmo papel, até 10 imagens);
+ * `duration` virou INTEIRO sem enum fechado (o Wan 2.6 só aceitava "5" ou
+ * "10" string — ver `PIPELINE_DURATION_OPTIONS`); NÃO existe
+ * `negative_prompt` nem `multi_shots` neste endpoint — os dois viram texto
+ * dentro do próprio prompt (ver `ANTI_ARTEFATO_WAN3` e as cláusulas de
+ * direção novas em `corpoAnimarWan`); o campo de áudio nativo chama-se
+ * `audio` (boolean, default `true`), não `generate_audio`. Preço LIDO por
+ * resolução (migration 073): US$ 0,05/s a 480p — ver `RESOLUCAO_VIDEO`.
+ *
+ * Áudio nativo do Wan 3.0 foi TESTADO e DESCARTADO (sonda V32,
+ * `probeWan3ReferenceToVideo.ts`, ~US$ 1,02 reais): `reference_audio_urls`
+ * tem teto de 15s totais e o modelo RE-SINTETIZA a fala a partir do texto do
+ * prompt — não reproduz o mp3 enviado — então não garante o roteiro literal
+ * do tenant. A voz continua sendo SEMPRE o clone do ElevenLabs, e o lábio
+ * continua sendo SEMPRE `sync-lipsync` — `audio: false` vai explícito em
+ * toda chamada (`corpoAnimarWan`), e `reference_audio_urls` nunca é
+ * populado.
  */
-export const ENDPOINT_ANIMAR = "wan/v2.6/reference-to-video/flash";
+export const ENDPOINT_ANIMAR = "alibaba/wan-3.0/reference-to-video";
 
 /**
  * O motor do tier "Premium" — BLOCO A, 21/08.
@@ -668,8 +738,21 @@ export const SYNC_MODE = "cut_off";
  */
 export const RESOLUCAO_IMAGEM = "1K";
 
-/** A do clipe. `720p` NÃO VERIFICADO no Wan — só o vocabulário do nano foi medido. */
-export const RESOLUCAO_VIDEO = "720p";
+/**
+ * A do clipe. `480p` — V33, item 7 (01/09/2026), MEDIDO por WebFetch: o
+ * schema de `alibaba/wan-3.0/reference-to-video` documenta o enum
+ * `480p|720p|1080p`, e 480p é o piso pedido nesta rodada (rosto pequeno em
+ * baixa resolução degrada a detecção do `sync-lipsync` — ver a exigência de
+ * enquadramento em `DIRECAO_ENQUADRAMENTO_ROSTO_WAN3`). 720p/1080p custam
+ * 2×/4× por segundo (US$ 0,10/US$ 0,20 — migration 073) e NÃO foram
+ * escolhidos nesta rodada; a diferença de custo/qualidade fica reportada ao
+ * operador para decisão, não decidida aqui.
+ *
+ * Antes de 01/09/2026 era `"720p"`, NÃO VERIFICADO no Wan 2.6 (só o
+ * vocabulário do `nano-banana` tinha sido medido) — texto histórico,
+ * superado por esta migração.
+ */
+export const RESOLUCAO_VIDEO = "480p";
 
 // ---------------------------------------------------------------------------
 // O DIÁRIO — a persistência, injetada
@@ -1017,6 +1100,18 @@ export interface FalPipelineResult {
    * antes de a usar (`pararApos: "compor"`).
    */
   duracaoSegundos: PipelineDuration;
+  /**
+   * A URL (fal-hosted) do áudio JÁ SINTETIZADO — V33, item 2 (01/09/2026).
+   * Só preenchida quando a corrida NARROU antes de parar em `animar`
+   * (caminho de tomada única, roteiros ≤30s estimados — ver
+   * `animarTomadaUnicaComAudioReal`) e `pararApos === "animar"`. `/approve`
+   * persiste este valor em `videos.fal_audio_url` (migration 073) para que
+   * `/approve-video` reutilize o MESMO áudio em vez de ressintetizar (ver o
+   * comentário de `sincronizarComAudio`). `null` em todo outro caso —
+   * inclusive quando a corrida JÁ sincronizou (o áudio virou parte do vídeo
+   * final, não sobra o que persistir à parte).
+   */
+  audioUrl: string | null;
   requestIds: { compor: string; animar: string; sincronizar: string };
 }
 
@@ -1590,6 +1685,23 @@ export async function runFalPipelineDaImagem(
   // jogo de verdade hoje, porque a criação SEMPRE para em `compor`
   // (`pararApos: "compor"`, o default do produto).
   const ehPremium = input.tier === "premium";
+
+  // V33, item 3 (01/09/2026) — TOMADA ÚNICA para tier Normal com roteiro
+  // curto: sem blocos, sem `xfade`, sem `corrigirCor` — e narrando ANTES de
+  // animar, para que `duration` venha do ÁUDIO REAL (item 2), não de uma
+  // estimativa de caracteres. A decisão de qual caminho tomar usa só uma
+  // ESTIMATIVA barata (chars/ritmo, sem margem de dispersão — é só para
+  // ESCOLHER o branch, não para cobrar nada) de propósito: narrar aqui só
+  // para decidir gastaria ElevenLabs duas vezes em roteiros longos, que
+  // vão cair no caminho fracionado de qualquer forma (item 3: acima de
+  // 30s, o fracionamento e o resumer do V30 continuam funcionando, sem
+  // mudar). `LIMITE_TAKE_UNICO_SEGUNDOS` é o mesmo teto usado só para
+  // ESCOLHER — nunca para autorizar gasto, que continua vindo de
+  // `tetoNormalUsd` sobre a duração real, dentro da função abaixo.
+  if (!ehPremium && input.script.length / PIPELINE_CHARS_PER_SECOND <= LIMITE_TAKE_UNICO_SEGUNDOS) {
+    return animarTomadaUnicaComAudioReal(input, imagemCompostaUrl, composicaoRequestId);
+  }
+
   const roteiroConferido = ehPremium ? conferirRoteiro(input.script) : conferirRoteiroENormal(input.script);
   const { chars, segundosEstimados, duracaoEscolhida } = roteiroConferido;
   const blocosDeAnimacao: BlocoDeAnimacao[] = ehPremium
@@ -1616,6 +1728,125 @@ export async function runFalPipelineDaImagem(
     blocos: blocosDeAnimacao,
     composicaoRequestId,
   });
+}
+
+/**
+ * O teto de decisão do caminho de TOMADA ÚNICA — V33, item 3 (01/09/2026).
+ *
+ * 30s de fala ESTIMADA (chars/ritmo, sem margem de dispersão — ver o
+ * comentário no call site em `runFalPipelineDaImagem`). Abaixo dele: uma
+ * chamada ao Wan 3.0, sem blocos. Acima: o fracionamento do V30 continua
+ * exatamente como estava, sem mudar de comportamento — só o `ENDPOINT_ANIMAR`
+ * embaixo dele trocou (item 1). NÃO é o teto de CARACTERES por bloco
+ * (`PIPELINE_MAX_CHARS_POR_DURACAO`) — este é sobre o roteiro INTEIRO,
+ * antes de qualquer fatiamento.
+ */
+export const LIMITE_TAKE_UNICO_SEGUNDOS = 30;
+
+/**
+ * A folga somada à duração REAL do áudio antes de pedir `duration` ao Wan
+ * 3.0 — V33, item 2. Pequena e fixa, de propósito: a sonda V32 mediu o
+ * defeito de pedir SEGUNDOS DEMAIS (20s pedidos contra ~12s de referência
+ * real de áudio, silêncio digital absoluto depois disso) — a margem existe
+ * só para o `cut_off` do `sync-lipsync` (etapa seguinte) ter alguns quadros
+ * de vídeo mudo sobrando para cortar, nunca para pedir um clipe
+ * sensivelmente mais longo que a fala. 1s é o valor inicial, sem UI para
+ * editá-lo; NÃO VERIFICADO por vídeo real desta migração ainda.
+ */
+export const MARGEM_DURACAO_WAN3_SEGUNDOS = 1;
+
+/**
+ * TOMADA ÚNICA do tier Normal — V33, itens 2 e 3 (01/09/2026).
+ *
+ * Narra PRIMEIRO (`narrar`, extraída de `narrarSincronizar` nesta mesma
+ * rodada) — inverte a ordem de sempre (animar→narrar) só neste caminho —
+ * para que `duration` venha do ÁUDIO REAL medido
+ * (`Math.ceil(fala.durationSeconds) + MARGEM_DURACAO_WAN3_SEGUNDOS`), nunca
+ * da estimativa por caracteres: foi pedir segundos pela estimativa, sem
+ * saber quanto a fala de fato ocupa, que abriu o buraco de silêncio de ~8s
+ * medido na sonda V32 (20s pedidos, ~12s de fala real). Depois anima UMA
+ * vez (`animarUmBloco`, `blocoIndice: null`) — sem laço, sem concat, sem
+ * `corrigirCor` (não há segundo bloco para corrigir contra).
+ *
+ * `pararApos === "animar"` — o caminho de produto, ver `/approve` em
+ * `routes/videos.ts` — devolve o áudio JÁ SINTETIZADO
+ * (`FalPipelineResult.audioUrl`), para que `/approve-video` reutilize o
+ * MESMO áudio via `runFalPipelineDoVideoMudo(..., audioPreSintetizado)` em
+ * vez de ressintetizar (ressintetizar o MESMO texto mede uma duração
+ * DIFERENTE — variância de até 9,1% já registrada neste projeto — o que
+ * reabriria o descompasso que esta função existe para fechar).
+ */
+async function animarTomadaUnicaComAudioReal(
+  input: FalPipelineInput,
+  imagemUrl: string,
+  composicaoRequestId: string,
+): Promise<FalPipelineResult> {
+  // O TETO usa a estimativa COM a margem de dispersão (ao contrário da
+  // decisão de branch em `runFalPipelineDaImagem`, que é sem margem, só para
+  // escolher o caminho) — é uma AUTORIZAÇÃO prévia, e precisa de folga para
+  // não recusar uma fala real que a estimativa central subestimou.
+  const segundosEstimadosComMargem =
+    (input.script.length / PIPELINE_CHARS_PER_SECOND) * (1 + PIPELINE_RITMO_DISPERSAO);
+  const teto = tetoParaTier(input, segundosEstimadosComMargem);
+
+  // Mesmo padrão de `animarNarrarSincronizar`: um seed e uma foto de
+  // identidade por corrida, nunca por bloco (aqui só há um bloco, mas o
+  // padrão é o mesmo por uniformidade com o caminho fracionado).
+  const seedDoVideo = (await input.diario.lerSeed?.()) ?? gerarSeedWan();
+  const fotoDeIdentidadeUrl =
+    input.fotoDeIdentidade && input.fotoDeIdentidade.bytes.length > 0
+      ? await falUpload(input.apiKeyFal, input.fotoDeIdentidade.bytes, input.fotoDeIdentidade.mimeType)
+      : null;
+
+  // --- NARRAR PRIMEIRO — item 2: é daqui que vem a duração REAL. -----------
+  const { audioUrl, fala } = await narrar(input);
+  const duracaoWan3 = Math.max(1, Math.ceil(fala.durationSeconds ?? 0) + MARGEM_DURACAO_WAN3_SEGUNDOS);
+
+  // --- ANIMAR, UMA VEZ — item 3: nunca mais segundos que a fala pede. ------
+  const bloco = await animarUmBloco(
+    input,
+    "normal",
+    imagemUrl,
+    duracaoWan3,
+    0,
+    teto,
+    direcaoComExpressividade(input.promptDeDirecao, input.expressiveness),
+    seedDoVideo,
+    fotoDeIdentidadeUrl,
+    // Tomada única: não é fracionamento, não tem índice de bloco.
+    null,
+  );
+
+  if (input.aspectRatio && input.verificarAspectRatio !== false) {
+    await assertAspectRatio(bloco.videoUrl, input.aspectRatio);
+  }
+
+  if (input.pararApos === "animar") {
+    return pararAqui("animar", bloco.gastoPrevistoUsd, duracaoWan3, {
+      imagemCompostaUrl: imagemUrl,
+      videoMudoUrl: bloco.videoUrl,
+      requestIds: { compor: composicaoRequestId, animar: bloco.requestId, sincronizar: "" },
+      // O ÁUDIO já existe — ver o comentário da função acima.
+      audioUrl,
+      audioDurationSeconds: fala.durationSeconds,
+    });
+  }
+
+  return sincronizarComAudio(
+    input,
+    {
+      videoMudoUrl: bloco.videoUrl,
+      imagemCompostaUrl: imagemUrl,
+      gastoAcumuladoUsd: bloco.gastoPrevistoUsd,
+      teto,
+      segundosEstimados: fala.durationSeconds ?? 0,
+      duracaoEscolhida: duracaoWan3,
+      composicaoRequestId,
+      animarRequestId: bloco.requestId,
+    },
+    audioUrl,
+    fala,
+  );
 }
 
 /**
@@ -1805,54 +2036,80 @@ function corpoAnimarWan(
   seed: number,
   fotoDeIdentidadeUrl: string | null,
 ): Record<string, unknown> {
+  // V33, item 5 (01/09/2026) — os PAPÉIS de cada referência, ditos no texto:
+  // a imagem COMPOSTA é quem carrega cenário e traje; a foto REAL, quando
+  // existe, é quem carrega a identidade. Antes desta rodada só a composta
+  // era citada, sempre como "Character1" — sem a foto real na lista, ou com
+  // as duas sem papel dito, o modelo não tem como saber qual referência
+  // prevalece quando elas divergem (ex.: a foto real do rosto contra o
+  // rosto redesenhado pela composição). A ORDEM da lista NÃO mudou (a
+  // composta continua Reference1, PRIMEIRA — invariante de V24/G-2b,
+  // `checkFalSceneWiringPolicy.ts`: "a composta continua sendo a referência
+  // PRINCIPAL; a foto real é um reforço, nunca uma substituta") — só o
+  // TEXTO ganhou a declaração de papel que faltava.
+  const referencias = fotoDeIdentidadeUrl ? [imagemDeReferencia, fotoDeIdentidadeUrl] : [imagemDeReferencia];
+  const clausulaDeReferencia = fotoDeIdentidadeUrl
+    ? "Reference1 is the composed scene — it defines the outfit and the background, and must be kept " +
+      "exactly as shown. Reference2 is the real photo of the person — it defines the exact identity: face, " +
+      "skin tone and hair, and must be kept exactly as shown. "
+    : "Reference1 shows the person, the outfit and the background — keep the exact identity, outfit and " +
+      "background exactly as shown. ";
+  // V33, item 4 — cláusula de IDENTIDADE no COMEÇO do prompt, não no fim
+  // (invertido em relação ao Wan 2.6): MEDIDO na sonda V32
+  // (`probeWan3ReferenceToVideo.ts`) que o pedido do operador era testar
+  // exatamente esta ordem: por que ficar no fim arriscava o modelo já ter
+  // "decidido" a cena antes de ler a restrição de identidade.
+  const prompt = [
+    clausulaDeReferencia,
+    comDefaultsDeDirecao(direcaoDoBloco),
+    // As três regras NOVAS do Wan 3.0 — ver o comentário de cada uma.
+    DIRECAO_ROSTO_FRONTAL_WAN3,
+    DIRECAO_ENQUADRAMENTO_ROSTO_WAN3,
+    DIRECAO_FALANDO_NATURALMENTE_WAN3,
+    // O equivalente positivo do `negative_prompt` do Wan 2.6 — este
+    // endpoint não tem o campo (ver `ANTI_ARTEFATO_WAN3`).
+    ANTI_ARTEFATO_WAN3,
+  ]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(" ");
   return {
-    // "Character1" nomeia a referência — MEDIDO no exemplo do próprio
-    // fornecedor ("Dance battle between Character1 and Character2"): sem um
-    // NOME para a imagem em `image_urls`, o texto livre não tem como apontar
-    // para ela. A frase final (preservar rosto/roupa/cenário) existe porque
-    // este endpoint NÃO fixa quadro de partida — ele pode redesenhar o que a
-    // referência mostra com mais liberdade que o antigo `image-to-video`, e
-    // isso é risco NOVO desta migração, não medido ainda por vídeo real.
-    // FASE 0 — câmera fixa, gesto contido, mão longe do rosto: SEMPRE, mesmo
-    // sem Interpretação nenhuma escrita. Ver `comDefaultsDeDirecao`.
-    prompt:
-      `Character1: ${comDefaultsDeDirecao(direcaoDoBloco)} Keep Character1's face, outfit and the scene ` +
-      "background exactly as shown in the reference image — same person, same clothes, same location.",
-    // LISTA, não mais campo singular — MEDIDO por leitura do schema em 29/08:
-    // `reference-to-video/flash` usa `image_urls` (0-5 imagens, referência de
-    // identidade), nunca `image_url`. A composta vai SEMPRE; a foto REAL do
-    // rosto entra como SEGUNDA referência quando disponível — ver o
-    // comentário de `fotoDeIdentidadeUrl` acima. Bem dentro do teto de 5
-    // imagens do schema (LIDO por WebFetch em 31/08).
-    image_urls: fotoDeIdentidadeUrl ? [imagemDeReferencia, fotoDeIdentidadeUrl] : [imagemDeReferencia],
-    // `generate_audio: false` é o mais caro de omitir: o default sintetiza uma
-    // trilha paga que a etapa 4 descartaria.
-    generate_audio: false,
+    prompt,
+    // RENOMEADO `image_urls` → `reference_image_urls` — MEDIDO por WebFetch
+    // (V32, Parte A): mesmo papel (referência de identidade/cenário), até
+    // 10 imagens no schema novo (contra 5 do antigo). ORDEM: a composta
+    // sempre PRIMEIRO (Reference1 na fala do prompt acima), a foto real
+    // depois quando existe — a fala e a lista precisam concordar, ou
+    // "Reference1"/"Reference2" no texto apontariam para a imagem errada.
+    reference_image_urls: referencias,
+    // `audio: false` — RENOMEADO de `generate_audio` (MEDIDO por WebFetch,
+    // V32). É o mais caro de omitir: o default (`true`) sintetiza uma
+    // trilha PRÓPRIA, paga, que a etapa de sincronizar substituiria de
+    // qualquer forma — e o áudio nativo foi DESCARTADO nesta migração (ver
+    // o comentário de `ENDPOINT_ANIMAR`): a voz é sempre o clone do
+    // ElevenLabs, nunca a do Wan.
+    audio: false,
     resolution: RESOLUCAO_VIDEO,
-    // A proporção escolhida na tela de publicação. O endpoint ANTIGO não
-    // tinha este campo em `animar()` (herdava a proporção da imagem composta,
-    // ver o comentário de `aspectRatio` em `FalPipelineInput`); o NOVO aceita
-    // `aspect_ratio` explícito — MEDIDO no schema em 29/08. Omitido (deixa o
-    // default "16:9" do fornecedor) só quando `input.aspectRatio` não veio,
-    // que hoje só acontece na sonda de contrato.
+    // A proporção escolhida na tela de publicação. Comportamento IDÊNTICO
+    // ao do Wan 2.6 — o campo mudou de endpoint, não de nome nem de regra
+    // (ver o comentário de `aspectRatio` em `FalPipelineInput`).
     ...(input.aspectRatio ? { aspect_ratio: input.aspectRatio } : {}),
-    // STRING, não número — MEDIDO por leitura do schema (`DurationEnum`, ver
-    // `PIPELINE_DURATION_OPTIONS`): o fornecedor espera "5" ou "10", não os
-    // números, e NÃO aceita mais "15" (o antigo `image-to-video/flash`
-    // aceitava; o novo `reference-to-video/flash` não — MEDIDO em 29/08).
-    // `duracaoEscolhida` é a saída de `escolherDuracao`, sempre um dos dois.
-    duration: String(duracaoEscolhida),
-    // Ver DEFAULTS_NUNCA_HERDADOS: sem eles, o fornecedor reescreve a direção
-    // e pode segmentar o clipe em tomadas — os dois aceitos sem erro de schema
-    // no endpoint antigo (MEDIDO em 14/08); presentes no schema do novo
-    // também (MEDIDO em 29/08), então `false` explícito não corre risco de 422.
+    // INTEIRO, não string — MUDOU nesta migração: o Wan 2.6 tinha um enum
+    // fechado ("5"|"10", string) e o Wan 3.0 documenta `duration` como
+    // inteiro sem enum (MEDIDO por WebFetch, V32; 20 aceito e confirmado
+    // pela sonda paga). `duracaoEscolhida` chega já pronta — ou um dos
+    // valores de `PIPELINE_DURATION_OPTIONS` (caminho fracionado, >30s) ou
+    // a duração derivada do áudio real (caminho de tomada única, ≤30s; ver
+    // `LIMITE_TAKE_UNICO_SEGUNDOS`).
+    duration: duracaoEscolhida,
+    // Ver DEFAULTS_NUNCA_HERDADOS: sem ele, o fornecedor reescreve a
+    // direção por conta própria. `multi_shots` SAIU — não existe no schema
+    // do Wan 3.0 (MEDIDO por WebFetch, V32); a segmentação em tomadas que
+    // ele evitava não tem mais um campo próprio para desligar, e
+    // `DIRECAO_PLANO_UNICO` (dentro de `comDefaultsDeDirecao`, acima) é
+    // quem carrega essa restrição agora, como texto.
     enable_prompt_expansion: false,
-    multi_shots: false,
-    // RODADA 2, 29/08 — LIDO no schema do Wan (só ele, entre as três etapas
-    // pagas, documenta este campo; RECONFIRMADO no schema do novo endpoint em
-    // 29/08). Ver `NEGATIVE_PROMPT_ANIMAR_WAN`.
-    negative_prompt: NEGATIVE_PROMPT_ANIMAR_WAN,
-    // Item 1, rodada de 29/08 seguinte — ver o comentário de `seed` acima.
+    // Item 1, rodada de 29/08 anterior — ver o comentário de `seed` acima.
     seed,
   };
 }
@@ -2221,49 +2478,55 @@ interface ContextoDaNarracao {
   animarRequestId: string;
 }
 
-/**
- * As etapas 3 a 5 — narrar, sincronizar, guardar. Extraída de
- * `animarNarrarSincronizar` para ter DOIS chamadores, mesma razão pela qual
- * aquela função já tinha sido extraída de `runFalPipeline`: a corrida
- * inteira (que passa por `animar` na mesma chamada) e a retomada pós-
- * aprovação do vídeo MUDO (`runFalPipelineDoVideoMudo`, FASE 2/Modo B), que
- * nunca chama `animar` de novo — ele já rodou e já foi pago numa corrida
- * anterior.
- */
-async function narrarSincronizar(
-  input: FalPipelineInput,
-  contexto: ContextoDaNarracao,
-): Promise<FalPipelineResult> {
-  const { videoMudoUrl, imagemCompostaUrl, teto, segundosEstimados, duracaoEscolhida, composicaoRequestId, animarRequestId } =
-    contexto;
-  let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
+interface FalaNarrada {
+  audio: Buffer;
+  durationSeconds: number | null;
+  source: string | null;
+}
 
-  // --- 3. NARRAR -----------------------------------------------------------
-  //
-  // A voz é REUSADA (`input.voiceId`), nunca clonada: clonar consome um slot
-  // irreversível, e a conta já está em 10/10 pela nossa régua.
+/**
+ * SÓ a etapa 3 — narrar. Extraída de `narrarSincronizar` — V33, item 2
+ * (01/09/2026): o caminho novo de tomada única (roteiros ≤30s estimados)
+ * precisa da duração REAL do áudio ANTES de montar o corpo de `animar()`
+ * (ver `animarTomadaUnicaComAudioReal`), então narrar deixou de ser algo
+ * que só acontece DEPOIS de animar. `narrarSincronizar` (o caminho de
+ * sempre, narrar-depois-de-animar) chama esta função e depois
+ * `sincronizarComAudio` — MESMO código nos dois casos, nunca duplicado.
+ *
+ * A voz é REUSADA (`input.voiceId`), nunca clonada: clonar consome um slot
+ * irreversível, e a conta já está em 10/10 pela nossa régua.
+ */
+async function narrar(input: FalPipelineInput): Promise<{ audioUrl: string; fala: FalaNarrada }> {
   const narracaoStep = await input.diario.abrirEtapa("narrar", 3, "elevenlabs", null);
-  const fala = await synthesizeSpeech(
-    input.apiKeyElevenLabs,
-    input.voiceId,
-    input.script,
-    input.voiceTuning,
-  );
+  const fala = await synthesizeSpeech(input.apiKeyElevenLabs, input.voiceId, input.script, input.voiceTuning);
   await input.diario.gravarRespostaCrua(
     narracaoStep,
     JSON.stringify({ bytes: fala.audio.length, durationSeconds: fala.durationSeconds, source: fala.source }),
   );
   await input.diario.fecharEtapa(narracaoStep, "completed");
   const audioUrl = await falUpload(input.apiKeyFal, fala.audio, "audio/mpeg");
+  return { audioUrl, fala };
+}
 
-  // --- 4. SINCRONIZAR ------------------------------------------------------
-  if (input.pararApos === "narrar") {
-    return pararAqui("narrar", gastoPrevistoUsd, duracaoEscolhida, {
-      imagemCompostaUrl,
-      videoMudoUrl,
-      requestIds: { compor: composicaoRequestId, animar: animarRequestId, sincronizar: "" },
-    });
-  }
+/**
+ * As etapas 4 e 5 — sincronizar, guardar. Recebe o áudio (`audioUrl`/`fala`)
+ * já pronto — de `narrar()` (caminho de sempre) OU já persistido de uma
+ * corrida ANTERIOR (`videos.fal_audio_url` — V33, item 2, caminho de
+ * tomada única retomado em `/approve-video`; ver `runFalPipelineDoVideoMudo`).
+ * Nunca ressintetiza: ressintetizar o MESMO texto mede uma duração
+ * DIFERENTE (variância de até 9,1% já registrada neste projeto), o que
+ * reabriria o descompasso áudio/vídeo que a derivação por áudio real existe
+ * para fechar.
+ */
+async function sincronizarComAudio(
+  input: FalPipelineInput,
+  contexto: ContextoDaNarracao,
+  audioUrl: string,
+  fala: Pick<FalaNarrada, "durationSeconds">,
+): Promise<FalPipelineResult> {
+  const { videoMudoUrl, imagemCompostaUrl, teto, segundosEstimados, duracaoEscolhida, composicaoRequestId, animarRequestId } =
+    contexto;
+  let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
 
   // RODADA 1, 29/08/2026 — `videoMudoUrl` pode ser um caminho LOCAL
   // (`/uploads/tenant/arquivo.mp4`): `/approve` baixa a URL da fal e persiste
@@ -2312,7 +2575,7 @@ async function narrarSincronizar(
     );
   }
 
-  // --- 5. BIBLIOTECA -------------------------------------------------------
+  // --- BIBLIOTECA -----------------------------------------------------------
   const biblioteca = await input.diario.abrirEtapa("biblioteca", 5, "eckko", null);
   await input.diario.gravarRespostaCrua(biblioteca, JSON.stringify({ videoUrl: videoFinalUrl }));
   await input.diario.fecharEtapa(biblioteca, "completed");
@@ -2324,12 +2587,46 @@ async function narrarSincronizar(
     videoMudoUrl,
     audioDurationSeconds: fala.durationSeconds,
     duracaoSegundos: duracaoEscolhida,
+    audioUrl: null,
     requestIds: {
       compor: composicaoRequestId,
       animar: animarRequestId,
       sincronizar: sincronia.requestId,
     },
   };
+}
+
+/**
+ * As etapas 3 a 5 — narrar, sincronizar, guardar. Extraída de
+ * `animarNarrarSincronizar` para ter DOIS chamadores, mesma razão pela qual
+ * aquela função já tinha sido extraída de `runFalPipeline`: a corrida
+ * inteira (que passa por `animar` na mesma chamada) e a retomada pós-
+ * aprovação do vídeo MUDO (`runFalPipelineDoVideoMudo`, FASE 2/Modo B), que
+ * nunca chama `animar` de novo — ele já rodou e já foi pago numa corrida
+ * anterior.
+ *
+ * V33 — passou a ser `narrar()` + `sincronizarComAudio()` em sequência, as
+ * duas extraídas abaixo. Comportamento IDÊNTICO ao de antes desta rodada
+ * para todo chamador que não passa pelo caminho de tomada única.
+ */
+async function narrarSincronizar(
+  input: FalPipelineInput,
+  contexto: ContextoDaNarracao,
+): Promise<FalPipelineResult> {
+  const { videoMudoUrl, imagemCompostaUrl, duracaoEscolhida, composicaoRequestId, animarRequestId, gastoAcumuladoUsd } =
+    contexto;
+
+  const { audioUrl, fala } = await narrar(input);
+
+  if (input.pararApos === "narrar") {
+    return pararAqui("narrar", gastoAcumuladoUsd, duracaoEscolhida, {
+      imagemCompostaUrl,
+      videoMudoUrl,
+      requestIds: { compor: composicaoRequestId, animar: animarRequestId, sincronizar: "" },
+    });
+  }
+
+  return sincronizarComAudio(input, contexto, audioUrl, fala);
 }
 
 /**
@@ -2341,6 +2638,17 @@ async function narrarSincronizar(
  * ser gasto (narrar + sincronizar), e `animar` já foi pago numa corrida
  * anterior — carregar o gasto dela para cá recusaria a segunda metade por
  * dinheiro que já saiu.
+ *
+ * `audioPreSintetizado` — V33, item 2 (01/09/2026). Quando presente
+ * (`videos.fal_audio_url`, persistido pelo `/approve` do caminho de tomada
+ * única — ver `animarTomadaUnicaComAudioReal`), esta função PULA `narrar()`
+ * e vai direto para `sincronizarComAudio` com o áudio já existente. Nunca
+ * ressintetiza: ressintetizar o MESMO texto mede uma duração DIFERENTE
+ * (variância de até 9,1% já registrada neste projeto), o que reabriria o
+ * descompasso áudio/vídeo que a tomada única existe para fechar.
+ * `undefined`/ausente: comportamento de antes desta rodada, narra de novo
+ * (todo caminho Premium, e todo Normal fracionado acima de
+ * `LIMITE_TAKE_UNICO_SEGUNDOS`).
  */
 export async function runFalPipelineDoVideoMudo(
   input: FalPipelineInput,
@@ -2350,6 +2658,7 @@ export async function runFalPipelineDoVideoMudo(
   composicaoRequestId = "",
   /** O `request_id` da animação que produziu este vídeo mudo. */
   animarRequestId = "",
+  audioPreSintetizado?: { audioUrl: string; durationSeconds: number | null } | null,
 ): Promise<FalPipelineResult> {
   // BLOCO FRACOES-1 — `conferirRoteiro` (única duração) lançaria para
   // qualquer roteiro Normal fracionado (>142 caracteres), mesmo aqui, que
@@ -2368,9 +2677,10 @@ export async function runFalPipelineDoVideoMudo(
     videoMudoUrl,
     composicaoRequestId: composicaoRequestId || null,
     animarRequestId: animarRequestId || null,
+    audioReaproveitado: Boolean(audioPreSintetizado),
   });
 
-  return narrarSincronizar(input, {
+  const contexto: ContextoDaNarracao = {
     videoMudoUrl,
     imagemCompostaUrl,
     gastoAcumuladoUsd: 0,
@@ -2379,7 +2689,15 @@ export async function runFalPipelineDoVideoMudo(
     duracaoEscolhida,
     composicaoRequestId,
     animarRequestId,
-  });
+  };
+
+  if (audioPreSintetizado) {
+    return sincronizarComAudio(input, contexto, audioPreSintetizado.audioUrl, {
+      durationSeconds: audioPreSintetizado.durationSeconds,
+    });
+  }
+
+  return narrarSincronizar(input, contexto);
 }
 
 /**
@@ -2404,6 +2722,14 @@ function pararAqui(
     /** O vídeo mudo, quando a parada é em `animar` ou depois dele. */
     videoMudoUrl?: string | null;
     requestIds?: FalPipelineResult["requestIds"];
+    /**
+     * V33, item 2 — a URL do áudio JÁ SINTETIZADO, quando a corrida narrou
+     * antes de parar em `animar` (caminho de tomada única). `undefined`/
+     * ausente em todo outro caso — comportamento de antes desta rodada.
+     */
+    audioUrl?: string | null;
+    /** A duração REAL medida do mesmo áudio — acompanha `audioUrl` sempre junto. */
+    audioDurationSeconds?: number | null;
   } = {},
 ): FalPipelineResult {
   logEvent("info", "fal_pipeline_parou_a_pedido", {
@@ -2417,8 +2743,9 @@ function pararAqui(
     videoUrl: "",
     imagemCompostaUrl: produzido.imagemCompostaUrl ?? null,
     videoMudoUrl: produzido.videoMudoUrl ?? null,
-    audioDurationSeconds: null,
+    audioDurationSeconds: produzido.audioDurationSeconds ?? null,
     duracaoSegundos: duracaoEscolhida,
+    audioUrl: produzido.audioUrl ?? null,
     requestIds: produzido.requestIds ?? { compor: "", animar: "", sincronizar: "" },
   };
 }

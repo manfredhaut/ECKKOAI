@@ -63,9 +63,19 @@ export const PIPELINE_DURATION_OPTIONS = [5, 10] as const;
  */
 export const PREMIUM_DURATION_OPTIONS = [5, 10, 15] as const;
 
-export type PipelineDuration =
-  | (typeof PIPELINE_DURATION_OPTIONS)[number]
-  | (typeof PREMIUM_DURATION_OPTIONS)[number];
+/**
+ * ALARGADO para `number` puro em 01/09/2026 (V33, migração do tier Normal
+ * para Wan 3.0) — até aqui era a união estreita `5|10|10|15` dos dois
+ * vocabulários abaixo. O caminho novo de tomada única (roteiros com até 30s
+ * estimados, ver `LIMITE_TAKE_UNICO_SEGUNDOS` em `falPipeline.ts`) deriva a
+ * duração do ÁUDIO REAL medido (`Math.ceil(fala.durationSeconds) + margem`),
+ * um inteiro qualquer que a união antiga não comportava. Os dois
+ * vocabulários (`PIPELINE_DURATION_OPTIONS`/`PREMIUM_DURATION_OPTIONS`) e
+ * `escolherDuracao`/`escolherDuracaoPremium` continuam emitindo só os
+ * valores de sempre — nada no caminho fracionado (>30s) muda de
+ * comportamento por este alargamento, só passa a aceitar um vizinho novo.
+ */
+export type PipelineDuration = number;
 
 /**
  * A maior opção do tier Normal — o teto de UM bloco Wan, sem emenda de

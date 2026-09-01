@@ -14,8 +14,10 @@
  *       — não mais `ordem=2` sozinho, que é igual para todo bloco. Testado
  *       por EXECUÇÃO, em FIXTURE (sem custo de rede real: `falSubmit`
  *       ainda chama `onRequestId`/`abrirEtapa` na fixture, só não fala com
- *       a fal de verdade) — um roteiro de 3 blocos tem de abrir 3 etapas
- *       `animar` com `blocoIndice` 0, 1, 2, nesta ordem.
+ *       a fal de verdade) — um roteiro fracionado (`ROTEIRO_FRACIONADO`,
+ *       acima de `LIMITE_TAKE_UNICO_SEGUNDOS` — V33, item 3) tem de abrir
+ *       uma etapa `animar` por bloco, com `blocoIndice` 0, 1, 2, … nesta
+ *       ordem.
  *  G-3  `reacompanharFal` (routes/videos.ts) — a única coisa que a
  *       varredura de boot chama para vídeos fal — NUNCA referencia a
  *       retomada de blocos. Testado por LEITURA: a função é recortada por
@@ -34,6 +36,10 @@ import path from "node:path";
 import type { Mutant } from "./mutants.js";
 import type { DiarioDoPipeline, FalPipelineInput } from "../services/video/falPipeline.js";
 import { runFalPipelineDaImagem, runFalPipelineRetomandoBlocos } from "../services/video/falPipeline.js";
+// V33, item 3 (01/09/2026) — usado só para DERIVAR o número de blocos que o
+// roteiro de prova produz, em vez de fixar `[0,1,2]` de cabeça. Ver o
+// comentário de `ROTEIRO_FRACIONADO` logo abaixo.
+import { fracionarRoteiro } from "../services/video/scriptFractioning.js";
 
 const PIPELINE = "backend/src/services/video/falPipeline.ts";
 const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
@@ -50,9 +56,18 @@ export const MUTANTS: Mutant[] = [
     // única chamada, continuaria indistinguível — é por isso que a prova é
     // por EXECUÇÃO comparando o valor CAPTURADO contra o do diário, não
     // por leitura de forma.
+    // ÂNCORA DESAMBIGUADA — V33, item 2 (01/09/2026): a mesma linha passou a
+    // existir DUAS vezes (`animarTomadaUnicaComAudioReal`, novo caminho de
+    // tomada única, e `animarNarrarSincronizar`, o de sempre). Este teste
+    // (`ROTEIRO_UM_BLOCO`, curto) exercita a PRIMEIRA — a âncora leva o
+    // comentário que só existe acima dela.
     file: PIPELINE,
-    find: "  const seedDoVideo = (await input.diario.lerSeed?.()) ?? gerarSeedWan();",
-    replace: "  const seedDoVideo = gerarSeedWan();",
+    find:
+      "  // padrão é o mesmo por uniformidade com o caminho fracionado).\n" +
+      "  const seedDoVideo = (await input.diario.lerSeed?.()) ?? gerarSeedWan();",
+    replace:
+      "  // padrão é o mesmo por uniformidade com o caminho fracionado).\n" +
+      "  const seedDoVideo = gerarSeedWan();",
     expect: "seed: o valor submetido à fal não bateu com o do diário",
   },
   {
@@ -150,9 +165,27 @@ function criarDiarioDeProva(lerSeedFixo: number | null): {
 }
 
 const ROTEIRO_UM_BLOCO = "Bom dia, isto é um teste curto.";
-const ROTEIRO_TRES_BLOCOS =
+/**
+ * RENOMEADO/ALONGADO em 01/09/2026 (V33, item 3) — o antigo `ROTEIRO_TRES_
+ * BLOCOS` (146 caracteres, ~13,4s estimados) fracionava sob o Wan 2.6
+ * porque cada bloco tinha teto de 10s; sob a migração para Wan 3.0, roteiros
+ * de até `LIMITE_TAKE_UNICO_SEGUNDOS` (30s) NUNCA fracionam mais — vão pela
+ * tomada única (`animarTomadaUnicaComAudioReal`), que nunca abre etapa
+ * `animar` com índice de bloco. Um roteiro de 146 caracteres não exercita
+ * mais G-2/G-4 (índice de bloco, não-regeneração) — precisa passar de 30s
+ * estimados (>~327 caracteres) para CONTINUAR caindo no fracionamento do
+ * V30, que este arquivo testa. Este roteiro (3 cópias do texto original,
+ * 440 caracteres, ~40,4s estimados) garante isso com folga. O NÚMERO de
+ * blocos que ele produz não é mais hardcoded — `fracionarRoteiro` decide,
+ * e os testes abaixo leem o resultado dela como base de comparação (ver
+ * `blocosEsperados`).
+ */
+const ROTEIRO_FRACIONADO = (
   "Inovar não é criar o futuro, é mudar o agora. Rompa o tradicional, use a tecnologia a seu favor e " +
-  "lidere o mercado. Mude o seu negócio hoje mesmo!";
+  "lidere o mercado. Mude o seu negócio hoje mesmo! "
+).repeat(3).trim();
+/** Quantos blocos `ROTEIRO_FRACIONADO` produz — a mesma função de produção decide, nunca um número de cabeça. */
+const NUMERO_DE_BLOCOS_DO_ROTEIRO_FRACIONADO = fracionarRoteiro(ROTEIRO_FRACIONADO).length;
 
 function inputDeProva(diario: DiarioDoPipeline, script: string): FalPipelineInput {
   return {
@@ -183,12 +216,20 @@ function inputDeProva(diario: DiarioDoPipeline, script: string): FalPipelineInpu
  * de cada submissão em `corposSubmetidos`.
  *
  * `PROVIDER_MODE=live` é necessário: em fixture, `falSubmit`/`falResult`
- * desviam antes da rede (ver `fixtureResultFor`, falClient.ts — que, à
- * parte, só reconhece a forma antiga do endpoint Wan,
- * `wan/v2.6/image-to-video/flash`, não a atual `reference-to-video/flash`
- * — GAP achado ao escrever esta guarda, fora do escopo do V30, reportado
- * à parte). Nenhum byte sai para a internet: cada chamada é respondida
- * aqui mesmo.
+ * desviam antes da rede (ver `fixtureResultFor`, falClient.ts). Nenhum byte
+ * sai para a internet: cada chamada é respondida aqui mesmo.
+ *
+ * V33, item 2 (01/09/2026) — GANHOU DUAS URLs novas de propósito.
+ * `animarTomadaUnicaComAudioReal` (roteiro ≤`LIMITE_TAKE_UNICO_SEGUNDOS`)
+ * narra ANTES de animar, então mesmo os testes de UM bloco (G-1) agora
+ * disparam ElevenLabs + `falUpload` do áudio antes da submissão `animar`
+ * de verdade. Sem tratar as duas, elas caíam no `else` genérico (queue
+ * submit) e devolviam `{request_id,...}` onde `synthesizeSpeech`/
+ * `falUpload` esperam `{audio_base64,...}`/`{file_url, upload_url}` — o
+ * `FalProviderError: a resposta não trouxe "file_url"` que motivou este
+ * comentário. As duas são respondidas ANTES do `else`, e nenhuma delas
+ * entra em `corposSubmetidos` — só a submissão `animar` de verdade conta
+ * para G-1 (`corpos.length === 1`).
  */
 async function comFalDeMentiraSubstituido<T>(
   corposSubmetidos: Record<string, unknown>[],
@@ -199,8 +240,29 @@ async function comFalDeMentiraSubstituido<T>(
   let contador = 0;
   try {
     process.env.PROVIDER_MODE = "live";
-    globalThis.fetch = (async (entrada: unknown, init?: { body?: unknown }) => {
+    globalThis.fetch = (async (entrada: unknown, init?: { body?: unknown; method?: string }) => {
       const url = String(typeof entrada === "string" ? entrada : (entrada as { url?: string })?.url ?? entrada);
+      // ElevenLabs — narrar() chama isto ANTES de animar no caminho de
+      // tomada única. `audio_base64` de mentira (1 byte) + um `alignment`
+      // com um único fim de caractere: o suficiente para `synthesizeSpeech`
+      // devolver `durationSeconds` numérico, sem inventar precisão nenhuma.
+      if (url.startsWith("https://api.elevenlabs.io/")) {
+        return new Response(
+          JSON.stringify({ audio_base64: Buffer.from("x").toString("base64"), alignment: { character_end_times_seconds: [1.23] } }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      // Upload à fal — TAMBÉM disparado por narrar() (sobe o áudio) e, no
+      // caminho de UM bloco só, nunca antes desta rodada.
+      if (url.startsWith("https://rest.fal.ai/storage/upload/initiate")) {
+        return new Response(
+          JSON.stringify({ file_url: "https://exemplo.fal.invalido/audio-de-mentira.mp3", upload_url: "https://exemplo.fal.invalido/put/audio-de-mentira" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.includes("/put/")) {
+        return new Response("", { status: 200, headers: { "content-type": "text/plain" } });
+      }
       if (url.endsWith("/status")) {
         return new Response(JSON.stringify({ status: "COMPLETED" }), {
           status: 200,
@@ -270,20 +332,20 @@ async function ignorandoFalhaDeConcatReal(fn: () => Promise<unknown>): Promise<v
   }
 }
 
-/** G-2 — as 3 etapas `animar` de um roteiro de 3 blocos gravam 0,1,2, em ordem. */
+/** G-2 — as etapas `animar` de um roteiro fracionado gravam 0,1,2,…, em ordem. */
 async function testeIndiceDeBloco(): Promise<string | null> {
   const { diario, chamadas } = criarDiarioDeProva(null);
   await comFalDeMentiraSubstituido([], () =>
     ignorandoFalhaDeConcatReal(() =>
-      runFalPipelineDaImagem(inputDeProva(diario, ROTEIRO_TRES_BLOCOS), "https://exemplo.fal.invalido/composta.png"),
+      runFalPipelineDaImagem(inputDeProva(diario, ROTEIRO_FRACIONADO), "https://exemplo.fal.invalido/composta.png"),
     ),
   );
   const indicesDosAnimar = chamadas.filter((c) => c.etapa === "animar").map((c) => c.blocoIndice);
-  const esperado = [0, 1, 2];
+  const esperado = Array.from({ length: NUMERO_DE_BLOCOS_DO_ROTEIRO_FRACIONADO }, (_, i) => i);
   if (JSON.stringify(indicesDosAnimar) !== JSON.stringify(esperado)) {
     return (
-      `índice de bloco: as etapas animar não gravaram 0,1,2 — vieram ${JSON.stringify(indicesDosAnimar)} ` +
-      `(${chamadas.length} chamada(s) de abrirEtapa no total)`
+      `índice de bloco: as etapas animar não gravaram ${JSON.stringify(esperado)} — vieram ` +
+      `${JSON.stringify(indicesDosAnimar)} (${chamadas.length} chamada(s) de abrirEtapa no total)`
     );
   }
   return null;
@@ -295,7 +357,7 @@ async function testeBlocoNaoRegenerado(): Promise<string | null> {
   await comFalDeMentiraSubstituido([], () =>
     ignorandoFalhaDeConcatReal(() =>
       runFalPipelineRetomandoBlocos(
-        inputDeProva(diario, ROTEIRO_TRES_BLOCOS),
+        inputDeProva(diario, ROTEIRO_FRACIONADO),
         "https://exemplo.fal.invalido/composta.png",
         [{ videoUrl: "https://exemplo.fal.invalido/bloco-0-ja-pago.mp4", requestId: "req-bloco-0-ja-pago" }],
       ),
@@ -308,10 +370,11 @@ async function testeBlocoNaoRegenerado(): Promise<string | null> {
       `etapa \`animar\` NOVA. Índices que abriram etapa nova: ${JSON.stringify(indicesDosAnimar)}`
     );
   }
-  const esperado = [1, 2];
+  const esperado = Array.from({ length: NUMERO_DE_BLOCOS_DO_ROTEIRO_FRACIONADO }, (_, i) => i).slice(1);
   if (JSON.stringify(indicesDosAnimar) !== JSON.stringify(esperado)) {
     return (
-      `retomada: esperava só os blocos 1 e 2 sendo submetidos de novo — vieram ${JSON.stringify(indicesDosAnimar)}`
+      `retomada: esperava só os blocos ${JSON.stringify(esperado)} sendo submetidos de novo — vieram ` +
+      JSON.stringify(indicesDosAnimar)
     );
   }
   return null;
@@ -327,7 +390,11 @@ export async function checkBlockResumePolicy(): Promise<BlockResumeCheckResult> 
 
   const erroIndice = await testeIndiceDeBloco();
   if (erroIndice) failures.push(erroIndice);
-  else notes.push("    índice de bloco: um roteiro de 3 blocos abre 3 etapas `animar` com blocoIndice 0, 1, 2");
+  else
+    notes.push(
+      `    índice de bloco: um roteiro fracionado em ${NUMERO_DE_BLOCOS_DO_ROTEIRO_FRACIONADO} blocos abre uma etapa ` +
+        "\`animar\` por bloco, com blocoIndice 0, 1, 2, … em ordem",
+    );
 
   const erroRegeneracao = await testeBlocoNaoRegenerado();
   if (erroRegeneracao) failures.push(erroRegeneracao);

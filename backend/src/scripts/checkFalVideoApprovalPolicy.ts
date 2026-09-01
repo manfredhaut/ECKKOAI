@@ -148,25 +148,15 @@ export const MUTANTS: Mutant[] = [
     // `tsc` segue verde, e o caminho feliz ainda produz um `videoUrl` no
     // fim — só que pagando o Wan/Seedance de novo (~US$ 0,25 a ~US$ 4,60+)
     // por um vídeo que já existia e já tinha sido aprovado.
-    // find/replace REGENERADOS no BLOCO FRACOES-1 (28/08): `teto: tetoParaTier(input)`
-    // passou a `teto: tetoParaTier(input, segundosTotaisDoRoteiro)` (fórmula
-    // sobre a duração TOTAL, não mais uma constante — ver
-    // `docs-internal/plano-fracoes-2026-08-28.md`). O `replace` (a mutação)
-    // ganhou `blocos:` porque `ContextoDaAnimacao` passou a exigir o campo —
-    // sem ele o `tsc` recusaria a mutação antes de ela chegar a rodar.
+    // ÂNCORA REGENERADA — V33, item 2 (01/09/2026): a função ganhou o
+    // parâmetro `audioPreSintetizado` e passou a montar um `contexto`
+    // (`ContextoDaNarracao`) reusado por `sincronizarComAudio`/
+    // `narrarSincronizar`, em vez de chamar `narrarSincronizar` inline com
+    // os campos soltos. A âncora agora é a chamada final — o mesmo defeito
+    // (reanimar em vez de só narrar/sincronizar) continua se aplicando à
+    // função inteira, só que no ponto de retorno novo.
     file: PIPELINE,
-    find:
-      "  return narrarSincronizar(input, {\n" +
-      "    videoMudoUrl,\n" +
-      "    imagemCompostaUrl,\n" +
-      "    gastoAcumuladoUsd: 0,\n" +
-      "    teto: tetoParaTier(input, segundosTotaisDoRoteiro),\n" +
-      "    segundosEstimados,\n" +
-      "    duracaoEscolhida,\n" +
-      "    composicaoRequestId,\n" +
-      "    animarRequestId,\n" +
-      "  });\n" +
-      "}",
+    find: "  return narrarSincronizar(input, contexto);\n}",
     replace:
       "  return animarNarrarSincronizar(input, {\n" +
       "    imagemUrl: imagemCompostaUrl ?? videoMudoUrl,\n" +
@@ -219,10 +209,13 @@ export const MUTANTS: Mutant[] = [
     guard: "o campo livre do Refazer (vídeo mudo) chega ao UPDATE — migration 061",
     name: "/redo-video para de gravar refazer_feedback",
     kind: "obvio",
+    // ÂNCORA ATUALIZADA — V33, item 2 (01/09/2026): o UPDATE ganhou
+    // `fal_audio_url = $7` (persiste o áudio da tomada única) na MESMA
+    // linha de `refazer_feedback = $6`.
     file: ROTA_DE_VIDEOS,
-    find: "approval_requested_at = now(), refazer_feedback = $6\n             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval_video' RETURNING *`,\n          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId, refazerFeedback],",
+    find: "approval_requested_at = now(), refazer_feedback = $6, fal_audio_url = $7\n             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval_video' RETURNING *`,\n          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId, refazerFeedback, corrida.audioUrl],",
     replace:
-      "approval_requested_at = now()\n             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval_video' RETURNING *`,\n          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId],",
+      "approval_requested_at = now(), fal_audio_url = $7\n             WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval_video' RETURNING *`,\n          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId, refazerFeedback, corrida.audioUrl],",
     expect: "/redo-video deixou de gravar o campo livre do Refazer",
   },
   {

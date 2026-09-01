@@ -465,6 +465,12 @@ function fixtureResultFor(responseUrl: string): unknown {
     // item 8. A entrada antiga (`image-to-video/flash`) fica, para não
     // quebrar nada que ainda a cite por engano.
     endpointId === "wan/v2.6/reference-to-video/flash" ||
+    // V33, item 1 (01/09/2026) — MESMO GAP, de novo: o Wan migrou para
+    // `alibaba/wan-3.0/reference-to-video` e esta função não reconhecia o
+    // id novo — achado ao escrever o ensaio fixture ponta a ponta do item
+    // 13 (`_ensaioTomadaUnicaWan3.ts`). As duas entradas antigas ficam,
+    // pela mesma razão de sempre.
+    endpointId === "alibaba/wan-3.0/reference-to-video" ||
     // Motor Premium (BLOCO A, 21/08) — mesma forma do Wan: os dois devolvem
     // `video.url`. Sem isto, toda etapa "animar" do tier premium quebraria em
     // fixture (mesmo defeito, já registrado no revert do BLOCO SEEDANCE-1,

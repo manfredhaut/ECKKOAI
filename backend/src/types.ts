@@ -107,6 +107,13 @@ export interface Video {
    */
   fal_muted_video_url: string | null;
   /**
+   * O ÁUDIO já sintetizado pelo ElevenLabs, quando a corrida narrou ANTES
+   * de animar — V33, item 2, migration 073. Só preenchido pelo caminho de
+   * tomada única do tier Normal (roteiros ≤30s estimados); `/approve-video`
+   * o lê para NÃO ressintetizar. `null` em todo outro caminho.
+   */
+  fal_audio_url: string | null;
+  /**
    * Texto livre do "Refazer" — o que precisa mudar, capturado no clique,
    * tanto na tela de imagem quanto na de vídeo mudo (migration 061). Só
    * CAPTURADO e PERSISTIDO: nenhum caminho de geração o lê ainda.

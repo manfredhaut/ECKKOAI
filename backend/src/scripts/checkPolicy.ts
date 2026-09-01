@@ -67,6 +67,7 @@ import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
 import { checkFalPollRecoveryPolicy } from "./checkFalPollRecoveryPolicy.js";
 import { checkBlockResumePolicy } from "./checkBlockResumePolicy.js";
+import { checkWan3TomadaUnicaPolicy } from "./checkWan3TomadaUnicaPolicy.js";
 import { checkScriptLimitPolicy } from "./checkScriptLimitPolicy.js";
 import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
@@ -1036,6 +1037,13 @@ async function main(): Promise<void> {
   const blockResume = await checkBlockResumePolicy();
   blockResume.failures.forEach((f) => failures.push(f));
   blockResume.notes.forEach((n) => note(n));
+
+  // --- 24o-quater. tomada única do tier Normal — V33, itens 2-4: duration
+  // vem do áudio real medido, identidade no começo do prompt, fracionamento
+  // só acima de LIMITE_TAKE_UNICO_SEGUNDOS. `fetch` substituído, sem custo.
+  const wan3TomadaUnica = await checkWan3TomadaUnicaPolicy();
+  wan3TomadaUnica.failures.forEach((f) => failures.push(f));
+  wan3TomadaUnica.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //

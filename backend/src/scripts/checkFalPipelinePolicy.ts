@@ -75,29 +75,33 @@ export const MUTANTS: Mutant[] = [
   },
   {
     guard: "pipeline: nenhum default do fornecedor é herdado",
-    name: "generate_audio sai do payload do Wan e volta a ser o default",
+    name: "audio sai do payload do Wan e volta a ser o default",
     kind: "esperto",
-    // O mais caro dos seis: com o default, o Wan sintetiza uma trilha PRÓPRIA
-    // e PAGA que a sincronia descarta. Some do payload sem quebrar nada
-    // visível — o vídeo continua saindo, só que com áudio que ninguém pediu e
-    // por um preço que ninguém viu.
+    // RENOMEADO de `generate_audio` (V33, item 1) — mesmo risco de sempre: com
+    // o default (`true`), o Wan sintetiza uma trilha PRÓPRIA e PAGA que a
+    // sincronia descarta. Some do payload sem quebrar nada visível — o vídeo
+    // continua saindo, só que com áudio que ninguém pediu e por um preço que
+    // ninguém viu.
     file: "backend/src/services/video/falPipeline.ts",
-    find: "    generate_audio: false,\n    resolution: RESOLUCAO_VIDEO,",
+    find: "    audio: false,\n    resolution: RESOLUCAO_VIDEO,",
     replace: "    resolution: RESOLUCAO_VIDEO,",
     expect: "pipeline: um default do fornecedor foi herdado em silêncio",
   },
   {
     guard: "pipeline: nenhum default do fornecedor é herdado",
-    name: "negative_prompt sai do payload do Wan e volta a ser vazio",
+    name: "enable_prompt_expansion sai do payload do Wan e volta a ser o default",
     kind: "esperto",
-    // RODADA 2, 29/08 — sem o campo, o Wan volta ao default vazio (LIDO no
-    // schema) e fica livre para produzir os artefatos que
-    // `NEGATIVE_PROMPT_ANIMAR_WAN` existe para conter. Some do payload sem
-    // quebrar nada visível no código — o vídeo continua saindo, só que sem a
-    // única defesa contra traço de desenho/pele plástica/legenda queimada.
+    // V33, item 1 (01/09/2026) — `negative_prompt`/`multi_shots` SAÍRAM de
+    // `DEFAULTS_NUNCA_HERDADOS` junto com a migração para Wan 3.0 (o
+    // endpoint novo não tem os dois campos — MEDIDO por WebFetch, V32); o
+    // texto que evitavam agora é parte do PROMPT (`ANTI_ARTEFATO_WAN3`,
+    // `DIRECAO_PLANO_UNICO`), sem default de fornecedor para herdar.
+    // `enable_prompt_expansion` é o último campo booleano que sobrou nesta
+    // lista, e cobre o mesmo risco: sem ele, o fornecedor reescreve a
+    // direção por conta própria, em silêncio.
     file: "backend/src/services/video/falPipeline.ts",
-    find: "    multi_shots: false,\n    // RODADA 2, 29/08 — LIDO no schema do Wan (só ele, entre as três etapas\n    // pagas, documenta este campo; RECONFIRMADO no schema do novo endpoint em\n    // 29/08). Ver `NEGATIVE_PROMPT_ANIMAR_WAN`.\n    negative_prompt: NEGATIVE_PROMPT_ANIMAR_WAN,",
-    replace: "    multi_shots: false,",
+    find: "    enable_prompt_expansion: false,\n    // Item 1, rodada de 29/08 anterior — ver o comentário de `seed` acima.\n    seed,",
+    replace: "    // Item 1, rodada de 29/08 anterior — ver o comentário de `seed` acima.\n    seed,",
     expect: "pipeline: um default do fornecedor foi herdado em silêncio",
   },
   {
@@ -144,14 +148,14 @@ export const MUTANTS: Mutant[] = [
     // desalinha só a CHAVE, mantendo `ENDPOINT_ANIMAR` correto, para provar
     // que corrigir dois de três lugares não passa despercebido.
     //
-    // A CHAVE ERRADA injetada é `image-to-video/flash` — o endpoint ANTIGO,
-    // de antes da migração para `reference-to-video/flash` (item 2, 29/08):
-    // reintroduzir literalmente o id de antes é o defeito mais plausível
-    // (alguém reverte só este mapa, sem querer, num merge ou num revert
-    // parcial), e continua desalinhado de `ENDPOINT_ANIMAR` do mesmo jeito.
+    // A CHAVE ERRADA injetada é o endpoint ANTIGO, de antes da migração para
+    // Wan 3.0 (V33, item 1, 01/09/2026): reintroduzir literalmente o id de
+    // antes é o defeito mais plausível (alguém reverte só este mapa, sem
+    // querer, num merge ou num revert parcial), e continua desalinhado de
+    // `ENDPOINT_ANIMAR` do mesmo jeito.
     file: "backend/src/services/video/falPipeline.ts",
-    find: '  "wan/v2.6/reference-to-video/flash": [',
-    replace: '  "wan/v2.6/image-to-video/flash": [',
+    find: '  "alibaba/wan-3.0/reference-to-video": [',
+    replace: '  "wan/v2.6/reference-to-video/flash": [',
     expect: "pipeline: um default do fornecedor foi herdado em silêncio",
   },
   {
@@ -162,12 +166,12 @@ export const MUTANTS: Mutant[] = [
     // roda de verdade dentro desta guarda (só o `fetch` é substituído) — se o
     // catálogo não bater com `ENDPOINT_ANIMAR`, `runFalPipeline` lança antes
     // de completar as 3 submissões pagas, e é essa contagem que acusa.
-    // A CHAVE ERRADA injetada é `image-to-video/flash` — o endpoint ANTIGO,
-    // de antes da migração para `reference-to-video/flash` (item 2, 29/08) —
-    // mesmo raciocínio do mutante irmão em DEFAULTS_NUNCA_HERDADOS.
+    // A CHAVE ERRADA injetada é o endpoint ANTIGO, de antes da migração para
+    // Wan 3.0 (V33, item 1) — mesmo raciocínio do mutante irmão em
+    // DEFAULTS_NUNCA_HERDADOS.
     file: "backend/src/services/providers/endpointCatalog.ts",
-    find: '    path: "/wan/v2.6/reference-to-video/flash",',
-    replace: '    path: "/wan/v2.6/image-to-video/flash",',
+    find: '    path: "/alibaba/wan-3.0/reference-to-video",',
+    replace: '    path: "/wan/v2.6/reference-to-video/flash",',
     expect: "pipeline: com teto folgado saíram",
   },
   {
@@ -177,9 +181,14 @@ export const MUTANTS: Mutant[] = [
     // Um roteiro de 47 caracteres (teto exato de 5 s) e outro de 142 (teto
     // exato de 15 s) só podem coincidir se o pipeline PARAR de olhar o
     // roteiro — qualquer valor fixo único erra pelo menos um dos dois.
+    // `duration` virou INTEIRO na migração para Wan 3.0 (V33, item 1) — o
+    // mutante injeta o mesmo defeito (valor fixo), só que no tipo novo.
+    // `corpoAnimarSeedance` (Premium) tem um campo `duration: duracaoEscolhida,`
+    // idêntico — a âncora leva a linha de comentário que só existe acima do
+    // do Wan, para não casar duas vezes.
     file: "backend/src/services/video/falPipeline.ts",
-    find: "    duration: String(duracaoEscolhida),",
-    replace: '    duration: "10",',
+    find: "    // `LIMITE_TAKE_UNICO_SEGUNDOS`).\n    duration: duracaoEscolhida,",
+    replace: "    // `LIMITE_TAKE_UNICO_SEGUNDOS`).\n    duration: 10,",
     expect: 'pipeline: a duração não foi escolhida a partir do roteiro',
   },
   {
@@ -556,25 +565,33 @@ export async function checkFalPipelinePolicy(): Promise<FalPipelineCheckResult> 
     "../services/video/falPipeline.js"
   );
 
+  // V33, item 1 (01/09/2026) — `duration` virou INTEIRO (schema do Wan 3.0
+  // não tem enum de string "5"/"10" como o Wan 2.6 tinha); o endpoint
+  // trocou para `alibaba/wan-3.0/reference-to-video`. `runFalPipeline`
+  // (só sonda/guarda — nunca chamado por rota de produto) continua sem o
+  // atalho de tomada única (`animarTomadaUnicaComAudioReal`, exclusivo de
+  // `runFalPipelineDaImagem`), então um roteiro de 47/95 caracteres ainda
+  // fraciona pela régua de sempre e ainda pede exatamente 5/10 — só o TIPO
+  // do valor mudou, de string para número.
   const roteiroPara5s = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[5]);
   const curto = await correr({ script: roteiroPara5s });
-  const animarCurto = curto.corpos.find((c) => c.endpoint === "wan/v2.6/reference-to-video/flash");
-  if (animarCurto?.corpo.duration !== "5") {
+  const animarCurto = curto.corpos.find((c) => c.endpoint === "alibaba/wan-3.0/reference-to-video");
+  if (animarCurto?.corpo.duration !== 5) {
     failures.push(
       `pipeline: a duração não foi escolhida a partir do roteiro — ${roteiroPara5s.length} caracteres ` +
-        `(o teto exato de 5 s) deveriam pedir "duration": "5" ao Wan, e o corpo trouxe ` +
+        `(o teto exato de 5 s) deveriam pedir "duration": 5 ao Wan, e o corpo trouxe ` +
         `${JSON.stringify(animarCurto?.corpo.duration ?? null)}. Passos: ${curto.passos.join(" → ") || "(nenhum)"}.`,
     );
   }
 
   const roteiroPara10s = "x".repeat(PIPELINE_MAX_CHARS_POR_DURACAO[10]);
   const longo = await correr({ script: roteiroPara10s });
-  const animarLongo = longo.corpos.find((c) => c.endpoint === "wan/v2.6/reference-to-video/flash");
-  if (animarLongo?.corpo.duration !== "10") {
+  const animarLongo = longo.corpos.find((c) => c.endpoint === "alibaba/wan-3.0/reference-to-video");
+  if (animarLongo?.corpo.duration !== 10) {
     failures.push(
       `pipeline: a duração não foi escolhida a partir do roteiro — ${roteiroPara10s.length} caracteres ` +
         `(o teto exato de 10 s, o maior bloco do Wan desde a migração do item 2) deveriam pedir ` +
-        `"duration": "10", e o corpo trouxe ${JSON.stringify(animarLongo?.corpo.duration ?? null)}. Passos: ` +
+        `"duration": 10, e o corpo trouxe ${JSON.stringify(animarLongo?.corpo.duration ?? null)}. Passos: ` +
         `${longo.passos.join(" → ") || "(nenhum)"}.`,
     );
   }

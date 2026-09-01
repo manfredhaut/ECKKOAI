@@ -2572,12 +2572,18 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // apontar para o `request_id` de `animar` (não mais o de `compor`):
         // é ele que `/approve-video` e `/redo-video` precisam para dar
         // continuidade, e `compor` já não tem mais nada em jogo daqui pra
-        // frente.
+        // frente. `fal_audio_url` (migration 073, V33 item 2) só vem
+        // preenchido quando esta corrida passou pelo caminho de tomada
+        // única (narrou ANTES de animar) — `COALESCE` preserva NULL para
+        // todo outro caminho, que narra DEPOIS, em `/approve-video`.
         const { rows: aguardandoVideo } = await pool.query<Video>(
           `UPDATE videos SET status = 'awaiting_approval_video', fal_muted_video_url = $2,
-                             provider_job_id = $3, approval_requested_at = now()
+                             provider_job_id = $3, approval_requested_at = now(),
+                             fal_audio_url = COALESCE($5, fal_audio_url),
+                             audio_duration_seconds = COALESCE($6, audio_duration_seconds),
+                             audio_duration_source = CASE WHEN $6 IS NULL THEN audio_duration_source ELSE 'tts_timestamps' END
              WHERE id = $1 AND tenant_id = $4 AND status = 'processing' RETURNING *`,
-          [video.id, videoMudoServido, corrida.requestIds.animar, req.tenantId],
+          [video.id, videoMudoServido, corrida.requestIds.animar, req.tenantId, corrida.audioUrl, corrida.audioDurationSeconds],
         );
         if (!aguardandoVideo[0]) {
           // A animação existe e foi paga; o que sumiu foi o estado que a
@@ -2871,6 +2877,28 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         origem: "aprovacao_video",
       });
 
+      // V33, item 2 (01/09/2026) — `fal_audio_url` só vem preenchido quando
+      // `/approve` passou pelo caminho de tomada única (narrou ANTES de
+      // animar, ver `animarTomadaUnicaComAudioReal`). Presente: reusa o
+      // MESMO áudio, sem ressintetizar (ressintetizar mediria uma duração
+      // DIFERENTE do mesmo texto — variância de até 9,1% já registrada
+      // neste projeto). Ausente (todo caminho Premium, e Normal fracionado
+      // acima de `LIMITE_TAKE_UNICO_SEGUNDOS`): comportamento de antes desta
+      // rodada, narra de novo dentro de `runFalPipelineDoVideoMudo`.
+      const audioJaSintetizado = await pool.query<{ fal_audio_url: string | null; audio_duration_seconds: string | null }>(
+        "SELECT fal_audio_url, audio_duration_seconds FROM videos WHERE id = $1",
+        [video.id],
+      );
+      const audioPreSintetizado = audioJaSintetizado.rows[0]?.fal_audio_url
+        ? {
+            audioUrl: audioJaSintetizado.rows[0].fal_audio_url,
+            durationSeconds:
+              audioJaSintetizado.rows[0].audio_duration_seconds != null
+                ? Number(audioJaSintetizado.rows[0].audio_duration_seconds)
+                : null,
+          }
+        : null;
+
       try {
         const r = await aprovarEAnimar({
           videoId: video.id,
@@ -2890,8 +2918,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 apiKeyFal,
                 apiKeyElevenLabs,
                 voiceId: avatar.voice_id ?? "",
-                // Migration 067 — a narração É refeita aqui, mesmo com a
-                // composição e a animação preservadas.
+                // Migration 067 — a narração É refeita aqui, EXCETO quando
+                // `audioPreSintetizado` já traz o áudio da tomada única.
                 voiceTuning: voiceTuningDoAvatar(avatar),
                 script: video.script,
                 // Nem a composição nem a animação são refeitas aqui — os
@@ -2916,6 +2944,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
               // que a linha entrou em `awaiting_approval_video` — ver o UPDATE
               // em `/approve`.
               video.provider_job_id ?? "",
+              audioPreSintetizado,
             ),
         });
 
@@ -3159,12 +3188,18 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         }
 
         // `approval_requested_at` REINICIA — mesmo raciocínio de `/recompose`:
-        // a aprovação pendente passa a ser do vídeo mudo NOVO.
+        // a aprovação pendente passa a ser do vídeo mudo NOVO. `fal_audio_url`
+        // é SOBRESCRITO (não `COALESCE`) — V33, item 2: este "Refazer" gera
+        // um vídeo mudo NOVO, e um áudio antigo (de uma narração anterior,
+        // possivelmente de duração diferente) não pode ficar amarrado a ele.
+        // `corrida.audioUrl` é `null` para todo roteiro acima de
+        // `LIMITE_TAKE_UNICO_SEGUNDOS` — o mesmo NULL que já valia antes
+        // desta rodada.
         const { rows: refeito } = await pool.query<Video>(
           `UPDATE videos SET fal_muted_video_url = $2, fal_run_id = $3, provider_job_id = $4,
-                             approval_requested_at = now(), refazer_feedback = $6
+                             approval_requested_at = now(), refazer_feedback = $6, fal_audio_url = $7
              WHERE id = $1 AND tenant_id = $5 AND status = 'awaiting_approval_video' RETURNING *`,
-          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId, refazerFeedback],
+          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId, refazerFeedback, corrida.audioUrl],
         );
         if (!refeito[0]) {
           // O vídeo mudo existe e foi pago; o que sumiu foi o estado que o
