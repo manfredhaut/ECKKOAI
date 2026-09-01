@@ -610,4 +610,30 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > 10. Em `docker compose logs -f backend`, procurar por `fal_pipeline_gasto_autorizado` (para ver o custo autorizado por etapa), `duration` no corpo enviado ao Wan (deve refletir `ceil(áudio real + 0,5s)`, não mais `+1s`), `aspect_ratio` (deve ser `9:16` no payload enviado à fal mesmo quando o vídeo foi pedido em 4:5), e o campo `target_duration_seconds` gravado na linha do vídeo.
 > 11. Medir a duração REAL do vídeo mudo entregue contra `duracaoEscolhida + 0,3s` (o teto de sobra do item 5-6) — é a primeira vez que este corte roda contra um vídeo real, não só a fixture local.
 >
+> ### (g) ⚠️ REVISÃO — mesma data, commit `a863739`. SUBSTITUI os passos 5, 6 e 9 de (d) acima
+>
+> **O operador pediu, na mesma sessão, para reverter TODO o frontend desta rodada** — `ResumeBlocksPanel.tsx` apagado, `ContentPage.tsx`/`GenerationSummary.tsx`/`PublishStep.tsx`/`SceneStep.tsx`/`global.css`/`types.ts`/os dois locales voltaram byte a byte ao estado de antes do V34 (`git diff 0e03141 -- frontend/` vazio, confirmado). O backend do V34 (duração-alvo, recorte final, prompt Wan 3.0, mapeamento 4:5→9:16 + derivação em `/approve-video`) foi MANTIDO integralmente.
+>
+> **Efeito prático nos passos de (d):**
+> - **Passo 5 fica**: tier "Normal" continua a escolha certa — **mas "Feed do Instagram (4:5)" NÃO aparece mais clicável na tela** (o chip voltou a ser desabilitado por tier, comportamento de antes do V34). O mapeamento 4:5→9:16 e a derivação em `/approve-video` continuam corretos e testados (`checkNormalAspectRatioPolicy.ts`, G-1/G-2/G-3 — reduzida de 7 para 5 mutantes, os 2 removidos testavam a UI revertida), mas hoje só são alcançáveis mandando `aspect_ratio: "4:5"` direto em `POST /videos` (fora do wizard) — **não há como exercitar esse caminho clicando na tela nesta rodada.**
+> - **Passo 6 fica igual**, exceto que **o resumo NÃO mostra mais a linha "Duração-alvo"** — `GenerationSummary.tsx` voltou a sete campos. O valor continua sendo enviado ao servidor (`GenerateStep.tsx` nunca mudou — já enviava `target_duration_seconds` antes do V34) e continua sendo comparado contra a fala real depois de narrar; só a CONFERÊNCIA visual na tela antes de gastar não existe mais nesta entrega.
+> - **Passo 9 fica igual só para o corte de 0,3s.** A frase sobre 4:5 não se aplica: sem o chip, o operador não consegue pedir 4:5 pela tela nesta rodada.
+>
+> **Os "8 de ambiente" do gate, por nome, com origem MEDIDA (item 9 do pedido de fechamento — "de ambiente" não é diagnóstico):**
+>
+> | Guarda :: mutante | Primeiro commit | Data |
+> |---|---|---|
+> | acesso: autofill em produção :: DEV_AUTOFILL=1 com NODE_ENV=production | `774a69b` | 31/07/2026 |
+> | acesso: galeria em produção :: DEV_GALLERY=1 com NODE_ENV=production | `f7af98a` | 31/07/2026 |
+> | provedor: fixture em produção :: fixture com NODE_ENV=production | `97e175b` | 31/07/2026 |
+> | acesso: limiter de login :: limiter afrouxado em produção | `87bf5e1` | 01/08/2026 |
+> | acesso: limiter de login :: limiter com valor que vira NaN | `87bf5e1` | 01/08/2026 |
+> | provedor: live sem autorização :: live com a frase de confirmação errada | `87bf5e1` | 01/08/2026 |
+> | recuperação: toda chamada a fornecedor tem teto de tempo :: o teto vem do ambiente... (contraponto) | `a392a04` | 08/08/2026 |
+> | recuperação: o boot recolhe o que ficou preso :: a idade máxima muda de valor... (contraponto) | `a392a04` | 08/08/2026 |
+>
+> **MEDIDO por `git log -S` em cada um dos 8 nomes**: todos datam de 31/07–08/08/2026, e vivem em 4 arquivos (`checkEnvironmentPolicy.ts`, `checkProviderPolicy.ts`, `checkVideoRecoveryPolicy.ts`, `checkMutantRegistryPolicy.ts` — este último com 0) que o V34 NUNCA tocou. **Não há "5 do V33 e 3 novos" — os 8 são os MESMOS 8 desde antes do V33 inteiro**, e a premissa de que a composição mudou entre rodadas não se confirma. O total de mutantes declarados mudou por causa de arquivos NOVOS (`checkAlvoDeDuracaoPolicy.ts`, `checkTrimOvershootPolicy.ts`, `checkFixtureFormatEnsaioPolicy.ts` — todos COM arquivo, nenhum de ambiente) e da redução de `checkNormalAspectRatioPolicy.ts`/`checkPreflightSummaryPolicy.ts` nesta revisão — não por mudança nos 8 mutantes de ambiente em si.
+>
+> **Reconfirmação após o revert**: `tsc` limpo nos dois lados; gate estático EXIT 0 (**480 mutantes declarados** — era 483 antes desta revisão, -3 pelos 2 mutantes removidos de `checkNormalAspectRatioPolicy.ts` e o 1 de `checkPreflightSummaryPolicy.ts` que reverteu inteiro —, **472 casam por arquivo + 8 de ambiente**); passada `--guard` dos **19 mutantes V34 remanescentes** (26 originais menos os 3 do resumo/8-campos que reverteram para o estado pré-V34, sem mudança nenhuma, e os 4 que testavam UI agora removida — `pararApos`/`compararAlvoComFala`/`sincronizarComAudio`/`aspectRatioParaFornecedor`/`compor-animar`/`approve-video`/`classifyVendorFailure`/`gravação do gasto`/`pipeline defaults`/`índice de bloco` seguem todos cobertos): **19/19 reprovaram de verdade**, árvore limpa em cada aplicação, sem edição concorrente durante a passada (regra nova registrada em `docs-internal/08-ocorrencias.md`, Ocorrência 4: `git add` de todo arquivo novo, sem commitar, ANTES de qualquer passada de mutantes — `git stash create` ignora não-rastreado). Backend, frontend e Postgres reiniciados e healthy depois do commit; hash do container bate byte a byte com `git show HEAD:...` para `falPipeline.ts`; contador de vídeos pagos hoje segue em **2**, MEDIDO antes e depois — o mesmo par de vídeos residual de antes desta sessão, nada novo cobrado.
+>
 > **A tela de retomada de blocos (item 18) só aparece sozinha** quando um vídeo Normal fracionado (roteiro >30s estimados) travar num `poll_timeout` de verdade — não há como forçar isso sem esperar uma falha real ou fracionar um roteiro bem mais longo que os passos acima sugerem. Testá-la exige ou paciência para uma falha orgânica, ou uma segunda rodada com um roteiro deliberadamente longo.
