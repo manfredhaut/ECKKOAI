@@ -87,7 +87,12 @@ export const MUTANTS: Mutant[] = [
       "      fotoDeIdentidadeUrl,\n" +
       "      null,\n" +
       "    );",
-    expect: "índice de bloco: as etapas animar não gravaram 0,1,2 —",
+    // V33, item 3 — a mensagem passou a citar os índices DINAMICAMENTE
+    // (`JSON.stringify(esperado)`, hoje `[0,1,2,3,4,5,6]` para
+    // `ROTEIRO_FRACIONADO`), não mais o literal "0,1,2" fixo. `expect`
+    // precisa ser a parte ESTÁVEL da frase — a que não muda se o número de
+    // blocos mudar de novo.
+    expect: "índice de bloco: as etapas animar não gravaram",
   },
   {
     guard: "reacompanharFal nunca referencia a retomada de blocos — retomar é sempre clique humano, nunca a varredura de boot",
