@@ -146,3 +146,66 @@ campos e digitar a credencial de admin funciona hoje, sem nenhuma alteração.
    contra essa guarda, não contra o conforto.**
 3. **Deixar como está e documentar** — é o estado de hoje, e o custo dele é
    esta entrada.
+
+---
+
+## Ocorrência 3 · Comando de git destrutivo rodado sobre um arquivo com trabalho não commitado
+
+**Contagem: 1ª vez** (31/08/2026, sessão V28, fechada no V29).
+
+**O que aconteceu, MEDIDO pelo próprio histórico da sessão.** No meio da
+depuração de um mutante de guarda (V28, item 8), uma edição manual foi feita
+em `backend/src/routes/videos.ts` só para reproduzir o comportamento de um
+mutante fora do arnês. Para desfazer essa edição de teste, rodou-se `git
+checkout -- backend/src/routes/videos.ts` — mas o arquivo **nunca tinha sido
+commitado nem `git add`-ado** com as mudanças reais da sessão (a
+implementação inteira do poll timeout recuperável, itens 3 e 5). O comando
+não reverteu "a edição de teste": reverteu o arquivo INTEIRO para o último
+commit, apagando junto tudo o que a sessão tinha construído ali.
+
+**Por que passou despercebido no instante do comando:** `git checkout --
+<arquivo>` é, por design, silencioso sobre O QUE ele está descartando — ele
+não avisa "isto vai apagar N linhas não commitadas", só troca o conteúdo do
+arquivo no disco. A intuição de quem roda o comando ("estou só desfazendo o
+que acabei de digitar") é exatamente o ponto cego: o arquivo carregava
+TRABALHO DE RODADAS ANTERIORES por cima da edição de teste, e o comando não
+distingue as duas camadas.
+
+**Recuperado sem perda, mas por uma característica do harness, não por uma
+salvaguarda do processo de edição.** `tools/run-mutants.mjs` cria, antes de
+cada passada, um commit temporário da árvore suja (para poder rodar workers
+em `git worktree` isolados) — e uma dessas passadas tinha rodado minutos
+antes do acidente. `git show <commit-temporário>:backend/src/routes/videos.ts`
+devolveu o conteúdo exato; `git diff --stat` contra o estado anterior ao
+acidente bateu byte a byte, e `tsc` confirmou compilação limpa depois da
+restauração. **Se o acidente tivesse acontecido ANTES da primeira passada de
+mutantes da sessão (ou se `run-mutants.mjs` não existisse), a recuperação não
+teria essa saída** — o trabalho teria sido perdido de verdade.
+
+### O que a ocorrência está pedindo
+
+Ainda é a 1ª vez — não há padrão de repetição para medir ainda. Mas o quase-
+desastre expõe uma lacuna estrutural: a política deste projeto de "nunca
+commitar sem pedido explícito do operador" (correta, e não deve mudar) tem
+como efeito colateral **sessões inteiras de trabalho vivendo só na árvore de
+trabalho, sem nenhuma rede de segurança contra um comando destrutivo
+rodado sobre a pasta errada, ou sobre a pasta certa com pressa.**
+
+Saídas possíveis, nenhuma escolhida ainda:
+
+1. **Nunca rodar `checkout`/`reset`/`restore` sobre um arquivo sem antes
+   `git diff` ou `git status` daquele arquivo especificamente** — o freio já
+   existe como instrução geral (CLAUDE.md, seção "Executando ações com
+   cuidado"), e esta ocorrência é a prova de que ele foi pulado sob pressa,
+   não de que ele não exista.
+2. **`git stash` como reversão de teste, nunca `checkout --`** — um stash
+   preserva o conteúdo anterior recuperável por `git stash pop`/`git stash
+   list`, e um `checkout --` não preserva nada.
+3. **Commits intermediários mais frequentes dentro de uma sessão longa**,
+   mesmo sem fechar a rodada — reduz a janela de trabalho que existe só na
+   árvore. Tensiona com "nunca commitar sem pedido explícito"; decidir isso é
+   do operador, não do assistente.
+
+Nenhuma das três foi adotada como regra fixa nesta rodada — fica registrado
+como o primeiro dado de um padrão que só a próxima ocorrência (se houver)
+vai confirmar ou não.

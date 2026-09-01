@@ -15,15 +15,46 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-Atualizado em **31/08/2026 (V24)**. HEAD **`0493235`**, árvore limpa. Esta
-sessão NÃO abriu trabalho novo de produto — commitou, em 7 commits nomeados,
-o trabalho de tier Normal de 6 sessões anteriores (29-31/08: migração para
+Atualizado em **31/08/2026 (V29)**. HEAD **`81e5e9d`**, árvore limpa. Esta
+sessão fechou o V28 (poll timeout recuperável na fal) em **3 commits
+nomeados**: `af1c2f3` (itens 3-6: `FalPollTimeoutError`, despacho fal-aware
+em `recovery.ts`, estorno de `/approve-video` pela etapa certa, remoção dos
+`.slice(0,200)`), `94a6954` (item 7: comentário "sondas V20/V22" corrigido)
+e `81e5e9d` (item 8: guarda `checkFalPollRecoveryPolicy.ts` + correções de
+fixture nas guardas afetadas). **A regra "nunca commitar sem pedido
+explícito" tinha custado, na sessão anterior, um `git checkout --` acidental
+que quase destruiu todo o trabalho não commitado do V28** — ver o incidente
+registrado no fim desta seção e em
+[docs-internal/08-ocorrencias.md](docs-internal/08-ocorrencias.md).
+
+Sessão anterior (V24, `0493235`) NÃO tinha aberto trabalho novo de produto —
+tinha commitado, em 7 commits nomeados, o trabalho de tier Normal de 6
+sessões anteriores (29-31/08: migração para
 `wan/v2.6/reference-to-video/flash`, Bugs D/E, RODADA 6, guarda de upload/
 payload) que tinha ficado pendente na árvore (12 modificados + 15 untracked)
-por sessões interrompidas sem commit. **Esta §1 estava 47 commits atrás**
-antes desta escrita — ver a nota de SÉTIMA divergência logo abaixo. O
+por sessões interrompidas sem commit. **Aquela §1 estava 47 commits atrás**
+antes daquela escrita — ver a nota de SÉTIMA divergência logo abaixo. O
 parágrafo anterior a este (I1/L1, `b679ea2`/`b00b744`, 23/08) é histórico e
 está coberto por §15 mais abaixo.
+
+> ⚠️ **INCIDENTE — `git checkout --` acidental descartou trabalho não
+> commitado (V28, sessão de 31/08).** Ao depurar um mutante de guarda
+> manualmente, um `git checkout -- backend/src/routes/videos.ts` foi rodado
+> para reverter uma edição de TESTE — mas isso descartou TODAS as mudanças
+> não commitadas do V28 nesse arquivo (não só a edição de teste), porque o
+> arquivo nunca tinha sido commitado nem staged com o conteúdo correto.
+> **Recuperado sem perda**, por sorte de arquitetura: `run-mutants.mjs` cria
+> um commit temporário da árvore suja ANTES de cada passada
+> (`git stash create`-like, "ancorando num commit temporário"), e uma dessas
+> passadas tinha rodado poucos minutos antes do acidente. `git show
+> <commit-temporário>:backend/src/routes/videos.ts` devolveu o conteúdo
+> exato; `git diff --stat` conferiu byte-idêntico ao de antes, `tsc` limpo
+> depois. **A lição, registrada para não se repetir:** `git status`/`git
+> diff` ANTES de qualquer `checkout`/`reset`/`restore`, mesmo num arquivo que
+> "eu mesmo acabei de editar" — a intuição de que já sei o que está lá é
+> exatamente o que falha quando o arquivo carrega trabalho de rodadas
+> anteriores por cima da edição atual. Detalhe completo em
+> [docs-internal/08-ocorrencias.md](docs-internal/08-ocorrencias.md).
 
 > ⚠️ **TROCA DE CONTA: o gatilho é `RETOMAR-P7`.** Numa conta nova, digite
 > **RETOMAR-P7** — [RETOMAR-P7.md](RETOMAR-P7.md) traz o estado completo do
@@ -552,14 +583,14 @@ commit que atualiza este arquivo não caberia dentro dele. `git log -3
 > ponteiro velho. Roda também no começo de toda passada do arnês. Ver §17.
 
 ```
-0493235  Scripts de sondagem manual (RODADA 4-20, 29-31/08) — preservados, não removidos
-fd222d8  docs-internal: composição de referência oficial do avatar de teste (31/08)
-ca91495  Guardas: texto de prova em inglês, para não disparar o linter do Wan
-cab08cb  Guarda: URL local não vaza à fal, e o payload enviado fica auditável (RODADA 1, 29/08)
-44003a8  Bugs D/E: direção por janela em Normal fracionado + cláusula de pose/roupa (RODADA 2/3, 29/08)
-cd43ec3  Guardas: seed compartilhado, linter do Wan e aspect_ratio por bloco (29/08)
-a2c4be3  Tier Normal migra para wan/v2.6/reference-to-video/flash (item 2, 29/08)
-ff79467  Linter do Wan: corrige /\bvocê\b/i e /\bestá\b/i, que nunca reprovavam nada
+81e5e9d  V28 item 8: guarda de mutação para poll timeout recuperável (itens 3 e 5)
+94a6954  V28 item 7: remove alegação não verificada sobre "sondas V20/V22"
+af1c2f3  V28 itens 3-6: poll timeout deixa de ser erro terminal na fal
+215bb50  4:5 (Feed do Instagram) some do tier Normal — enum do Wan não tem 4:5 (V25, item 1)
+ddc046a  Foto real do rosto vira segunda referência de identidade no Wan (V24, item 7)
+f1838d0  Legenda some da tela fora do tier Simples (V24, item 6)
+b298260  Cenário/traje só-texto (sem imagem) deixam de ser descartados (V24, item 5)
+9ee88fb  ESTADO.md: reancora a §1 (47 commits de atraso, sétima divergência) — V24
 ```
 
 ⚠️ **SÉTIMA divergência, MEDIDA em 31/08/2026 (V24) — a maior distância já
