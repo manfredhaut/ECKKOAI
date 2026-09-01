@@ -41,8 +41,11 @@ export const MUTANTS: Mutant[] = [
     // não do áudio que acabou de ser medido. É exatamente o defeito que
     // abriu o buraco de silêncio na sonda V32: pedir mais segundos do que a
     // fala ocupa.
+    // ÂNCORA ATUALIZADA — V34, item 5: o `Math.ceil` passou a envolver a
+    // soma inteira (`(fala.durationSeconds ?? 0) + MARGEM_DURACAO_WAN3_
+    // SEGUNDOS`), não mais "ceil(áudio) + margem" em dois passos.
     file: PIPELINE,
-    find: "  const duracaoWan3 = Math.max(1, Math.ceil(fala.durationSeconds ?? 0) + MARGEM_DURACAO_WAN3_SEGUNDOS);",
+    find: "  const duracaoWan3 = Math.max(1, Math.ceil((fala.durationSeconds ?? 0) + MARGEM_DURACAO_WAN3_SEGUNDOS));",
     replace: "  const duracaoWan3 = escolherDuracao(input.script.length) ?? 10;",
     expect: "tomada única: duration não veio do áudio real medido",
   },
@@ -244,16 +247,21 @@ export async function checkWan3TomadaUnicaPolicy(): Promise<Wan3TomadaUnicaCheck
         `observados: ${corpos.map((c) => c.endpoint).join(", ") || "(nenhum)"}.`,
     );
   } else {
-    // G-1 — duration = ceil(6.4) + 1 = 8, nunca a estimativa por caracteres
-    // (que para este roteiro de 100 caracteres escolheria 10s, o teto do
-    // bloco — um número DIFERENTE, o que garante que o teste discrimina).
-    if (animar.corpo.duration !== 8) {
+    // G-1 — duration = ceil(6,4 + 0,5) = ceil(6,9) = 7, nunca a estimativa
+    // por caracteres (que para este roteiro de 100 caracteres escolheria
+    // 10s, o teto do bloco — um número DIFERENTE, o que garante que o
+    // teste discrimina). V34, item 5: a margem caiu de 1s para 0,5s, e o
+    // `ceil` passou a envolver a soma inteira — `duration` do Wan 3.0 é
+    // INTEIRO, e `ceil(áudio) + 0,5` produziria um float inválido.
+    if (animar.corpo.duration !== 7) {
       failures.push(
-        `tomada única: duration não veio do áudio real medido — esperava 8 (ceil(6,4s) + margem de 1s) ` +
+        `tomada única: duration não veio do áudio real medido — esperava 7 (ceil(6,4s + margem de 0,5s)) ` +
           `e saiu ${JSON.stringify(animar.corpo.duration)}.`,
       );
     } else {
-      notes.push("    tomada única: duration = ceil(áudio real) + margem, medido no corpo real submetido (8 = ceil(6,4) + 1)");
+      notes.push(
+        "    tomada única: duration = ceil(áudio real + margem), medido no corpo real submetido (7 = ceil(6,4 + 0,5))",
+      );
     }
 
     // G-2 — a cláusula de identidade ("Reference1 shows the person" / "keep

@@ -7,6 +7,7 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { SimulatedBadge } from "../../features/SimulatedBadge";
 import { VideoPlayer } from "../../features/VideoPlayer";
+import { ResumeBlocksPanel } from "./ResumeBlocksPanel";
 
 type Tab = "avatars" | "videos";
 
@@ -16,6 +17,7 @@ export function ContentPage() {
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [playing, setPlaying] = useState<string | null>(null);
+  const [resumingId, setResumingId] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Avatar[]>("/avatars").then(setAvatars);
@@ -23,6 +25,16 @@ export function ContentPage() {
   }, []);
 
   const playingVideo = videos.find((v) => v.id === playing) ?? null;
+  const resumingVideo = videos.find((v) => v.id === resumingId) ?? null;
+
+  /**
+   * MESMO par que `carregarRetomadaPendente` (routes/videos.ts) exige antes
+   * de aceitar `POST /videos/:id/resume-blocks` — fora disso a rota devolve
+   * 409, e o botão não tem o que fazer.
+   */
+  function podeRetomarBlocos(v: Video): boolean {
+    return v.status === "processing" && v.failure_reason === "poll_timeout";
+  }
 
   return (
     <>
@@ -140,6 +152,16 @@ export function ContentPage() {
                         >
                           {playing === v.id ? t("content.hideVideo") : t("content.watch")}
                         </button>
+                      ) : podeRetomarBlocos(v) ? (
+                        <button
+                          className="btn btn-outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setResumingId(resumingId === v.id ? null : v.id);
+                          }}
+                        >
+                          {t("content.resume.button")}
+                        </button>
                       ) : (
                         "—"
                       )}
@@ -156,6 +178,20 @@ export function ContentPage() {
           {playingVideo && (
             <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid var(--color-border)" }}>
               <VideoPlayer video={playingVideo} />
+            </div>
+          )}
+
+          {/* Retomada de blocos — V34, item 18. Mesmo padrão do player acima:
+              abaixo da tabela, não em modal, para a lista continuar visível. */}
+          {resumingVideo && (
+            <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid var(--color-border)" }}>
+              <ResumeBlocksPanel
+                video={resumingVideo}
+                onResumed={(atualizado) => {
+                  setVideos((prev) => prev.map((v) => (v.id === atualizado.id ? atualizado : v)));
+                  setResumingId(null);
+                }}
+              />
             </div>
           )}
         </div>

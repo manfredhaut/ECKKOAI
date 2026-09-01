@@ -103,6 +103,9 @@ import { checkTargetDurationCapPolicy } from "./checkTargetDurationCapPolicy.js"
 import { checkRecomposeFeedbackPolicy } from "./checkRecomposeFeedbackPolicy.js";
 import { checkFalSpendLedgerPolicy } from "./checkFalSpendLedgerPolicy.js";
 import { checkScriptValidationStatusPolicy } from "./checkScriptValidationStatusPolicy.js";
+import { checkAlvoDeDuracaoPolicy } from "./checkAlvoDeDuracaoPolicy.js";
+import { checkTrimOvershootPolicy } from "./checkTrimOvershootPolicy.js";
+import { checkFixtureFormatEnsaioPolicy } from "./checkFixtureFormatEnsaioPolicy.js";
 import { checkRecomposeLateralPhotoPolicy } from "./checkRecomposeLateralPhotoPolicy.js";
 import { checkReferenceVideoPhotoOptionalPolicy } from "./checkReferenceVideoPhotoOptionalPolicy.js";
 import { checkAvatarSceneDefaultsPolicy } from "./checkAvatarSceneDefaultsPolicy.js";
@@ -919,6 +922,23 @@ async function main(): Promise<void> {
   const scriptValidationStatus = checkScriptValidationStatusPolicy();
   scriptValidationStatus.failures.forEach((f) => failures.push(f));
   scriptValidationStatus.notes.forEach((n) => note(n));
+
+  // --- V34, itens 3/4 — duração-alvo recusa antes de animar, com fronteira
+  // medida (8,0% passa, 8,1% recusa) ---------------------------------------
+  const alvoDeDuracao = checkAlvoDeDuracaoPolicy();
+  alvoDeDuracao.failures.forEach((f) => failures.push(f));
+  alvoDeDuracao.notes.forEach((n) => note(n));
+
+  // --- V34, itens 5/6 — o vídeo para junto com a fala (recorte final) -----
+  const trimOvershoot = await checkTrimOvershootPolicy();
+  trimOvershoot.failures.forEach((f) => failures.push(f));
+  trimOvershoot.notes.forEach((n) => note(n));
+
+  // --- V34, item 19 — ensaio de fixture: 16:9/9:16/1:1/4:5 medidos por
+  // ffprobe contra um master real derivado -------------------------------
+  const fixtureFormatEnsaio = await checkFixtureFormatEnsaioPolicy();
+  fixtureFormatEnsaio.failures.forEach((f) => failures.push(f));
+  fixtureFormatEnsaio.notes.forEach((n) => note(n));
 
   // --- Achado 29/08 — /recompose também manda a foto lateral --------------
   const recomposeLateralPhoto = checkRecomposeLateralPhotoPolicy(process.env.REPO_ROOT ?? "/repo");

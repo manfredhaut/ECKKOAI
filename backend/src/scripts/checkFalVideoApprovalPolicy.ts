@@ -123,21 +123,41 @@ export const MUTANTS: Mutant[] = [
     // parada, e sem incluí-la a âncora curta voltaria a casar 2x (a mesma
     // ambiguidade de bloco único vs. vários blocos que a extensão do BLOCO
     // FRACOES-1 já corrigia uma vez).
+    // ÂNCORA CORRIGIDA — V34, item 3/14 (01/09/2026): `ROTEIRO_DA_PROVA` é
+    // curto de propósito e desde o V33 (tomada única) isso o manda por
+    // `animarTomadaUnicaComAudioReal`, NUNCA pela função `animarNarrarSincronizar`
+    // — a âncora antiga vigiava o `if (input.pararApos === "animar")` do
+    // bloco único DENTRO de `animarNarrarSincronizar` (usado só por roteiros
+    // >30s sem fracionar, ou Premium), um trecho que este teste específico
+    // nunca executa. Guarda INERTE por 2 rodadas sem que ninguém notasse
+    // (achado ao investigar por que a passada `--guard` desta rodada não
+    // reprovava mesmo com o `if` mutado) — a âncora agora mira o `if` de
+    // dentro de `animarTomadaUnicaComAudioReal`, o único que este roteiro
+    // curto de fato alcança. `assertAspectRatio(...)` logo acima é único no
+    // arquivo por trazer o comentário "MAPEADO — V34, item 14" (o irmão em
+    // `animarNarrarSincronizar` não o tem), o que mantém a âncora com
+    // exatamente 1 ocorrência.
     file: PIPELINE,
     find:
-      '    gastoPrevistoUsd = bloco.gastoPrevistoUsd;\n' +
-      '    if (input.aspectRatio && input.verificarAspectRatio !== false) {\n' +
-      '      await assertAspectRatio(bloco.videoUrl, input.aspectRatio);\n' +
-      '    }\n' +
+      '  if (input.aspectRatio && input.verificarAspectRatio !== false) {\n' +
+      '    // MAPEADO — V34, item 14: o vídeo MUDO está sempre no formato ENVIADO\n' +
+      '    // ao fornecedor (9:16 quando o pedido foi 4:5), nunca no formato final\n' +
+      '    // que a pessoa escolheu. `!` seguro: `input.aspectRatio` truthy aqui\n' +
+      '    // implica saída truthy de `aspectRatioParaFornecedor`.\n' +
+      '    await assertAspectRatio(bloco.videoUrl, aspectRatioParaFornecedor(input.aspectRatio)!);\n' +
+      '  }\n' +
       '\n' +
-      '    if (input.pararApos === "animar") {',
+      '  if (input.pararApos === "animar") {',
     replace:
-      '    gastoPrevistoUsd = bloco.gastoPrevistoUsd;\n' +
-      '    if (input.aspectRatio && input.verificarAspectRatio !== false) {\n' +
-      '      await assertAspectRatio(bloco.videoUrl, input.aspectRatio);\n' +
-      '    }\n' +
+      '  if (input.aspectRatio && input.verificarAspectRatio !== false) {\n' +
+      '    // MAPEADO — V34, item 14: o vídeo MUDO está sempre no formato ENVIADO\n' +
+      '    // ao fornecedor (9:16 quando o pedido foi 4:5), nunca no formato final\n' +
+      '    // que a pessoa escolheu. `!` seguro: `input.aspectRatio` truthy aqui\n' +
+      '    // implica saída truthy de `aspectRatioParaFornecedor`.\n' +
+      '    await assertAspectRatio(bloco.videoUrl, aspectRatioParaFornecedor(input.aspectRatio)!);\n' +
+      '  }\n' +
       '\n' +
-      '    if (String(input.pararApos) === "impossivel-pararApos-nenhuma-corrida-tem") {',
+      '  if (String(input.pararApos) === "impossivel-pararApos-nenhuma-corrida-tem") {',
     expect: "a corrida não parou em animar — sincronizar foi alcançado",
   },
   {
@@ -179,6 +199,8 @@ export const MUTANTS: Mutant[] = [
     // chamada exatamente igual — só que a corrida completa sozinha até
     // `ready`, sem nunca oferecer a segunda aprovação. Nada na assinatura da
     // função muda: `pararApos` é opcional no tipo.
+    // ÂNCORA ESTENDIDA — V34, item 1/3: `targetDurationSeconds:` entrou
+    // ENTRE `pararApos: "animar",` e o fechamento do objeto.
     file: ROTA_DE_VIDEOS,
     find:
       "                tier: videoTierParaPipeline(video.tier_video),\n" +
@@ -187,10 +209,17 @@ export const MUTANTS: Mutant[] = [
       "                // um segundo clique humano, em `/approve-video`. Ver o\n" +
       "                // comentário equivalente em `animarNarrarSincronizar`.\n" +
       "                pararApos: \"animar\",\n" +
+      "                // V34, item 1/3 (01/09/2026) — relido da LINHA, mesma razão\n" +
+      "                // de `tier` acima: é o alvo GRAVADO na criação, não o que o\n" +
+      "                // formulário mostra agora. Presente, dispara a comparação\n" +
+      "                // alvo×fala ANTES de qualquer `animar()` — ver\n" +
+      "                // `compararAlvoComFala`, falPipeline.ts.\n" +
+      "                targetDurationSeconds: video.target_duration_seconds,\n" +
       "              },\n" +
       "              imagemAprovada,",
     replace:
       "                tier: videoTierParaPipeline(video.tier_video),\n" +
+      "                targetDurationSeconds: video.target_duration_seconds,\n" +
       "              },\n" +
       "              imagemAprovada,",
     expect: "aprovação de vídeo: /approve não passa pararApos: \"animar\" — a corrida completaria sozinha até ready",
@@ -538,6 +567,11 @@ export async function checkFalVideoApprovalPolicy(): Promise<FalVideoApprovalChe
         pollTimeoutMs: 50,
         pollIntervalMs: 1,
         pararApos: "animar",
+        // V34, item 5 — se o freio acima falhar (é exatamente o que este
+        // G-B testa), a corrida alcançaria sincronizarComAudio, que
+        // rodaria `ffmpeg` de VERDADE contra a URL fake abaixo. Mesmo
+        // padrão de `apararSobraFinal: false` nas guardas irmãs.
+        apararSobraFinal: false,
       },
       "https://exemplo.fal.invalido/imagem-composta-aprovada.png",
       "req-da-composicao",
@@ -588,6 +622,11 @@ export async function checkFalVideoApprovalPolicy(): Promise<FalVideoApprovalChe
         tetoDeGastoUsd: 99,
         pollTimeoutMs: 50,
         pollIntervalMs: 1,
+        // V34, item 5 — esta corrida completa até sincronizar (sem
+        // `pararApos`), e `apararVideoFinal` (ffmpeg.ts) rodaria `ffmpeg`
+        // de VERDADE contra a URL fake abaixo. Mesmo padrão de
+        // `verificarAspectRatio: false` noutras guardas.
+        apararSobraFinal: false,
       },
       "https://exemplo.fal.invalido/video-mudo-aprovado.mp4",
       "https://exemplo.fal.invalido/imagem-composta-aprovada.png",

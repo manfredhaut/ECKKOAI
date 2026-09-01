@@ -13,7 +13,7 @@
 
 import { scrubSecretsFromText } from "./vendorResponseLog.js";
 import { logEvent } from "../log/safeLog.js";
-import { RoteiroInvalidoError } from "../video/falPipeline.js";
+import { RoteiroInvalidoError, AlvoDeDuracaoForaDoAlcanceError } from "../video/falPipeline.js";
 
 export type VendorKind = "script" | "voice" | "avatar";
 
@@ -60,9 +60,17 @@ const VENDOR_LABEL: Record<VendorKind, string> = {
  * `conferirRoteiroENormal`) — nunca por nada que já tenha falado com a fal.
  * Checar a CLASSE, e não o texto da mensagem, sobrevive à próxima vez que
  * alguém reescrever a frase.
+ *
+ * `AlvoDeDuracaoForaDoAlcanceError` (V34, item 3, 01/09/2026) entra na
+ * MESMA categoria — a fala real diverge do alvo escolhido em mais de 8%,
+ * `animar()` nunca é alcançado, e o que resolve é o roteiro mudar, não o
+ * fornecedor. `requestIdDaEtapa(runId, "animar")` continua NULL neste caso
+ * (nenhuma etapa `animar` chegou a abrir), então `decidirEEstornar` estorna
+ * pelo mesmo caminho que `RoteiroInvalidoError` já usa — sem código novo
+ * no chamador.
  */
 export function classifyVendorFailure(err: unknown): VendorFailure {
-  if (err instanceof RoteiroInvalidoError) return "script_invalid";
+  if (err instanceof RoteiroInvalidoError || err instanceof AlvoDeDuracaoForaDoAlcanceError) return "script_invalid";
 
   const raw = err instanceof Error ? err.message : String(err);
 

@@ -29,6 +29,7 @@ import {
 import { contaDe, debitCredit, refundCredit } from "../services/billing/creditGate.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
 import { persistRemoteArtifact, probeArtifact, proxyRemoteAttachment } from "../services/downloadProxy.js";
+import { deriveVariantsForVideo } from "../services/video/deriveVariants.js";
 import { ARTIFACT_INVALID_MESSAGE, InvalidArtifactError, validateVideoArtifact } from "../services/videoArtifact.js";
 import { toClientVendorError, vendorErrorStatus } from "../services/providers/vendorError.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
@@ -1698,8 +1699,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated,
                            publish_platform, aspect_ratio, resolution,
                            background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id,
-                           captions, motion_prompt_en, tier_video)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) RETURNING *`,
+                           captions, motion_prompt_en, tier_video, target_duration_seconds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) RETURNING *`,
       [
         req.tenantId,
         avatar_id,
@@ -1744,6 +1745,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // chamada: "gerar novamente" precisa repetir o MESMO tier, não o
         // default.
         tierVideo,
+        // V34, item 1 — a duração-alvo do passo Roteiro. Gravada junto do
+        // resto do pedido, pela mesma razão de `tier_video`/`captions`
+        // acima: "gerar novamente" repete o MESMO alvo, e é o alvo desta
+        // linha (não o do formulário, que pode já ter mudado) que o
+        // pipeline compara contra a fala real — ver `compararAlvoComFala`
+        // em falPipeline.ts.
+        targetDurationSeconds,
       ],
     );
     const video = rows[0];
@@ -2521,6 +2529,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // um segundo clique humano, em `/approve-video`. Ver o
                 // comentário equivalente em `animarNarrarSincronizar`.
                 pararApos: "animar",
+                // V34, item 1/3 (01/09/2026) — relido da LINHA, mesma razão
+                // de `tier` acima: é o alvo GRAVADO na criação, não o que o
+                // formulário mostra agora. Presente, dispara a comparação
+                // alvo×fala ANTES de qualquer `animar()` — ver
+                // `compararAlvoComFala`, falPipeline.ts.
+                targetDurationSeconds: video.target_duration_seconds,
               },
               imagemAprovada,
               video.provider_job_id ?? "",
@@ -2979,6 +2993,42 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             videoId: video.id,
             reason: err instanceof Error ? err.message : String(err),
           });
+        }
+
+        // V34, item 14 (01/09/2026) — 4:5 NUNCA foi pedido ao fornecedor
+        // (ver `aspectRatioParaFornecedor`, falPipeline.ts): o que acabou
+        // de ser salvo em `servedUrl` é um master 9:16. Quando o vídeo foi
+        // criado com "Feed do Instagram" (4:5), deriva o corte central
+        // AGORA, por software — a mesma infraestrutura de
+        // `deriveVariantsForVideo` (nunca antes ligada ao caminho da fal;
+        // servia só ao HeyGen) — e passa a servir o ARQUIVO DERIVADO como
+        // `output_url`. Sem segunda geração, sem barra preta: o corte é
+        // sempre por CROP (nunca padding), MEDIDO por `planDerivation`
+        // contra o conteúdo real do master.
+        //
+        // Falhar aqui NÃO invalida o vídeo — ele foi renderizado e cobrado
+        // — e cai no master 9:16 servido como está, mesmo padrão de
+        // `artifact_persist_failed` acima: um vídeo no formato "errado" é
+        // melhor que nenhum vídeo.
+        if (video.aspect_ratio === "4:5" && servedUrl.startsWith("/uploads/")) {
+          try {
+            const variantes = await deriveVariantsForVideo({
+              videoId: video.id,
+              tenantId: req.tenantId,
+              masterUrl: servedUrl,
+              masterAspectRatio: "9:16",
+              aspectRatios: ["9:16", "4:5"],
+            });
+            const doisPor5 = variantes.find((v) => v.aspectRatio === "4:5");
+            if (doisPor5) servedUrl = doisPor5.outputUrl;
+          } catch (err) {
+            logEvent("error", "video_variant_derive_failed", {
+              context: "videos.approveVideo",
+              videoId: video.id,
+              aspectRatio: "4:5",
+              reason: err instanceof Error ? err.message : String(err),
+            });
+          }
         }
 
         const { rows: pronto } = await pool.query<Video>(

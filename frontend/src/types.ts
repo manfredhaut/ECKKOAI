@@ -79,6 +79,15 @@ export interface Video {
   /** Estimativa fracionária derivada do roteiro, para exibir antes da medição. */
   estimated_seconds?: number;
   status: VideoStatus;
+  /**
+   * Por que a corrida parou, quando parou por erro/timeout — `null` no
+   * caminho feliz. `"poll_timeout"` com `status === "processing"` e
+   * `provider_vendor === "fal"` é o gatilho da RETOMADA de blocos (V34, item
+   * 18): `GET /videos/:id/resume-info` e `POST /videos/:id/resume-blocks`.
+   */
+  failure_reason?: string | null;
+  /** Qual fornecedor gerou este vídeo (`fal`, `heygen`, `did`, …). */
+  provider_vendor?: string | null;
   /** A imagem-base a aprovar, quando `status === "awaiting_approval"`. */
   fal_composed_image_url?: string | null;
   /** O vídeo MUDO a aprovar, quando `status === "awaiting_approval_video"`. */
@@ -125,6 +134,15 @@ export interface Video {
    * servidor continua sendo o freio real (409 `refacoes_esgotadas`).
    */
   refacoes?: { feitas: number; limite: number };
+}
+
+/** Resposta de `GET /videos/:id/resume-info` — V34, item 18. Custo zero. */
+export interface ResumeInfo {
+  blocosConcluidos: number;
+  blocosTotais: number;
+  blocosRestantes: number;
+  custoRestanteUsd: number | null;
+  custoIndisponivel: string | null;
 }
 
 /** Resposta de `GET /dashboard-summary` — saldo de crédito e custo do mês. */

@@ -1186,6 +1186,14 @@ th {
   color: var(--color-tertiary);
 }
 
+/* Retomada de blocos (V34, item 18) — aviso, não erro: o vídeo travou mas
+   os blocos já pagos não se perdem. Cor de âmbar, não vermelho. */
+.alert-warning {
+  background: color-mix(in srgb, var(--color-secondary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 45%, transparent);
+  color: var(--color-secondary);
+}
+
 /* --- Progresso da gravação de referência (RecordingProgress) ------------
    A barra mede o caminho até a META de qualidade, não até o teto. As duas
    marcas são o ponto: sem elas o preenchimento vira um progresso rumo ao

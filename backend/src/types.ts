@@ -66,6 +66,14 @@ export interface Video {
   scenario_prompt: string | null;
   outfit_prompt: string | null;
   duration_seconds: number;
+  /**
+   * A duração-alvo escolhida no passo Roteiro (15/30/45/60 s, ou um valor
+   * livre de "Mais") — V34, item 1, migration 074. `null` quando "Mais" foi
+   * deixado sem número ou a linha é anterior a esta migration. Distinta de
+   * `duration_seconds` acima: aquela é a duração REAL truncada, derivada do
+   * fornecedor; esta é o que a PESSOA pediu, antes de qualquer geração.
+   */
+  target_duration_seconds: number | null;
   status: VideoStatus;
   output_url: string | null;
   provider_job_id: string | null;

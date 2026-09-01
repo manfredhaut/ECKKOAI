@@ -1,98 +1,139 @@
 /**
- * 4:5 (Feed do Instagram) some do tier Normal — V25, 31/08/2026.
+ * 4:5 (Feed do Instagram) REATIVADO no tier Normal, por DERIVAÇÃO — V34,
+ * item 16/17 (01/09/2026). Substitui inteiramente a guarda da V25
+ * (31/08/2026), que bloqueava o CHIP porque o motor de animação (Wan,
+ * então 2.6, hoje 3.0) nunca teve 4:5 no próprio enum — MEDIDO nas duas
+ * migrações, e ainda verdade hoje.
  *
  * ---------------------------------------------------------------------------
- * O DEFEITO QUE ISTO FECHA
+ * O QUE MUDOU
  *
- * MEDIDO por leitura do schema oficial da fal (WebFetch, V24): o enum de
- * `aspect_ratio` de `wan/v2.6/reference-to-video/flash` — o motor de animação
- * do tier Normal NAQUELA data — era EXATAMENTE `["16:9","9:16","1:1","4:3","3:4"]`.
- * **4:5 não estava nele.** `fal-ai/nano-banana-2/edit` (o `compor`, primeira
- * etapa paga) TEM 4:5 no próprio enum — então, sem este bloqueio, um vídeo
- * Normal com "Feed do Instagram (4:5)" pagaria a composição (~US$ 0,08) e só
- * então levaria a recusa do fornecedor na animação, a etapa mais cara.
+ * Em vez de impedir a ESCOLHA (V25), esta rodada garante que 4:5 nunca
+ * chega ao PAYLOAD do fornecedor: `aspectRatioParaFornecedor` (falPipeline.ts)
+ * troca "4:5" por "9:16" em todo ponto que fala com a fal (compor E animar);
+ * o vídeo nasce em 9:16 — o MASTER — e `/approve-video` deriva o corte
+ * central para 4:5 por SOFTWARE (`deriveVariantsForVideo`, reaproveitando a
+ * infraestrutura que já existia para o caminho HeyGen, nunca antes ligada
+ * ao caminho da fal). Sem segunda geração, sem barra preta (o corte é
+ * SEMPRE por CROP — `deriveFormat`/`buildDerivationArgs`, formatDerivation.ts
+ * — nunca por padding).
  *
- * ⚠️ RECONFIRMADO em 01/09/2026 (V33, item 10) depois da migração do motor
- * de animação para `alibaba/wan-3.0/reference-to-video`: o enum NOVO, LIDO
- * por WebFetch (V32, Parte A), é `adaptive|16:9|4:3|1:1|3:4|9:16` — **4:5
- * também não está nele.** A CONCLUSÃO desta guarda (bloquear 4:5 no tier
- * Normal) continua correta; o motivo mudou de endpoint, não de resultado —
- * o texto acima ("wan/v2.6/reference-to-video/flash") é histórico, mantido
- * porque foi a medição que originou este bloqueio, não a medição atual.
+ * O chip do Feed do Instagram volta a ficar sempre clicável (PublishStep.tsx);
+ * a troca forçada para "9:16" ao entrar no tier Normal (SceneStep.tsx, V25)
+ * foi removida — não há mais nada de que "escapar".
  *
- * O mesmo raciocínio de Fundo/Look (SceneStep.tsx, BLOCO A): um controle que
- * o servidor vai rejeitar depois de cobrar é pior que um controle ausente.
- *
- * Escopo: SÓ o tier Normal. O HeyGen (tier Simples) documenta 4:5 no próprio
- * enum (`HEYGEN_ASPECT_RATIOS`, videoFormat.ts) — nunca tocado aqui. O
- * Premium (Seedance 2.5) não foi medido nesta rodada, e por isso também não é
- * tocado — bloquear sem medir seria inventar uma recusa.
  * ---------------------------------------------------------------------------
+ * O QUE ESTA GUARDA MEDE
  *
- * O QUE ESTA GUARDA MEDE, E O QUE ELA NÃO MEDE
+ *  G-1  `aspectRatioParaFornecedor` — por EXECUÇÃO direta da função pura:
+ *       "4:5" vira "9:16"; qualquer outro valor (incluindo `undefined`)
+ *       passa intacto.
+ *  G-2  os DOIS pontos que falam com o fornecedor (compor, animar) usam a
+ *       função acima — por LEITURA do texto que monta cada payload. Sem
+ *       isto, a função existiria e não seria CONSULTADA em algum dos dois,
+ *       e 4:5 vazaria por aquele lado.
+ *  G-3  o chip do Feed do Instagram não é mais desabilitado por tier
+ *       (PublishStep.tsx), e a troca forçada para 9:16 saiu de SceneStep.tsx
+ *       — por LEITURA (ausência de um controle não se exercita chamando
+ *       função).
+ *  G-4  `/approve-video` deriva o corte de 4:5 quando `video.aspect_ratio
+ *       === "4:5"` — por LEITURA do call site de `deriveVariantsForVideo`
+ *       em routes/videos.ts.
  *
- * Por LEITURA de três arquivos — o defeito é um controle que deveria estar
- * desabilitado e não está, e ausência de gate não se exercita chamando
- * função:
- *
- *  (i)   PublishStep.tsx desabilita o chip `instagram_feed` quando
- *        `tierVideo === "normal"`, com o aviso `instagramFeedTierNotice`.
- *  (ii)  SceneStep.tsx troca a seleção para `reels_tiktok` (9:16, o único
- *        formato com medição real neste vendor) se alguém troca para Normal
- *        com 4:5 já escolhido — sem isto, o CHIP fica bloqueado mas o VALOR
- *        já escolhido sobreviveria no `wizard` e chegaria a `POST /videos`
- *        do mesmo jeito.
- *  (iii) A chave i18n `instagramFeedTierNotice` existe nos dois idiomas.
- *
- * NÃO VERIFICADO, e a guarda não finge o contrário: que o fornecedor de fato
- * recuse 4:5 hoje (é o schema documentado, nunca uma chamada real); e que
- * 16:9/9:16/1:1/4:3/3:4 continuem saindo sem alteração — isso é conferido por
- * LEITURA no relatório desta rodada (o array `PUBLISH_PLATFORMS` e o `if` do
- * chip não tocam nenhum outro `option.id`), não por uma segunda guarda.
+ * NÃO VERIFICADO, e a guarda não finge o contrário: que o corte central
+ * realmente preserva o sujeito em qualquer vídeo real (a régua de
+ * enquadramento, item 15, é uma INSTRUÇÃO de prompt, não uma garantia); e
+ * que o schema do Wan 3.0 de fato recusaria "4:5" se alguém o mandasse (é
+ * o enum documentado, nunca uma chamada real que testasse isso).
  */
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import type { Mutant } from "./mutants.js";
+import { aspectRatioParaFornecedor } from "../services/video/falPipeline.js";
 
 const PUBLISH_STEP = "frontend/src/pages/CreateVideo/steps/PublishStep.tsx";
 const SCENE_STEP = "frontend/src/pages/CreateVideo/steps/SceneStep.tsx";
+const PIPELINE = "backend/src/services/video/falPipeline.ts";
+const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
 
 export const MUTANTS: Mutant[] = [
   {
-    guard: "4:5 (Feed do Instagram) fica desabilitado no tier Normal",
-    name: "o chip de 4:5 volta a ficar clicável em qualquer tier",
+    guard: "aspectRatioParaFornecedor troca 4:5 por 9:16, e só 4:5",
+    name: "aspectRatioParaFornecedor deixa de trocar 4:5 por 9:16",
+    kind: "obvio",
+    file: PIPELINE,
+    find: 'return aspectRatio === "4:5" ? "9:16" : aspectRatio;',
+    replace: "return aspectRatio;",
+    expect: 'aspectRatioParaFornecedor: "4:5" deveria virar "9:16" e virou',
+  },
+  {
+    guard: "aspectRatioParaFornecedor troca 4:5 por 9:16, e só 4:5",
+    name: "aspectRatioParaFornecedor passa a trocar TUDO por 9:16",
+    kind: "esperto",
+    // ESPERTO: continua "corrigindo" 4:5 (o teste ingênuo continuaria
+    // verde) — mas agora também reescreve 16:9/1:1/qualquer coisa para
+    // 9:16, quebrando todo vídeo que NÃO pediu 4:5.
+    file: PIPELINE,
+    find: 'return aspectRatio === "4:5" ? "9:16" : aspectRatio;',
+    replace: 'return "9:16";',
+    expect: 'deveria passar intacto e virou "9:16"',
+  },
+  {
+    guard: "compor() e animar() só falam com o fornecedor pela proporção MAPEADA",
+    name: "compor() volta a mandar input.aspectRatio cru",
+    kind: "obvio",
+    file: PIPELINE,
+    find: "aspect_ratio: aspectRatioParaFornecedor(input.aspectRatio),",
+    replace: "aspect_ratio: input.aspectRatio,",
+    expect: "4:5: compor() não usa `aspectRatioParaFornecedor`",
+  },
+  {
+    guard: "compor() e animar() só falam com o fornecedor pela proporção MAPEADA",
+    name: "corpoAnimarWan() volta a mandar input.aspectRatio cru",
+    kind: "obvio",
+    file: PIPELINE,
+    find: "...(input.aspectRatio ? { aspect_ratio: aspectRatioParaFornecedor(input.aspectRatio) } : {}),",
+    replace: "...(input.aspectRatio ? { aspect_ratio: input.aspectRatio } : {}),",
+    expect: "4:5: corpoAnimarWan() não usa `aspectRatioParaFornecedor`",
+  },
+  {
+    guard: "o chip do Feed do Instagram não é mais desabilitado por tier",
+    name: "o chip do Feed do Instagram volta a ser desabilitado no tier Normal",
     kind: "obvio",
     file: PUBLISH_STEP,
-    find: 'const bloqueadoPeloTier = option.id === "instagram_feed" && feed45BloqueadoNoNormal;',
-    replace: "const bloqueadoPeloTier = false;",
-    expect: "4:5: o chip não fica desabilitado no tier Normal",
+    find: "disabled={naoHonra}",
+    replace: 'disabled={naoHonra || (option.id === "instagram_feed" && tierVideo === "normal")}',
+    expect: "4:5: PublishStep.tsx volta a desabilitar um chip por tier",
   },
   {
-    guard: "4:5 (Feed do Instagram) fica desabilitado no tier Normal",
-    name: "feed45BloqueadoNoNormal deixa de olhar o tier",
-    kind: "esperto",
-    // ESPERTO: `bloqueadoPeloTier` continua existindo e sendo usado nos
-    // mesmos dois lugares (disabled + aviso) — só o valor de origem para de
-    // depender do tier, e o chip fica sempre liberado (ou sempre bloqueado,
-    // dependendo do default) independente da escolha real.
-    file: PUBLISH_STEP,
-    find: 'const feed45BloqueadoNoNormal = tierVideo === "normal";',
-    replace: "const feed45BloqueadoNoNormal = false;",
-    expect: "4:5: o chip não fica desabilitado no tier Normal",
-  },
-  {
-    guard: "4:5 escolhido antes de trocar para Normal não sobrevive à troca",
-    name: "a seleção de 4:5 sobrevive à troca para o tier Normal",
+    guard: "SceneStep.tsx não força mais a troca para 9:16 ao entrar no tier Normal",
+    name: "a troca forçada para reels_tiktok volta a existir",
     kind: "obvio",
     file: SCENE_STEP,
-    find:
+    find: "  /**\n   * A CONFIANÇA do formato escolhido nesta mesma tela, NO TIER escolhido",
+    replace:
       '  useEffect(() => {\n' +
       '    if (tierVideo === "normal" && publishPlatform === "instagram_feed") {\n' +
       '      onPublishPlatformChange("reels_tiktok");\n' +
       "    }\n" +
-      "  }, [tierVideo, publishPlatform, onPublishPlatformChange]);\n",
-    replace: "",
-    expect: "4:5: a seleção sobrevive à troca para o tier Normal",
+      "  }, [tierVideo, publishPlatform, onPublishPlatformChange]);\n\n" +
+      "  /**\n   * A CONFIANÇA do formato escolhido nesta mesma tela, NO TIER escolhido",
+    expect: '4:5: SceneStep.tsx ainda troca a seleção para "reels_tiktok" ao entrar no tier Normal',
+  },
+  {
+    guard: "/approve-video deriva o corte de 4:5 quando o vídeo pediu Feed do Instagram",
+    name: "a derivação de 4:5 some de /approve-video",
+    kind: "obvio",
+    // `if (false)` literal faz o `tsc` parar de tipar o bloco normalmente
+    // (código "definitivamente inalcançável") e o gate reprovaria pelo
+    // `tsc`, não pela guarda — mesmo gotcha documentado em
+    // checkFalVideoApprovalPolicy.ts. `String(...) === "sentinela"` é
+    // sempre falso em runtime sem ser PROVADO falso em tempo de
+    // compilação, então o bloco continua tipado normalmente.
+    file: ROTA_DE_VIDEOS,
+    find: 'if (video.aspect_ratio === "4:5" && servedUrl.startsWith("/uploads/")) {',
+    replace: 'if (String(video.aspect_ratio) === "impossivel-4-5-nunca-existe" && servedUrl.startsWith("/uploads/")) {',
+    expect: "4:5: backend/src/routes/videos.ts não deriva o corte de 4:5",
   },
 ];
 
@@ -105,49 +146,91 @@ export function checkNormalAspectRatioPolicy(repoRoot: string): NormalAspectRati
   const failures: string[] = [];
   const notes: string[] = [];
 
+  // --- G-1: execução direta, função pura -----------------------------------
+  if (aspectRatioParaFornecedor("4:5") !== "9:16") {
+    failures.push(
+      `aspectRatioParaFornecedor: "4:5" deveria virar "9:16" e virou ` +
+        `${JSON.stringify(aspectRatioParaFornecedor("4:5"))}. O Wan 3.0 não tem 4:5 no enum de aspect_ratio ` +
+        "(MEDIDO por WebFetch, V32) — sem a troca, a chamada real seria recusada pelo fornecedor.",
+    );
+  }
+  for (const passa of ["9:16", "16:9", "1:1"] as const) {
+    if (aspectRatioParaFornecedor(passa) !== passa) {
+      failures.push(
+        `aspectRatioParaFornecedor: ${JSON.stringify(passa)} deveria passar intacto e virou ` +
+          `${JSON.stringify(aspectRatioParaFornecedor(passa))}. Só 4:5 precisa de substituição.`,
+      );
+    }
+  }
+  if (aspectRatioParaFornecedor(undefined) !== undefined) {
+    failures.push(
+      "aspectRatioParaFornecedor: `undefined` (sonda de contrato, sem proporção) deveria passar como " +
+        `\`undefined\` e virou ${JSON.stringify(aspectRatioParaFornecedor(undefined))}.`,
+    );
+  }
+
+  // --- G-2: leitura dos dois call sites -------------------------------------
+  const pipeline = readFileSync(path.join(repoRoot, PIPELINE), "utf-8").replace(/\r\n/g, "\n");
+  if (!pipeline.includes("aspect_ratio: aspectRatioParaFornecedor(input.aspectRatio),")) {
+    failures.push(
+      "4:5: compor() não usa `aspectRatioParaFornecedor` — a linha exata não aparece em " +
+        `${PIPELINE}. Sem ela, um vídeo 4:5 chegaria à composição com "4:5" cru.`,
+    );
+  }
+  if (
+    !pipeline.includes(
+      "...(input.aspectRatio ? { aspect_ratio: aspectRatioParaFornecedor(input.aspectRatio) } : {}),",
+    )
+  ) {
+    failures.push(
+      "4:5: corpoAnimarWan() não usa `aspectRatioParaFornecedor` — a linha exata não aparece em " +
+        `${PIPELINE}. Sem ela, "4:5" cru chegaria ao Wan, que não tem esse valor no enum.`,
+    );
+  }
+
+  // --- G-3: leitura do front (ausência de bloqueio) -------------------------
   const publishStep = readFileSync(path.join(repoRoot, PUBLISH_STEP), "utf-8").replace(/\r\n/g, "\n");
+  if (/feed45BloqueadoNoNormal|bloqueadoPeloTier/.test(publishStep)) {
+    failures.push(
+      `4:5: PublishStep.tsx ainda referencia lógica de bloqueio por tier (\`feed45BloqueadoNoNormal\`/` +
+        "`bloqueadoPeloTier`) — deveria ter sido removida nesta rodada; o chip é sempre clicável agora " +
+        "(o servidor nunca manda 4:5 ao fornecedor, então não há mais o que bloquear).",
+    );
+  }
+  // Âncora EXATA, e não regex de nome antigo: qualquer condição nova de
+  // tier colada ao `disabled` (mesmo com identificador nunca visto antes)
+  // precisa derrubar esta linha para passar batido.
+  if (!publishStep.includes("disabled={naoHonra}")) {
+    failures.push(
+      "4:5: PublishStep.tsx volta a desabilitar um chip por tier — a linha exata `disabled={naoHonra}` " +
+        "não aparece mais, o que significa que alguma condição de tier foi colada ao `disabled` de novo.",
+    );
+  }
+  if (!publishStep.includes("instagramFeedTierNotice")) {
+    failures.push(
+      "4:5: o aviso `instagramFeedTierNotice` não aparece em PublishStep.tsx — a nota informativa sobre " +
+        "a derivação (gerado em 9:16, cortado depois) precisa continuar visível no chip.",
+    );
+  }
+
   const sceneStep = readFileSync(path.join(repoRoot, SCENE_STEP), "utf-8").replace(/\r\n/g, "\n");
-
-  if (!/const feed45BloqueadoNoNormal = tierVideo === "normal";/.test(publishStep)) {
+  if (/onPublishPlatformChange\("reels_tiktok"\)/.test(sceneStep)) {
     failures.push(
-      "4:5: o chip não fica desabilitado no tier Normal — esperava " +
-        '`const feed45BloqueadoNoNormal = tierVideo === "normal";` em PublishStep.tsx e não achei. Sem ' +
-        "isto, um vídeo Normal com Feed do Instagram paga a composição e só então leva a recusa do Wan " +
-        "na animação (o enum de aspect_ratio do wan/v2.6/reference-to-video/flash não tem 4:5).",
-    );
-  }
-  if (
-    !/disabled=\{naoHonra \|\| bloqueadoPeloTier\}/.test(publishStep) ||
-    !/option\.id === "instagram_feed" && feed45BloqueadoNoNormal/.test(publishStep)
-  ) {
-    failures.push(
-      "4:5: o chip não fica desabilitado no tier Normal — a flag `bloqueadoPeloTier` existe mas não está " +
-        "ligada ao atributo `disabled` do botão, ou não é calculada só para `instagram_feed`.",
-    );
-  }
-  if (!/instagramFeedTierNotice/.test(publishStep)) {
-    failures.push(
-      "4:5: o aviso `instagramFeedTierNotice` não aparece em PublishStep.tsx — sem ele, o chip fica " +
-        "desabilitado sem dizer por quê.",
+      "4:5: SceneStep.tsx ainda troca a seleção para \"reels_tiktok\" ao entrar no tier Normal — essa " +
+        "troca forçada existia porque 4:5 era bloqueado (V25) e deveria ter saído nesta rodada.",
     );
   }
 
-  if (
-    !/tierVideo === "normal" && publishPlatform === "instagram_feed"/.test(sceneStep) ||
-    !/onPublishPlatformChange\("reels_tiktok"\)/.test(sceneStep)
-  ) {
+  // --- G-4: leitura do call site de derivação -------------------------------
+  const rota = readFileSync(path.join(repoRoot, ROTA_DE_VIDEOS), "utf-8").replace(/\r\n/g, "\n");
+  if (!rota.includes('if (video.aspect_ratio === "4:5" && servedUrl.startsWith("/uploads/")) {')) {
     failures.push(
-      "4:5: a seleção sobrevive à troca para o tier Normal — esperava um efeito em SceneStep.tsx trocando " +
-        'para "reels_tiktok" quando `tierVideo === "normal"` e `publishPlatform === "instagram_feed"`, e ' +
-        "não achei. Sem isto, o chip fica visualmente bloqueado mas o valor já escolhido continua indo " +
-        "para `POST /videos`.",
+      `4:5: ${ROTA_DE_VIDEOS} não deriva o corte de 4:5 — a condição exata que dispara ` +
+        "`deriveVariantsForVideo` para vídeos 4:5 não foi encontrada em /approve-video.",
     );
   }
-  if (!/tierVideo=\{tierVideo\}/.test(sceneStep)) {
-    failures.push(
-      "4:5: SceneStep.tsx deixou de passar `tierVideo` para `<PublishStep>` — sem o prop, o componente não " +
-        "tem como saber que está no tier Normal.",
-    );
+  if (!rota.includes("deriveVariantsForVideo({")) {
+    failures.push(`4:5: ${ROTA_DE_VIDEOS} não chama \`deriveVariantsForVideo\` — sem ela, não há derivação nenhuma.`);
   }
 
   for (const idioma of ["pt-BR", "en"]) {
@@ -161,8 +244,9 @@ export function checkNormalAspectRatioPolicy(repoRoot: string): NormalAspectRati
 
   if (failures.length === 0) {
     notes.push(
-      "    4:5: o chip do Feed do Instagram fica desabilitado no tier Normal, com aviso nos 2 idiomas, e " +
-        "uma seleção prévia de 4:5 é trocada para 9:16 ao entrar no tier Normal",
+      "    4:5: aspectRatioParaFornecedor troca 4:5→9:16 (e só 4:5), consultada por compor() e animar(); " +
+        "o chip do Feed do Instagram fica sempre clicável, sem troca forçada de tier; /approve-video " +
+        "deriva o corte central para 4:5 quando pedido",
     );
   }
 

@@ -74,18 +74,27 @@ export const MUTANTS: Mutant[] = [
     guard: "cada bloco de animação grava o próprio índice (0-based) no diário",
     name: "o índice do bloco deixa de ser passado a etapaNaFal",
     kind: "obvio",
+    // ÂNCORA ESTENDIDA — V34, item 8: `animarUmBloco` ganhou o parâmetro
+    // `falaDoBloco` (`blocos[i].texto`), logo depois de `i,`. Incluído em
+    // find/replace, sem mudar — só `i,`/`null,` é a mutação de verdade.
     file: PIPELINE,
     find:
       "      planoDosBlocos[i].direcaoDoBloco,\n" +
       "      seedDoVideo,\n" +
       "      fotoDeIdentidadeUrl,\n" +
       "      i,\n" +
+      "      // A FATIA do roteiro deste bloco — item 8. Nunca o roteiro inteiro:\n" +
+      "      // ver o comentário de `falaDoBloco` em `animarUmBloco`.\n" +
+      "      blocos[i].texto,\n" +
       "    );",
     replace:
       "      planoDosBlocos[i].direcaoDoBloco,\n" +
       "      seedDoVideo,\n" +
       "      fotoDeIdentidadeUrl,\n" +
       "      null,\n" +
+      "      // A FATIA do roteiro deste bloco — item 8. Nunca o roteiro inteiro:\n" +
+      "      // ver o comentário de `falaDoBloco` em `animarUmBloco`.\n" +
+      "      blocos[i].texto,\n" +
       "    );",
     // V33, item 3 — a mensagem passou a citar os índices DINAMICAMENTE
     // (`JSON.stringify(esperado)`, hoje `[0,1,2,3,4,5,6]` para
@@ -211,6 +220,12 @@ function inputDeProva(diario: DiarioDoPipeline, script: string): FalPipelineInpu
     pararApos: "animar",
     esperar: async () => {},
     verificarAspectRatio: false,
+    // V34, item 5 — um mutante que desarma o freio de `pararApos` (ou
+    // qualquer outro defeito que faça esta corrida ultrapassar `animar`)
+    // alcançaria `sincronizarComAudio`, que rodaria `ffmpeg` de VERDADE
+    // contra a URL fake abaixo. Mesmo padrão de `verificarAspectRatio: false`
+    // acima.
+    apararSobraFinal: false,
   };
 }
 

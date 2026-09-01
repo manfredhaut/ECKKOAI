@@ -99,9 +99,13 @@ export const MUTANTS: Mutant[] = [
     // `enable_prompt_expansion` é o último campo booleano que sobrou nesta
     // lista, e cobre o mesmo risco: sem ele, o fornecedor reescreve a
     // direção por conta própria, em silêncio.
+    // ÂNCORA ENCURTADA — V34, item 12: `enable_thinking: false` (com um
+    // comentário grande) entrou ENTRE `enable_prompt_expansion` e `seed`,
+    // então a âncora antiga (que ia até `seed,`) parou de casar. A linha
+    // sozinha já é única no arquivo (só `corpoAnimarWan` a declara).
     file: "backend/src/services/video/falPipeline.ts",
-    find: "    enable_prompt_expansion: false,\n    // Item 1, rodada de 29/08 anterior — ver o comentário de `seed` acima.\n    seed,",
-    replace: "    // Item 1, rodada de 29/08 anterior — ver o comentário de `seed` acima.\n    seed,",
+    find: "    enable_prompt_expansion: false,",
+    replace: "",
     expect: "pipeline: um default do fornecedor foi herdado em silêncio",
   },
   {

@@ -396,7 +396,17 @@
     "voiceCloned": "Voz clonada",
     "durationDelivered": "{{seconds}} s entregues",
     "durationEstimated": "~{{seconds}} s estimados",
-    "durationUnknown": "duração não medida"
+    "durationUnknown": "duração não medida",
+    "resume": {
+      "title": "Este vídeo travou num bloco",
+      "explanation": "{{done}} de {{total}} bloco(s) já foram animados e JÁ FORAM PAGOS. Retomar continua exatamente de onde parou — nenhum bloco concluído é refeito nem cobrado de novo.",
+      "costRemaining": "Custo do que falta: aproximadamente US$ {{amount}}.",
+      "costUnknown": "Não foi possível estimar o custo do que falta agora — retomar continua seguro (nenhum bloco pago é refeito).",
+      "window": "Isto precisa ser retomado em algumas horas: depois de um tempo sem retomada, a varredura de recuperação encerra o vídeo automaticamente e os blocos pagos deixam de poder ser reaproveitados.",
+      "button": "Retomar geração",
+      "buttonLoading": "Retomando…",
+      "loadingInfo": "Verificando quanto falta…"
+    }
   },
   "settings": {
     "title": "Configurações",
@@ -691,7 +701,7 @@
       },
       "notVerified": "A proporção escolhida é enviada ao serviço de vídeo em toda geração. Até agora só o formato vertical (9:16) foi conferido em vídeos reais — os demais ainda não passaram por uma geração de verdade.",
       "notHonored": "O provedor de vídeo conectado à sua conta não aceita escolha de proporção.",
-      "instagramFeedTierNotice": "Indisponível no nível Normal — o motor de animação (Wan) não aceita esta proporção."
+      "instagramFeedTierNotice": "Gerado em formato vertical (9:16) e cortado depois, sem gerar de novo."
     },
     "generate": {
       "title": "Gerar e revisar",
@@ -704,7 +714,8 @@
         "background": "Fundo",
         "motionPrompt": "Interpretação",
         "expressiveness": "Expressividade",
-        "format": "Formato"
+        "format": "Formato",
+        "targetDuration": "Duração-alvo"
       },
       "generateButton": "Gerar vídeo",
       "submitting": "Enviando…",

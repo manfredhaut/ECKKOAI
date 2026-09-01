@@ -4,7 +4,7 @@
  * Três vetores, um tema: cada um fecha um lugar em que a tela ficava calada
  * exatamente no instante em que falar importava.
  *
- * 1. **O resumo dos sete campos, acima do botão Gerar.** Dois vídeos pagos
+ * 1. **O resumo dos oito campos, acima do botão Gerar.** Dois vídeos pagos
  *    saíram com campos vazios sem que desse para perceber antes de clicar — o
  *    corpo era válido, o fornecedor respondeu 200, e a ausência só apareceu no
  *    vídeo pronto. O passo Cena mostra cada controle na hora de preencher, mas
@@ -44,10 +44,10 @@ const WIZARD = "frontend/src/pages/CreateVideo/CreateVideoPage.tsx";
 const PASSO1 = "frontend/src/pages/CreateVideo/steps/AvatarSetupStep.tsx";
 
 /**
- * Os SETE campos, e de onde cada um sai no corpo de `POST /videos`.
+ * Os OITO campos, e de onde cada um sai no corpo de `POST /videos`.
  *
  * Declarados aqui em pares para que a guarda não aceite um resumo que mostre
- * sete linhas tiradas de outro lugar: o valor do resumo está em ele ser lido do
+ * oito linhas tiradas de outro lugar: o valor do resumo está em ele ser lido do
  * MESMO objeto que vai ao servidor. Um resumo que lê o formulário mostraria o
  * que a pessoa escolheu, e o defeito é justamente escolha que não chega.
  */
@@ -69,12 +69,18 @@ const CAMPOS: { chave: string; corpo: string; oQueE: string }[] = [
   { chave: "motionPrompt", corpo: "corpo.motion_prompt", oQueE: "a interpretação" },
   { chave: "expressiveness", corpo: "corpo.expressiveness", oQueE: "a expressividade" },
   { chave: "format", corpo: "corpo.publish_platform", oQueE: "o formato" },
+  // ALVO DE DURAÇÃO — V34, item 2 (01/09/2026). Chegava ao servidor desde
+  // antes (POST /videos já lia `target_duration_seconds` para recusar
+  // roteiro longo demais), mas nunca aparecia nesta tela de conferência —
+  // a mesma ausência silenciosa que os outros sete campos já corrigiram,
+  // uma vez cada.
+  { chave: "targetDuration", corpo: "corpo.target_duration_seconds", oQueE: "a duração-alvo" },
 ];
 
 export const MUTANTS: Mutant[] = [
   {
-    guard: "gerar: o resumo mostra os sete campos antes de gastar",
-    name: "um dos sete campos some do resumo",
+    guard: "gerar: o resumo mostra os oito campos antes de gastar",
+    name: "um dos oito campos some do resumo",
     kind: "esperto",
     // O resumo continua existindo, continua bonito, continua mostrando seis
     // linhas — e a que sai é justamente a que ninguém confere de cabeça. É a
@@ -85,7 +91,7 @@ export const MUTANTS: Mutant[] = [
     expect: "gerar: o resumo não mostra o formato",
   },
   {
-    guard: "gerar: o resumo mostra os sete campos antes de gastar",
+    guard: "gerar: o resumo mostra os oito campos antes de gastar",
     name: "a linha Cenário some do resumo",
     kind: "obvio",
     // OBVIO, DE PROPÓSITO: é o defeito que acabou de acontecer de verdade —
@@ -98,10 +104,10 @@ export const MUTANTS: Mutant[] = [
     expect: "gerar: o resumo não mostra o cenário",
   },
   {
-    guard: "gerar: o resumo mostra os sete campos antes de gastar",
+    guard: "gerar: o resumo mostra os oito campos antes de gastar",
     name: "o resumo sai da tela de gerar",
     kind: "obvio",
-    // O componente continua no repositório, com os sete campos e as traduções
+    // O componente continua no repositório, com os oito campos e as traduções
     // todas — e deixa de ser renderizado. A guarda que só olhasse o arquivo do
     // resumo passaria verde com a tela vazia.
     //
@@ -120,7 +126,7 @@ export const MUTANTS: Mutant[] = [
     expect: "gerar: o resumo do que vai ser enviado não é mostrado",
   },
   {
-    guard: "gerar: o resumo mostra os sete campos antes de gastar",
+    guard: "gerar: o resumo mostra os oito campos antes de gastar",
     name: "o resumo passa a ler o formulário em vez do corpo enviado",
     kind: "esperto",
     // A diferença não aparece na tela na maioria das vezes — os dois coincidem
@@ -144,7 +150,7 @@ export const MUTANTS: Mutant[] = [
     guard: "gerar: a linha Traje do resumo lê o campo que realmente chega ao corpo (outfit/outfit_prompt), não o dropdown removido em 25/08 (avatar_look_id)",
     name: "a linha Traje do resumo volta a ler avatar_look_id",
     kind: "esperto",
-    // ESPERTO: o resumo continua existindo, continua com sete linhas, e a
+    // ESPERTO: o resumo continua existindo, continua com oito linhas, e a
     // linha "Traje" continua parecendo válida — só que lê um campo que o
     // dropdown removido em 25/08 nunca mais preenche. Resultado: "Traje:
     // nenhum" sempre, mesmo quando o Traje Padrão do Passo 1 está sendo
@@ -153,6 +159,23 @@ export const MUTANTS: Mutant[] = [
     find: '    { campo: "outfit", value: corpo.outfit_prompt || corpo.outfit || null },',
     replace: '    { campo: "outfit", value: corpo.avatar_look_id ? (nomes.look ?? corpo.avatar_look_id) : null },',
     expect: "gerar: o resumo deixou de ser derivado do corpo em o traje",
+  },
+  {
+    guard: "gerar: o resumo mostra os oito campos antes de gastar",
+    name: "a linha de duração-alvo some do resumo",
+    kind: "obvio",
+    // OBVIO, mesmo padrão do mutante da linha Cenário acima: a ausência do
+    // alvo é justamente o tipo de campo que ninguém confere de cabeça três
+    // telas atrás — e agora é ele que decide se a corrida recusa antes de
+    // gastar (ver `compararAlvoComFala`, falPipeline.ts).
+    file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
+    find:
+      '    {\n' +
+      '      campo: "targetDuration",\n' +
+      "      value: corpo.target_duration_seconds != null ? `${corpo.target_duration_seconds}s` : null,\n" +
+      "    },",
+    replace: "",
+    expect: "gerar: o resumo não mostra a duração-alvo",
   },
   {
     guard: "passo 1: traje em preparo trava o Avançar",
@@ -203,11 +226,11 @@ export async function checkPreflightSummaryPolicy(
     for (const c of CAMPOS) {
       // `campo:` e não `key:` — ver o comentário no próprio `GenerationSummary`:
       // a guarda de feature flags conta todo `key: "..."` do frontend como
-      // referência a flag, e sete linhas dessas acusavam sete flags fantasma.
+      // referência a flag, e oito linhas dessas acusavam oito flags fantasma.
       if (!resumo.includes(`campo: "${c.chave}"`)) {
         failures.push(
           `gerar: o resumo não mostra ${c.oQueE} — falta a linha \`campo: "${c.chave}"\` em ${RESUMO}. ` +
-            "Os sete campos existem porque dois vídeos pagos saíram com campo vazio sem que desse para " +
+            "Os oito campos existem porque dois vídeos pagos saíram com campo vazio sem que desse para " +
             "perceber antes de clicar; uma lista com cinco linhas não chama atenção nenhuma.",
         );
       }
@@ -327,7 +350,7 @@ export async function checkPreflightSummaryPolicy(
   // --------------------------------------------------------------- i18n ----
   //
   // Chave sem tradução vira o próprio nome da chave na tela — e num resumo de
-  // conferência isso é pior que não ter resumo: sete linhas de `createVideo.
+  // conferência isso é pior que não ter resumo: oito linhas de `createVideo.
   // generate.summary.avatar` não são conferíveis por ninguém.
   const CHAVES: { caminho: string[]; nome: string }[] = [
     ...CAMPOS.map((c) => ({ caminho: ["createVideo", "generate", "summary", c.chave], nome: c.chave })),

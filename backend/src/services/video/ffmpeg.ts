@@ -127,6 +127,41 @@ export async function ffmpegAvailable(): Promise<{ ok: boolean; detail: string }
 }
 
 /**
+ * APARA o vídeo FINAL (já sincronizado, com áudio) para terminar logo
+ * depois do fim da fala — V34, item 5 (01/09/2026).
+ *
+ * ┌─ O defeito que isto fecha ────────────────────────────────────────────────┐
+ * │ `duration` pedido ao Wan é `ceil(áudio) + margem` (falPipeline.ts) — um   │
+ * │ inteiro, sempre maior ou igual à fala. O `sync_mode: cut_off` do          │
+ * │ `sync-lipsync` corta o VÍDEO no fim da fala quando o vídeo é mais longo   │
+ * │ — mas só até o segundo mais próximo que o Wan de fato entregou, e a       │
+ * │ combinação de arredondamento (ceil) + margem produzia 1-2s de vídeo mudo  │
+ * │ sobrando no fim (MEDIDO pelo operador como inaceitável). Esta função é o  │
+ * │ segundo corte, DEPOIS do lipsync, com a PRECISÃO do ffmpeg em vez da      │
+ * │ granularidade de segundo inteiro do pedido original.                     │
+ * └────────────────────────────────────────────────────────────────────────┘
+ *
+ * RE-ENCODA (não `-c copy`): um corte por stream-copy alinha no keyframe mais
+ * PRÓXIMO, não no instante exato — para um mp4 com poucos keyframes (comum em
+ * clipes curtos de fala parada), isso deixaria sobrar bem mais que o alvo. A
+ * transcodificação custa tempo de CPU, não dinheiro (nenhuma chamada de rede
+ * aqui), e é a mesma troca que `concatVideos`/`deriveOneVariant` já fazem.
+ *
+ * `duracaoAlvoSegundos` MAIOR que a duração real do vídeo é inofensivo: o
+ * `-t` do ffmpeg não estica nada, só limita um teto que nunca é alcançado.
+ */
+export async function apararSobraMuda(
+  inputPath: string,
+  outputPath: string,
+  duracaoAlvoSegundos: number,
+): Promise<void> {
+  await runFfmpeg(
+    ["-y", "-i", inputPath, "-t", duracaoAlvoSegundos.toFixed(3), "-c:v", "libx264", "-c:a", "aac", outputPath],
+    "apararSobraMuda",
+  );
+}
+
+/**
  * A duração do CROSSFADE entre dois blocos consecutivos — item 4, 29/08/2026.
  *
  * Antes desta rodada, `concatVideos` usava o filtro `concat` puro: um CORTE

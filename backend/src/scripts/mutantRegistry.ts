@@ -97,6 +97,8 @@ import { MUTANTS as targetDurationCapMutants } from "./checkTargetDurationCapPol
 import { MUTANTS as recomposeFeedbackMutants } from "./checkRecomposeFeedbackPolicy.js";
 import { MUTANTS as falSpendLedgerMutants } from "./checkFalSpendLedgerPolicy.js";
 import { MUTANTS as scriptValidationStatusMutants } from "./checkScriptValidationStatusPolicy.js";
+import { MUTANTS as alvoDeDuracaoMutants } from "./checkAlvoDeDuracaoPolicy.js";
+import { MUTANTS as trimOvershootMutants } from "./checkTrimOvershootPolicy.js";
 import { MUTANTS as recomposeLateralPhotoMutants } from "./checkRecomposeLateralPhotoPolicy.js";
 import { MUTANTS as wanBlockOrchestrationMutants } from "./checkWanBlockOrchestrationPolicy.js";
 import { MUTANTS as colorMatchDefaultMutants } from "./checkColorMatchDefaultPolicy.js";
@@ -204,6 +206,8 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkRecomposeFeedbackPolicy.ts", recomposeFeedbackMutants),
   ...de("backend/src/scripts/checkFalSpendLedgerPolicy.ts", falSpendLedgerMutants),
   ...de("backend/src/scripts/checkScriptValidationStatusPolicy.ts", scriptValidationStatusMutants),
+  ...de("backend/src/scripts/checkAlvoDeDuracaoPolicy.ts", alvoDeDuracaoMutants),
+  ...de("backend/src/scripts/checkTrimOvershootPolicy.ts", trimOvershootMutants),
   ...de("backend/src/scripts/checkRecomposeLateralPhotoPolicy.ts", recomposeLateralPhotoMutants),
   ...de("backend/src/scripts/checkWanBlockOrchestrationPolicy.ts", wanBlockOrchestrationMutants),
   ...de("backend/src/scripts/checkColorMatchDefaultPolicy.ts", colorMatchDefaultMutants),

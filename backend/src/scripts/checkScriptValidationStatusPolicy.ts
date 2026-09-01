@@ -39,9 +39,16 @@ export const MUTANTS: Mutant[] = [
     kind: "obvio",
     // ÓBVIO: sem ela, a recusa de roteiro cai direto no fallback de regex,
     // não bate em nenhuma, e volta a ser "unknown" — o defeito original.
+    //
+    // ÂNCORA ATUALIZADA — V34, item 3 (01/09/2026): a mesma linha passou a
+    // reconhecer `AlvoDeDuracaoForaDoAlcanceError` também
+    // (`checkAlvoDeDuracaoPolicy`/`compararAlvoComFala`, falPipeline.ts) —
+    // a mutação remove só a metade de `RoteiroInvalidoError`, preservando
+    // a outra, para continuar testando ESTA classe especificamente.
     file: VENDOR_ERROR,
-    find: '  if (err instanceof RoteiroInvalidoError) return "script_invalid";\n\n',
-    replace: "",
+    find:
+      '  if (err instanceof RoteiroInvalidoError || err instanceof AlvoDeDuracaoForaDoAlcanceError) return "script_invalid";',
+    replace: '  if (err instanceof AlvoDeDuracaoForaDoAlcanceError) return "script_invalid";',
     expect: "classifyVendorFailure(new RoteiroInvalidoError",
   },
   {
