@@ -457,6 +457,14 @@ function fixtureResultFor(responseUrl: string): unknown {
   }
   if (
     endpointId === "wan/v2.6/image-to-video/flash" ||
+    // V30 — o Wan migrou para `reference-to-video/flash` na RODADA 4
+    // (29/08, item 2 de falPipeline.ts), e esta função nunca foi
+    // atualizada: em fixture PURO (sem `fetch` substituído por fora),
+    // TODA etapa `animar` do tier Normal quebrava com "a animação
+    // concluiu sem devolver vídeo" — achado ao escrever o ensaio do V30
+    // item 8. A entrada antiga (`image-to-video/flash`) fica, para não
+    // quebrar nada que ainda a cite por engano.
+    endpointId === "wan/v2.6/reference-to-video/flash" ||
     // Motor Premium (BLOCO A, 21/08) — mesma forma do Wan: os dois devolvem
     // `video.url`. Sem isto, toda etapa "animar" do tier premium quebraria em
     // fixture (mesmo defeito, já registrado no revert do BLOCO SEEDANCE-1,
