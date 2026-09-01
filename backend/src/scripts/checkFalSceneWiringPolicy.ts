@@ -676,11 +676,14 @@ export async function corridaDeAnimacao(
 /**
  * G-2b — V24, 31/08/2026: a foto REAL do rosto vira SEGUNDA referência de
  * identidade em `image_urls`, junto da imagem composta — até esta rodada o
- * Wan só recebia a composta (as sondas V20/V22, que seguraram identidade
- * melhor, mandaram DUAS referências). MESMA corrida de `corridaDeAnimacao`,
- * só que com `fotoDeIdentidade` preenchido — o campo PRÓPRIO que
- * `FalPipelineInput` ganhou nesta rodada, independente de `fotoBase` (que
- * aqui continua `Buffer.alloc(0)`, porque `compor()` não roda de novo).
+ * Wan só recebia a composta. Decisão do operador (o schema do fornecedor
+ * permite até 5 imagens em `image_urls`, LIDO por WebFetch); NÃO é uma
+ * melhora medida neste repositório — `git log -S "V20"`/`-S "V22"` (V27,
+ * 31/08) não encontram nenhum registro do precedente citado no pedido
+ * original. MESMA corrida de `corridaDeAnimacao`, só que com
+ * `fotoDeIdentidade` preenchido — o campo PRÓPRIO que `FalPipelineInput`
+ * ganhou nesta rodada, independente de `fotoBase` (que aqui continua
+ * `Buffer.alloc(0)`, porque `compor()` não roda de novo).
  */
 export async function corridaDeAnimacaoComFotoDeIdentidade(): Promise<{ submissoes: Submissao[]; erro: string }> {
   const { runFalPipelineDaImagem } = await import("../services/video/falPipeline.js");
@@ -1050,7 +1053,8 @@ export async function checkFalSceneWiringPolicy(): Promise<FalSceneWiringCheckRe
         "identidade: com a foto real do rosto disponível, `image_urls` do motor de animação deveria " +
           `trazer 2 entradas (composta + foto real) e saiu com ${imagensComFoto.length} — ` +
           `${JSON.stringify(imagensComFoto)}. Sem a segunda referência, o Wan segura identidade só a ` +
-          "partir da imagem composta — MEDIDO como insuficiente nas sondas V20/V22.",
+          "partir da imagem composta — decisão do operador de reforçar com a foto real, não uma " +
+          "melhora medida neste repositório.",
       );
     } else if (imagensComFoto[0] !== "https://v3b.fal.media/imagem-aprovada.png") {
       failures.push(
