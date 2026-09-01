@@ -283,24 +283,32 @@ async function varrer(): Promise<Varredura> {
       // transicionar para este estado. É o que torna esta linha perigosa
       // sem a exceção — sem ela cai no ramo de REACOMPANHAR.
       provider_job_id: "req-do-animar",
+      provider_vendor: "fal",
       idade_ms: Math.floor(idadeAprovacao / 2),
     },
     {
       id: "v-video-aguardando-velho",
       status: STATUS_AGUARDANDO_APROVACAO_VIDEO,
       provider_job_id: "req-do-animar-velho",
+      provider_vendor: "fal",
       idade_ms: idadeAprovacao + 60_000,
     },
     {
       id: "v-queued-recente",
       status: "queued",
       provider_job_id: "job-heygen",
+      // V28, item 3 — vendor PRÓPRIO: esta linha testa o caminho GENÉRICO de
+      // reacompanhamento (heygen/did), não o fluxo de aprovação de vídeo da
+      // fal. Com `provider_vendor: "fal"` (o valor das duas linhas acima),
+      // `recoverInFlightVideos` despacharia para `reacompanharFal` — que este
+      // teste não injeta — e corretamente NÃO chamaria o `reacompanhar`
+      // genérico (ver o comentário do tipo `Reacompanhar`, recovery.ts).
+      provider_vendor: "heygen",
       idade_ms: Math.floor(idadeRecuperacao / 2),
     },
   ].map((l) => ({
     ...l,
     tenant_id: "t-1",
-    provider_vendor: "fal",
     publish_platform: "youtube",
     aspect_ratio: "16:9",
     resolution: "720p",

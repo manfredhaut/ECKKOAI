@@ -319,24 +319,34 @@ async function varrer(): Promise<Varredura> {
       // torna esta linha perigosa sem a exceção — ela não cai no ramo do
       // órfão, cai no de REACOMPANHAR.
       provider_job_id: "req-da-composicao",
+      provider_vendor: "fal",
       idade_ms: Math.floor(idadeAprovacao / 2),
     },
     {
       id: "v-aguardando-velho",
       status: "awaiting_approval",
       provider_job_id: "req-da-composicao-velha",
+      provider_vendor: "fal",
       idade_ms: idadeAprovacao + 60_000,
     },
     {
       id: "v-queued-recente",
       status: "queued",
       provider_job_id: "job-heygen",
+      // V28, item 3 — vendor PRÓPRIO, diferente das duas linhas acima: esta
+      // testa o caminho GENÉRICO de reacompanhamento (heygen/did), não o
+      // fluxo de aprovação da fal. Com `provider_vendor: "fal"` (o valor que
+      // as outras duas usam), `recoverInFlightVideos` despacharia para
+      // `reacompanharFal` — que este teste não injeta — e corretamente NÃO
+      // chamaria o `reacompanhar` genérico, para não vazar a chave errada
+      // (ver o comentário do tipo `Reacompanhar`, recovery.ts). O nome
+      // `job-heygen` já indicava a intenção original.
+      provider_vendor: "heygen",
       idade_ms: Math.floor(idadeRecuperacao / 2),
     },
   ].map((l) => ({
     ...l,
     tenant_id: "t-1",
-    provider_vendor: "fal",
     publish_platform: "youtube",
     aspect_ratio: "16:9",
     resolution: "720p",

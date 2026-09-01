@@ -65,6 +65,7 @@ import { checkLegacyEndpointPolicy } from "./checkLegacyEndpointPolicy.js";
 import { checkPreflightSummaryPolicy } from "./checkPreflightSummaryPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
+import { checkFalPollRecoveryPolicy } from "./checkFalPollRecoveryPolicy.js";
 import { checkScriptLimitPolicy } from "./checkScriptLimitPolicy.js";
 import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
@@ -1015,6 +1016,15 @@ async function main(): Promise<void> {
   const normalAspectRatio = checkNormalAspectRatioPolicy(process.env.REPO_ROOT ?? "/repo");
   normalAspectRatio.failures.forEach((f) => failures.push(f));
   normalAspectRatio.notes.forEach((n) => note(n));
+
+  // --- 24o-undevicies. poll timeout deixa de ser erro terminal — o vídeo
+  // fica recuperável, o request_id sobrevive, e o vendor fal nunca passa
+  // pelo reacompanhamento genérico (V28, itens 3 e 5, 31/08). `fetch` e
+  // `pool.query` substituídos dentro da própria checagem, restaurados no
+  // finally — sem custo, sem rede real, sem geração.
+  const falPollRecovery = await checkFalPollRecoveryPolicy();
+  falPollRecovery.failures.forEach((f) => failures.push(f));
+  falPollRecovery.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //

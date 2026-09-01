@@ -185,7 +185,9 @@ export const MUTANTS: Mutant[] = [
     name: "não recolhe nada",
     kind: "obvio",
     file: BOOT,
-    find: "  const recuperacao = await recoverInFlightVideos(rearmVideoPolling);",
+    // ÂNCORA ATUALIZADA — V28, item 3: `recoverInFlightVideos` ganhou o
+    // segundo calhau (`reacompanharFal`), e `index.ts` passa os dois.
+    find: "  const recuperacao = await recoverInFlightVideos(rearmVideoPolling, reacompanharFal);",
     // Os dois últimos campos entraram com a migration 052 (`awaiting_approval`).
     // Sem eles o literal deixa de satisfazer `RecoveryResult`, o mutante para de
     // COMPILAR, e o arnês devolveria AMBÍGUO pelo `tsc` — com a guarda saudável
@@ -607,7 +609,12 @@ export async function checkVideoRecoveryPolicy(repoRoot: string): Promise<Recove
     // A varredura tem de re-armar pelo MESMO `pollJob` da criação. Um segundo
     // mecanismo de acompanhamento é a forma mais cara de os dois divergirem:
     // um grava consumo e o outro não, e a diferença só aparece na conciliação.
-    if (posVarredura !== -1 && !/recoverInFlightVideos\(\s*rearmVideoPolling\s*\)/.test(boot)) {
+    //
+    // ÂNCORA ATUALIZADA — V28, item 3: `recoverInFlightVideos` ganhou o
+    // segundo calhau (`reacompanharFal`, o caminho fal-aware — ver
+    // recovery.ts). O regex passou a exigir só que `rearmVideoPolling` seja
+    // o PRIMEIRO argumento, sem fechar o parêntese logo em seguida.
+    if (posVarredura !== -1 && !/recoverInFlightVideos\(\s*rearmVideoPolling\s*,/.test(boot)) {
       failures.push(
         "recuperação: o boot chama a varredura sem passar `rearmVideoPolling` — reacompanhar por outro " +
           "caminho cria um segundo mecanismo de polling ao lado do da criação.",
