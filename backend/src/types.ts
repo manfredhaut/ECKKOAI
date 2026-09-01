@@ -71,6 +71,13 @@ export interface Video {
   provider_job_id: string | null;
   provider_vendor: string | null;
   error_message: string | null;
+  /**
+   * Por que a linha está no estado que está — `vendor_rejected`,
+   * `poll_timeout`, `approval_expired`, `recovery_orphan`, `recovery_stale`
+   * (ver `VideoFailureReason`, videoFailure.ts). `null` enquanto a linha
+   * não passou por nenhum caminho de falha/recuperação.
+   */
+  failure_reason: string | null;
   /** Plataforma escolhida no passo "Publicação" e o formato derivado dela. */
   publish_platform: string | null;
   aspect_ratio: string | null;

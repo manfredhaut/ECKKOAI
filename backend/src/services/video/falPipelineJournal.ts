@@ -17,7 +17,7 @@
 import { pool } from "../../db/pool.js";
 import { logEvent } from "../log/safeLog.js";
 import { alertarSeGastoFalAcimaDoLimite } from "../billing/falSpendLedger.js";
-import type { DiarioDoPipeline, EtapaDoPipeline } from "./falPipeline.js";
+import { gerarSeedWan, type DiarioDoPipeline, type EtapaDoPipeline } from "./falPipeline.js";
 
 /**
  * Quem abriu a corrida — migration 066, W3.1.
@@ -159,9 +159,19 @@ export async function abrirCorrida(input: AbrirCorridaInput): Promise<string> {
   // /approve-video, /redo-video) passam.
   await alertarSeGastoFalAcimaDoLimite(input.tenantId);
 
+  // V30, item 1 — gerado AQUI, na abertura, e não mais em memória dentro de
+  // `animarNarrarSincronizar`: uma retomada roda numa invocação NOVA do
+  // processo, e um seed gerado ali sortearia um valor diferente do já
+  // usado pelos blocos pagos da mesma corrida. Seedance nunca lê este
+  // valor (`corpoAnimarSeedance` não tem parâmetro de seed) — gravá-lo
+  // mesmo para corridas Premium é inofensivo, e evita um `if (tier ===
+  // "normal")` aqui que a ABERTURA da corrida não tem como avaliar (o tier
+  // chega só depois, em `FalPipelineInput`).
+  const seedWan = gerarSeedWan();
+
   const { rows } = await pool.query<{ id: string }>(
-    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem, seed_wan)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id`,
     [
       input.tenantId,
@@ -171,9 +181,22 @@ export async function abrirCorrida(input: AbrirCorridaInput): Promise<string> {
       input.script.length,
       input.charsPerSecond,
       input.origem ?? null,
+      seedWan,
     ],
   );
   return rows[0].id;
+}
+
+/**
+ * O seed Wan desta corrida — V30, item 1. `null` só para corridas ANTERIORES
+ * a esta migration (nunca gravado); `lerSeed()` (diário) trata esse caso.
+ */
+export async function seedDaCorrida(runId: string): Promise<number | null> {
+  const { rows } = await pool.query<{ seed_wan: number | null }>(
+    "SELECT seed_wan FROM fal_pipeline_runs WHERE id = $1",
+    [runId],
+  );
+  return rows[0]?.seed_wan ?? null;
 }
 
 export async function fecharCorrida(
@@ -266,6 +289,60 @@ export async function etapaPorRequestId(requestId: string): Promise<EtapaPresa |
   };
 }
 
+/** Um bloco de animação já concluído e pago, pronto para ser reusado numa retomada. */
+export interface BlocoConcluido {
+  indice: number;
+  videoUrl: string;
+  requestId: string;
+}
+
+/**
+ * Os blocos de animação JÁ CONCLUÍDOS desta corrida, na ordem certa —
+ * V30, item 3. Só etapas `animar` com `bloco_indice` gravado (migration
+ * 072) e `status='completed'` contam; um bloco `running`/`failed`, ou de
+ * antes desta migration (`bloco_indice` NULL), nunca entra na lista — a
+ * retomada tem de ignorá-lo, não adivinhar que ele terminou.
+ *
+ * `ORDER BY bloco_indice`: a ORDEM importa para quem consome (o elemento
+ * `i` da lista tem de ser o resultado do bloco `i`) — `created_at` também
+ * serviria no caminho feliz, mas `bloco_indice` é o dado EXPLÍCITO que
+ * esta migration existe para não depender mais de inferência por data.
+ *
+ * `raw_response` sem `video.url` (forma inesperada, ou uma etapa `animar`
+ * de antes deste campo existir no corpo) é IGNORADO, não faz a função
+ * lançar — um bloco cujo resultado não se consegue reaproveitar é
+ * tratado como bloco pendente, e a retomada o re-submete. Reenviar um
+ * bloco que JÁ tinha sido pago é o pior caso só quando ele é descartado
+ * SEM re-submissão; aqui a retomada segue e paga de novo, o mesmo custo
+ * de nunca ter havido este mecanismo.
+ */
+export async function blocosConcluidosDaCorrida(runId: string): Promise<BlocoConcluido[]> {
+  const { rows } = await pool.query<{
+    bloco_indice: number;
+    request_id: string | null;
+    raw_response: string | null;
+  }>(
+    `SELECT bloco_indice, request_id, raw_response
+       FROM fal_pipeline_steps
+      WHERE run_id = $1 AND etapa = 'animar' AND status = 'completed' AND bloco_indice IS NOT NULL
+      ORDER BY bloco_indice ASC`,
+    [runId],
+  );
+  const blocos: BlocoConcluido[] = [];
+  for (const r of rows) {
+    if (!r.request_id || !r.raw_response) continue;
+    let videoUrl: unknown;
+    try {
+      videoUrl = JSON.parse(r.raw_response)?.video?.url;
+    } catch {
+      continue;
+    }
+    if (typeof videoUrl !== "string" || !videoUrl) continue;
+    blocos.push({ indice: r.bloco_indice, videoUrl, requestId: r.request_id });
+  }
+  return blocos;
+}
+
 export function criarDiarioNoBanco(runId: string): DiarioDoPipeline {
   return {
     async abrirEtapa(
@@ -273,14 +350,32 @@ export function criarDiarioNoBanco(runId: string): DiarioDoPipeline {
       ordem: number,
       vendor: string,
       endpointId: string | null,
+      blocoIndice?: number | null,
     ): Promise<string> {
       const { rows } = await pool.query<{ id: string }>(
-        `INSERT INTO fal_pipeline_steps (run_id, etapa, ordem, vendor, endpoint_id, request_at)
-         VALUES ($1, $2, $3, $4, $5, now())
+        `INSERT INTO fal_pipeline_steps (run_id, etapa, ordem, vendor, endpoint_id, request_at, bloco_indice)
+         VALUES ($1, $2, $3, $4, $5, now(), $6)
          RETURNING id`,
-        [runId, etapa, ordem, vendor, endpointId],
+        [runId, etapa, ordem, vendor, endpointId, blocoIndice ?? null],
       );
       return rows[0].id;
+    },
+
+    // V30, item 1 — ver o comentário de `DiarioDoPipeline.lerSeed`. Corrida
+    // de ANTES da migration 072 (`seed_wan` NULL): gera um seed agora e o
+    // grava, para que ela passe a ter um valor estável dali em diante — sem
+    // isto, cada chamada dentro da MESMA corrida velha sortearia um seed
+    // diferente, que é exatamente o defeito que esta função existe para
+    // fechar.
+    async lerSeed(): Promise<number> {
+      const existente = await seedDaCorrida(runId);
+      if (existente !== null) return existente;
+      const novo = gerarSeedWan();
+      await pool.query("UPDATE fal_pipeline_runs SET seed_wan = $2, updated_at = now() WHERE id = $1", [
+        runId,
+        novo,
+      ]);
+      return novo;
     },
 
     async gravarRequestId(stepId: string, requestId: string): Promise<void> {

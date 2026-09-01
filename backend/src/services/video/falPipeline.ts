@@ -695,8 +695,33 @@ export type EtapaDoPipeline = "publicar" | "compor" | "animar" | "narrar" | "sin
  * gravador em memória e observa a ORDEM em que os métodos são chamados.
  */
 export interface DiarioDoPipeline {
-  /** Abre a etapa. Devolve um id opaco usado nas gravações seguintes. */
-  abrirEtapa(etapa: EtapaDoPipeline, ordem: number, vendor: string, endpointId: string | null): Promise<string>;
+  /**
+   * Abre a etapa. Devolve um id opaco usado nas gravações seguintes.
+   *
+   * `blocoIndice` — V30, item 2. O índice (0-based) do bloco de animação
+   * que ESTA etapa representa, para um vídeo Normal fracionado em N blocos.
+   * `undefined`/`null` para toda etapa que não seja um bloco de animação
+   * fracionada — inclusive o `animar` de um vídeo que coube num bloco só.
+   * OPCIONAL na interface: guardas com diário em memória não precisam
+   * implementá-lo, e `etapaNaFal` só o passa adiante quando existe.
+   */
+  abrirEtapa(
+    etapa: EtapaDoPipeline,
+    ordem: number,
+    vendor: string,
+    endpointId: string | null,
+    blocoIndice?: number | null,
+  ): Promise<string>;
+  /**
+   * O seed Wan desta corrida — V30, item 1. Lê o valor gravado por
+   * `abrirCorrida` na abertura (migration 072); se a corrida for de ANTES
+   * desta migration (`seed_wan` NULL), gera um novo e o grava agora, para
+   * que a corrida passe a ter um seed estável dali em diante. OPCIONAL:
+   * guardas com diário em memória não precisam implementá-lo —
+   * `animarNarrarSincronizar` cai para `gerarSeedWan()` fresco quando
+   * ausente, o comportamento de antes desta rodada.
+   */
+  lerSeed?(): Promise<number>;
   /** O PONTEIRO para o trabalho pago. Chamado antes de qualquer interpretação. */
   gravarRequestId(stepId: string, requestId: string): Promise<void>;
   /**
@@ -1371,6 +1396,8 @@ async function etapaNaFal(
   ordem: number,
   endpointId: string,
   corpo: Record<string, unknown>,
+  /** V30, item 2 — ver o comentário de `DiarioDoPipeline.abrirEtapa`. */
+  blocoIndice?: number | null,
 ): Promise<{ requestId: string; saida: any }> {
   // RODADA 1 — corta ANTES de abrir a etapa no diário e antes de qualquer
   // chamada de rede. Ver `garantirUrlsPublicas`.
@@ -1387,7 +1414,7 @@ async function etapaNaFal(
     corpo: redactDeep(corpo),
   });
 
-  const stepId = await input.diario.abrirEtapa(etapa, ordem, "fal", endpointId);
+  const stepId = await input.diario.abrirEtapa(etapa, ordem, "fal", endpointId, blocoIndice);
 
   // ⚠️ LOG TEMPORÁRIO — evidência de runtime para o teste de precedência de
   // credencial (platform vs BYOK). REMOVER depois do teste; não deve virar
@@ -1591,6 +1618,103 @@ export async function runFalPipelineDaImagem(
   });
 }
 
+/**
+ * Erro ao pedir uma retomada que não tem o que retomar — V30, item 3.
+ *
+ * Classe PRÓPRIA (não `FalPipelineError` genérica) para o call site de
+ * produto (`routes/videos.ts`) poder devolver um 409 claro em vez de um
+ * 502 de "falha no fornecedor" — nada foi enviado à fal quando isto é
+ * lançado, então não é o vocabulário de erro de fornecedor que se aplica.
+ */
+export class RetomadaSemBlocoPendenteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RetomadaSemBlocoPendenteError";
+  }
+}
+
+/**
+ * RETOMA um vídeo Normal fracionado do bloco de animação onde parou —
+ * V30, item 3. Par de `runFalPipelineDaImagem` (corrida do zero) e de
+ * `runFalPipelineDoVideoMudo` (retoma um passo mais adiante, depois de
+ * `animar` inteiro) — o MESMO laço/concatenação de `animarNarrarSincronizar`
+ * é reusado, nunca duplicado; o que muda é só o ponto de partida do laço.
+ *
+ * `blocosJaConcluidos` — os blocos ALREADY-PAGOS, na ordem 0..k-1, com a
+ * URL e o `request_id` de cada um (ver `blocosConcluidosDaCorrida`,
+ * falPipelineJournal.ts). Reenviar qualquer um deles seria pagar duas
+ * vezes pelo mesmo segundo de vídeo — `animarNarrarSincronizar` recusa
+ * isso por construção (o laço começa em `blocosJaConcluidos.length`).
+ *
+ * Recusa ANTES de qualquer chamada paga (`RetomadaSemBlocoPendenteError`)
+ * quando o roteiro recomputado não tem bloco pendente nenhum — script
+ * mudou, ou a corrida já tinha terminado a animação por outro caminho.
+ */
+export async function runFalPipelineRetomandoBlocos(
+  input: FalPipelineInput,
+  imagemCompostaUrl: string,
+  blocosJaConcluidos: { videoUrl: string; requestId: string }[],
+  /** O `request_id` da composição que produziu esta imagem, quando conhecido. */
+  composicaoRequestId = "",
+): Promise<FalPipelineResult> {
+  // ESCOPO desta rodada: só Normal fraciona (ver `NORMAL_MAX_TARGET_SECONDS`
+  // — Premium sempre cabe num bloco só). `conferirRoteiroENormal` recomputa
+  // o MESMO plano de blocos que a corrida original produziu — pura e
+  // determinística a partir do `script`, então recalcular aqui, numa
+  // invocação nova do processo, devolve os mesmos N blocos de antes.
+  const roteiroConferido = conferirRoteiroENormal(input.script);
+  const { chars, segundosEstimados, duracaoEscolhida, blocos, segundosTotais } = roteiroConferido;
+
+  if (blocosJaConcluidos.length >= blocos.length) {
+    throw new RetomadaSemBlocoPendenteError(
+      `fal: a retomada não achou bloco pendente — ${blocosJaConcluidos.length} bloco(s) já concluído(s) ` +
+        `contra ${blocos.length} no roteiro recomputado. Ou o roteiro mudou desde a corrida original, ou ` +
+        "a animação já terminou por outro caminho. Nada foi enviado à fal.",
+    );
+  }
+
+  logEvent("info", "fal_pipeline_retomando_blocos", {
+    chars,
+    segundosEstimados,
+    duracaoEscolhida,
+    imagemCompostaUrl,
+    composicaoRequestId: composicaoRequestId || null,
+    blocosTotais: blocos.length,
+    blocosJaConcluidos: blocosJaConcluidos.length,
+    segundosTotais,
+  });
+
+  return animarNarrarSincronizar(input, {
+    imagemUrl: imagemCompostaUrl,
+    gastoAcumuladoUsd: 0,
+    teto: tetoParaTier(input, segundosTotais),
+    tier: "normal",
+    segundosEstimados,
+    duracaoEscolhida,
+    blocos,
+    composicaoRequestId,
+    blocosJaConcluidos,
+  });
+}
+
+/**
+ * O custo estimado só dos blocos AINDA NÃO submetidos — V30, item 4. Read-
+ * only: não abre etapa, não grava nada, não fala com a fal. Existe para a
+ * tela mostrar "falta pagar US$ X" ANTES do clique que retoma de verdade,
+ * pela MESMA fonte de preço (`custoDaEtapa`/`provider_prices`) que a
+ * submissão real usa — nunca uma fórmula paralela que possa divergir dela.
+ */
+export async function custoEstimadoBlocosRestantesUsd(
+  blocosRestantes: BlocoDeAnimacao[],
+): Promise<number> {
+  let total = 0;
+  for (const bloco of blocosRestantes) {
+    const custoPeloCodigo = PRECOS_FAL.animarUsdPorSegundo * bloco.duracaoEscolhida;
+    total += await custoDaEtapa(ENDPOINT_ANIMAR, bloco.duracaoEscolhida, custoPeloCodigo, "animar");
+  }
+  return total;
+}
+
 interface ContextoDaAnimacao {
   imagemUrl: string;
   gastoAcumuladoUsd: number;
@@ -1610,6 +1734,15 @@ interface ContextoDaAnimacao {
    * fracionam (fora de escopo, ver `NORMAL_MAX_TARGET_SECONDS`).
    */
   blocos: BlocoDeAnimacao[];
+  /**
+   * Blocos JÁ animados e PAGOS numa corrida anterior — RETOMADA, V30, item
+   * 3. `undefined`/vazio: corrida do zero, comportamento de antes desta
+   * rodada. Quando presente, o laço de blocos (abaixo) começa em
+   * `blocosJaConcluidos.length`, nunca em 0 — reenviar um bloco que já
+   * consta aqui seria pagar duas vezes pelo mesmo segundo de vídeo. A ORDEM
+   * importa: o elemento `i` tem de ser o resultado do bloco `i`.
+   */
+  blocosJaConcluidos?: { videoUrl: string; requestId: string }[];
 }
 
 /**
@@ -1726,11 +1859,17 @@ function corpoAnimarWan(
 
 /**
  * O `seed` de UMA corrida — item 1 da rodada de 29/08 seguinte. Gerado uma
- * vez, no INÍCIO de `animarNarrarSincronizar`, e passado a todo bloco Wan
- * daquela corrida (Seedance nunca o recebe — `corpoAnimarSeedance` não tem
+ * vez, na ABERTURA da corrida (`abrirCorrida`, falPipelineJournal.ts —
+ * V30, item 1), e reutilizado em todo bloco Wan daquela corrida, inclusive
+ * numa RETOMADA (Seedance nunca o recebe — `corpoAnimarSeedance` não tem
  * este parâmetro). Faixa do schema: inteiro 0-2147483647.
+ *
+ * EXPORTADA (V30): `abrirCorrida` (falPipelineJournal.ts) precisa gerar o
+ * seed no INSERT — antes desta rodada ele só existia em memória, dentro de
+ * `animarNarrarSincronizar`, e uma retomada em processo/invocação nova
+ * sortearia um seed DIFERENTE dos blocos já pagos da mesma corrida.
  */
-function gerarSeedWan(): number {
+export function gerarSeedWan(): number {
   return Math.floor(Math.random() * 2147483648);
 }
 
@@ -1795,6 +1934,13 @@ async function animarUmBloco(
    * `fotoDeIdentidadeUrl` lá.
    */
   fotoDeIdentidadeUrl: string | null,
+  /**
+   * V30, item 2 — o índice (0-based) deste bloco na corrida, quando ela é
+   * um vídeo Normal fracionado; `null` para o caminho de bloco único
+   * (Premium, ou Normal que já cabia em 1). Só rotula a etapa no diário —
+   * não muda nada do que é enviado à fal.
+   */
+  blocoIndice: number | null,
 ): Promise<{ videoUrl: string; requestId: string; gastoPrevistoUsd: number }> {
   // O CUSTO e o ENDPOINT dependem do tier — ver `enderecoAnimarParaTier` e
   // `custoSeedanceUsd`. "normal" (Wan) é tarifado por segundo; "premium"
@@ -1821,7 +1967,7 @@ async function animarUmBloco(
   // checagens não se aplicam a ele.
   if (tier !== "premium") lintarPromptDoBlocoWan(corpoDeAnimar);
 
-  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);
+  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar, blocoIndice);
   const videoUrl = animacao.saida?.video?.url;
   if (!videoUrl) {
     throw new FalPipelineError(
@@ -1879,10 +2025,19 @@ async function animarNarrarSincronizar(
   contexto: ContextoDaAnimacao,
 ): Promise<FalPipelineResult> {
   const { imagemUrl, teto, tier, segundosEstimados, duracaoEscolhida, composicaoRequestId, blocos } = contexto;
+  const blocosJaConcluidos = contexto.blocosJaConcluidos ?? [];
   let gastoPrevistoUsd = contexto.gastoAcumuladoUsd;
   // Item 1, rodada de 29/08 seguinte — UM seed por corrida, o MESMO em todo
   // bloco Wan dela (`corpoAnimarSeedance` nunca o lê). Ver `gerarSeedWan`.
-  const seedDoVideo = gerarSeedWan();
+  //
+  // V30, item 1 — lido do DIÁRIO (persistido por `abrirCorrida` na
+  // abertura), não mais gerado aqui: numa RETOMADA, esta função roda de
+  // novo, numa invocação nova do processo, e `gerarSeedWan()` direto
+  // sortearia um seed DIFERENTE do já usado pelos blocos pagos da mesma
+  // corrida. `lerSeed` é opcional na interface — sem ele (guardas com
+  // diário em memória), cai para `gerarSeedWan()` fresco, o comportamento
+  // de antes desta rodada.
+  const seedDoVideo = (await input.diario.lerSeed?.()) ?? gerarSeedWan();
   // V24 — a foto REAL do rosto sobe UMA VEZ por corrida (mesmo padrão do
   // seed acima), nunca por bloco: os N blocos de um vídeo Normal fracionado
   // reusam a MESMA URL, do mesmo jeito que já reusam a MESMA imagem
@@ -1914,6 +2069,9 @@ async function animarNarrarSincronizar(
       direcaoComExpressividade(input.promptDeDirecao, input.expressiveness),
       seedDoVideo,
       fotoDeIdentidadeUrl,
+      // Bloco único: não é fracionamento, não tem índice — ver o comentário
+      // de `blocoIndice` em `animarUmBloco`.
+      null,
     );
     gastoPrevistoUsd = bloco.gastoPrevistoUsd;
     if (input.aspectRatio && input.verificarAspectRatio !== false) {
@@ -1980,9 +2138,20 @@ async function animarNarrarSincronizar(
     })),
   });
 
-  const videoUrls: string[] = [];
-  const requestIds: string[] = [];
-  for (let i = 0; i < blocos.length; i++) {
+  // V30, item 3 — RETOMADA: os blocos já pagos numa corrida anterior nunca
+  // são reenviados. `blocosJaConcluidos` pré-preenche as duas listas na
+  // MESMA ordem em que o laço as construiria do zero, e o laço começa no
+  // primeiro índice AINDA NÃO feito — nunca em 0 quando há retomada.
+  if (blocosJaConcluidos.length > blocos.length) {
+    throw new FalPipelineError(
+      `fal: a retomada trouxe ${blocosJaConcluidos.length} bloco(s) já concluído(s), mas o roteiro só ` +
+        `tem ${blocos.length} — o roteiro pode ter mudado desde a corrida original. Recusa em vez de ` +
+        "adivinhar qual bloco reenviar.",
+    );
+  }
+  const videoUrls: string[] = blocosJaConcluidos.map((b) => b.videoUrl);
+  const requestIds: string[] = blocosJaConcluidos.map((b) => b.requestId);
+  for (let i = blocosJaConcluidos.length; i < blocos.length; i++) {
     // SEMPRE `imagemUrl` (a composta original) — nunca o último quadro do
     // bloco anterior. Ver o comentário acima desta seção.
     const bloco = await animarUmBloco(
@@ -1995,6 +2164,7 @@ async function animarNarrarSincronizar(
       planoDosBlocos[i].direcaoDoBloco,
       seedDoVideo,
       fotoDeIdentidadeUrl,
+      i,
     );
     gastoPrevistoUsd = bloco.gastoPrevistoUsd;
     videoUrls.push(bloco.videoUrl);

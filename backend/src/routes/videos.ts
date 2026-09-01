@@ -94,6 +94,9 @@ import {
   VIDEO_TIERS,
   runFalPipelineDaImagem,
   runFalPipelineDoVideoMudo,
+  runFalPipelineRetomandoBlocos,
+  custoEstimadoBlocosRestantesUsd,
+  RetomadaSemBlocoPendenteError,
   videoTierParaPipeline,
   vendorRequiredByTier,
   FalPollTimeoutError,
@@ -105,6 +108,7 @@ import {
   fracionarRoteiro,
   janelasDosBlocos,
   direcaoDoPrimeiroBloco,
+  type BlocoDeAnimacao,
 } from "../services/video/scriptFractioning.js";
 import {
   MAX_REFACOES_POR_VIDEO,
@@ -115,6 +119,8 @@ import {
   fecharCorrida,
   requestIdDaEtapa,
   etapaPorRequestId,
+  blocosConcluidosDaCorrida,
+  type BlocoConcluido,
 } from "../services/video/falPipelineJournal.js";
 import { aprovarEAnimar, recompor } from "../services/video/falApproval.js";
 import { materializeFalFixtureImage } from "../services/providers/fixtureProvider.js";
@@ -3183,6 +3189,292 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           consequence: "o vídeo mudo anterior continua válido e a linha segue aguardando aprovação",
         });
         return reply.code(vendorErrorStatus(failure)).send({ error: "redo_video_failed", message });
+      }
+    },
+  );
+
+  /**
+   * Carrega um vídeo com bloco de animação PENDENTE de retomada — V30,
+   * item 3. Recusa cedo (409, sem custo) em qualquer condição que não
+   * bata: nunca adivinha o que fazer com um estado inesperado.
+   *
+   * ESCOPO estreito de propósito: só `status='processing'` com
+   * `failure_reason='poll_timeout'` e o request_id preso apontando para
+   * uma etapa `animar` JÁ `completed` (ou seja, já recuperada por
+   * `reacompanharFal`/a varredura de boot). Um bloco ainda `running` não
+   * passa por aqui — retomar antes de a fal confirmar arriscaria pedir de
+   * novo um bloco que ela ainda está processando.
+   */
+  async function carregarRetomadaPendente(
+    tenantId: string,
+    videoId: string,
+    reply: FastifyReply,
+  ): Promise<{
+    video: VideoRow;
+    avatar: Avatar;
+    runId: string;
+    blocosJaConcluidos: BlocoConcluido[];
+    blocosPlano: BlocoDeAnimacao[];
+  } | null> {
+    const { rows } = await pool.query<VideoRow>(
+      "SELECT * FROM videos WHERE id = $1 AND tenant_id = $2",
+      [videoId, tenantId],
+    );
+    const video = rows[0];
+    if (!video) {
+      await reply.code(404).send({ error: "not_found", message: "Vídeo não encontrado." });
+      return null;
+    }
+    if (video.status !== "processing" || video.failure_reason !== "poll_timeout" || video.provider_vendor !== "fal") {
+      await reply.code(409).send({
+        error: "resume_not_pending",
+        message:
+          `Este vídeo está em "${video.status}"` +
+          (video.failure_reason ? ` (motivo: ${video.failure_reason})` : "") +
+          ", e não há bloco pendente de retomada. Isto só existe para um vídeo Normal fracionado que " +
+          "travou num poll — status \"processing\" com motivo \"poll_timeout\".",
+      });
+      return null;
+    }
+    if (!video.provider_job_id) {
+      await reply.code(409).send({
+        error: "resume_unavailable",
+        message: "Este vídeo não tem um request_id preso para consultar. Nada a retomar por aqui.",
+      });
+      return null;
+    }
+    const etapa = await etapaPorRequestId(video.provider_job_id);
+    if (!etapa || etapa.etapa !== "animar") {
+      await reply.code(409).send({
+        error: "resume_unavailable",
+        message:
+          "O request_id preso deste vídeo não é de uma etapa de animação — a retomada de blocos só " +
+          "existe para isso.",
+      });
+      return null;
+    }
+    if (etapa.status !== "completed") {
+      await reply.code(409).send({
+        error: "resume_not_ready",
+        message:
+          "O bloco que travou ainda não foi confirmado pelo fornecedor. Espere a próxima varredura de " +
+          "boot buscar o resultado antes de retomar.",
+      });
+      return null;
+    }
+    if (!video.fal_composed_image_url) {
+      await reply.code(409).send({
+        error: "resume_unavailable",
+        message: "Este vídeo não tem imagem composta gravada, e a animação parte dela. Nada a retomar.",
+      });
+      return null;
+    }
+    const { rows: avatarRows } = await pool.query<Avatar>(
+      "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
+      [video.avatar_id, tenantId],
+    );
+    const avatar = avatarRows[0];
+    if (!avatar) {
+      await reply.code(409).send({ error: "resume_unavailable", message: "Avatar deste vídeo não encontrado." });
+      return null;
+    }
+    const blocosJaConcluidos = await blocosConcluidosDaCorrida(etapa.runId);
+    let blocosPlano: BlocoDeAnimacao[];
+    try {
+      blocosPlano = fracionarRoteiro(video.script);
+    } catch (err) {
+      await reply.code(409).send({
+        error: "resume_unavailable",
+        message: `O roteiro não pôde ser refracionado: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return null;
+    }
+    if (blocosJaConcluidos.length === 0 || blocosJaConcluidos.length >= blocosPlano.length) {
+      await reply.code(409).send({
+        error: "resume_unavailable",
+        message:
+          blocosJaConcluidos.length === 0
+            ? "Nenhum bloco concluído foi encontrado nesta corrida — não há o que reaproveitar."
+            : "Todos os blocos do roteiro já foram animados nesta corrida. Nada a retomar.",
+      });
+      return null;
+    }
+    // Índices contíguos 0..k-1 — um GAP indica algo fora do fluxo normal
+    // (um bloco perdido, ou uma retomada anterior incompleta), e a
+    // retomada recusa em vez de adivinhar qual bloco preencher.
+    for (let i = 0; i < blocosJaConcluidos.length; i++) {
+      if (blocosJaConcluidos[i].indice !== i) {
+        await reply.code(409).send({
+          error: "resume_unavailable",
+          message:
+            "Os blocos concluídos desta corrida não são contíguos a partir de 0 (índices: " +
+            `${blocosJaConcluidos.map((b) => b.indice).join(",")}) — a retomada recusa em vez de adivinhar.`,
+        });
+        return null;
+      }
+    }
+    return { video, avatar, runId: etapa.runId, blocosJaConcluidos, blocosPlano };
+  }
+
+  /**
+   * READ-ONLY, custo zero — V30, item 4. Quantos blocos já estão pagos e
+   * quanto falta pagar, ANTES de qualquer clique que gaste dinheiro. Não
+   * abre etapa, não fala com a fal.
+   */
+  app.get<{ Params: { id: string } }>(
+    "/videos/:id/resume-info",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const carga = await carregarRetomadaPendente(req.tenantId, req.params.id, reply);
+      if (!carga) return reply;
+      const { blocosJaConcluidos, blocosPlano } = carga;
+      const blocosRestantes = blocosPlano.slice(blocosJaConcluidos.length);
+      let custoRestanteUsd: number | null = null;
+      let custoIndisponivel: string | null = null;
+      try {
+        custoRestanteUsd = await custoEstimadoBlocosRestantesUsd(blocosRestantes);
+      } catch (err) {
+        custoIndisponivel = err instanceof Error ? err.message : String(err);
+      }
+      return reply.send({
+        blocosConcluidos: blocosJaConcluidos.length,
+        blocosTotais: blocosPlano.length,
+        blocosRestantes: blocosRestantes.length,
+        custoRestanteUsd: custoRestanteUsd !== null ? Number(custoRestanteUsd.toFixed(4)) : null,
+        custoIndisponivel,
+      });
+    },
+  );
+
+  /**
+   * A RETOMADA de verdade — V30, itens 3-5. SEMPRE um clique humano
+   * explícito: esta rota nunca é chamada por `recovery.ts` (a varredura de
+   * boot só chama `reacompanharFal`, que busca — nunca submete um bloco
+   * novo). Reusa a MESMA `runId` da corrida travada (nunca abre uma nova):
+   * os blocos já pagos e o `seed` continuam acessíveis pelo mesmo diário, e
+   * retomar não conta como refação (`contarRefacoes` soma por LINHA de
+   * `fal_pipeline_runs`, e nenhuma linha nova nasce aqui).
+   */
+  app.post<{ Params: { id: string } }>(
+    "/videos/:id/resume-blocks",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const carga = await carregarRetomadaPendente(req.tenantId, req.params.id, reply);
+      if (!carga) return reply;
+      const { video, avatar, runId, blocosJaConcluidos } = carga;
+
+      const avatarCredential = await getCredentialForVendor(req.tenantId, "avatar", "fal");
+      const voiceCredential = await getCredential(req.tenantId, "voice");
+      if (!avatarCredential || !voiceCredential) {
+        return reply.code(409).send({
+          error: "resume_unavailable",
+          message:
+            "A retomada precisa da chave da fal e da chave de voz. Alguma das duas não está disponível " +
+            "agora. Nada foi cobrado.",
+        });
+      }
+      const chaveFal = await resolveTenantAvatarFalKey(avatarCredential.apiKey);
+      const fotoDeIdentidade = await fotoDeIdentidadeDoAvatar(avatar);
+      const composicaoRequestId = await requestIdDaEtapa(runId, "compor");
+
+      try {
+        const corrida = await runFalPipelineRetomandoBlocos(
+          {
+            apiKeyFal: chaveFal.apiKey,
+            apiKeyElevenLabs: voiceCredential.apiKey,
+            voiceId: avatar.voice_id ?? "",
+            voiceTuning: voiceTuningDoAvatar(avatar),
+            script: video.script,
+            fotoBase: Buffer.alloc(0),
+            fotoMimeType: "image/jpeg",
+            fotoDeIdentidade,
+            promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
+            tenantId: req.tenantId,
+            aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
+            promptDeDirecao: motionPromptDaLinha(video),
+            expressiveness: isExpressiveness(video.expressiveness) ? video.expressiveness : null,
+            diario: criarDiarioNoBanco(runId),
+            tier: "normal",
+            // Mesmo freio do primeiro clique (`/approve`): a retomada
+            // termina a ANIMAÇÃO e para no vídeo mudo, aguardando o
+            // segundo clique humano de sempre (`/approve-video`) — nunca
+            // encadeia até narrar/sincronizar sozinha.
+            pararApos: "animar",
+          },
+          video.fal_composed_image_url!,
+          blocosJaConcluidos.map((b) => ({ videoUrl: b.videoUrl, requestId: b.requestId })),
+          composicaoRequestId ?? "",
+        );
+        await fecharCorrida(runId, "completed");
+
+        const videoMudoServido = String(corrida.videoMudoUrl);
+        let videoMudoFinal = videoMudoServido;
+        try {
+          const salvo = await persistRemoteArtifact(req.tenantId, videoMudoServido, `${video.id}-mudo.mp4`);
+          if (salvo) videoMudoFinal = salvo.localUrl;
+        } catch (err) {
+          logEvent("error", "artifact_persist_failed", {
+            context: "videos.resumeBlocks",
+            videoId: video.id,
+            stage: "video_mudo",
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        const { rows: retomado } = await pool.query<Video>(
+          `UPDATE videos SET status = 'awaiting_approval_video', fal_muted_video_url = $2, fal_run_id = $3,
+                             provider_job_id = $4, approval_requested_at = now(), failure_reason = NULL
+             WHERE id = $1 AND tenant_id = $5 AND status = 'processing' RETURNING *`,
+          [video.id, videoMudoFinal, runId, corrida.requestIds.animar, req.tenantId],
+        );
+        if (!retomado[0]) {
+          // O vídeo mudo existe e foi pago; o que sumiu foi o estado que o
+          // receberia. O `request_id` está no diário, então ele é recuperável.
+          return reply.code(409).send({
+            error: "resume_not_pending",
+            message:
+              "A retomada terminou, mas o vídeo saiu de \"processing\" enquanto ela rodava. O vídeo mudo " +
+              "está gravado no diário da corrida e não foi perdido.",
+          });
+        }
+        return reply.send(withDeliveredSeconds(retomado[0] as VideoRow));
+      } catch (err) {
+        if (err instanceof RetomadaSemBlocoPendenteError) {
+          return reply.code(409).send({ error: "resume_unavailable", message: err.message });
+        }
+        if (err instanceof FalPollTimeoutError) {
+          // MESMO tratamento do catch de /approve e /approve-video — ver o
+          // comentário lá. Um bloco RESTANTE também pode estourar o poll; o
+          // vídeo continua recuperável, os blocos já pagos (os de antes E o
+          // que acabou de travar, depois de recuperado) continuam
+          // preservados, e retomar de novo resolve dali.
+          await pool.query(
+            "UPDATE videos SET provider_job_id = $2, failure_reason = $3 WHERE id = $1 AND status = 'processing'",
+            [video.id, err.requestId, "poll_timeout"],
+          );
+          logEvent("warn", "fal_poll_timeout_recuperavel", {
+            context: "videos.resumeBlocks",
+            videoId: video.id,
+            etapa: err.etapa,
+            requestId: err.requestId.slice(0, 8) + "…",
+            consequence: "vídeo continua em processing; blocos já pagos preservados; retomar de novo resolve dali",
+          });
+          return reply.code(202).send({
+            status: "processing",
+            message:
+              "O serviço de vídeo aceitou o próximo bloco e ainda está processando — mais tempo do que o " +
+              "esperado, mas nada foi perdido. Os blocos já pagos continuam preservados. Retome de novo " +
+              "quando o resultado estiver pronto.",
+          });
+        }
+        await fecharCorrida(runId, "failed", err instanceof Error ? err.message : String(err));
+        const { failure, message } = toClientVendorError("avatar", "videos.resumeBlocks", err);
+        logEvent("error", "fal_retomada_blocos_falhou", {
+          context: "videos.resumeBlocks",
+          videoId: video.id,
+          consequence: "os blocos já pagos continuam gravados no diário; o vídeo segue em processing",
+        });
+        return reply.code(vendorErrorStatus(failure)).send({ error: "resume_blocks_failed", message });
       }
     },
   );
