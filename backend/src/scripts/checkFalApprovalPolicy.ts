@@ -261,8 +261,8 @@ export const MUTANTS: Mutant[] = [
     name: "o INSERT deixa de listar a coluna video_id",
     kind: "obvio",
     file: DIARIO_DO_PIPELINE,
-    find: "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem)\n     VALUES ($1, $2, $3, $4, $5, $6, $7)\n     RETURNING id`,\n    [\n      input.tenantId,\n      input.videoId ?? null,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n    ],",
-    replace: "    `INSERT INTO fal_pipeline_runs (tenant_id, script, target_seconds, script_chars, chars_per_second, origem)\n     VALUES ($1, $2, $3, $4, $5, $6)\n     RETURNING id`,\n    [\n      input.tenantId,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n    ],",
+    find: "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem, seed_wan)\n     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n     RETURNING id`,\n    [\n      input.tenantId,\n      input.videoId ?? null,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n      seedWan,\n    ],",
+    replace: "    `INSERT INTO fal_pipeline_runs (tenant_id, script, target_seconds, script_chars, chars_per_second, origem, seed_wan)\n     VALUES ($1, $2, $3, $4, $5, $6, $7)\n     RETURNING id`,\n    [\n      input.tenantId,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n      seedWan,\n    ],",
     expect: "aprovação: o INSERT de `fal_pipeline_runs` não menciona a coluna `video_id`",
   },
   {
@@ -275,8 +275,8 @@ export const MUTANTS: Mutant[] = [
     // conferisse "a coluna existe no texto do SQL" passaria com a coluna
     // presente e sempre vazia, que é o pior caso: parece resolvido e não está.
     file: DIARIO_DO_PIPELINE,
-    find: "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem)\n     VALUES ($1, $2, $3, $4, $5, $6, $7)\n     RETURNING id`,\n    [\n      input.tenantId,\n      input.videoId ?? null,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n    ],",
-    replace: "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem)\n     VALUES ($1, $2, $3, $4, $5, $6, $7)\n     RETURNING id`,\n    [\n      input.tenantId,\n      null,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n    ],",
+    find: "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem, seed_wan)\n     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n     RETURNING id`,\n    [\n      input.tenantId,\n      input.videoId ?? null,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n      seedWan,\n    ],",
+    replace: "    `INSERT INTO fal_pipeline_runs (tenant_id, video_id, script, target_seconds, script_chars, chars_per_second, origem, seed_wan)\n     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n     RETURNING id`,\n    [\n      input.tenantId,\n      null,\n      input.script,\n      input.targetSeconds,\n      input.script.length,\n      input.charsPerSecond,\n      input.origem ?? null,\n      seedWan,\n    ],",
     expect: "aprovação: o INSERT de `fal_pipeline_runs` cita `video_id` no texto, mas o valor enviado não é o",
   },
 ];

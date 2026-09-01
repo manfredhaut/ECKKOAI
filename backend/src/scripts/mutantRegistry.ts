@@ -51,6 +51,7 @@ import { MUTANTS as preflightSummaryMutants } from "./checkPreflightSummaryPolic
 import { MUTANTS as videoContractMutants } from "./checkVideoContractPolicy.js";
 import { MUTANTS as videoRecoveryMutants } from "./checkVideoRecoveryPolicy.js";
 import { MUTANTS as falPollRecoveryMutants } from "./checkFalPollRecoveryPolicy.js";
+import { MUTANTS as blockResumeMutants } from "./checkBlockResumePolicy.js";
 import { MUTANTS as scriptLimitMutants } from "./checkScriptLimitPolicy.js";
 import { MUTANTS as captionMutants } from "./checkCaptionPolicy.js";
 import { MUTANTS as translationMutants } from "./checkTranslationPolicy.js";
@@ -156,6 +157,7 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkVideoContractPolicy.ts", videoContractMutants),
   ...de("backend/src/scripts/checkVideoRecoveryPolicy.ts", videoRecoveryMutants),
   ...de("backend/src/scripts/checkFalPollRecoveryPolicy.ts", falPollRecoveryMutants),
+  ...de("backend/src/scripts/checkBlockResumePolicy.ts", blockResumeMutants),
   ...de("backend/src/scripts/checkScriptLimitPolicy.ts", scriptLimitMutants),
   ...de("backend/src/scripts/checkCaptionPolicy.ts", captionMutants),
   ...de("backend/src/scripts/checkTranslationPolicy.ts", translationMutants),

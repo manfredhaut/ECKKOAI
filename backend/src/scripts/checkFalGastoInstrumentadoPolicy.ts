@@ -148,7 +148,7 @@ export const MUTANTS: Mutant[] = [
       "  // checagens não se aplicam a ele.\n" +
       '  if (tier !== "premium") lintarPromptDoBlocoWan(corpoDeAnimar);\n' +
       "\n" +
-      '  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);\n',
+      '  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar, blocoIndice);\n',
     replace:
       "  const corpoDeAnimar =\n" +
       "    tier === \"premium\"\n" +
@@ -157,7 +157,7 @@ export const MUTANTS: Mutant[] = [
       "\n" +
       '  if (tier !== "premium") lintarPromptDoBlocoWan(corpoDeAnimar);\n' +
       "\n" +
-      '  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar);\n' +
+      '  const animacao = await etapaNaFal(input, "animar", 2, enderecoAnimarParaTier(tier), corpoDeAnimar, blocoIndice);\n' +
       '  const gastoPrevistoUsd = autorizarGasto(gastoAcumuladoUsd, custoAnimarUsd, teto, "animar");\n' +
       "  await input.diario.registrarGastoPrevisto(gastoPrevistoUsd);\n",
     expect: "gasto instrumentado: uma submissão paga aconteceu ANTES da gravação do gasto dela",

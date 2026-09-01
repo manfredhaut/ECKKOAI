@@ -313,13 +313,16 @@ export async function checkWanBlockOrchestrationPolicy(): Promise<WanBlockOrches
   // ---------------------------------------------------------------------
   const repoRoot = process.env.REPO_ROOT ?? "/repo";
   const fontePipeline = apenasCodigo(readFileSync(path.join(repoRoot, PIPELINE), "utf8"));
-  const inicioLaco = fontePipeline.indexOf("for (let i = 0; i < blocos.length; i++) {");
+  // V30, item 3 — o laço passou a começar em `blocosJaConcluidos.length`,
+  // não mais em 0: uma RETOMADA não pode reenviar bloco já pago. A âncora
+  // segue a mesma técnica de sempre (texto do CÓDIGO, não um comentário).
+  const inicioLaco = fontePipeline.indexOf("for (let i = blocosJaConcluidos.length; i < blocos.length; i++) {");
   const ancoraFim = fontePipeline.indexOf("requestIds.push(bloco.requestId);", inicioLaco);
   if (inicioLaco < 0 || ancoraFim < 0) {
     failures.push(
       `wan-orchestration: não encontrei o laço de vários blocos em ${PIPELINE} pelas âncoras esperadas ` +
-        '("for (let i = 0; i < blocos.length; i++) {" … "requestIds.push(bloco.requestId);") — a guarda ' +
-        "não pode opinar sobre um trecho que não achou.",
+        '("for (let i = blocosJaConcluidos.length; i < blocos.length; i++) {" … ' +
+        '"requestIds.push(bloco.requestId);") — a guarda não pode opinar sobre um trecho que não achou.',
     );
   } else {
     const trechoDoLaco = fontePipeline.slice(inicioLaco, ancoraFim);

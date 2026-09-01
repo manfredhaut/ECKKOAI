@@ -160,15 +160,16 @@ export async function checkVoiceTuningPolicy(): Promise<VoiceTuningCheckResult> 
   // ---------------------------------------------------------------------------
   // G-3 — os call sites de produto, por FORMA.
   //
-  // CINCO: um do caminho HeyGen e quatro do fal (criação, refazer imagem,
-  // refazer vídeo e aprovação do vídeo mudo). Todos passam por
-  // `narrarSincronizar`/`generateVideoHeygen`, que ressintetizam.
+  // SEIS: um do caminho HeyGen e cinco do fal (criação, refazer imagem,
+  // refazer vídeo, aprovação do vídeo mudo e retomada de blocos — V30, item
+  // 3). Todos passam por `narrarSincronizar`/`generateVideoHeygen`, que
+  // ressintetizam.
   // ---------------------------------------------------------------------------
   const videos = lerDaRaiz(ROTA_VIDEOS);
   const chamadas = (videos.match(/voiceTuning: voiceTuningDoAvatar\(avatar\)/g) ?? []).length;
-  if (chamadas !== 5) {
+  if (chamadas !== 6) {
     failures.push(
-      `voz: os ajustes do avatar não chegam aos cinco call sites de geração (achei ${chamadas} de 5 em ` +
+      `voz: os ajustes do avatar não chegam aos seis call sites de geração (achei ${chamadas} de 6 em ` +
         "routes/videos.ts). Um call site sem `voiceTuning` sintetiza com o default do fornecedor, e o " +
         "vídeo sai com outra voz que a prévia — sem erro, sem log e sem diferença de duração.",
     );

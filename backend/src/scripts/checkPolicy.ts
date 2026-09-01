@@ -66,6 +66,7 @@ import { checkPreflightSummaryPolicy } from "./checkPreflightSummaryPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
 import { checkFalPollRecoveryPolicy } from "./checkFalPollRecoveryPolicy.js";
+import { checkBlockResumePolicy } from "./checkBlockResumePolicy.js";
 import { checkScriptLimitPolicy } from "./checkScriptLimitPolicy.js";
 import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
@@ -1025,6 +1026,16 @@ async function main(): Promise<void> {
   const falPollRecovery = await checkFalPollRecoveryPolicy();
   falPollRecovery.failures.forEach((f) => failures.push(f));
   falPollRecovery.notes.forEach((n) => note(n));
+
+  // --- 24o-vicies. retomada de vídeo fracionado sem regerar bloco pago —
+  // V30, itens 1-5: seed persistido e reutilizado, índice de bloco
+  // explícito, retomada nunca automática, bloco pago nunca reenviado.
+  // `fetch` substituído dentro da própria checagem (G-1 roda em "live" só
+  // para poder inspecionar o corpo submetido; nenhum byte sai para a
+  // internet) — sem custo, sem rede real, sem geração.
+  const blockResume = await checkBlockResumePolicy();
+  blockResume.failures.forEach((f) => failures.push(f));
+  blockResume.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //
