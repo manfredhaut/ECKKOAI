@@ -4,10 +4,10 @@ Always respond in Brazilian Portuguese.
 >
 > O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
 > — não duplicado aqui de propósito, para não haver dois textos podendo
-> discordar um do outro. **Dentro da Seção 6, o bloco mais novo é "FECHAMENTO
-> PARA TROCA DE CONTA (27/08)", no FIM da seção — leia-o antes dos blocos de
-> 26/08 e 25/08 que vêm antes dele, que estão superados no que os três
-> conflitarem.**
+> discordar um do outro. **Dentro da Seção 6, o bloco mais novo é
+> "FECHAMENTO — V34 (01/09)", no FIM da seção — leia-o antes de todos os
+> blocos anteriores (28/08, 27/08, 26/08, 25/08), que estão superados no
+> que algum deles conflitar.**
 > Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
 > existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
 > isso o texto antigo saiu daqui.
@@ -553,3 +553,61 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > **Nenhuma chamada faturável ocorreu hoje até o fechamento desta sessão** (contador em 0, MEDIDO — ver (b), inclusive depois do restart do backend). O passo acima É a primeira, e vai cobrar de verdade.
 >
 > **Ambiente ao fechar esta sessão: ARMADO EM LIVE**, mesma configuração dos fechamentos anteriores, reconfirmada sem divergência — ver tabela em (b).
+
+> ⚠️ **FECHAMENTO — V34 (01/09/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão de IMPLEMENTAÇÃO (não teste pago), encadeada a partir do commit `0e03141` (fechamento do V33). Rodada MODE: CORREÇÃO, CUSTO US$ 0,00 do lado do assistente — **nenhuma geração paga foi disparada nesta sessão**, todo o custo mencionado abaixo é ESTIMADO para o clique do operador.
+>
+> ### (a) HEAD e o que foi commitado
+>
+> **Commit único: `1430193`** — 28 arquivos, 1677 inserções / 233 remoções. Seis partes:
+>
+> 1. **Duração-alvo vira parâmetro de verdade (itens 1-4).** `target_duration_seconds` persiste na linha do vídeo (migration 074), viaja por `/approve` até `compararAlvoComFala` (falPipeline.ts), e recusa ANTES de `animar()` (nunca antes de `narrar()`, que já foi pago ao ElevenLabs) quando a fala sintetizada diverge do alvo em mais de 8% — fronteira MEDIDA por execução direta: 8,0% passa, 8,1% recusa, nos dois sentidos (`checkAlvoDeDuracaoPolicy.ts`, novo). A recusa entra em `classifyVendorFailure` junto de `RoteiroInvalidoError`, mapeando para 422. O resumo "o que vai ser enviado" ganhou a 8ª linha (Duração-alvo).
+> 2. **O vídeo para junto com a fala (itens 5-6).** A margem antes do lipsync caiu de 1s para 0,5s; depois do lipsync, `apararSobraMuda`/`apararVideoFinal` (ffmpeg.ts/falPipeline.ts) cortam o vídeo sincronizado com PRECISÃO de ffmpeg para terminar no máximo 0,3s depois do fim do áudio — MEDIDO com ffmpeg real contra a fixture local (`checkTrimOvershootPolicy.ts`, novo): cortou 5,000s → 2,520s pedindo 2,500s, dentro da folga de 1 quadro.
+> 3. **Prompt do Wan 3.0 alinhado às práticas documentadas (itens 7-12).** Referências rotuladas "Image 1"/"Image 2" (mesma ORDEM de sempre — composta primeiro, foto real depois, invariante V24/G-2b preservada); fala do bloco citada entre aspas para o ritmo labial; proibição explícita de trilha/voz gerada; cláusula de escala por duração; teto de prompt em 20.000 caracteres (declarado pelo OPERADOR — **NÃO VERIFICADO** contra a doc oficial da fal, que por WebFetch nesta sessão não afirma limite nenhum, nem 1.500 nem 20.000); `enable_thinking: false` explícito.
+> 4. **4:5 (Feed do Instagram) reativado no tier Normal por DERIVAÇÃO (itens 13-17).** `aspectRatioParaFornecedor` troca "4:5" por "9:16" em todo ponto que fala com a fal (compor e animar — o Wan não tem 4:5 no enum); `/approve-video` deriva o corte central por SOFTWARE (`deriveVariantsForVideo`, nunca antes ligada ao caminho da fal) quando `video.aspect_ratio === "4:5"`. Chip sempre clicável; troca forçada removida. `checkNormalAspectRatioPolicy.ts` reescrita.
+> 5. **Tela de retomada de blocos (item 18).** `ResumeBlocksPanel.tsx`, na Biblioteca de Vídeos, para vídeos travados em `processing`/`poll_timeout` — consome `GET /videos/:id/resume-info` (custo zero) e `POST /videos/:id/resume-blocks`.
+> 6. **Ensaio de fixture (item 19).** `checkFixtureFormatEnsaioPolicy.ts`, novo — deriva os 4 formatos do produto (16:9, 9:16, 1:1, 4:5) de um master real via `deriveOneVariant` e mede CADA ARQUIVO DE SAÍDA por `ffprobe`: 16:9→1136×640 (1,7750), 9:16→360×640 (0,5625), 1:1→640×640 (1,0000), 4:5→512×640 (0,8000) — todos dentro de 1% da proporção pedida.
+>
+> **Achado e corrigido NO CAMINHO, antes do commit:** `checkBlockResumePolicy.ts` não desativava o recorte final novo (`apararSobraFinal`) no teste de tomada única — uma mutação no freio de `pararApos` fazia essa guarda travar em `ffmpeg` real contra URL fake ANTES de `checkFalVideoApprovalPolicy.ts` sequer rodar, mascarando o próprio mutante que deveria ter reprovado (18 de 26 mutantes novos/alterados chegaram a aparecer "inertes" nas passadas intermediárias por este e por outros 3 motivos: `expect` escrito de cabeça sem bater com a mensagem real da checagem, uma checagem nova que faltava por completo, e um `if (false)` literal que quebra a tipagem do TypeScript em bloco "definitivamente inalcançável" — mesmo gotcha já documentado em `checkFalVideoApprovalPolicy.ts`, resolvido com `String(x) === "sentinela"`). Todos corrigidos e reconfirmados um a um ANTES do commit.
+>
+> ### (b) Reconfirmação padrão
+>
+> | Verificação | Resultado |
+> |---|---|
+> | `tsc` (backend e frontend) | EXIT 0 nos dois |
+> | Gate estático (fixture) | EXIT 0 — 483 mutantes declarados (era 478 no fechamento do V33), 475 casam por arquivo + 8 de ambiente |
+> | Passada `--guard` dos 26 mutantes novos/alterados desta rodada | **26/26 reprovaram de verdade**, árvore limpa em cada aplicação — MEDIDO depois de corrigir os 4 achados acima |
+> | Passada COMPLETA (483 mutantes, sem filtro) | **Disparada em background ao fechar esta sessão** — log em `_arnes-logs/mutants-v34-completa-2026-09-01-{a,b}.log`. Resultado NÃO CONHECIDO no momento em que este texto foi escrito |
+> | Containers | 4/4 healthy — backend E frontend REINICIADOS nesta sessão (ambos `RestartCount=0`, sem crash) para o código novo e a migration 074 entrarem em vigor — sem watch dentro do Docker, um `tsc`/gate verde no disco não garante o processo em memória atualizado |
+> | Migration 074 | Aplicada com sucesso no restart — confirmada em `schema_migrations` |
+> | Hash container × commit `1430193` | `falPipeline.ts` bate byte a byte entre `git show HEAD:...` e o conteúdo lido de dentro do container backend |
+> | `PROVIDER_MODE` | `live`, `PROVIDER_LIVE_CONFIRM` len=28 — confirmado no PROCESSO após os dois restarts |
+> | ⚠️ `PROVIDER_LIVE_MAX_GENERATIONS` | **DIVERGE**: processo = `1` (o que efetivamente vale agora, e é o que este fechamento pediu para deixar); `docker compose config` (o `.env`) = `3`. Um `docker compose up -d` ANTES do teste do operador reconciliaria os dois PARA 3, não para 1 — se isso não for desejado, o `.env` precisa ser corrigido à mão antes, ou o operador simplesmente evita `up -d`/reiniciar o backend entre agora e o teste |
+> | Contador de vídeos pagos hoje | **2** (não 0) — MEDIDO por query direta, `status` "erro" e "aguardando aprovação", tier normal, ambos criados às 00h de 01/09, ANTES desta sessão começar (a migration 073 anterior a eles só foi aplicada às 11h27 do mesmo dia — são resíduo de teste anterior a esta sessão, não algo que ela causou) |
+> | Verificação visual (browser real, logado) | Biblioteca de Vídeos carrega sem erro de console novo, tabela renderiza as ~50 linhas existentes normalmente; nenhuma delas está em `processing`/`poll_timeout`, então o botão "Retomar geração" **não pôde ser visto na tela** — só confirmado que a ausência dele não quebra nada |
+>
+> ### (c) Custo por etapa e teto — para o PRIMEIRO clique do operador (item 21)
+>
+> **Saldo da fal.ai antes do teste: NÃO VERIFICADO nesta sessão** — nenhuma chamada de leitura ao painel da fal foi feita (o assistente não tem essa credencial em mãos); o operador precisa conferir o saldo direto no painel da fal.ai antes de clicar em "Gerar".
+>
+> Tier **Normal**, por etapa (`PRECOS_FAL`, providerCost.ts — preço de lista lido do painel em 13/08, nunca conferido contra fatura real):
+> - `compor` (a imagem composta): **US$ 0,08 fixo**, sempre, qualquer duração.
+> - `animar` (o vídeo mudo, Wan 3.0): **US$ 0,05 por segundo** de vídeo pedido.
+> - `sincronizar` (narrar + lipsync): **US$ 0,05 por segundo** de ÁUDIO real (não do vídeo).
+> - **Teto da corrida** (o que barra ANTES de gastar mais que isso): `tetoNormalUsd(segundos) = (0,08 + 0,05×s + 0,05×s) × 1,2`, arredondado — por exemplo, um alvo de 15s tem teto ≈ **US$ 1,90**. Tier Premium (Seedance) usa teto fixo `PIPELINE_TETO_USD_PREMIUM = US$ 10,00` — não tocado nesta rodada.
+> - `PROVIDER_LIVE_MAX_GENERATIONS=1` (no processo — ver divergência acima): só UMA corrida live é permitida antes de o processo recusar sozinho.
+>
+> ### (d) PRÓXIMO PASSO EXATO
+>
+> 1. Conferir o saldo da fal.ai no painel do fornecedor (NÃO VERIFICADO por este fechamento — ver (c)).
+> 2. **Não rodar `docker compose up -d` nem reiniciar o backend antes do teste** — isso reconciliaria `PROVIDER_LIVE_MAX_GENERATIONS` para 3 (o valor do `.env`), não para o 1 que está valendo agora no processo.
+> 3. Em `http://dev-c77a5b.twinai.localhost:8090`, passo 1 "Configurar avatar" → qualquer avatar já treinado.
+> 4. Passo 2 "Roteiro" → escrever um roteiro **curto** (para caber na tomada única, ≤30s estimados) e **escolher uma duração-alvo explícita** (não deixar em "Mais"/vazio) — é o único jeito de exercitar o item 1-4 desta rodada (a comparação alvo×fala) na primeira tentativa.
+> 5. Passo 3 "Cena" → tier **"Normal"** (nunca "Simples"/HeyGen — fora de escopo desta rodada) → opcionalmente escolher **"Feed do Instagram" (4:5)** para exercitar a derivação nova (item 13-17).
+> 6. Passo 4 "Gerar" → conferir que o resumo mostra a linha **"Duração-alvo"** (8ª linha, item 1-2 desta rodada) → Gerar.
+> 7. **Resultado esperado: a corrida para em "compor"** (imagem composta aguardando aprovação) — comportamento de sempre, não é erro.
+> 8. Aprovar a imagem → a corrida narra, compara alvo×fala (recusa aqui, sem custo de animar, se o desvio passar de 8%) e anima, parando no vídeo MUDO aguardando aprovação.
+> 9. Aprovar o vídeo mudo → narra/sincroniza e entrega o vídeo final. **Se pediu 4:5**, o arquivo servido deve ser o corte central derivado (mesma resolução vertical do master 9:16, cortado nas laterais) — não um vídeo gerado de novo.
+> 10. Em `docker compose logs -f backend`, procurar por `fal_pipeline_gasto_autorizado` (para ver o custo autorizado por etapa), `duration` no corpo enviado ao Wan (deve refletir `ceil(áudio real + 0,5s)`, não mais `+1s`), `aspect_ratio` (deve ser `9:16` no payload enviado à fal mesmo quando o vídeo foi pedido em 4:5), e o campo `target_duration_seconds` gravado na linha do vídeo.
+> 11. Medir a duração REAL do vídeo mudo entregue contra `duracaoEscolhida + 0,3s` (o teto de sobra do item 5-6) — é a primeira vez que este corte roda contra um vídeo real, não só a fixture local.
+>
+> **A tela de retomada de blocos (item 18) só aparece sozinha** quando um vídeo Normal fracionado (roteiro >30s estimados) travar num `poll_timeout` de verdade — não há como forçar isso sem esperar uma falha real ou fracionar um roteiro bem mais longo que os passos acima sugerem. Testá-la exige ou paciência para uma falha orgânica, ou uma segunda rodada com um roteiro deliberadamente longo.
