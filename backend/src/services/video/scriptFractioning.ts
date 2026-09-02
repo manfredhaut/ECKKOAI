@@ -207,7 +207,14 @@ export function formatarJanela(janela: JanelaDeTempo): string {
   return `[${mmss(janela.inicioSegundos)}-${mmss(janela.fimSegundos)}]`;
 }
 
-const MARCADOR_DE_JANELA = /\[\d{1,2}:\d{2}-\d{1,2}:\d{2}\]/g;
+/**
+ * EXPORTADA — ETAPA 3 (02/09/2026): `routes/videos.ts` reusa este MESMO
+ * padrão logo após `translateDirection`, para recusar ANTES de qualquer
+ * chamada paga (compor/narrar) se um marcador sobreviver por qualquer
+ * motivo não previsto na condição de tomada única. Fonte única — o mesmo
+ * padrão que `direcaoPorJanela` usa para fatiar, não uma cópia por texto.
+ */
+export const MARCADOR_DE_JANELA = /\[\d{1,2}:\d{2}-\d{1,2}:\d{2}\]/g;
 
 /**
  * Fatiar a Interpretação TRADUZIDA em uma direção por bloco — BUG E, RODADA 3.

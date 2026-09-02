@@ -35,7 +35,7 @@ import { complete } from "../providers/providerRegistry.js";
 import type { ScriptVendor } from "../providers/vendorCatalog.js";
 import { recordProviderUsage } from "../billing/usageTracking.js";
 import { logEvent } from "../log/safeLog.js";
-import { formatarJanela, type JanelaDeTempo } from "./scriptFractioning.js";
+import { formatarJanela, MARCADOR_DE_JANELA, type JanelaDeTempo } from "./scriptFractioning.js";
 
 /**
  * O idioma da INTERFACE, que é o gatilho — e não o idioma detectado no texto.
@@ -207,7 +207,20 @@ async function reutilizar(tenantId: string, source: string): Promise<string | nu
       LIMIT 1`,
     [tenantId, source],
   );
-  return rows[0]?.motion_prompt_en ?? null;
+  const encontrado = rows[0]?.motion_prompt_en ?? null;
+  // ACHADO 02/09/2026, teste real na tela — a metade que faltava da mesma
+  // regra do comentário acima ("o cache não serve à tradução segmentada"):
+  // este ramo só roda com `!segmentando` (quem chama já garante isso), então
+  // TODA chamada que chega aqui quer ZERO marcadores agora. Uma linha salva
+  // ANTES desta correção existir pode ter sido gravada QUANDO a mesma
+  // Interpretação ainda segmentava (`fracionarRoteiro` sem o limiar de
+  // tomada única) — reaproveitá-la vazaria `[mm:ss-mm:ss]` para um vídeo que
+  // não vai fatiar nada. Tratado como cache-miss força tradução nova, limpa.
+  // `matchAll`, não `.test()`: `MARCADOR_DE_JANELA` tem `/g`, e `.test()`
+  // num regex global é POSICIONAL — chamadas sucessivas no mesmo processo
+  // avançariam `lastIndex` e dariam falso-negativo na segunda vez.
+  if (encontrado && [...encontrado.matchAll(MARCADOR_DE_JANELA)].length > 0) return null;
+  return encontrado;
 }
 
 /**

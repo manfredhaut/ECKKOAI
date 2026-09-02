@@ -101,6 +101,7 @@ import {
   videoTierParaPipeline,
   vendorRequiredByTier,
   FalPollTimeoutError,
+  LIMITE_TAKE_UNICO_SEGUNDOS,
   type EntradaDeComposicao,
   type VideoTier,
 } from "../services/video/falPipeline.js";
@@ -109,6 +110,7 @@ import {
   fracionarRoteiro,
   janelasDosBlocos,
   direcaoDoPrimeiroBloco,
+  MARCADOR_DE_JANELA,
   type BlocoDeAnimacao,
 } from "../services/video/scriptFractioning.js";
 import {
@@ -1656,8 +1658,23 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // os dois SEMPRE chegam aqui com `blockWindows` indefinido, e por isso
       // `translateDirection` nunca pede segmentação para eles — o texto que
       // recebem é BYTE A BYTE o de antes desta rodada.
+      //
+      // ETAPA 2 (02/09/2026) — causa raiz do timecode vazado em vídeos que
+      // fracionam por FRASE (`fracionarRoteiro`, teto de caracteres por
+      // bloco do Wan 2.6) mas animam por TOMADA ÚNICA (`falPipeline.ts`,
+      // `LIMITE_TAKE_UNICO_SEGUNDOS`, Wan 3.0): os dois critérios divergem
+      // para o MESMO roteiro, e um roteiro curto podia pedir segmentação
+      // aqui mesmo sabendo que `animarTomadaUnicaComAudioReal` nunca ia
+      // fatiar o resultado — o marcador `[mm:ss-mm:ss]` sobrevivia até o
+      // prompt final e o linter determinístico reprovava DEPOIS de compor e
+      // narrar já terem sido pagos. Replica a MESMA condição de
+      // `falPipeline.ts:1803` — não o cálculo de fracionamento, a condição
+      // de ELEGIBILIDADE para tomada única — porque é essa condição, e não
+      // o teto de caracteres por bloco, que decide de fato se o vídeo vai
+      // fracionar na hora de animar.
       let blockWindows: ReturnType<typeof janelasDosBlocos> | undefined;
-      if (tierVideo === "normal") {
+      const elegivelParaTomadaUnica = script.length / PIPELINE_CHARS_PER_SECOND <= LIMITE_TAKE_UNICO_SEGUNDOS;
+      if (tierVideo === "normal" && !elegivelParaTomadaUnica) {
         try {
           const blocos = fracionarRoteiro(script);
           if (blocos.length > 1) blockWindows = janelasDosBlocos(blocos);
@@ -1677,6 +1694,44 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           blockWindows,
         });
         motionPromptEn = traducao.english;
+
+        // ETAPA 3 (02/09/2026) — GUARDA DE CUSTO ZERO. Mesma classe de
+        // checagem de `lintarPromptDoBlocoWan` (falPipeline.ts), movida
+        // para o ponto mais cedo possível: aqui, ainda não existe linha em
+        // `videos`, não houve INSERT, não houve compor nem narrar. O
+        // linter original só roda dentro de `animarUmBloco`, com compor
+        // (e, no caminho de tomada única, narrar) já pagos — foi essa
+        // distância que custou US$0,08 + a síntese de voz inteira em cada
+        // uma das tentativas que motivaram esta investigação.
+        //
+        // `traducao.segmented` distingue os dois casos válidos: SÓ quando
+        // o modelo foi de fato instruído a segmentar (`segmented: true`,
+        // condicionado a `blockWindows.length > 1`) é que marcadores são
+        // esperados, e a contagem tem de bater com `blockWindows.length`
+        // — o MESMO invariante que `direcaoPorJanela` exige para fatiar
+        // sem cair no fallback. Em qualquer outro caso (não segmentado,
+        // reaproveitado do cache, ou locale já em inglês — que devolve o
+        // texto do usuário SEM tocar, mesmo com `blockWindows` definido
+        // para um roteiro que vai fracionar de verdade) o esperado é
+        // ZERO — exigir a contagem cheia aqui quebraria esse caminho
+        // legítimo, que hoje já funciona por fallback (texto inteiro por
+        // bloco, sem instrução por janela).
+        const marcadoresEncontrados = [...motionPromptEn.matchAll(MARCADOR_DE_JANELA)].length;
+        const marcadoresEsperados = traducao.segmented ? (blockWindows?.length ?? 0) : 0;
+        if (marcadoresEncontrados !== marcadoresEsperados) {
+          logEvent("error", "direction_translation_marker_mismatch", {
+            tenantId: req.tenantId,
+            marcadoresEncontrados,
+            marcadoresEsperados,
+            segmented: traducao.segmented,
+          });
+          return reply.code(502).send({
+            error: "direction_translation_failed",
+            message:
+              "A tradução da Interpretação saiu com marcadores de tempo inconsistentes com o fracionamento " +
+              "esperado, e por isso não gerei o vídeo. Nada foi cobrado. Tente novamente.",
+          });
+        }
       } catch (err) {
         if (err instanceof DirectionTranslationError) {
           // RECUSA, e nunca "segue sem traduzir". O precedente contrário está
