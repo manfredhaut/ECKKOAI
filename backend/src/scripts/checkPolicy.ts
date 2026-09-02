@@ -119,6 +119,7 @@ import { checkWanBlockOrchestrationPolicy } from "./checkWanBlockOrchestrationPo
 import { checkColorMatchDefaultPolicy } from "./checkColorMatchDefaultPolicy.js";
 import { checkWanPromptQuoteHeuristicPolicy } from "./checkWanPromptQuoteHeuristicPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
+import { checkTomadaUnicaMarkerCachePolicy } from "./checkTomadaUnicaMarkerCachePolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -1064,6 +1065,17 @@ async function main(): Promise<void> {
   const wan3TomadaUnica = await checkWan3TomadaUnicaPolicy();
   wan3TomadaUnica.failures.forEach((f) => failures.push(f));
   wan3TomadaUnica.notes.forEach((n) => note(n));
+
+  // --- 24o-quinquies. regressão do timecode vazado — os 3 invariantes que
+  // fecharam o primeiro vídeo Normal/Wan 3.0 ponta a ponta (02/09/2026):
+  // routes/videos.ts só pede segmentação quando o roteiro excede a tomada
+  // única, a guarda pós-tradução recusa marcador sobrando ANTES de qualquer
+  // chamada paga, e reutilizar() não devolve cache contaminado. G-1/G-2 por
+  // leitura de arquivo; G-3/G-4 por execução real de translateDirection,
+  // fetch/pool.query substituídos — sem custo, sem rede real.
+  const tomadaUnicaMarkerCache = await checkTomadaUnicaMarkerCachePolicy(process.env.REPO_ROOT ?? "/repo");
+  tomadaUnicaMarkerCache.failures.forEach((f) => failures.push(f));
+  tomadaUnicaMarkerCache.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //
