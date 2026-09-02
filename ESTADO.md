@@ -15,6 +15,18 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
+> ⚠️ **OITAVA DIVERGÊNCIA, MEDIDA em 02/09/2026 — este arquivo NÃO foi
+> reconciliado nesta sessão, por escopo.** HEAD real no fechamento:
+> `4771279` (dois commits à frente de `44b2159`) — 14 commits à frente do
+> topo da §1 abaixo (`81e5e9d`). A sessão de 02/09 fechou as 3 causas raiz
+> de um bug que impedia qualquer vídeo Normal/Wan 3.0 de completar (marcador
+> `[mm:ss-mm:ss]` vazado no prompt do Wan), com o PRIMEIRO vídeo completo
+> ponta a ponta neste tier — resumo completo no **fechamento mais novo do
+> CLAUDE.md** ("FECHAMENTO — primeiro vídeo Normal/Wan 3.0 completo ponta a
+> ponta", fim da Seção 6). Reconciliar a §1 inteira (14 commits, várias
+> sessões) ficou fora do escopo pedido nesta rodada — é a mesma dívida que
+> as sete divergências anteriores já registram, não um incidente novo.
+
 Atualizado em **31/08/2026 (V29)**. HEAD **`81e5e9d`**, árvore limpa. Esta
 sessão fechou o V28 (poll timeout recuperável na fal) em **3 commits
 nomeados**: `af1c2f3` (itens 3-6: `FalPollTimeoutError`, despacho fal-aware
