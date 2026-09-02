@@ -74,6 +74,13 @@ export interface Video {
    * fornecedor; esta é o que a PESSOA pediu, antes de qualquer geração.
    */
   target_duration_seconds: number | null;
+  /**
+   * Recusas CONSECUTIVAS da guarda de folga de sincronização (o vídeo
+   * animado saiu mais curto que a fala real) — migration 075. Escalona a
+   * margem do próximo "Refazer vídeo"; reseta para 0 quando a etapa passa.
+   * Ver `FolgaDeSincronizacaoInsuficienteError`, falPipeline.ts.
+   */
+  sync_folga_recusas: number;
   status: VideoStatus;
   output_url: string | null;
   provider_job_id: string | null;

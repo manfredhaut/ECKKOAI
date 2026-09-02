@@ -398,6 +398,12 @@ async function correr(
       // Item 8, 29/08 — `assertAspectRatio` roda `ffprobe` DE VERDADE, e a
       // URL do vídeo aqui é fake (`fetch` substituído, o binário não é).
       verificarAspectRatio: false,
+      // 02/09/2026 — mesma razão acima: a guarda de folga de sincronização
+      // também roda `ffprobe` DE VERDADE contra a URL do vídeo animado, e
+      // ela é fake aqui — sem desligar, a submissão de sincronizar nunca
+      // sai (a checagem lança ANTES dela, diferente de `apararVideoFinal`,
+      // que roda DEPOIS e cujo erro esta prova já tolerava).
+      verificarFolgaSincronizar: false,
     });
     gastoPrevistoUsd = r.gastoPrevistoUsd;
   } catch (err) {

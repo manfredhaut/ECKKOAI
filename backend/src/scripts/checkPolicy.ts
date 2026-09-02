@@ -120,6 +120,7 @@ import { checkColorMatchDefaultPolicy } from "./checkColorMatchDefaultPolicy.js"
 import { checkWanPromptQuoteHeuristicPolicy } from "./checkWanPromptQuoteHeuristicPolicy.js";
 import { checkMutantRegistryPolicy } from "./checkMutantRegistryPolicy.js";
 import { checkTomadaUnicaMarkerCachePolicy } from "./checkTomadaUnicaMarkerCachePolicy.js";
+import { checkSyncFolgaPolicy } from "./checkSyncFolgaPolicy.js";
 import type { Mutant } from "./mutants.js";
 import {
   DENY_ENFORCED_FOR,
@@ -1076,6 +1077,14 @@ async function main(): Promise<void> {
   const tomadaUnicaMarkerCache = await checkTomadaUnicaMarkerCachePolicy(process.env.REPO_ROOT ?? "/repo");
   tomadaUnicaMarkerCache.failures.forEach((f) => failures.push(f));
   tomadaUnicaMarkerCache.notes.forEach((n) => note(n));
+
+  // --- 24o-sexies. folga de sincronização — o vídeo animado tem folga real
+  // suficiente sobre a fala real, medido por ffprobe contra a fixture local
+  // (02/09/2026, achado da investigação de mismatch de duração). Custo
+  // ZERO: fetch substituído, ffprobe real só contra a fixture versionada.
+  const syncFolga = await checkSyncFolgaPolicy();
+  syncFolga.failures.forEach((f) => failures.push(f));
+  syncFolga.notes.forEach((n) => note(n));
 
   // --- 25o. todo mutante declarado ainda casa 1x no alvo ------------------
   //

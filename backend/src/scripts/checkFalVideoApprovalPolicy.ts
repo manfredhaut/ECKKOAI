@@ -572,6 +572,9 @@ export async function checkFalVideoApprovalPolicy(): Promise<FalVideoApprovalChe
         // rodaria `ffmpeg` de VERDADE contra a URL fake abaixo. Mesmo
         // padrão de `apararSobraFinal: false` nas guardas irmãs.
         apararSobraFinal: false,
+        // 02/09/2026 — mesma razão acima: a guarda de folga de
+        // sincronização também roda `ffprobe` de VERDADE.
+        verificarFolgaSincronizar: false,
       },
       "https://exemplo.fal.invalido/imagem-composta-aprovada.png",
       "req-da-composicao",
@@ -627,6 +630,9 @@ export async function checkFalVideoApprovalPolicy(): Promise<FalVideoApprovalChe
         // de VERDADE contra a URL fake abaixo. Mesmo padrão de
         // `verificarAspectRatio: false` noutras guardas.
         apararSobraFinal: false,
+        // 02/09/2026 — mesma razão acima: a guarda de folga de
+        // sincronização também roda `ffprobe` de VERDADE.
+        verificarFolgaSincronizar: false,
       },
       "https://exemplo.fal.invalido/video-mudo-aprovado.mp4",
       "https://exemplo.fal.invalido/imagem-composta-aprovada.png",

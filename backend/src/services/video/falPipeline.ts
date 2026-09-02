@@ -40,7 +40,7 @@ import { readUpload } from "../storage.js";
 import { PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd, tetoNormalUsd } from "../billing/providerCost.js";
 import { custoDe } from "../billing/providerPrices.js";
 import { HEYGEN_MAX_SCRIPT_CHARS, estimateSecondsFromChars } from "./scriptDuration.js";
-import { concatVideos, assertAspectRatio, apararSobraMuda } from "./ffmpeg.js";
+import { concatVideos, assertAspectRatio, apararSobraMuda, probeVideo } from "./ffmpeg.js";
 import {
   fracionarRoteiro,
   segundosTotaisDosBlocos,
@@ -1162,6 +1162,25 @@ export interface FalPipelineInput {
    * `DESVIO_ALVO_MAXIMO_FRACAO`. Só tier "normal" — Premium fora de escopo.
    */
   targetDurationSeconds?: number | null;
+  /**
+   * Somada a `MARGEM_DURACAO_WAN3_SEGUNDOS` só na tomada única — margem
+   * ESCALONADA, achado real de 02/09/2026 (folga insuficiente entre o
+   * vídeo animado e a fala real). `/redo-video` a calcula a partir de
+   * `video.sync_folga_recusas` (0,5s por recusa consecutiva) e a passa
+   * aqui, para não repetir cegamente o mesmo déficit de duração numa nova
+   * tentativa. Ausente/0: comportamento de sempre.
+   */
+  margemDuracaoWan3ExtraSegundos?: number;
+  /**
+   * A checagem de folga de sincronização (item 4 da investigação de
+   * mismatch de duração, 02/09/2026) roda `ffprobe` de VERDADE sobre a URL
+   * do vídeo animado — mesmo com `fetch` substituído, o binário `ffmpeg`
+   * não é, e tentaria alcançar a URL fake de uma guarda pela rede real.
+   * `false` só para a guarda; o produto nunca desliga isto (default `true`
+   * quando ausente) — mesmo padrão de `verificarAspectRatio`/
+   * `apararSobraFinal` acima.
+   */
+  verificarFolgaSincronizar?: boolean;
 }
 
 export interface FalPipelineResult {
@@ -1884,6 +1903,68 @@ export const LIMITE_TAKE_UNICO_SEGUNDOS = 30;
 export const MARGEM_DURACAO_WAN3_SEGUNDOS = 0.5;
 
 /**
+ * A FOLGA MÍNIMA aceita entre a duração REAL do vídeo animado, medida por
+ * `ffprobe` no arquivo que o Wan de fato entregou, e a duração REAL da
+ * fala — 02/09/2026, achado da investigação de mismatch de duração.
+ *
+ * ┌─ Por que 0,1s, e não um número maior "por segurança" ────────────────────┐
+ * │ `MARGEM_DURACAO_WAN3_SEGUNDOS` (acima) já garante, por construção, que   │
+ * │ o `duration` PEDIDO ao Wan nunca fica a menos de 0,5s da fala (a conta   │
+ * │ `ceil(fala + 0,5) - fala` está sempre em [0,5s, 1,49s]). Esta constante  │
+ * │ não existe para substituir aquela margem — existe para medir se o Wan   │
+ * │ RESPEITOU o pedido, algo que este projeto nunca verificou (o comentário  │
+ * │ de `MARGEM_DURACAO_WAN3_SEGUNDOS` já dizia "NÃO VERIFICADO... que 0,5s   │
+ * │ baste"). Por isso o limiar aqui é pequeno: não é uma segunda margem de   │
+ * │ segurança arbitrária, é o piso abaixo do qual dizemos "a margem PEDIDA   │
+ * │ não sobreviveu à entrega real". 0,1s ~ 2-3 quadros a 24-30fps — folga    │
+ * │ menor que isso é indistinguível de arredondamento de quadro do próprio   │
+ * │ fornecedor, não uma garantia real de que a fala cabe inteira.            │
+ * └────────────────────────────────────────────────────────────────────────┘
+ *
+ * NÃO VERIFICADO por vídeo real que o Wan alguma vez viole a margem de
+ * 0,5s — esta guarda existe porque a suposição nunca tinha sido MEDIDA
+ * nenhuma vez, não porque uma violação já foi observada.
+ */
+export const FOLGA_MINIMA_SINCRONIZAR_SEGUNDOS = 0.1;
+
+/**
+ * Quanto `/redo-video` (routes/videos.ts) soma a `margemDuracaoWan3ExtraSegundos`
+ * por CADA recusa consecutiva (`videos.sync_folga_recusas`) — decisão do
+ * operador, 02/09/2026: escalonar em vez de repetir a mesma margem às
+ * cegas numa nova tentativa manual e paga.
+ */
+export const ESCALADA_MARGEM_POR_RECUSA_SEGUNDOS = 0.5;
+
+/**
+ * O vídeo animado, medido de verdade, não tem folga suficiente sobre a
+ * fala real para sincronizar sem risco de `sync_mode: cut_off` cortar o
+ * FIM da narração em silêncio. Lançada ANTES de `custoDaEtapa`/
+ * `autorizarGasto` para `sincronizar` — nada é cobrado nesta etapa.
+ *
+ * `routes/videos.ts` (`/approve-video`) trata esta classe à parte do
+ * catch-all de `classifyVendorFailure`: incrementa
+ * `videos.sync_folga_recusas`, devolve o vídeo para
+ * `awaiting_approval_video` (não para `error` — "Refazer vídeo" continua
+ * disponível) e nunca chama `decidirEEstornar` (nada foi autorizado para
+ * estornar).
+ */
+export class FolgaDeSincronizacaoInsuficienteError extends Error {
+  constructor(
+    readonly duracaoVideoSegundos: number,
+    readonly duracaoFalaSegundos: number,
+  ) {
+    const folga = duracaoVideoSegundos - duracaoFalaSegundos;
+    super(
+      `sincronizar: o vídeo animado saiu com ${duracaoVideoSegundos.toFixed(2)}s, a fala mede ` +
+        `${duracaoFalaSegundos.toFixed(2)}s — folga de ${folga.toFixed(2)}s, abaixo do mínimo seguro de ` +
+        `${FOLGA_MINIMA_SINCRONIZAR_SEGUNDOS}s. Sincronizar agora arriscaria cortar o fim da narração em ` +
+        "silêncio (sync_mode: cut_off corta o lado mais curto dos dois). Nada foi cobrado nesta etapa.",
+    );
+    this.name = "FolgaDeSincronizacaoInsuficienteError";
+  }
+}
+
+/**
  * A SOBRA MÁXIMA de vídeo mudo tolerada no FINAL do vídeo entregue, depois
  * do corte de `apararSobraMuda` (ffmpeg.ts) — V34, item 5 (01/09/2026).
  * 0,3s é o valor pedido pelo operador; aplicado só ao tier Normal (ver
@@ -1949,7 +2030,15 @@ async function animarTomadaUnicaComAudioReal(
   // (V34, item 5), o formato antigo produziria `duration: 7.5`, um FLOAT
   // que o schema do fornecedor não aceita. `Math.max(1, …)` continua
   // porque um áudio de 0s (medição falha) não pode pedir duração 0.
-  const duracaoWan3 = Math.max(1, Math.ceil((fala.durationSeconds ?? 0) + MARGEM_DURACAO_WAN3_SEGUNDOS));
+  // `margemDuracaoWan3ExtraSegundos` — 02/09/2026: só presente quando
+  // `/redo-video` está reagindo a uma recusa anterior de
+  // `FolgaDeSincronizacaoInsuficienteError` (ver o comentário do campo em
+  // `FalPipelineInput`). Ausente/0 em toda tentativa normal — byte a byte
+  // o cálculo de antes desta correção.
+  const duracaoWan3 = Math.max(
+    1,
+    Math.ceil((fala.durationSeconds ?? 0) + MARGEM_DURACAO_WAN3_SEGUNDOS + (input.margemDuracaoWan3ExtraSegundos ?? 0)),
+  );
 
   // --- ANIMAR, UMA VEZ — item 3: nunca mais segundos que a fala pede. ------
   const bloco = await animarUmBloco(
@@ -2888,6 +2977,40 @@ async function sincronizarComAudio(
   const videoUrlParaSincronizar = videoMudoUrl.startsWith("/")
     ? await falUpload(input.apiKeyFal, await readUpload(videoMudoUrl), "video/mp4")
     : videoMudoUrl;
+
+  // GUARDA DE FOLGA — 02/09/2026, ANTES de qualquer coisa paga desta etapa.
+  // Mede a duração REAL do vídeo animado (não a pedida) e compara com a
+  // fala REAL — a mesma pergunta que `MARGEM_DURACAO_WAN3_SEGUNDOS`
+  // pressupõe estar respondida, e nunca tinha sido medida contra um vídeo
+  // de verdade. Só tier Normal (Premium fora de escopo, mesmo padrão de
+  // `apararVideoFinal` abaixo) e só com a fala real conhecida — sem ela
+  // não há contra o que medir.
+  if (
+    input.tier !== "premium" &&
+    !isFixtureMode() &&
+    fala.durationSeconds != null &&
+    input.verificarFolgaSincronizar !== false
+  ) {
+    const geometriaDoVideo = await probeVideo(videoUrlParaSincronizar);
+    // Arredondado em MILISSEGUNDOS antes de comparar — subtração de ponto
+    // flutuante entre dois números medidos (nunca exatos) produz ruído bem
+    // abaixo da casa que importa aqui (ex.: 5 - 4.9 = 0.09999999999999964
+    // em IEEE754, não 0.1 exato) — sem arredondar, a fronteira `>=` vira
+    // sorte de representação binária, não a comparação matemática pretendida.
+    const folgaSegundos = Math.round((geometriaDoVideo.durationSeconds - fala.durationSeconds) * 1000) / 1000;
+    const suficiente = folgaSegundos >= FOLGA_MINIMA_SINCRONIZAR_SEGUNDOS;
+    logEvent(suficiente ? "info" : "error", "sincronizar_folga_medida", {
+      context: "falPipeline.sincronizarComAudio",
+      duracaoVideoSegundos: geometriaDoVideo.durationSeconds,
+      duracaoFalaSegundos: fala.durationSeconds,
+      folgaSegundos,
+      limiarSegundos: FOLGA_MINIMA_SINCRONIZAR_SEGUNDOS,
+      suficiente,
+    });
+    if (!suficiente) {
+      throw new FolgaDeSincronizacaoInsuficienteError(geometriaDoVideo.durationSeconds, fala.durationSeconds);
+    }
+  }
 
   // O custo depende da duração REAL do áudio, que agora é conhecida. Quando a
   // medição falha, a estimativa pela régua entra no lugar — e para o TETO ela

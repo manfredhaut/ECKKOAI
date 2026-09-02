@@ -44,8 +44,15 @@ export const MUTANTS: Mutant[] = [
     // ÂNCORA ATUALIZADA — V34, item 5: o `Math.ceil` passou a envolver a
     // soma inteira (`(fala.durationSeconds ?? 0) + MARGEM_DURACAO_WAN3_
     // SEGUNDOS`), não mais "ceil(áudio) + margem" em dois passos.
+    // ÂNCORA ATUALIZADA DE NOVO — 02/09/2026: a margem escalonada
+    // (`margemDuracaoWan3ExtraSegundos`, achado de mismatch de duração)
+    // entrou na MESMA soma, e a linha virou multi-linha.
     file: PIPELINE,
-    find: "  const duracaoWan3 = Math.max(1, Math.ceil((fala.durationSeconds ?? 0) + MARGEM_DURACAO_WAN3_SEGUNDOS));",
+    find:
+      "  const duracaoWan3 = Math.max(\n" +
+      "    1,\n" +
+      "    Math.ceil((fala.durationSeconds ?? 0) + MARGEM_DURACAO_WAN3_SEGUNDOS + (input.margemDuracaoWan3ExtraSegundos ?? 0)),\n" +
+      "  );",
     replace: "  const duracaoWan3 = escolherDuracao(input.script.length) ?? 10;",
     expect: "tomada única: duration não veio do áudio real medido",
   },

@@ -102,6 +102,8 @@ import {
   vendorRequiredByTier,
   FalPollTimeoutError,
   LIMITE_TAKE_UNICO_SEGUNDOS,
+  FolgaDeSincronizacaoInsuficienteError,
+  ESCALADA_MARGEM_POR_RECUSA_SEGUNDOS,
   type EntradaDeComposicao,
   type VideoTier,
 } from "../services/video/falPipeline.js";
@@ -3089,7 +3091,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         const { rows: pronto } = await pool.query<Video>(
           `UPDATE videos SET status = 'ready', output_url = $2, provider_output_url = $3,
                              audio_duration_seconds = COALESCE($4, audio_duration_seconds),
-                             audio_duration_source = CASE WHEN $4 IS NULL THEN audio_duration_source ELSE 'tts_timestamps' END
+                             audio_duration_source = CASE WHEN $4 IS NULL THEN audio_duration_source ELSE 'tts_timestamps' END,
+                             sync_folga_recusas = 0
              WHERE id = $1 RETURNING *`,
           [video.id, servedUrl, providerUrl, corrida.audioDurationSeconds],
         );
@@ -3149,6 +3152,42 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
               "foi cobrado a mais e nada precisa ser refeito.",
           });
         }
+
+        // GUARDA DE FOLGA — 02/09/2026. Tratada À PARTE do catch-all
+        // abaixo: não é rejeição do fornecedor (`classifyVendorFailure`
+        // não saberia o que fazer com ela) e o vídeo NÃO vai para `error`
+        // — volta para `awaiting_approval_video`, com os MESMOS
+        // `fal_muted_video_url`/`fal_composed_image_url`/`fal_audio_url`
+        // de antes (nunca sobrescritos, porque a recusa aconteceu antes
+        // de qualquer coisa nova ser persistida), para que "Refazer vídeo"
+        // continue disponível. Nada foi cobrado nesta etapa — a recusa
+        // acontece antes de `custoDaEtapa`/`autorizarGasto` para
+        // sincronizar — então `decidirEEstornar` não se aplica: não há o
+        // que estornar.
+        if (err instanceof FolgaDeSincronizacaoInsuficienteError) {
+          await fecharCorrida(runId, "failed", "sincronizar_folga_insuficiente");
+          const { rows: devolvido } = await pool.query<Video>(
+            `UPDATE videos SET status = 'awaiting_approval_video', sync_folga_recusas = sync_folga_recusas + 1
+               WHERE id = $1 AND status = 'processing' RETURNING *`,
+            [video.id],
+          );
+          logEvent("error", "video_sync_folga_insuficiente", {
+            context: "videos.approveVideo",
+            videoId: video.id,
+            duracaoVideoSegundos: err.duracaoVideoSegundos,
+            duracaoFalaSegundos: err.duracaoFalaSegundos,
+            recusasConsecutivas: devolvido[0]?.sync_folga_recusas ?? null,
+            consequence: "vídeo volta para awaiting_approval_video; nada foi cobrado nesta etapa",
+          });
+          return reply.code(422).send({
+            error: "sync_folga_insuficiente",
+            message:
+              "A animação saiu mais curta que a narração, e por isso não seria seguro sincronizar sem " +
+              "cortar parte da fala. Nada foi cobrado nesta etapa — compor e animar já tinham sido pagos " +
+              "antes. Use \"Refazer vídeo\" para tentar novamente.",
+          });
+        }
+
         await fecharCorrida(runId, "failed", err instanceof Error ? err.message : String(err));
         const { failure, message } = toClientVendorError("avatar", "videos.approveVideo", err);
 
@@ -3267,6 +3306,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             // até narrar/sincronizar. Mesmo papel que `PARAR_APOS_RECOMPOR`
             // tem para `/recompose`, um passo adiante.
             pararApos: "animar",
+            // MARGEM ESCALONADA — 02/09/2026: presente só quando este vídeo
+            // já foi recusado antes por `FolgaDeSincronizacaoInsuficienteError`
+            // (o vídeo animado saiu curto demais para a fala). `0` para todo
+            // "Refazer" comum (o caso de sempre — não gostou do resultado,
+            // não teve deficit de folga) — byte a byte o comportamento de
+            // antes desta correção.
+            margemDuracaoWan3ExtraSegundos: video.sync_folga_recusas * ESCALADA_MARGEM_POR_RECUSA_SEGUNDOS,
           },
           imagemAprovada,
           // `video.provider_job_id`, neste ponto, é o `request_id` de

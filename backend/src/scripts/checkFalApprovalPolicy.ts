@@ -478,6 +478,9 @@ async function refazer(): Promise<{ submetidos: string[]; erro: string }> {
       pollTimeoutMs: 50,
       pollIntervalMs: 1,
       esperar: async () => {},
+      // 02/09/2026 — a guarda de folga de sincronização roda `ffprobe` DE
+      // VERDADE contra a URL do vídeo animado, e ela é fake aqui.
+      verificarFolgaSincronizar: false,
     });
   } catch (err) {
     erro = String(err);

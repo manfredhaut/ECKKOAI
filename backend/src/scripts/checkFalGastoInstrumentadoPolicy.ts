@@ -329,6 +329,10 @@ const ENTRADA_COMUM = {
   // URLs fake do fornecedor simulado. Mesmo padrão de
   // `verificarAspectRatio: false` noutras guardas.
   apararSobraFinal: false,
+  // 02/09/2026 — mesma razão de `apararSobraFinal: false` acima: a
+  // guarda de folga de sincronização também roda `ffprobe` de VERDADE, e
+  // esta corrida de prova usa URLs que não existem de propósito.
+  verificarFolgaSincronizar: false,
 } as const;
 
 /** Ponto flutuante: os valores saem de multiplicações, não de literais. */

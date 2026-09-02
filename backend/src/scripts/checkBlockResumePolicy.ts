@@ -226,6 +226,9 @@ function inputDeProva(diario: DiarioDoPipeline, script: string): FalPipelineInpu
     // contra a URL fake abaixo. Mesmo padrão de `verificarAspectRatio: false`
     // acima.
     apararSobraFinal: false,
+    // 02/09/2026 — mesma razão acima: a guarda de folga de sincronização
+    // também roda `ffprobe` de VERDADE.
+    verificarFolgaSincronizar: false,
   };
 }
 
