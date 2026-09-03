@@ -109,6 +109,7 @@ import { MUTANTS as heygenVoiceCloneMutants } from "./checkHeygenVoiceClonePolic
 import { MUTANTS as heygenVoiceCloneWiringMutants } from "./checkHeygenVoiceCloneWiringPolicy.js";
 import { MUTANTS as heygenCallbackWiringMutants } from "./checkHeygenCallbackWiringPolicy.js";
 import { MUTANTS as idempotencyReplayMutants } from "./checkIdempotencyReplayPolicy.js";
+import { MUTANTS as backgroundResizeMutants } from "./checkBackgroundResizePolicy.js";
 import { MUTANTS as audioMeasuredMutants } from "./checkAudioMeasuredPolicy.js";
 import { MUTANTS as heygenWebhookMutants } from "./checkHeygenWebhookPolicy.js";
 import type { Mutant } from "./mutants.js";
@@ -226,6 +227,7 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkHeygenVoiceCloneWiringPolicy.ts", heygenVoiceCloneWiringMutants),
   ...de("backend/src/scripts/checkHeygenCallbackWiringPolicy.ts", heygenCallbackWiringMutants),
   ...de("backend/src/scripts/checkIdempotencyReplayPolicy.ts", idempotencyReplayMutants),
+  ...de("backend/src/scripts/checkBackgroundResizePolicy.ts", backgroundResizeMutants),
   ...de("backend/src/scripts/checkAudioMeasuredPolicy.ts", audioMeasuredMutants),
   ...de("backend/src/scripts/checkHeygenWebhookPolicy.ts", heygenWebhookMutants),
 ];

@@ -730,6 +730,17 @@ export function SceneStep({
         <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
           {t("createVideo.scene.motionOurAdvice")}
         </p>
+        {/* M1, BLOCO HEYGEN-SIMPLES-6 — LIMITE DO MOTOR, não estilo de
+            escrita: `motion_prompt` (doc do fornecedor, relida em 03/09/2026)
+            é escopado a "avatar body motion and hand gestures" — câmera,
+            cena e deslocamento nunca fazem parte disso, em nenhum motor. O
+            texto de cima já avisa que a ORIENTAÇÃO é nossa; este avisa que
+            uma CATEGORIA INTEIRA de pedido (câmera/deslocamento) não tem
+            onde pousar — sem isto, alguém escreve "caminha até a câmera" e
+            só descobre que não aconteceu depois de pagar o vídeo. */}
+        <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+          {t("createVideo.scene.motionCameraLimit")}
+        </p>
       </Field>
 
       <Field label={t("createVideo.scene.expressivenessLabel")} help={t("createVideo.scene.expressivenessHelp")}>

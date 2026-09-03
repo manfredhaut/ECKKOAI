@@ -68,6 +68,7 @@ import { checkHeygenVoiceClonePolicy } from "./checkHeygenVoiceClonePolicy.js";
 import { checkHeygenVoiceCloneWiringPolicy } from "./checkHeygenVoiceCloneWiringPolicy.js";
 import { checkHeygenCallbackWiringPolicy } from "./checkHeygenCallbackWiringPolicy.js";
 import { checkIdempotencyReplayPolicy } from "./checkIdempotencyReplayPolicy.js";
+import { checkBackgroundResizePolicy } from "./checkBackgroundResizePolicy.js";
 import { checkAudioMeasuredPolicy } from "./checkAudioMeasuredPolicy.js";
 import { checkHeygenWebhookPolicy } from "./checkHeygenWebhookPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
@@ -726,6 +727,12 @@ async function main(): Promise<void> {
   const idempotencyReplay = await checkIdempotencyReplayPolicy();
   idempotencyReplay.failures.forEach((f) => failures.push(f));
   idempotencyReplay.notes.forEach((n) => note(n));
+
+  // --- 25e-8. L1+L2+N1, SIMPLES-6: fundo por imagem sobe redimensionado ao
+  // quadro real; resolution=1080p chega ao payload real -------------------
+  const backgroundResize = await checkBackgroundResizePolicy();
+  backgroundResize.failures.forEach((f) => failures.push(f));
+  backgroundResize.notes.forEach((n) => note(n));
 
   // --- 25f. o vídeo pago não some sem rastro ------------------------------
   //

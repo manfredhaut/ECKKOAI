@@ -39,19 +39,23 @@ export const HEYGEN_RESOLUTIONS = ["720p", "1080p", "4k"] as const;
 export type VideoResolution = (typeof HEYGEN_RESOLUTIONS)[number];
 
 /**
- * Resolução usada em todas as plataformas, por ora: 720p.
+ * Resolução usada em todas as plataformas — N1, BLOCO HEYGEN-SIMPLES-6
+ * (03/09/2026): 1080p, subida de 720p por confirmação do operador de que a
+ * tarifa NÃO varia por resolução (`HEYGEN_VIDEO_COST.unitsPerBilledSecond`,
+ * providerCost.ts, é por SEGUNDO, sem termo de pixel — consistente com essa
+ * confirmação, embora este arquivo não tenha remedido a tarifa em 1080p
+ * live). O nome da constante ficou (o histórico abaixo é o motivo de ela
+ * existir), só o valor mudou.
  *
- * Não é preguiça, é o único ponto de custo MEDIDO. A passada live do LIVE-1
- * saiu em 1280×720 (o servidor escolheu, já que não mandamos nada) e custou
- * ~US$ 0,045 por segundo. Subir para 1080p mudaria o custo por um fator que
- * ninguém mediu, num saldo que comporta poucas gerações. Explicitar o que já
- * era o comportamento observado mantém o custo no ponto conhecido e ainda
- * assim tira a decisão das mãos do fornecedor.
+ * Era 720p desde o LIVE-1 porque era o único ponto de custo MEDIDO
+ * (1280×720, ~US$ 0,045/s) — subir sem medir teria mudado o custo por um
+ * fator desconhecido. A medição que faltava é agora a confirmação de
+ * tarifa constante, não uma remedição pixel a pixel.
  *
- * Quando houver medição de 1080p, isto vira campo por plataforma — a estrutura
- * já comporta, cada entrada declara a sua.
+ * Campo por plataforma continua possível — a estrutura já comporta, cada
+ * entrada declara a sua — só não foi usado até hoje.
  */
-const MEASURED_RESOLUTION: VideoResolution = "720p";
+const MEASURED_RESOLUTION: VideoResolution = "1080p";
 
 export interface PublishPlatform {
   id: string;
@@ -131,6 +135,41 @@ export function resolveVideoFormat(platform: unknown): VideoFormat {
   const id = isPublishPlatform(platform) ? platform : DEFAULT_PUBLISH_PLATFORM;
   const entry = PUBLISH_PLATFORMS.find((p) => p.id === id)!;
   return { platform: entry.id, aspectRatio: entry.aspectRatio, resolution: entry.resolution };
+}
+
+/** Lado CURTO do quadro, em pixels, por resolução — convenção de mercado. */
+const RESOLUTION_SHORT_EDGE: Record<VideoResolution, number> = {
+  "720p": 720,
+  "1080p": 1080,
+  "4k": 2160,
+};
+
+/**
+ * Dimensões em PIXELS para uma combinação `aspect_ratio` × `resolution` —
+ * BLOCO HEYGEN-SIMPLES-6 (L2), 03/09/2026. Existe para o fundo por IMAGEM
+ * poder ser redimensionado ao QUADRO de verdade antes de subir como asset
+ * (ver `avatarProvider.ts` — a HeyGen não documenta nenhum campo de
+ * escala/recorte/posição para `background`, então o enquadramento é
+ * responsabilidade NOSSA, antes do upload).
+ *
+ * MESMA convenção de lado-curto que o pipeline da fal já usa
+ * (`formatDerivation.ts`, `targetForAspect`) — os números batem
+ * (16:9→1920×1080, 9:16→1080×1920, 4:5→1080×1350, 1:1→1080×1080 em
+ * 1080p) — mas REIMPLEMENTADA aqui, independente, para o caminho HeyGen
+ * nunca importar um módulo do pipeline Normal/Premium.
+ *
+ * Arredondado ao PAR mais próximo: alguns codecs recusam dimensão ímpar.
+ */
+export function pixelDimensionsFor(
+  aspectRatio: AspectRatio,
+  resolution: VideoResolution,
+): { width: number; height: number } {
+  const short = RESOLUTION_SHORT_EDGE[resolution];
+  const par = (n: number) => Math.round(n / 2) * 2;
+  if (aspectRatio === "16:9") return { width: par((short * 16) / 9), height: short };
+  if (aspectRatio === "9:16") return { width: short, height: par((short * 16) / 9) };
+  if (aspectRatio === "4:5") return { width: short, height: par((short * 5) / 4) };
+  return { width: short, height: short }; // "1:1"
 }
 
 /**

@@ -858,6 +858,7 @@
       "motionPlaceholder": "mãos abertas na altura do peito, gesto calmo\nolhar direto para a câmera, sorriso leve",
       "motionCounter": "{{used}} de {{max}} caracteres",
       "motionOurAdvice": "Esta orientação de escrita é recomendação nossa, não do serviço de vídeo: ele aceita texto livre e publica um único exemplo, sem regras de formato.",
+      "motionCameraLimit": "Direções de câmera ou de cena — \"caminha até a câmera\", \"recua\", \"a câmera se aproxima\" — nunca são respeitadas: este campo só controla corpo, mãos e expressão da pessoa, nunca a câmera ou o cenário.",
       "expressivenessLabel": "Expressividade",
       "expressivenessHelp": "Quanto o rosto e o corpo acompanham a fala. Já vem em \"Média\" por padrão — troque para Baixa ou Alta quando quiser.",
       "expressiveness_low": "Baixa",

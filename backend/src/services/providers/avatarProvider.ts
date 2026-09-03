@@ -4,8 +4,16 @@
 // flagged "ASSUMPTION" — those are best-effort reads of ambiguous docs and
 // are meant to be corrected against the real HTTP response on first use,
 // same as the Gemini script adapter's model id was.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { writeFile, readFile, unlink } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { mimeDoUpload, readUpload } from "../storage.js";
+// Redimensionar o fundo por IMAGEM ao quadro real antes do upload — L2,
+// BLOCO HEYGEN-SIMPLES-6, 03/09/2026. `pixelDimensionsFor` é import PRÓPRIO
+// (não de `formatDerivation.ts`, que é do pipeline Normal/Premium) — ver
+// `resizeBackgroundImage` mais abaixo.
+import { runFfmpeg } from "../video/ffmpeg.js";
 import { synthesizeSpeech, type VoiceTuning } from "./voiceProvider.js";
 import { processVoiceAudio } from "../audioProcessing.js";
 // A duração REAL do áudio que de fato viaja para o fornecedor — SIMPLES-3
@@ -46,7 +54,7 @@ import type {
 import { runFalPipeline, type PipelineTier } from "../video/falPipeline.js";
 import { isFixtureMode } from "./providerMode.js";
 import { withLiveBudget } from "./liveGuard.js";
-import { vendorAcceptsFormat, type VideoFormat } from "./videoFormat.js";
+import { vendorAcceptsFormat, pixelDimensionsFor, type VideoFormat } from "./videoFormat.js";
 import { readSupportedEngines, selectEngine, type EngineReason, type HeygenEngine } from "./videoEngine.js";
 import { normalizeScene, promptDeComposicaoPosicional, type SceneInput } from "./videoScene.js";
 import {
@@ -1218,6 +1226,59 @@ function mimeTypeDaExtensao(url: string): string {
 }
 
 /**
+ * REDIMENSIONA o fundo por IMAGEM ao QUADRO real (aspect_ratio × resolution)
+ * antes do upload — L1/L2, BLOCO HEYGEN-SIMPLES-6 (03/09/2026).
+ *
+ * ┌─ O bug que isto fecha ────────────────────────────────────────────────┐
+ * │ `background` de `POST /v3/videos` (schema relido em 03/09/2026, doc     │
+ * │ pública) só aceita `type`/`value`/`url`/`asset_id` — NENHUM campo de    │
+ * │ escala, recorte, posição ou dimensão. Antes desta correção, o arquivo  │
+ * │ enviado pela pessoa (ex.: uma foto de escritório 800×600) subia CRU,   │
+ * │ do jeito que veio do upload — e o fornecedor, sem instrução de         │
+ * │ enquadramento nenhuma, o colocava no tamanho NATIVO dele, não esticado │
+ * │ para preencher o quadro do vídeo (720p/1080p) — o retângulo pequeno no │
+ * │ canto que o operador viu no vídeo real desta sessão. `fit` (o campo    │
+ * │ top-level) rege como o AVATAR se encaixa no quadro, nunca a imagem de  │
+ * │ fundo — os dois são independentes no schema do fornecedor.             │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * Recorte "cover" — escala para PREENCHER o quadro e corta o excesso — pela
+ * MESMA lógica que `HEYGEN_FIT="cover"` já aplica ao avatar: os dois
+ * elementos da composição preenchem o quadro, nenhum deles deixa barra.
+ *
+ * Falhar aqui NÃO derruba a geração — mesma regra do upload em si: melhor
+ * um vídeo com o fundo do jeito antigo (pequeno) do que nenhum vídeo.
+ */
+async function resizeBackgroundImage(
+  buffer: Buffer,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  const entrada = path.join(os.tmpdir(), `${randomUUID()}-bg-in.png`);
+  const saida = path.join(os.tmpdir(), `${randomUUID()}-bg-out.png`);
+  try {
+    await writeFile(entrada, buffer);
+    await runFfmpeg(
+      [
+        "-y",
+        "-i",
+        entrada,
+        "-vf",
+        `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`,
+        "-frames:v",
+        "1",
+        saida,
+      ],
+      "background-resize",
+    );
+    return await readFile(saida);
+  } finally {
+    await unlink(entrada).catch(() => {});
+    await unlink(saida).catch(() => {});
+  }
+}
+
+/**
  * A duração MEDIDA do áudio estourou o teto — e a chamada paga NÃO saiu.
  *
  * Classe PRÓPRIA, e não `AvatarProviderError`, pela mesma razão medida que fez
@@ -1297,12 +1358,14 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
   const cena = normalizeScene(input.scene ?? {});
   if (cena.background?.type === "image") {
     try {
-      const imagem = await readUpload(cena.background.uploadUrl);
-      backgroundAssetId = await heygenUploadAsset(
-        input.apiKey,
-        imagem,
-        mimeTypeDaExtensao(cena.background.uploadUrl),
-      );
+      const imagemCrua = await readUpload(cena.background.uploadUrl);
+      // L1/L2 — REDIMENSIONA ao quadro real antes de subir. Sem isto, o
+      // arquivo sobe do tamanho NATIVO do upload, e a HeyGen não tem campo
+      // nenhum para escalar `background` — o retângulo pequeno no canto
+      // medido no vídeo real desta sessão. Ver `resizeBackgroundImage`.
+      const { width, height } = pixelDimensionsFor(input.format.aspectRatio, input.format.resolution);
+      const imagem = await resizeBackgroundImage(imagemCrua, width, height);
+      backgroundAssetId = await heygenUploadAsset(input.apiKey, imagem, "image/png");
     } catch (err) {
       logEvent("error", "background_asset_failed", {
         context: "heygen.generateVideo",
