@@ -15,6 +15,26 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
+> ⚠️ **DÉCIMA-PRIMEIRA DIVERGÊNCIA, MEDIDA em 03/09/2026 — este arquivo NÃO
+> foi reconciliado nesta sessão, por escopo.** HEAD real no fechamento:
+> `71064fb`. Sessão curta, **BLOCO HEYGEN-SIMPLES-4** — os dois itens que
+> faltaram no fechamento do SIMPLES-3: **F3** (Idempotency-Key) já estava
+> correto (SHA256 determinístico, sem timestamp — `heygenIdempotencyKey`/
+> `heygenVideoRequestHeaders`, anteriores a este bloco todo); reproduzido
+> ANCORADO NO USO por um novo guard (`checkIdempotencyReplayPolicy.ts`) que
+> chama `generateVideo()` duas vezes de ponta a ponta e confirma o mesmo
+> header nas duas chamadas reais — 1 mutante novo, provado reprovando,
+> registro em **513 mutantes declarados**. **I2** — só investigado, nada
+> executado: `PROVIDER_LIVE_MAX_GENERATIONS` processo=1 (desde
+> `2026-09-03T10:51:40Z`, o restart do fechamento do SIMPLES-3) vs
+> `.env`=3; causa e proposta de correção no relatório da sessão ao
+> operador, decisão de restartar (ou não) é dele. **Custo real: US$ 0,00**
+> — nenhuma chamada a HeyGen/ElevenLabs. **Achado de processo, corrigido
+> antes do commit:** reproduzir um mutante manualmente sem `ARNES_EM_CURSO=1`
+> e com `sed` sem âncora de linha corrompeu temporariamente um call site
+> não relacionado (`createAvatarLook`) — revertido, confirmado por `git
+> diff` vazio.
+>
 > ⚠️ **DÉCIMA DIVERGÊNCIA, MEDIDA em 03/09/2026 — este arquivo NÃO foi
 > reconciliado nesta sessão, por escopo (mesma dívida da nona, um degrau a
 > mais).** HEAD real no fechamento: `5ebc13e` — 1 commit à frente da nona

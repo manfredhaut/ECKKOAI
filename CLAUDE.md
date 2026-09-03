@@ -5,10 +5,10 @@ Always respond in Brazilian Portuguese.
 > O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
 > — não duplicado aqui de propósito, para não haver dois textos podendo
 > discordar um do outro. **Dentro da Seção 6, o bloco mais novo é
-> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-3 (03/09, tarde)", no FIM da seção —
-> leia-o antes de todos os blocos anteriores (SIMPLES-1 03/09 manhã,
-> primeiro vídeo Normal/Wan 3.0 02/09, V34 01/09, 28/08, 27/08, 26/08,
-> 25/08), que estão superados no que algum deles conflitar.**
+> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-4 (03/09)", no FIM da seção — leia-o
+> antes de todos os blocos anteriores (SIMPLES-3 03/09 tarde, SIMPLES-1
+> 03/09 manhã, primeiro vídeo Normal/Wan 3.0 02/09, V34 01/09, 28/08,
+> 27/08, 26/08, 25/08), que estão superados no que algum deles conflitar.**
 > Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
 > existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
 > isso o texto antigo saiu daqui.
@@ -748,3 +748,15 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > ### (j) Achado à parte, ainda não investigado
 >
 > `twinai_local_dump.sql` — a mesma pergunta em aberto de SIMPLES-1 (dump do Postgres reaparecendo sozinho na raiz do repositório, origem não identificada). Não reapareceu nesta sessão especificamente, mas também não foi procurado; segue como pergunta para o operador.
+
+> ⚠️ **FECHAMENTO — BLOCO HEYGEN-SIMPLES-4 (03/09/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão curta, os dois itens que ficaram faltando no fechamento de SIMPLES-3. **HEAD ao fechar: `71064fb` + este commit.**
+>
+> **F3 — já estava correto, não precisou de correção.** `heygenIdempotencyKey`/`heygenVideoRequestHeaders` ([avatarProvider.ts:905](backend/src/services/providers/avatarProvider.ts:905)) derivam a chave por SHA256 de `[tenantId, providerAvatarId, script, background, motionPrompt, expressiveness, aspectRatio, resolution, engineChoice, HEYGEN_FIT]` — determinístico, sem timestamp, sem `audio_asset_id` (deliberado: o áudio é ressintetizado a cada clique). Isso é anterior ao próprio BLOCO HEYGEN-SIMPLES-1 inteiro. `checkVideoContractPolicy.ts` (seção 6) já provava isso testando as duas funções puras direto, inclusive com 5ms de espera entre duas chamadas para provar que não é o instante. O que faltava, na mesma lógica de F1: prova ANCORADA NO USO — `checkIdempotencyReplayPolicy.ts` (novo) chama `generateVideo()` DUAS VEZES de ponta a ponta, conteúdo idêntico (o duplo clique real), confirma o header `Idempotency-Key` byte-a-byte igual nas duas chamadas ao `POST /v3/videos`, e que a 2ª aceita uma resposta de replay do fornecedor (mesmo `video_id` da 1ª) sem tratamento especial. 1 mutante novo, provado reprovando isoladamente. **Registro: 513 mutantes declarados** (era 512).
+>
+> **Achado de processo, corrigido ANTES do commit:** reproduzir o mutante à mão sem `ARNES_EM_CURSO=1`, com `sed` sem âncora de linha, corrompeu temporariamente `createAvatarLook` (`POST /v3/avatars`, call site NÃO relacionado que por coincidência de texto virou alvo do mesmo `sed`) — detectado pelo `tsc` (o tipo de `heygenIdempotencyKey` não bate com o `input` de `createAvatarLook`), revertido, `git diff` do arquivo confirmado vazio antes do commit final.
+>
+> **I2 — só investigado, nada executado, decisão é do operador.** `PROVIDER_LIVE_MAX_GENERATIONS` no PROCESSO = **1**, no `.env` = **3**. **(a) Qual é o correto:** não há um "correto" objetivo — é uma escolha de segurança feita explicitamente numa sessão anterior (`primeiro vídeo Normal/Wan 3.0`, 02/09) e preservada deliberadamente em CADA restart desde então (inclusive nos dois do SIMPLES-3/4), nunca uma divergência acidental. **(b) Por quê:** o processo não foi reiniciado SEM o override desde `2026-09-03T10:51:40Z` (o restart do fechamento de SIMPLES-3) — e antes disso, a mesma escolha (1, não 3) foi preservada manualmente em cada sessão que precisou restartar o backend, por causa da regra "não mudar `PROVIDER_LIVE_MAX_GENERATIONS` por conta própria — perguntar antes", registrada desde o fechamento de "primeiro vídeo Normal/Wan 3.0". **(c) O que resolve:** um `docker compose up -d backend` SEM o override reconciliaria o processo para o `3` do `.env` (perde a margem de segurança de 1); OU editar o `.env` para `1`, alinhando o arquivo à intenção real que já vem sendo seguida há 3 sessões (não perde nada, só torna o `.env` honesto sobre o que já está rodando). Nenhuma das duas foi feita.
+>
+> **Custo real: US$ 0,00.** Nenhuma chamada a HeyGen/ElevenLabs — prova inteira em `fetch` substituído, dentro do guard. Ambiente não foi tocado (não houve demonstração no navegador desta vez — a prova por execução do guard já é mais forte que um clique, por comparar os headers byte a byte).
+>
+> **Tier Normal/Wan 3.0 e tier Simples/HeyGen considerados FECHADOS pelo operador ao final desta sessão.**
