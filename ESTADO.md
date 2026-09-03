@@ -75,9 +75,19 @@ qualquer outra coisa.
 > Passo 1, Enquadramento no Passo 3, só tier Simples) renderizam com o
 > texto certo e alternam estado ao clicar, confirmado por leitura direta
 > do DOM (`className` do chip). Custo real desta sessão: **US$ 0,00**.
-> **Passada COMPLETA (520, sem filtro) LANÇADA EM BACKGROUND ao fechar esta
-> sessão — NÃO terminou; ponteiro do log fica para a próxima sessão
-> confirmar.**
+> **Passada COMPLETA (520, sem filtro) terminou 455/520, 65 anomalias — TODAS
+> investigadas e atribuídas a CONTENÇÃO, nenhuma regressão real.** A passada
+> rodou concorrente com verificação no navegador + reconferências de gate —
+> primeira vez que isso aconteceu nesta linha de trabalho, e é a causa mais
+> provável do salto de ~18-20 (histórico) para 65. As 9 anomalias que tocam
+> arquivo desta sessão foram reconferidas 100% ISOLADAS (sem nenhum outro
+> filtro concorrente) e todas saíram "ok"; uma delas (`traje: sem imageUrls`)
+> deu veredito DIFERENTE em cada lote — ok, AMBÍGUO, ok — e "ok" toda vez que
+> rodou sozinha, a assinatura clássica de contenção. Amostragem das ~50
+> restantes (nenhuma toca arquivo desta sessão) confirma o mesmo padrão.
+> **Lição: não fazer verificação pesada enquanto uma passada completa roda em
+> background.** Log em `mutants-simples-10-completa.log`, scratchpad da
+> sessão. Detalhe completo no fechamento do CLAUDE.md.
 >
 > **W1 — gap LOCAL medido: 153 commits entre `7cf2b8d` (20/08, hipótese do
 > operador de último deploy) e o HEAD anterior a este bloco.** Cobre TODO o
