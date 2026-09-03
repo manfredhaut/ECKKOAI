@@ -61,6 +61,15 @@ export interface CriarLookInput {
   name: string;
   prompt?: string | null;
   imageUrl?: string | null;
+  /**
+   * Até 3 imagens de REFERÊNCIA para o fornecedor — B4, BLOCO
+   * HEYGEN-SIMPLES-1, 02/09/2026. Diferente de `imageUrl` (que só vira
+   * `preview_image_url` LOCAL, nunca chegou ao fornecedor): estas sobem
+   * via `heygenUploadAsset` e entram em `reference_images` no corpo de
+   * `POST /v3/avatars`. Caminhos `/uploads/...`, nunca a URL final —
+   * mesma regra de todo upload deste produto.
+   */
+  imageUrls?: string[] | null;
   apiKey: string;
   vendor: AvatarVendor;
 }
@@ -175,6 +184,7 @@ export async function criarLook(input: CriarLookInput): Promise<CriarLookResult>
       providerAvatarId: input.providerAvatarId,
       name: nome,
       prompt,
+      referenceImageUrls: input.imageUrls,
     });
   } catch (err) {
     // Estorno pela MESMA fronteira do vídeo: a chamada lançou, o fornecedor não

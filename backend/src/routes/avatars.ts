@@ -158,7 +158,10 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
    * aparece no seletor do passo Cena, e o id escolhido chega ao payload como
    * qualquer outro look.
    */
-  app.post<{ Params: { id: string }; Body: { name?: string; imageUrl?: string; prompt?: string } }>(
+  app.post<{
+    Params: { id: string };
+    Body: { name?: string; imageUrl?: string; imageUrls?: string[]; prompt?: string };
+  }>(
     "/avatars/:id/looks",
     { preHandler: requireActiveTenant },
     async (req, reply) => {
@@ -197,6 +200,7 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         name: req.body?.name ?? "",
         prompt: req.body?.prompt ?? null,
         imageUrl: req.body?.imageUrl ?? null,
+        imageUrls: req.body?.imageUrls ?? null,
         apiKey: credential.apiKey,
         vendor: credential.vendor as AvatarVendor,
       });

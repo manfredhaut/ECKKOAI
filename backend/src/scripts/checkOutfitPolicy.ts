@@ -93,6 +93,48 @@ export const MUTANTS: Mutant[] = [
     replace: "export const HEYGEN_LOOK_COST = {\n  units: 30,",
     expect: "o custo do traje deixou de bater com a medição",
   },
+  {
+    guard: "traje: até 3 reference_images (o teto do fornecedor) — nunca mais",
+    name: "o truncamento de reference_images em 3 desaparece",
+    kind: "esperto",
+    // ESPERTO: o `.slice` continua ali, o resto da função não muda — só o
+    // NÚMERO some. 4 imagens de referência viram 4 uploads e 4 entradas no
+    // corpo, e o fornecedor recusaria a chamada de criação com um 400 —
+    // DEPOIS de já ter cobrado os 4 uploads de asset.
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: "      .slice(0, MAX_REFERENCE_IMAGES);",
+    replace: "      .slice(0, 99);",
+    expect: "esperado exatamente 3",
+  },
+  {
+    guard: "traje: reference_images está no formato {type:\"asset_id\", asset_id}",
+    name: "reference_images passa a mandar a URL local em vez do asset_id",
+    kind: "esperto",
+    // ESPERTO: o array continua tendo 3 itens, `type` continua `"asset_id"`
+    // — só o VALOR de `asset_id` passa a ser a nossa URL `/uploads/...` em
+    // vez do id que o fornecedor devolveu no upload. `/uploads/...` é
+    // servido por um host que a HeyGen não alcança — mesmo defeito já
+    // medido para `background.uploadUrl` em `buildHeygenVideoPayload`.
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: '      referenceImages.push({ type: "asset_id", asset_id: assetId });',
+    replace: '      referenceImages.push({ type: "asset_id", asset_id: url });',
+    expect: "formato {type:\"asset_id\", asset_id}",
+  },
+  {
+    guard: "traje: sem imageUrls, o corpo não tem reference_images",
+    name: "reference_images entra no corpo mesmo sem imageUrls",
+    kind: "esperto",
+    // ESPERTO: com a lista de referências vazia, `referenceImages` continua
+    // um array — só vazio. Mandar `reference_images: []` em vez de omitir o
+    // campo é o tipo de detalhe que passa despercebido no código e pode não
+    // passar despercebido no schema do fornecedor (`additionalProperties`
+    // fechado não distingue "array vazio" de "array com algo", mas alguns
+    // validadores de schema recusam array vazio onde esperam >=1 item).
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: "    if (referenceImages.length > 0) body.reference_images = referenceImages;",
+    replace: "    body.reference_images = referenceImages;",
+    expect: "reference_images` mesmo assim",
+  },
 ];
 
 type Row = Record<string, unknown>;
@@ -185,10 +227,28 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
   });
 
   // Duplo de rede: devolve EXATAMENTE a resposta medida em 06/08, com o
-  // `status: processing` que torna o caminho assíncrono observável.
-  globalThis.fetch = (async () => {
+  // `status: processing` que torna o caminho assíncrono observável. B4
+  // (BLOCO HEYGEN-SIMPLES-1, 02/09/2026) diferencia por URL: `/v3/assets`
+  // (upload das referências) responde com um asset_id; `/v3/avatars`
+  // (criação do look) continua a resposta de sempre — e o corpo que ELA
+  // recebe é capturado, para o item 8 medir `reference_images`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let corpoDeAvatarsRecebido: any = null;
+  let chamadasDeAssets = 0;
+  globalThis.fetch = (async (entrada: unknown, init?: unknown) => {
     obs.fetchChamado += 1;
     if (fetchDeveLancar) throw new Error("HeyGen fora do ar (simulado pela guarda)");
+    const url = String(typeof entrada === "string" ? entrada : (entrada as { url?: string })?.url ?? entrada);
+    if (url.includes("/v3/assets")) {
+      chamadasDeAssets += 1;
+      return new Response(
+        JSON.stringify({ data: { asset_id: `asset-${chamadasDeAssets}` } }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    const initObj = init as { body?: string } | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    corpoDeAvatarsRecebido = initObj?.body ? (JSON.parse(initObj.body) as any) : null;
     return new Response(
       JSON.stringify({
         data: {
@@ -446,6 +506,75 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
       );
     }
 
+    // -------------------------------------------------------------------------
+    // 8. B4, BLOCO HEYGEN-SIMPLES-1 (02/09/2026) — reference_images.
+    //
+    // Até 3 imagens sobem para `POST /v3/assets` ANTES de `POST /v3/avatars`,
+    // e os asset_ids entram em `reference_images` no formato
+    // `{type:"asset_id", asset_id}`. `/uploads/.gitkeep` é o arquivo real de
+    // prova já usado por outras guardas deste projeto (rastreado pelo git,
+    // conteúdo irrelevante — o que se mede é o DESPACHO).
+    // -------------------------------------------------------------------------
+    process.env.PROVIDER_MODE = "live";
+    resetLiveGenerationCount();
+    obs.contagemDoDia = 0;
+    chamadasDeAssets = 0;
+    corpoDeAvatarsRecebido = null;
+    const comReferencia = await criarLook({
+      ...BASE,
+      name: "Terno com referência",
+      prompt: "terno azul",
+      imageUrls: ["/uploads/.gitkeep", "/uploads/.gitkeep", "/uploads/.gitkeep", "/uploads/.gitkeep"],
+    });
+    if (!comReferencia.ok) {
+      failures.push(`traje: criação com reference_images falhou inesperadamente — ${JSON.stringify(comReferencia)}.`);
+    }
+    if (chamadasDeAssets !== 3) {
+      failures.push(
+        `traje: 4 imagens de referência foram passadas e ${chamadasDeAssets} upload(s) de asset ` +
+          "aconteceram — esperado exatamente 3 (o teto do fornecedor). Mandar mais uploads que o " +
+          "necessário paga por asset que nunca vai ser usado no corpo.",
+      );
+    }
+    const referencias = corpoDeAvatarsRecebido?.reference_images as unknown[] | undefined;
+    if (!Array.isArray(referencias) || referencias.length !== 3) {
+      failures.push(
+        `traje: o corpo de POST /v3/avatars não trouxe 3 reference_images — veio ${JSON.stringify(referencias)}.`,
+      );
+    } else if (
+      referencias.some((r) => (r as Record<string, unknown>).type !== "asset_id" || !(r as Record<string, unknown>).asset_id)
+    ) {
+      failures.push(
+        `traje: reference_images não está no formato {type:"asset_id", asset_id} — veio ${JSON.stringify(referencias)}.`,
+      );
+    } else if (
+      // O VALOR de asset_id precisa ser o id que o UPLOAD devolveu
+      // ("asset-1"/"asset-2"/"asset-3", do duplo de fetch acima) — nunca a
+      // URL local `/uploads/...`, que é um endereço que a HeyGen não alcança
+      // (mesmo defeito já medido para `background.uploadUrl`).
+      !(referencias as { asset_id: string }[]).every((r) => /^asset-\d+$/.test(r.asset_id))
+    ) {
+      failures.push(
+        `traje: reference_images não está no formato {type:"asset_id", asset_id} — veio ${JSON.stringify(referencias)} ` +
+          '(esperado asset_id no formato "asset-N", devolvido pelo upload; uma URL local aqui é um ' +
+          "endereço que a HeyGen não alcança).",
+      );
+    }
+
+    // Sem imageUrls, o corpo NÃO tem reference_images — o comportamento de
+    // sempre, para todo traje criado só por texto (o caminho de produto hoje).
+    corpoDeAvatarsRecebido = null;
+    const semReferencia = await criarLook({ ...BASE, name: "Terno sem referência", prompt: "terno cinza" });
+    if (!semReferencia.ok) {
+      failures.push(`traje: criação sem reference_images falhou inesperadamente — ${JSON.stringify(semReferencia)}.`);
+    }
+    if (corpoDeAvatarsRecebido && "reference_images" in corpoDeAvatarsRecebido) {
+      failures.push(
+        "traje: sem `imageUrls`, o corpo trouxe `reference_images` mesmo assim — todo traje criado só por " +
+          "texto (o caminho de produto de hoje) passaria a mandar um campo que ninguém pediu.",
+      );
+    }
+
     if (desconhecidas.length > 0) {
       failures.push(
         "traje: o duplo de banco recebeu consulta que não sabe responder — " +
@@ -459,6 +588,10 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
           "em preparo; preparo fora do seletor e concluído dentro; falha do fornecedor estorna sem gravar",
       );
       notes.push("  traje: fixture cria sem rede, sem custo e sem teto — e o custo declarado é o medido (US$ 1,00)");
+      notes.push(
+        "  traje: até 3 reference_images sobem para /v3/assets antes de /v3/avatars, no formato " +
+          "{type:asset_id,asset_id}; a 4ª imagem é truncada, e sem imageUrls o campo não aparece",
+      );
     }
   } finally {
     (pool as unknown as { query: unknown }).query = queryReal;

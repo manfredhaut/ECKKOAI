@@ -1821,28 +1821,71 @@ export interface CreatedAvatarLook {
  * E por isso não há estorno depois do aceite: o fornecedor cobrou, e um look
  * feio é entrega ruim, não falha de chamada.
  */
+/**
+ * O TETO de referências que o fornecedor aceita — B4, BLOCO
+ * HEYGEN-SIMPLES-1, 02/09/2026. Schema lido por doc pública
+ * (developers.heygen.com/docs/create-avatar, WebFetch): até 3, cada uma
+ * `{type:"asset_id", asset_id}` (o modo que este produto já usa, já que o
+ * upload de imagem passa por `heygenUploadAsset`/`POST /v3/assets` antes de
+ * qualquer chamada de criação). NÃO reconfirmado por chamada real — `POST
+ * /v3/avatars` está nas proibidas desta rodada.
+ */
+const MAX_REFERENCE_IMAGES = 3;
+
 export async function createAvatarLook(input: {
   apiKey: string;
   vendor: AvatarVendor;
   providerAvatarId: string;
   name: string;
   prompt: string;
+  /**
+   * Caminhos `/uploads/...` LOCAIS das imagens de referência — nunca um
+   * asset id pronto. O upload para `POST /v3/assets` acontece AQUI DENTRO,
+   * não em quem chama: `createAvatarLook` já não é uma função pura (já faz
+   * `fetch` de verdade para criar o look), então subir os assets antes do
+   * corpo é I/O a mais no mesmo lugar, não um novo. Se o upload falhar, o
+   * erro sobe pelo MESMO `catch` de `criarLook` que já estorna o crédito —
+   * ela nunca sabe se falhou no upload ou na criação, e as duas merecem o
+   * mesmo tratamento (o débito do look ainda não tinha correspondência real).
+   * Truncado a `MAX_REFERENCE_IMAGES`: mandar mais que o fornecedor aceita
+   * é pedir um 400 depois do débito do look (que já saiu no 200 da criação,
+   * ver o comentário acima) — aqui é melhor truncar cedo e silenciosamente
+   * do que fazer 4 uploads pra usar só 3.
+   */
+  referenceImageUrls?: string[] | null;
 }): Promise<CreatedAvatarLook> {
   if (isFixtureMode()) return createAvatarLookFixture(input.providerAvatarId, input.name);
   if (input.vendor === "did") {
     throw new Error("Criar traje por texto não existe na D-ID; só HeyGen implementa geração de look.");
   }
 
+  // DENTRO de `withLiveBudget`, como toda chamada tarifável desta função:
+  // os uploads de referência são eles próprios uma chamada ao fornecedor
+  // (`POST /v3/assets`, `billable: true` no catálogo), e ficar de fora do
+  // orçamento de sessão os deixaria fora do freio que ele existe para dar.
   return withLiveBudget("criação de traje", "criar traje", async () => {
+    const urlsTruncadas = (input.referenceImageUrls ?? [])
+      .filter((u): u is string => Boolean(u))
+      .slice(0, MAX_REFERENCE_IMAGES);
+    const referenceImages: { type: "asset_id"; asset_id: string }[] = [];
+    for (const url of urlsTruncadas) {
+      const buffer = await readUpload(url);
+      const assetId = await heygenUploadAsset(input.apiKey, buffer, mimeTypeDaExtensao(url));
+      referenceImages.push({ type: "asset_id", asset_id: assetId });
+    }
+
+    const body: Record<string, unknown> = {
+      type: "prompt",
+      name: input.name,
+      avatar_id: input.providerAvatarId,
+      prompt: input.prompt,
+    };
+    if (referenceImages.length > 0) body.reference_images = referenceImages;
+
     const res = await fetch(`${HEYGEN_BASE}/v3/avatars`, {
       method: "POST",
       headers: { "x-api-key": input.apiKey, "content-type": "application/json" },
-      body: JSON.stringify({
-        type: "prompt",
-        name: input.name,
-        avatar_id: input.providerAvatarId,
-        prompt: input.prompt,
-      }),
+      body: JSON.stringify(body),
       signal: vendorSignal(),
     });
     const data = await fetchJson(res, "HeyGen", "heygen.createLook");

@@ -44,7 +44,10 @@ const ROTA_AVATARS = "backend/src/routes/avatars.ts";
 
 const ANCORA_LOOKS_INICIO = 'app.get<{ Params: { id: string } }>("/avatars/:id/looks", async (req, reply) => {';
 const ANCORA_CRIAR_LOOK_INICIO =
-  'app.post<{ Params: { id: string }; Body: { name?: string; imageUrl?: string; prompt?: string } }>(\n' +
+  "  app.post<{\n" +
+  "    Params: { id: string };\n" +
+  '    Body: { name?: string; imageUrl?: string; imageUrls?: string[]; prompt?: string };\n' +
+  "  }>(\n" +
   '    "/avatars/:id/looks",\n' +
   '    { preHandler: requireActiveTenant },\n' +
   '    async (req, reply) => {';
