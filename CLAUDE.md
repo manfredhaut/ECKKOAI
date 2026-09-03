@@ -5,11 +5,11 @@ Always respond in Brazilian Portuguese.
 > O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
 > — não duplicado aqui de propósito, para não haver dois textos podendo
 > discordar um do outro. **Dentro da Seção 6, o bloco mais novo é
-> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-5 (03/09)", no FIM da seção — leia-o
-> antes de todos os blocos anteriores (SIMPLES-4 e SIMPLES-3 03/09 tarde,
-> SIMPLES-1 03/09 manhã, primeiro vídeo Normal/Wan 3.0 02/09, V34 01/09,
-> 28/08, 27/08, 26/08, 25/08), que estão superados no que algum deles
-> conflitar.**
+> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-6 (03/09)", no FIM da seção — leia-o
+> antes de todos os blocos anteriores (SIMPLES-5, SIMPLES-4 e SIMPLES-3
+> 03/09 tarde, SIMPLES-1 03/09 manhã, primeiro vídeo Normal/Wan 3.0 02/09,
+> V34 01/09, 28/08, 27/08, 26/08, 25/08), que estão superados no que algum
+> deles conflitar.**
 > Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
 > existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
 > isso o texto antigo saiu daqui.
@@ -771,3 +771,25 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > **Custo real: US$ 0,00.** Nenhuma chamada a HeyGen/ElevenLabs — a rodada inteira foi restart de ambiente + leitura de código (grep/Read), sem execução de gerador nenhum.
 >
 > **Gate reconfirmado verde depois do restart** (`docker compose exec -T -e PROVIDER_MODE=fixture backend npm run check`), árvore limpa (nenhum arquivo de produto tocado nesta rodada).
+
+> ⚠️ **FECHAMENTO — BLOCO HEYGEN-SIMPLES-6 (03/09/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Três correções (L1/L2, N1), um aviso (M1), zero reabertura de A-I. **HEAD ao fechar: `a873d65` + este commit.**
+>
+> ### (a) L1 — a causa, MEDIDA por releitura da doc pública em 03/09/2026
+>
+> `background` de `POST /v3/videos` (developers.heygen.com/reference/create-avatar-video-v3, schema atual, relido ao vivo nesta sessão) aceita EXATAMENTE `type` (`color`|`image`), `value`, `url`, `asset_id` — nenhum campo de escala, recorte, posição ou dimensão. `fit` existe, mas é TOP-LEVEL e documentado como regendo "how the SUBJECT is fitted to the output canvas" — o AVATAR, nunca o fundo. Antes desta correção, [avatarProvider.ts](backend/src/services/providers/avatarProvider.ts) fazia `readUpload` + `heygenUploadAsset` direto, sem redimensionar — o arquivo subia do tamanho NATIVO do upload da pessoa (ex.: uma foto de escritório 800×600), e sem instrução de enquadramento nenhuma a HeyGen o posicionava assim — o retângulo pequeno no canto que o operador viu no vídeo real desta sessão.
+>
+> ### (b) L2 — a correção e a prova
+>
+> `resizeBackgroundImage()` (novo, mesmo arquivo) roda `ffmpeg` (`scale=W:H:force_original_aspect_ratio=increase,crop=W:H` — a mesma lógica "cover" que `HEYGEN_FIT="cover"` já aplica ao avatar) antes do `heygenUploadAsset`, para o quadro real derivado de `pixelDimensionsFor(aspectRatio, resolution)` (novo, [videoFormat.ts](backend/src/services/providers/videoFormat.ts) — REIMPLEMENTADO independente de `formatDerivation.ts`, que é do pipeline Normal/Premium; isolamento). Prova por EXECUÇÃO real (`checkBackgroundResizePolicy.ts`, novo): uma imagem de prova 100×50 gerada por `ffmpeg` (deliberadamente errada — nem a proporção nem o tamanho do alvo) sobe pelo caminho de verdade, e os BYTES capturados no `POST /v3/assets` real (interceptando o `FormData`/`Blob`, não JSON) são medidos por `ffprobe`: **1920×1080**, o quadro exato (16:9 @ 1080p). 1 mutante, provado reprovando isoladamente.
+>
+> ### (c) N1 — resolução 720p→1080p
+>
+> `MEASURED_RESOLUTION` ([videoFormat.ts](backend/src/services/providers/videoFormat.ts)) estava em `"720p"` desde o LIVE-1 porque era o único ponto de custo MEDIDO — subir sem medir mudaria o custo por um fator desconhecido. Por confirmação do OPERADOR nesta rodada de que a tarifa não varia por resolução (consistente com `HEYGEN_VIDEO_COST.unitsPerBilledSecond` em `providerCost.ts`, que já é só por segundo, sem termo de pixel), subida para `"1080p"`. Provado por execução real: `resolution="1080p"` chega ao `POST /v3/videos` real (mesmo guard de (b), 2º mutante).
+>
+> ### (d) M1 — o aviso, confirmado ao vivo no navegador
+>
+> Novo parágrafo no campo "Interpretação" ([SceneStep.tsx](frontend/src/pages/CreateVideo/steps/SceneStep.tsx), chave `motionCameraLimit`): direções de câmera/deslocamento ("caminha até a câmera", "recua", "a câmera se aproxima") nunca são respeitadas — `motion_prompt` é documentado (releitura de 03/09) como escopado a "avatar body motion and hand gestures", nunca câmera ou cena. Confirmado NA TELA, wizard completo (fixture): o texto aparece logo abaixo do aviso já existente sobre a orientação de escrita ser recomendação nossa. Só texto — nenhuma mudança em `motion_prompt`/comportamento de geração, confirmado por tsc+gate inalterados nessa parte.
+>
+> ### (e) Gate, custo, ambiente
+>
+> 2 mutantes novos (`checkBackgroundResizePolicy.ts`), provados reprovando isoladamente antes do commit. **Registro: 515 mutantes declarados** (era 513). `tsc` limpo nos dois lados, gate verde. **Custo real: US$ 0,00** — toda a prova roda em fixture + `ffmpeg`/`ffprobe` locais, nenhuma chamada a HeyGen/ElevenLabs. Ambiente trocado para `fixture` só para a demonstração do aviso M1 (mesmo procedimento já autorizado em rodadas anteriores) e devolvido a `live`/`PROVIDER_LIVE_MAX_GENERATIONS=3` ao final — idêntico ao estado deixado por SIMPLES-5, confirmado por `printenv`.

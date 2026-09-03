@@ -15,6 +15,40 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
+> ⚠️ **BLOCO HEYGEN-SIMPLES-6, FECHADO em 03/09/2026. HEAD `a873d65` + este
+> commit.** Três correções, uma investigação, um aviso — não reabre A-I.
+>
+> **L1/L2 — Fundo por imagem corrigido.** Causa MEDIDA por releitura da doc
+> pública de `POST /v3/videos`: `background` só aceita
+> `type`/`value`/`url`/`asset_id` — nenhum campo de escala/recorte/
+> dimensão. O arquivo subia do tamanho NATIVO do upload; sem instrução de
+> enquadramento, a HeyGen o posicionava sem esticar — o retângulo pequeno
+> no canto que o operador viu no vídeo real desta sessão. Corrigido:
+> `resizeBackgroundImage()` ([avatarProvider.ts](backend/src/services/providers/avatarProvider.ts))
+> redimensiona (ffmpeg, cover-crop) ao quadro real antes do upload, via
+> `pixelDimensionsFor()` (novo, [videoFormat.ts](backend/src/services/providers/videoFormat.ts),
+> reimplementado independente de `formatDerivation.ts` — isolamento do
+> Normal). Provado por execução real: imagem de prova 100×50
+> (deliberadamente errada) sobe redimensionada para 1920×1080 — bytes
+> capturados no `POST /v3/assets` real, medidos por `ffprobe`.
+>
+> **N1 — resolução 720p→1080p.** `MEASURED_RESOLUTION` ([videoFormat.ts](backend/src/services/providers/videoFormat.ts)),
+> por confirmação do operador de que a tarifa não varia por resolução.
+> Provado: `resolution="1080p"` chega ao `POST /v3/videos` real.
+>
+> **M1 — aviso de câmera/deslocamento** no campo Interpretação
+> ([SceneStep.tsx](frontend/src/pages/CreateVideo/steps/SceneStep.tsx)):
+> `motion_prompt` cobre só corpo/mãos/expressão, nunca câmera/cena —
+> confirmado ao vivo no navegador (fixture). Só texto; nenhuma mudança de
+> comportamento de geração.
+>
+> **2 mutantes novos** (`checkBackgroundResizePolicy.ts`), provados
+> reprovando isoladamente. **Registro: 515 mutantes declarados** (era
+> 513). Gate verde, tsc limpo nos dois lados, custo real **US$ 0,00**
+> (fixture + ffmpeg/ffprobe locais — nenhuma chamada a HeyGen/ElevenLabs).
+> Ambiente devolvido a `live`/`MAX_GENERATIONS=3` ao final, idêntico ao
+> estado deixado por SIMPLES-5.
+>
 > ⚠️ **AMBIENTE — RECONCILIADO em 03/09/2026 (BLOCO HEYGEN-SIMPLES-5).** A
 > divergência `PROVIDER_LIVE_MAX_GENERATIONS` processo=1 × `.env`=3
 > (registrada desde SIMPLES-2, relatada em SIMPLES-4) foi resolvida por
