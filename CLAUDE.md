@@ -5,11 +5,11 @@ Always respond in Brazilian Portuguese.
 > O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
 > — não duplicado aqui de propósito, para não haver dois textos podendo
 > discordar um do outro. **Dentro da Seção 6, o bloco mais novo é
-> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-6 (03/09)", no FIM da seção — leia-o
-> antes de todos os blocos anteriores (SIMPLES-5, SIMPLES-4 e SIMPLES-3
-> 03/09 tarde, SIMPLES-1 03/09 manhã, primeiro vídeo Normal/Wan 3.0 02/09,
-> V34 01/09, 28/08, 27/08, 26/08, 25/08), que estão superados no que algum
-> deles conflitar.**
+> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-7 (03/09)", no FIM da seção — leia-o
+> antes de todos os blocos anteriores (SIMPLES-6, SIMPLES-5, SIMPLES-4 e
+> SIMPLES-3 03/09 tarde, SIMPLES-1 03/09 manhã, primeiro vídeo Normal/Wan
+> 3.0 02/09, V34 01/09, 28/08, 27/08, 26/08, 25/08), que estão superados
+> no que algum deles conflitar.**
 > Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
 > existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
 > isso o texto antigo saiu daqui.
@@ -793,3 +793,37 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > ### (e) Gate, custo, ambiente
 >
 > 2 mutantes novos (`checkBackgroundResizePolicy.ts`), provados reprovando isoladamente antes do commit. **Registro: 515 mutantes declarados** (era 513). `tsc` limpo nos dois lados, gate verde. **Custo real: US$ 0,00** — toda a prova roda em fixture + `ffmpeg`/`ffprobe` locais, nenhuma chamada a HeyGen/ElevenLabs. Ambiente trocado para `fixture` só para a demonstração do aviso M1 (mesmo procedimento já autorizado em rodadas anteriores) e devolvido a `live`/`PROVIDER_LIVE_MAX_GENERATIONS=3` ao final — idêntico ao estado deixado por SIMPLES-5, confirmado por `printenv`.
+
+> ⚠️ **FECHAMENTO — BLOCO HEYGEN-SIMPLES-7 (03/09/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão de INVESTIGAÇÃO pura — fecha 3 lacunas do fechamento do SIMPLES-6 (as 40 anomalias, o teste de fundo real, o isolamento de `videoFormat.ts`). Nenhuma mudança nas Partes L/M/N. **HEAD ao fechar: `0711cc1` + este commit.**
+>
+> ### (a) O — as 40 anomalias, nomeadas e diffadas
+>
+> Lista completa extraída do log (`sed`/`grep` sobre `mutants-heygen-simples-6-completa.log`, no scratchpad da sessão anterior): 40 itens. Diff contra o histórico documentado nesta linha de trabalho (~18-20 itens, rotativos entre passadas): **13 batiam** (erro de vendor: defesa em profundidade; custo trunc/floor; lote nativo; preenchimento; docs-internal; 2× recuperação; a chave da fal redigida; pipeline resposta crua; 2× pipeline polling; pipeline três etapas; aspas retas; color-match corrigirCor) — **27 eram "novos"** frente à última lista conhecida.
+>
+> Os 27 foram reexecutados EM LOTE, isolados, com `--guard` repetido 27 vezes (o filtro usa OR — `filtros.some(...)`, confirmado lendo `tools/run-mutants.mjs:536`). **Achado de processo:** um dos filtros começava com `/` ("/recompose inclui a foto lateral...") e o Git Bash o reescreveu como caminho do Windows (`C:/Program Files/Git/recompose...`) antes de chegar ao Node — o filtro nunca casou nada. Corrigido com `MSYS_NO_PATHCONV=1` na reexecução isolada desse item.
+>
+> Do lote de 27: **23 já saíram "ok"** de primeira; **4 saíram AMBÍGUO** ("voz: a prévia sai da voz que acabou de ser criada"; "admin: aprovar manualmente limpa o token"; "roteiro: acima do teto RECUSA, nunca corta"; "compor() e animar() só falam com o fornecedor pela proporção MAPEADA") — reprovaram, mas sem a mensagem esperada. Cada um dos 4 foi reexecutado SOZINHO (filtro único, sem concorrência com os outros 26): **os 4 saíram "ok"** na segunda tentativa. **Confirmação: os 27 "novos" reprovam corretamente — nenhum é defeito real.** Load average medido antes/depois: ~34 (durante a passada completa original) → ~7 (nas reverificações) — a contenção de 6 workers paralelos brigando por CPU/`docker exec` é a causa mais provável, não uma regressão introduzida por SIMPLES-6.
+>
+> ### (b) P — nenhum asset real, saldo confirma
+>
+> `checkBackgroundResizePolicy.ts` substitui `globalThis.fetch` ANTES de chamar `generateVideo()` e restaura no `finally` — releitura linha a linha confirma que o mock **lança erro para qualquer URL fora das três esperadas** (ElevenLabs timestamps, HeyGen assets, HeyGen videos): se alguma chamada tivesse escapado para a rede real, o teste teria FALHADO (capturado como `erro`), não passado em silêncio. A `apiKey` usada (`"chave-irrelevante-fetch-substituido"`) é uma string inventada — mesmo num cenário hipotético de vazamento, a HeyGen teria recusado com 401 antes de criar qualquer asset.
+>
+> Confirmado de forma independente por leitura REAL da conta (`probeSimples7SaldoCheck.ts`, novo, `GET /v3/users/me`, custo zero): saldo **US$ 5,40** — MAIOR que o último valor conhecido (US$ 4,00, medido no fechamento de SIMPLES-1, mais cedo no mesmo dia). Um saldo que SOBE descarta qualquer débito real no meio do caminho.
+>
+> Não existe `GET`/`DELETE` de asset documentado na API da HeyGen (`developers.heygen.com/reference/upload-asset`, WebFetch 03/09/2026) — mesmo que um asset real existisse, não haveria como listá-lo ou removê-lo pela API. **Pricing de `POST /v3/assets` não é documentado publicamente** — declarado NÃO VERIFICADO, e não presumido US$0,00 só porque nada foi cobrado NESTE caso (nenhuma chamada real saiu).
+>
+> Achado de processo, corrigido no caminho: a primeira versão do probe também chamava `GET /v2/user/remaining_quota`, e o gate reprovou (`checkLegacyEndpointPolicy.ts` — toda chamada v2 precisa estar registrada em `legacyEndpoints.ts`). Removida a chamada v2 do probe (descartável, não vale abrir uma entrada permanente de inventário para uma leitura de uma sessão) — `/v3/users/me` já trazia o saldo em `data.wallet`, que é tudo que era preciso.
+>
+> ### (c) Q — `videoFormat.ts` é compartilhado, sem efeito comportamental
+>
+> `falPipeline.ts:52` importa `AspectRatio` (só o TIPO) de `videoFormat.ts` — confirma que o arquivo É compartilhado. `routes/videos.ts` computa `format = resolveVideoFormat(publishPlatform)` UMA VEZ, antes de despachar por vendor — então `format.resolution` (agora "1080p") entra no objeto passado a `generateVideo()` também para vídeos Normal/Premium.
+>
+> Isolamento COMPORTAMENTAL confirmado por dois greps exaustivos, zero ocorrências cada: `grep "\.resolution\b" falPipeline.ts` (o arquivo NUNCA lê resolução) e `grep "input\.format\b" generateVideoFal` (só `input.format.aspectRatio` é extraído, na linha que abre a composição — `resolution` nunca sai do objeto). `pixelDimensionsFor()`/`resizeBackgroundImage()` (L2) ficam, por limite de função confirmado (`generateVideoHeygen` linha 1310–1560, `generateVideoFal` linha 1724+), inteiramente dentro de `generateVideoHeygen` — `generateVideoFal` nunca as chama.
+>
+> B-ISO: em vez de uma nova geração Normal em fixture, a prova aqui é a AUSÊNCIA de qualquer caminho de código que pudesse ser afetado — mais forte que uma amostra única, porque cobre TODOS os inputs possíveis, não só um. Corroborado empiricamente pelas guardas fal já existentes e inalteradas (`checkFalGenerationPathPolicy.ts`, `checkFalSceneWiringPolicy.ts`, `checkFalPipelinePolicy.ts` — todas com `expect` de conteúdo EXATO de payload, todas verdes durante SIMPLES-6 inteiro): se `resolution` vazando tivesse mudado alguma coisa observável no payload fal, essas guardas teriam reprovado.
+>
+> **Achado à parte, NÃO corrigido — fora do escopo desta rodada:** `videos.resolution`/`provider_usage.resolution` agora gravam `"1080p"` também para linhas Normal/Premium, mesmo o pipeline fal nunca tendo "escolhido" 1080p por si — é um RÓTULO herdado do objeto compartilhado, não uma medição do que o fal de fato entregou (que segue sendo o que `formatDerivation.ts`/`MASTER_ASPECT_RATIO` decidem, por conta própria). Sem efeito de comportamento; efeito possível em relatório/auditoria futura que leia essa coluna assumindo que ela reflete o pipeline fal.
+>
+> ### (d) Gate e custo
+>
+> Nenhum código de produto tocado — só o probe novo (`probeSimples7SaldoCheck.ts`, descartável, mantido como artefato histórico, mesmo padrão dos outros `probe*.ts` já no repositório). Gate verde, `tsc` limpo. **Custo real: US$ 0,00** — a única chamada real desta sessão foi um `GET` de saldo.

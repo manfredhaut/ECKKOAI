@@ -15,6 +15,47 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
+> ⚠️ **BLOCO HEYGEN-SIMPLES-7, FECHADO em 03/09/2026. HEAD `0711cc1` +
+> este commit.** Só investigação — fecha 3 lacunas do fechamento do
+> SIMPLES-6, nenhuma mudança nas Partes L/M/N.
+>
+> **O — as 40 anomalias eram ruído de contenção, não regressão.** Lista
+> nomeada completa extraída e diffada contra o histórico (~18-20 itens
+> conhecidos): 13 batiam com a dívida rotativa já documentada, **27
+> apareciam como "novos".** Todos os 27 foram reexecutados ISOLADOS sob
+> carga baixa (load average caiu de ~34 para ~7 entre a passada completa
+> e as reverificações) — **os 27 reprovaram corretamente**, confirmando
+> contenção (6 workers paralelos concorrendo por CPU/docker-exec), não
+> defeito real. Achado de processo: um filtro `--guard` começando com `/`
+> foi corrompido pelo Git Bash em caminho do Windows (`MSYS_NO_PATHCONV=1`
+> resolve).
+>
+> **P — nenhum asset real foi criado pelo teste do fundo 100×50.** `fetch`
+> substituído para 100% das chamadas durante o teste inteiro
+> (`checkBackgroundResizePolicy.ts` lança erro para qualquer URL não
+> prevista — se algo tivesse vazado para a rede real, o teste teria
+> falhado, não passado em silêncio); a `apiKey` usada era uma string
+> falsa. Confirmado por GET real (`probeSimples7SaldoCheck.ts`, novo):
+> saldo HeyGen **US$ 5,40** — MAIOR que o último valor conhecido (US$
+> 4,00, SIMPLES-1, mesmo dia). Não existe GET/DELETE de asset na API da
+> HeyGen (doc pública) — nada a apagar mesmo que houvesse. Pricing de
+> `POST /v3/assets` não é documentado — declarado NÃO VERIFICADO, não
+> presumido US$0,00.
+>
+> **Q — `videoFormat.ts` É compartilhado**, mas sem efeito comportamental
+> no Normal/Premium: `falPipeline.ts` nunca lê `.resolution` (grep
+> exaustivo, zero ocorrências), e `generateVideoFal` só extrai
+> `aspectRatio` de `input.format` — confirmado por leitura de código nos
+> dois arquivos. `pixelDimensionsFor()`/`resizeBackgroundImage()` (L2) só
+> são chamadas dentro de `generateVideoHeygen` (confirmado por limite de
+> função). **Achado à parte, NÃO corrigido (fora do escopo):**
+> `videos.resolution`/`provider_usage.resolution` agora gravam "1080p"
+> também para vídeos Normal/Premium — um rótulo sem efeito de
+> comportamento, mas potencialmente enganoso num relatório futuro.
+>
+> Nenhum código de produto tocado (só o probe novo, descartável). Gate
+> verde, custo real US$ 0,00 (a checagem de saldo é GET).
+>
 > ⚠️ **BLOCO HEYGEN-SIMPLES-6, FECHADO em 03/09/2026. HEAD `a873d65` + este
 > commit.** Três correções, uma investigação, um aviso — não reabre A-I.
 >
