@@ -66,6 +66,7 @@ import { checkPreflightSummaryPolicy } from "./checkPreflightSummaryPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import { checkHeygenSpeechPolicy } from "./checkHeygenSpeechPolicy.js";
 import { checkHeygenVoiceCloneWiringPolicy } from "./checkHeygenVoiceCloneWiringPolicy.js";
+import { checkHeygenWebhookPolicy } from "./checkHeygenWebhookPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
 import { checkFalPollRecoveryPolicy } from "./checkFalPollRecoveryPolicy.js";
 import { checkBlockResumePolicy } from "./checkBlockResumePolicy.js";
@@ -698,6 +699,11 @@ async function main(): Promise<void> {
   const heygenVoiceCloneWiring = checkHeygenVoiceCloneWiringPolicy(process.env.REPO_ROOT ?? "/repo");
   heygenVoiceCloneWiring.failures.forEach((f) => failures.push(f));
   heygenVoiceCloneWiring.notes.forEach((n) => note(n));
+
+  // --- 25e-4. B7: a rota receptora de webhook HeyGen -----------------------
+  const heygenWebhook = checkHeygenWebhookPolicy(process.env.REPO_ROOT ?? "/repo");
+  heygenWebhook.failures.forEach((f) => failures.push(f));
+  heygenWebhook.notes.forEach((n) => note(n));
 
   // --- 25f. o vídeo pago não some sem rastro ------------------------------
   //

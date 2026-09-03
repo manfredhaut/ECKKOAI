@@ -143,6 +143,11 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # B7, BLOCO HEYGEN-SIMPLES-1 — vazio até um endpoint real ser
+      # registrado na conta HeyGen (POST /v3/webhooks/endpoints, NÃO feito
+      # nesta rodada por decisão do operador). A rota recusa toda entrega
+      # sem isto preenchido — ver routes/heygenWebhook.ts.
+      HEYGEN_WEBHOOK_SECRET: ${HEYGEN_WEBHOOK_SECRET:-}
       # Limiter de login: default = valor de produção (5 / 15 min). Só
       # afrouxe em desenvolvimento; npm run check reprova valor folgado com
       # NODE_ENV=production. Ver services/loginRateLimitPolicy.ts.

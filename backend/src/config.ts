@@ -101,4 +101,12 @@ export const config = {
   // Printed by `stripe listen` in dev (different from any dashboard-configured
   // secret) — see docs/setup.md for the local verification flow.
   stripeWebhookSecret: optional("STRIPE_WEBHOOK_SECRET"),
+  // B7, BLOCO HEYGEN-SIMPLES-1 (02/09/2026) — o secret que POST /v3/webhooks/
+  // endpoints devolveria ao registrar nosso endpoint na conta HeyGen.
+  // NENHUM endpoint foi registrado nesta rodada (decisão do operador): a
+  // rota receptora (routes/heygenWebhook.ts) já valida a assinatura
+  // HMAC-SHA256 do jeito documentado, mas sem este secret preenchido ela
+  // recusa toda entrega (mesmo padrão de `stripeWebhookSecret` ausente,
+  // acima) — não há como validar uma assinatura contra um segredo vazio.
+  heygenWebhookSecret: optional("HEYGEN_WEBHOOK_SECRET"),
 };

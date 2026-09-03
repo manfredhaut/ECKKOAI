@@ -34,6 +34,7 @@ import { storageRoutes } from "./routes/storage.js";
 import { featureFlagRoutes } from "./routes/featureFlags.js";
 import { publicRoutes } from "./routes/public.js";
 import { stripeWebhookRoutes } from "./routes/stripeWebhook.js";
+import { heygenWebhookRoutes } from "./routes/heygenWebhook.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -75,6 +76,11 @@ export async function buildApp() {
   // buffer, needed for Stripe signature verification) doesn't leak into any
   // other route. Public: Stripe calls it directly, no session cookie.
   await app.register(stripeWebhookRoutes);
+  // B7, BLOCO HEYGEN-SIMPLES-1 — mesmo padrão exato do Stripe acima (raw
+  // body próprio deste plugin, sem cookie de sessão). Público, mas a rota
+  // recusa toda entrega sem HEYGEN_WEBHOOK_SECRET configurado — ver
+  // routes/heygenWebhook.ts.
+  await app.register(heygenWebhookRoutes);
 
   // Everything below requires a logged-in session, scoped to the caller's tenant.
   await app.register(async (protectedApp) => {
