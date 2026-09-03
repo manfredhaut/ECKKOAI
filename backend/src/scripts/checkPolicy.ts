@@ -65,6 +65,7 @@ import { checkLegacyEndpointPolicy } from "./checkLegacyEndpointPolicy.js";
 import { checkPreflightSummaryPolicy } from "./checkPreflightSummaryPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import { checkHeygenSpeechPolicy } from "./checkHeygenSpeechPolicy.js";
+import { checkHeygenVoiceCloneWiringPolicy } from "./checkHeygenVoiceCloneWiringPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
 import { checkFalPollRecoveryPolicy } from "./checkFalPollRecoveryPolicy.js";
 import { checkBlockResumePolicy } from "./checkBlockResumePolicy.js";
@@ -692,6 +693,11 @@ async function main(): Promise<void> {
   const heygenSpeech = await checkHeygenSpeechPolicy();
   heygenSpeech.failures.forEach((f) => failures.push(f));
   heygenSpeech.notes.forEach((n) => note(n));
+
+  // --- 25e-3. B6: a clonagem HeyGen está ligada na rota de voice-sample --
+  const heygenVoiceCloneWiring = checkHeygenVoiceCloneWiringPolicy(process.env.REPO_ROOT ?? "/repo");
+  heygenVoiceCloneWiring.failures.forEach((f) => failures.push(f));
+  heygenVoiceCloneWiring.notes.forEach((n) => note(n));
 
   // --- 25f. o vídeo pago não some sem rastro ------------------------------
   //

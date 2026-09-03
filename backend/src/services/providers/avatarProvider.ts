@@ -714,6 +714,37 @@ export async function cloneVoiceHeygenAndRecordUsage(input: {
 }
 
 /**
+ * `cloneVoiceHeygenAndRecordUsage` a partir de um BUFFER em memória — B6,
+ * BLOCO HEYGEN-SIMPLES-1 (02/09/2026). Sobe o áudio (`heygenUploadAsset`,
+ * a MESMA função de fundo/foto/áudio de vídeo) e então clona, num só
+ * passo — para `POST /avatars/:id/voice-sample` (routes/voice.ts) não
+ * precisar conhecer o upload intermediário: ela já tem o buffer
+ * NORMALIZADO em memória (o mesmo que sobe para o ElevenLabs), e subir de
+ * novo do disco seria I/O que o caminho já evitou uma vez.
+ */
+export async function cloneVoiceHeygenFromBufferAndRecordUsage(input: {
+  apiKey: string;
+  buffer: Buffer;
+  mimeType: string;
+  voiceName: string;
+  tenantId: string;
+  avatarId?: string | null;
+  language?: string | null;
+  removeBackgroundNoise?: boolean | null;
+}): Promise<HeygenVoiceCloneResult> {
+  const assetId = await heygenUploadAsset(input.apiKey, input.buffer, input.mimeType);
+  return cloneVoiceHeygenAndRecordUsage({
+    apiKey: input.apiKey,
+    audioAssetId: assetId,
+    voiceName: input.voiceName,
+    tenantId: input.tenantId,
+    avatarId: input.avatarId,
+    language: input.language,
+    removeBackgroundNoise: input.removeBackgroundNoise,
+  });
+}
+
+/**
  * O veredito de `GET /v3/voices/{voice_clone_id}` — POLLING do clone.
  *
  * `"pending"|"processing"|"complete"|"failed"` são os valores citados pela

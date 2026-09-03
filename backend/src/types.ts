@@ -25,6 +25,14 @@ export interface Avatar {
   photo_urls: string[];
   reference_video_url: string | null;
   voice_id: string | null;
+  /**
+   * A voz clonada DIRETO na HeyGen — B5/B6, BLOCO HEYGEN-SIMPLES-1
+   * (migration 076). Paralela a `voice_id` (sempre ElevenLabs), nunca uma
+   * substituição: o mesmo avatar pode gerar tanto no tier Simples (lê esta
+   * coluna) quanto no Normal/Premium (lê `voice_id`). `null` até a
+   * primeira clonagem HeyGen bem-sucedida.
+   */
+  heygen_voice_id: string | null;
   provider_avatar_id: string | null;
   provider_status: "ready" | "processing" | "unknown" | null;
   /** `supported_api_engines` declarado na criação. NULL = não declarou. */

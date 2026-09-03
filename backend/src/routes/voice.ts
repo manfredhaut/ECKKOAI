@@ -41,7 +41,8 @@ import {
   readVoiceSubscription,
   synthesizeSpeech,
 } from "../services/providers/voiceProvider.js";
-import { getCredential } from "../services/credentialLookup.js";
+import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
+import { cloneVoiceHeygenFromBufferAndRecordUsage } from "../services/providers/avatarProvider.js";
 import { takeUpload } from "../services/uploadLimits.js";
 import { readUpload, saveUpload } from "../services/storage.js";
 import { requireActiveTenant } from "../middleware/requireActiveTenant.js";
@@ -408,6 +409,46 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         "UPDATE avatars SET voice_id = $3 WHERE id = $1 AND tenant_id = $2 RETURNING *",
         [req.params.id, req.tenantId, voiceId],
       );
+
+      // --- 6c. a MESMA gravação, clonada TAMBÉM na HeyGen — B6, BLOCO
+      // HEYGEN-SIMPLES-1 (02/09/2026, migration 076).
+      //
+      // Best-effort, e de propósito: o slot ElevenLabs já foi consumido e a
+      // resposta principal (voice_id) já é válida por si só — este avatar
+      // continua funcionando no Normal/Premium mesmo se a HeyGen recusar ou
+      // estiver fora do ar. Sem credencial HeyGen conectada, pula em
+      // silêncio (o caminho de hoje, para quem não usa o tier Simples).
+      //
+      // A HeyGen usa a MESMA chave para avatar e voz (medido: a sonda de
+      // reconhecimento A1-A5 já consultou GET /v3/voices com a credencial
+      // de `provider=avatar`), então não há um "provider=voice, vendor=
+      // heygen" separado para resolver — é a credencial de avatar mesmo.
+      let heygenVoiceId: string | null = null;
+      const heygenCredential = await getCredentialForVendor(req.tenantId, "avatar", "heygen");
+      if (heygenCredential) {
+        try {
+          const clonado = await cloneVoiceHeygenFromBufferAndRecordUsage({
+            apiKey: heygenCredential.apiKey,
+            buffer: normalizada.buffer,
+            mimeType: normalizada.mimeType,
+            voiceName: voiceNameWithTimestamp(avatar.name, new Date()),
+            tenantId: req.tenantId,
+            avatarId: avatar.id,
+            removeBackgroundNoise: removerRuido,
+          });
+          heygenVoiceId = clonado.voiceCloneId;
+          await pool.query("UPDATE avatars SET heygen_voice_id = $2 WHERE id = $1", [avatar.id, heygenVoiceId]);
+        } catch (err) {
+          logEvent("error", "heygen_voice_clone_failed", {
+            avatarId: avatar.id,
+            consequence:
+              "o avatar continua servindo o Normal/Premium normalmente (voice_id ElevenLabs já gravado); " +
+              "só o tier Simples fica sem voz HeyGen própria para este avatar até uma nova tentativa",
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      if (heygenVoiceId && updated[0]) updated[0].heygen_voice_id = heygenVoiceId;
 
       // --- 7. prévia audível ----------------------------------------------
       //
