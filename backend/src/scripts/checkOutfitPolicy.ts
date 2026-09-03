@@ -563,6 +563,15 @@ export async function checkOutfitPolicy(repoRoot: string): Promise<OutfitCheckRe
 
     // Sem imageUrls, o corpo NÃO tem reference_images — o comportamento de
     // sempre, para todo traje criado só por texto (o caminho de produto hoje).
+    //
+    // SEGUNDO reset aqui — SIMPLES-2, 03/09/2026, achado ao rodar o gate fora
+    // do container de origem. Sem ele, esta chamada consome a MESMA cota de
+    // `PROVIDER_LIVE_MAX_GENERATIONS` que a chamada acima já gastou, e o
+    // teste passa a depender do valor REAL desse env no processo (>=2) em
+    // vez de testar só o comportamento de `criarLook` — hermético num
+    // container e quebradiço noutro, pela mesma cota que protege geração
+    // real, nunca pensada para gate de guarda.
+    resetLiveGenerationCount();
     corpoDeAvatarsRecebido = null;
     const semReferencia = await criarLook({ ...BASE, name: "Terno sem referência", prompt: "terno cinza" });
     if (!semReferencia.ok) {
