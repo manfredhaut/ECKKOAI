@@ -67,6 +67,7 @@ import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
 import { checkHeygenVoiceClonePolicy } from "./checkHeygenVoiceClonePolicy.js";
 import { checkHeygenVoiceCloneWiringPolicy } from "./checkHeygenVoiceCloneWiringPolicy.js";
 import { checkHeygenCallbackWiringPolicy } from "./checkHeygenCallbackWiringPolicy.js";
+import { checkIdempotencyReplayPolicy } from "./checkIdempotencyReplayPolicy.js";
 import { checkAudioMeasuredPolicy } from "./checkAudioMeasuredPolicy.js";
 import { checkHeygenWebhookPolicy } from "./checkHeygenWebhookPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
@@ -719,6 +720,12 @@ async function main(): Promise<void> {
   const audioMeasured = await checkAudioMeasuredPolicy();
   audioMeasured.failures.forEach((f) => failures.push(f));
   audioMeasured.notes.forEach((n) => note(n));
+
+  // --- 25e-7. F3, SIMPLES-4: duas chamadas reais idênticas mandam a MESMA
+  // Idempotency-Key ao POST /v3/videos, e o replay do fornecedor é aceito --
+  const idempotencyReplay = await checkIdempotencyReplayPolicy();
+  idempotencyReplay.failures.forEach((f) => failures.push(f));
+  idempotencyReplay.notes.forEach((n) => note(n));
 
   // --- 25f. o vídeo pago não some sem rastro ------------------------------
   //
