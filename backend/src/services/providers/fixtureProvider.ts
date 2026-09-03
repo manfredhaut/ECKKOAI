@@ -20,7 +20,16 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { saveUpload } from "../storage.js";
-import type { AvatarProviderStatus, GenerateVideoInput, GenerateVideoResult, PollResult, TrainAvatarResult } from "./avatarProvider.js";
+import type {
+  AvatarProviderStatus,
+  GenerateVideoInput,
+  GenerateVideoResult,
+  PollResult,
+  TrainAvatarResult,
+  HeygenSpeechResult,
+  HeygenVoiceCloneResult,
+  HeygenVoiceCloneStatus,
+} from "./avatarProvider.js";
 import { buildHeygenVideoPayload } from "./avatarProvider.js";
 import type { AvatarLook, CreatedAvatarLook } from "./avatarProvider.js";
 import type {
@@ -578,4 +587,43 @@ export function waitForAvatarReadyFixture(providerAvatarId: string): AvatarProvi
   // estado perdido em memória seria pior que a realidade.
   if (startedAt === undefined) return "ready";
   return Date.now() - startedAt < FIXTURE_AVATAR_TRAINING_MS ? "processing" : "ready";
+}
+
+// ---------------------------------------------------------------------------
+// B5/B2, BLOCO HEYGEN-SIMPLES-1 (02/09/2026) — TTS e clonagem nativa HeyGen.
+// Nenhum call site de produto usa estas ainda (ver o comentário de topo de
+// cada função real, em avatarProvider.ts); as fixtures existem só para o
+// desvio de `isFixtureMode()` que a guarda de provedor exige de toda função
+// exportada que alcança rede.
+// ---------------------------------------------------------------------------
+
+export function synthesizeSpeechHeygenFixture(text: string): HeygenSpeechResult {
+  // Mesma régua de sempre (12,8151 c/s, scriptDuration.ts) só para o número
+  // ser plausível — não é a medição real, que é justamente o que este
+  // caminho existiria para dar ao produto.
+  const durationSeconds = Math.max(0.5, Math.round((text.length / 12.8151) * 100) / 100);
+  return {
+    audioUrl: `/uploads/fixture/heygen-speech-${randomUUID().slice(0, 8)}.mp3`,
+    durationSeconds,
+    requestId: `fixture-speech-${randomUUID().slice(0, 8)}`,
+    wordTimestamps: null,
+  };
+}
+
+export function cloneVoiceHeygenFixture(): HeygenVoiceCloneResult {
+  return { voiceCloneId: `fixture-voice-clone-${randomUUID().slice(0, 8)}` };
+}
+
+export function readHeygenVoiceCloneStatusFixture(): HeygenVoiceCloneStatus {
+  return "complete";
+}
+
+export function deleteVoiceHeygenFixture(): void {
+  return;
+}
+
+export function countHeygenVoiceSlotsFixture(): number {
+  // Fixture não tem vozes reais na conta — 0 é a contagem verdadeira do
+  // ambiente simulado, não um chute.
+  return 0;
 }

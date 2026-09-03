@@ -2,7 +2,14 @@ import { pool } from "../../db/pool.js";
 import { logEvent } from "../log/safeLog.js";
 
 export type MeteredProvider = "avatar" | "voice" | "script";
-export type MeteredUnitType = "seconds" | "characters" | "tokens_in" | "tokens_out";
+/**
+ * `"clones"` — B5, BLOCO HEYGEN-SIMPLES-1, 02/09/2026: `POST
+ * /v3/voices/clone` (HeyGen) é cobrado por CHAMADA, não por caractere nem
+ * por segundo — as outras três unidades não descrevem "uma clonagem", e
+ * forçar `unitCount` em caracteres/segundos para um consumo que não tem
+ * nenhum dos dois inventaria uma medição que não existe.
+ */
+export type MeteredUnitType = "seconds" | "characters" | "tokens_in" | "tokens_out" | "clones";
 
 /** Ver DurationSource em avatarProvider.ts — mesmo vocabulário, sem acoplar. */
 export type UnitSource = "vendor_response" | "tts_timestamps" | "requested";

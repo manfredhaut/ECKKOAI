@@ -52,6 +52,11 @@ import {
   pollVideoJobFixture,
   trainAvatarFixture,
   waitForAvatarReadyFixture,
+  synthesizeSpeechHeygenFixture,
+  cloneVoiceHeygenFixture,
+  readHeygenVoiceCloneStatusFixture,
+  deleteVoiceHeygenFixture,
+  countHeygenVoiceSlotsFixture,
 } from "./fixtureProvider.js";
 import { logEvent } from "../log/safeLog.js";
 
@@ -537,6 +542,7 @@ export async function synthesizeSpeechHeygen(
   text: string,
   opts?: { speed?: number | null; locale?: string | null },
 ): Promise<HeygenSpeechResult> {
+  if (isFixtureMode()) return synthesizeSpeechHeygenFixture(text);
   const body: Record<string, unknown> = { text, voice_id: voiceId };
   if (opts?.speed != null) body.speed = opts.speed;
   if (opts?.locale) body.locale = opts.locale;
@@ -602,6 +608,205 @@ export async function requestSpeechAndRecordUsage(input: {
     estimatedCostUsd: null,
   });
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// CLONAGEM DE VOZ NATIVA — B5, BLOCO HEYGEN-SIMPLES-1, 02/09/2026.
+//
+// Schema lido por doc pública (developers.heygen.com/reference/clone-a-voice
+// e /reference/delete-a-voice, WebFetch): NÃO reconfirmado por chamada real
+// — `POST /v3/voices/clone` está nas proibidas desta rodada, junto de
+// `/v3/videos`/`/v3/avatars`/`/v3/voices/speech`. Sem call site de produto
+// ainda: a rota `/avatars/:id/voice-sample` (routes/voice.ts) continua
+// chamando só `cloneVoice` (ElevenLabs, voiceProvider.ts) — ligar as duas
+// exigiria despachar aquela rota por vendor, e ela é COMPARTILHADA com o
+// caminho que atende Normal/Premium hoje (a voz clonada ali é a MESMA que
+// `avatar.voice_id` alimenta em `requireAudio`). Mexer nesse despacho é
+// decisão fora do escopo desta rodada — aqui só o CAMINHO (as quatro
+// funções de protocolo), nunca a ligação.
+// ---------------------------------------------------------------------------
+
+const HEYGEN_CLONE_ENDPOINT = "/v3/voices/clone";
+
+export interface HeygenVoiceCloneResult {
+  voiceCloneId: string;
+}
+
+/**
+ * `POST /v3/voices/clone`. `audio` usa o MESMO discriminador de
+ * `reference_images` (B4) — aqui só o modo `asset_id`, já que o produto
+ * sempre sobe o áudio via `POST /v3/assets` antes de qualquer chamada de
+ * clonagem (mesmo padrão de `createAvatarLook`).
+ *
+ * `removeBackgroundNoise` mapeia o checkbox "Remover ruído de fundo" que a
+ * tela JÁ coleta hoje (`VoiceSampleRecorder.tsx`, `removerRuido`) para o
+ * caminho ElevenLabs (`cloneVoice`, voiceProvider.ts) — o mesmo campo, sem
+ * inventar um segundo controle, quando o vendor da voz for HeyGen.
+ * `undefined` cai no default DECLARADO do fornecedor (`true`), e não num
+ * valor nosso — mesma doutrina de `DEFAULTS_NUNCA_HERDADOS` (falPipeline.ts)
+ * quanto a defaults do fornecedor: aqui não há histórico de o fornecedor
+ * mudar esse default em silêncio, então herdar é aceitável.
+ */
+export async function cloneVoiceHeygen(
+  apiKey: string,
+  audioAssetId: string,
+  voiceName: string,
+  opts?: { language?: string | null; removeBackgroundNoise?: boolean | null },
+): Promise<HeygenVoiceCloneResult> {
+  if (isFixtureMode()) return cloneVoiceHeygenFixture();
+  const body: Record<string, unknown> = {
+    audio: { type: "asset_id", asset_id: audioAssetId },
+    voice_name: voiceName,
+  };
+  if (opts?.language) body.language = opts.language;
+  if (opts?.removeBackgroundNoise != null) body.remove_background_noise = opts.removeBackgroundNoise;
+
+  let res: Response;
+  try {
+    res = await fetch(`${HEYGEN_BASE}${HEYGEN_CLONE_ENDPOINT}`, {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: vendorSignal(),
+    });
+  } catch (err) {
+    logProviderNetworkError("avatarProvider.heygen", err);
+    throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
+  }
+  const json = await fetchJson(res, "HeyGen", "heygen.cloneVoice");
+  const voiceCloneId = json?.data?.voice_clone_id;
+  if (typeof voiceCloneId !== "string" || !voiceCloneId) {
+    throw new AvatarProviderError(unexpectedShapeMessage("heygen.cloneVoice", "data.voice_clone_id", json));
+  }
+  return { voiceCloneId };
+}
+
+/**
+ * `POST /v3/voices/clone` MAIS o registro de consumo — mesmo par de
+ * responsabilidades de `requestSpeechAndRecordUsage`.
+ */
+export async function cloneVoiceHeygenAndRecordUsage(input: {
+  apiKey: string;
+  audioAssetId: string;
+  voiceName: string;
+  tenantId: string;
+  avatarId?: string | null;
+  language?: string | null;
+  removeBackgroundNoise?: boolean | null;
+}): Promise<HeygenVoiceCloneResult> {
+  const result = await cloneVoiceHeygen(input.apiKey, input.audioAssetId, input.voiceName, {
+    language: input.language,
+    removeBackgroundNoise: input.removeBackgroundNoise,
+  });
+  await recordProviderUsage({
+    tenantId: input.tenantId,
+    videoId: null,
+    provider: "voice",
+    vendor: "heygen",
+    unitType: "clones",
+    unitCount: 1,
+    endpointId: HEYGEN_CLONE_ENDPOINT,
+    keySource: "tenant_byok",
+    // NÃO MEDIDO — preço não documentado pela doc pública lida.
+    estimatedCostUsd: null,
+  });
+  return result;
+}
+
+/**
+ * O veredito de `GET /v3/voices/{voice_clone_id}` — POLLING do clone.
+ *
+ * `"pending"|"processing"|"complete"|"failed"` são os valores citados pela
+ * doc pública lida (síntese de busca, não a página de referência — que
+ * devolveu 404 no WebFetch direto). NÃO totalmente confirmado: uma fonte
+ * citou `"complete"`, outra `"completed"` — por isso o veredito abaixo
+ * trata qualquer string que COMECE com "complet" como concluído, em vez de
+ * comparar por igualdade estrita, e qualquer coisa que não seja um dos
+ * nomes conhecidos cai em `"processing"` (mesma doutrina de "unknown trata
+ * como ainda não pronto" já usada para avatar — nunca declarar pronto por
+ * engano, isso deixaria a voz escolhível antes de existir no fornecedor).
+ */
+export type HeygenVoiceCloneStatus = "pending" | "processing" | "complete" | "failed";
+
+export async function readHeygenVoiceCloneStatus(
+  apiKey: string,
+  voiceCloneId: string,
+): Promise<HeygenVoiceCloneStatus> {
+  if (isFixtureMode()) return readHeygenVoiceCloneStatusFixture();
+  let res: Response;
+  try {
+    res = await fetch(`${HEYGEN_BASE}/v3/voices/${encodeURIComponent(voiceCloneId)}`, {
+      headers: { "x-api-key": apiKey },
+      signal: vendorSignal(),
+    });
+  } catch (err) {
+    logProviderNetworkError("avatarProvider.heygen", err);
+    throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
+  }
+  const json = await fetchJson(res, "HeyGen", "heygen.readVoiceCloneStatus");
+  const bruto = String(json?.data?.status ?? "").toLowerCase();
+  if (bruto === "failed") return "failed";
+  if (bruto === "pending") return "pending";
+  if (bruto.startsWith("complet")) return "complete";
+  return "processing";
+}
+
+/**
+ * `DELETE /v3/voices/{voice_id}`. Sem corpo; resposta `{data:{voice_id}}`
+ * no 200 — MEDIDO só por doc pública. `404` (voz já apagada) é tratado como
+ * sucesso: o efeito desejado (a voz não existir mais) já vale, e recusar
+ * uma segunda tentativa de apagar a MESMA voz sem razão de negócio nenhuma
+ * seria o tipo de erro que só existe porque ninguém verificou o caso.
+ */
+export async function deleteVoiceHeygen(apiKey: string, voiceId: string): Promise<void> {
+  if (isFixtureMode()) return deleteVoiceHeygenFixture();
+  let res: Response;
+  try {
+    res = await fetch(`${HEYGEN_BASE}/v3/voices/${encodeURIComponent(voiceId)}`, {
+      method: "DELETE",
+      headers: { "x-api-key": apiKey },
+      signal: vendorSignal(),
+    });
+  } catch (err) {
+    logProviderNetworkError("avatarProvider.heygen", err);
+    throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
+  }
+  if (res.status === 404) {
+    // Já não existe — o log ainda registra a resposta bruta, para diagnóstico.
+    await fetchJson(res, "HeyGen", "heygen.deleteVoice").catch(() => null);
+    return;
+  }
+  await fetchJson(res, "HeyGen", "heygen.deleteVoice");
+}
+
+/**
+ * A CONTAGEM REAL de slots de voz em uso — lida do fornecedor por GET,
+ * NUNCA de constante local (pedido explícito do B5). `GET
+ * /v3/voices?type=private&limit=100` já é usado pela sonda de
+ * reconhecimento (A2) — MEDIDO em 02/09/2026 na conta real: 2 vozes
+ * privadas, `has_more: false`. O TETO em si (quantas a conta pode ter)
+ * não está documentado pela doc pública lida — permanece NÃO VERIFICADO,
+ * e por isso esta função devolve só a CONTAGEM, nunca uma comparação
+ * contra um número que ninguém confirmou.
+ */
+export async function countHeygenVoiceSlots(apiKey: string): Promise<number> {
+  if (isFixtureMode()) return countHeygenVoiceSlotsFixture();
+  let res: Response;
+  try {
+    res = await fetch(`${HEYGEN_BASE}/v3/voices?type=private&limit=100`, {
+      headers: { "x-api-key": apiKey },
+      signal: vendorSignal(),
+    });
+  } catch (err) {
+    logProviderNetworkError("avatarProvider.heygen", err);
+    throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
+  }
+  const json = await fetchJson(res, "HeyGen", "heygen.countVoiceSlots");
+  const lista = json?.data;
+  if (!Array.isArray(lista)) {
+    throw new AvatarProviderError(unexpectedShapeMessage("heygen.countVoiceSlots", "data (array)", json));
+  }
+  return lista.length;
 }
 
 async function trainAvatarHeygen(apiKey: string, photoBuffer: Buffer): Promise<TrainAvatarResult> {
