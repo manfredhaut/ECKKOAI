@@ -15,6 +15,26 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
+> ⚠️ **AMBIENTE — RECONCILIADO em 03/09/2026 (BLOCO HEYGEN-SIMPLES-5).** A
+> divergência `PROVIDER_LIVE_MAX_GENERATIONS` processo=1 × `.env`=3
+> (registrada desde SIMPLES-2, relatada em SIMPLES-4) foi resolvida por
+> ORDEM EXPLÍCITA do operador — direção invertida da proposta original: em
+> vez de baixar o `.env` para 1, o teto foi LIBERADO para 3 nos dois
+> lados. `docker compose up -d backend` (sem override), confirmado por
+> `printenv` no processo pós-restart: `MODE=live MAX_GEN=3 CONFIRM_LEN=28`,
+> `StartedAt=2026-09-03T11:44:24Z`. **HEAD nesta rodada: nenhum commit de
+> código** — só operação de ambiente + investigação (K1-K3: confirmado por
+> arquivo:linha que `POST /videos` ([videos.ts:1379](backend/src/routes/videos.ts:1379)
+> + `generateVideo({` em [videos.ts:1942](backend/src/routes/videos.ts:1942))
+> é o ÚNICO call site de produção de `generateVideo()` em todo
+> `backend/src` fora de scripts de guarda — nenhuma varredura de
+> recuperação, nenhum polling, nenhum job agendado o chama; no frontend,
+> as duas chamadas a `handleGenerate()` ([GenerateStep.tsx:248](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:248)
+> e [:822](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:822)) são
+> as únicas, e nenhuma vive em `useEffect`/temporizador). **O clique
+> humano em "Gerar vídeo"/"Gerar novamente" continua sendo a única porta
+> para uma chamada paga** — confirmado antes de liberar o teto, não depois.
+>
 > ⚠️ **DÉCIMA-PRIMEIRA DIVERGÊNCIA, MEDIDA em 03/09/2026 — este arquivo NÃO
 > foi reconciliado nesta sessão, por escopo.** HEAD real no fechamento:
 > `71064fb`. Sessão curta, **BLOCO HEYGEN-SIMPLES-4** — os dois itens que

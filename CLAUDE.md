@@ -5,10 +5,11 @@ Always respond in Brazilian Portuguese.
 > O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
 > — não duplicado aqui de propósito, para não haver dois textos podendo
 > discordar um do outro. **Dentro da Seção 6, o bloco mais novo é
-> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-4 (03/09)", no FIM da seção — leia-o
-> antes de todos os blocos anteriores (SIMPLES-3 03/09 tarde, SIMPLES-1
-> 03/09 manhã, primeiro vídeo Normal/Wan 3.0 02/09, V34 01/09, 28/08,
-> 27/08, 26/08, 25/08), que estão superados no que algum deles conflitar.**
+> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-5 (03/09)", no FIM da seção — leia-o
+> antes de todos os blocos anteriores (SIMPLES-4 e SIMPLES-3 03/09 tarde,
+> SIMPLES-1 03/09 manhã, primeiro vídeo Normal/Wan 3.0 02/09, V34 01/09,
+> 28/08, 27/08, 26/08, 25/08), que estão superados no que algum deles
+> conflitar.**
 > Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
 > existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
 > isso o texto antigo saiu daqui.
@@ -760,3 +761,13 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > **Custo real: US$ 0,00.** Nenhuma chamada a HeyGen/ElevenLabs — prova inteira em `fetch` substituído, dentro do guard. Ambiente não foi tocado (não houve demonstração no navegador desta vez — a prova por execução do guard já é mais forte que um clique, por comparar os headers byte a byte).
 >
 > **Tier Normal/Wan 3.0 e tier Simples/HeyGen considerados FECHADOS pelo operador ao final desta sessão.**
+
+> ⚠️ **FECHAMENTO — BLOCO HEYGEN-SIMPLES-5 (03/09/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão curtíssima, só operação de ambiente + uma confirmação de segurança. **Nenhum commit de código.**
+>
+> **J1/J2 — teto de concorrência liberado, direção invertida da proposta anterior.** Por ordem explícita do operador: em vez de baixar `.env` para `1` (o que o texto de fechamento de SIMPLES-4 tinha proposto como uma das duas saídas), o teto foi ERGUIDO para `3` nos dois lados — reaproveitando o valor que já estava no `.env`, sem inventar número novo. Comando: `docker compose up -d backend` (sem override de ambiente). Confirmado por leitura do PROCESSO pós-restart, não só do arquivo: `printenv` devolveu `MODE=live MAX_GEN=3 CONFIRM_LEN=28`, `StartedAt=2026-09-03T11:44:24Z` (`RestartCount=0`, sem crash). **A divergência processo×`.env` registrada desde SIMPLES-2 está fechada — os dois concordam em 3.**
+>
+> **K1-K3 — o clique humano continua sendo a única porta, confirmado ANTES de liberar o teto.** Varredura de `generateVideo(` em todo `backend/src`: um único call site de produção, [routes/videos.ts:1942](backend/src/routes/videos.ts:1942), dentro do handler `POST /videos` ([routes/videos.ts:1379](backend/src/routes/videos.ts:1379), `preHandler: requireActiveTenant`) — todas as outras ocorrências no repositório são scripts de guarda (`backend/src/scripts/check*.ts`), que nunca rodam em produção. `recovery.ts` (a varredura de boot que reconcilia vídeos presos) usa só `pollVideoJob` — leitura de status via GET, nunca uma nova chamada de criação — confirmado por grep negativo de `generateVideo(`/`POST.*v3/videos` no arquivo inteiro. No frontend, as duas únicas chamadas a `handleGenerate()` ([GenerateStep.tsx:248](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:248), dentro do handler do botão "Confirmar e gerar" do diálogo; e [:822](frontend/src/pages/CreateVideo/steps/GenerateStep.tsx:822), o `onClick` de "Gerar novamente") — nenhuma das duas vive em `useEffect`, temporizador ou qualquer caminho que dispare sem um clique síncrono da pessoa. **A frase pedida: "o clique em Gerar vídeo é a única porta, confirmado por `routes/videos.ts:1379`+`:1942` (backend) e `GenerateStep.tsx:248`+`:822` (frontend)" — não existe fila, retry automático nem agendamento que gere (e cobre) um vídeo HeyGen sem presença humana.**
+>
+> **Custo real: US$ 0,00.** Nenhuma chamada a HeyGen/ElevenLabs — a rodada inteira foi restart de ambiente + leitura de código (grep/Read), sem execução de gerador nenhum.
+>
+> **Gate reconfirmado verde depois do restart** (`docker compose exec -T -e PROVIDER_MODE=fixture backend npm run check`), árvore limpa (nenhum arquivo de produto tocado nesta rodada).
