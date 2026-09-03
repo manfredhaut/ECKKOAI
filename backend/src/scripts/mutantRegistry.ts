@@ -105,8 +105,10 @@ import { MUTANTS as recomposeLateralPhotoMutants } from "./checkRecomposeLateral
 import { MUTANTS as wanBlockOrchestrationMutants } from "./checkWanBlockOrchestrationPolicy.js";
 import { MUTANTS as colorMatchDefaultMutants } from "./checkColorMatchDefaultPolicy.js";
 import { MUTANTS as wanPromptQuoteHeuristicMutants } from "./checkWanPromptQuoteHeuristicPolicy.js";
-import { MUTANTS as heygenSpeechMutants } from "./checkHeygenSpeechPolicy.js";
+import { MUTANTS as heygenVoiceCloneMutants } from "./checkHeygenVoiceClonePolicy.js";
 import { MUTANTS as heygenVoiceCloneWiringMutants } from "./checkHeygenVoiceCloneWiringPolicy.js";
+import { MUTANTS as heygenCallbackWiringMutants } from "./checkHeygenCallbackWiringPolicy.js";
+import { MUTANTS as audioMeasuredMutants } from "./checkAudioMeasuredPolicy.js";
 import { MUTANTS as heygenWebhookMutants } from "./checkHeygenWebhookPolicy.js";
 import type { Mutant } from "./mutants.js";
 
@@ -219,7 +221,9 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkWanBlockOrchestrationPolicy.ts", wanBlockOrchestrationMutants),
   ...de("backend/src/scripts/checkColorMatchDefaultPolicy.ts", colorMatchDefaultMutants),
   ...de("backend/src/scripts/checkWanPromptQuoteHeuristicPolicy.ts", wanPromptQuoteHeuristicMutants),
-  ...de("backend/src/scripts/checkHeygenSpeechPolicy.ts", heygenSpeechMutants),
+  ...de("backend/src/scripts/checkHeygenVoiceClonePolicy.ts", heygenVoiceCloneMutants),
   ...de("backend/src/scripts/checkHeygenVoiceCloneWiringPolicy.ts", heygenVoiceCloneWiringMutants),
+  ...de("backend/src/scripts/checkHeygenCallbackWiringPolicy.ts", heygenCallbackWiringMutants),
+  ...de("backend/src/scripts/checkAudioMeasuredPolicy.ts", audioMeasuredMutants),
   ...de("backend/src/scripts/checkHeygenWebhookPolicy.ts", heygenWebhookMutants),
 ];

@@ -1228,6 +1228,18 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         costUnknownReason: estimate.known ? null : estimate.explanation,
       },
       actual,
+      // G3 (SIMPLES-3, 03/09/2026) — o "medido" INTERMEDIÁRIO: a duração
+      // REAL do áudio (ffprobe sobre o arquivo final, `requireAudio`),
+      // disponível ANTES do vídeo terminar (persistida por `onAudioMeasured`
+      // logo depois da síntese, bem antes do `POST /v3/videos`). Distinto
+      // de `actual` acima: `actual` só existe quando o vídeo TERMINOU
+      // (`provider_usage`, unit_source=vendor_response); isto aqui já
+      // existe enquanto o vídeo está `processing`/`queued` — é o que
+      // preenche a janela que antes só mostrava "nenhum ainda".
+      audioMeasured:
+        video.audio_duration_seconds != null
+          ? { seconds: Number(video.audio_duration_seconds), source: video.audio_duration_source }
+          : null,
       // A diferença só existe quando os dois lados existem E a geração foi
       // real. As duas condições vivem em `costDifference()`, num lugar só.
       difference: costDifference({

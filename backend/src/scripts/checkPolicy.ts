@@ -64,8 +64,10 @@ import { checkOutfitPolicy } from "./checkOutfitPolicy.js";
 import { checkLegacyEndpointPolicy } from "./checkLegacyEndpointPolicy.js";
 import { checkPreflightSummaryPolicy } from "./checkPreflightSummaryPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
-import { checkHeygenSpeechPolicy } from "./checkHeygenSpeechPolicy.js";
+import { checkHeygenVoiceClonePolicy } from "./checkHeygenVoiceClonePolicy.js";
 import { checkHeygenVoiceCloneWiringPolicy } from "./checkHeygenVoiceCloneWiringPolicy.js";
+import { checkHeygenCallbackWiringPolicy } from "./checkHeygenCallbackWiringPolicy.js";
+import { checkAudioMeasuredPolicy } from "./checkAudioMeasuredPolicy.js";
 import { checkHeygenWebhookPolicy } from "./checkHeygenWebhookPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
 import { checkFalPollRecoveryPolicy } from "./checkFalPollRecoveryPolicy.js";
@@ -689,11 +691,11 @@ async function main(): Promise<void> {
   videoContract.failures.forEach((f) => failures.push(f));
   videoContract.notes.forEach((n) => note(n));
 
-  // --- 25e-2. B2: medição de duração via /v3/voices/speech, e o modo
-  // audio_url em buildHeygenVideoPayload -----------------------------------
-  const heygenSpeech = await checkHeygenSpeechPolicy();
-  heygenSpeech.failures.forEach((f) => failures.push(f));
-  heygenSpeech.notes.forEach((n) => note(n));
+  // --- 25e-2. B5: clonagem de voz nativa HeyGen (o CAMINHO — clone/status/
+  // delete/countSlots). O TTS nativo (B2) foi removido em SIMPLES-3 (G2) ---
+  const heygenVoiceClone = await checkHeygenVoiceClonePolicy();
+  heygenVoiceClone.failures.forEach((f) => failures.push(f));
+  heygenVoiceClone.notes.forEach((n) => note(n));
 
   // --- 25e-3. B6: a clonagem HeyGen está ligada na rota de voice-sample --
   const heygenVoiceCloneWiring = checkHeygenVoiceCloneWiringPolicy(process.env.REPO_ROOT ?? "/repo");
@@ -704,6 +706,19 @@ async function main(): Promise<void> {
   const heygenWebhook = checkHeygenWebhookPolicy(process.env.REPO_ROOT ?? "/repo");
   heygenWebhook.failures.forEach((f) => failures.push(f));
   heygenWebhook.notes.forEach((n) => note(n));
+
+  // --- 25e-5. F1+H2, SIMPLES-3: output_format/title/callback_url/callback_id
+  // chegam ao POST /v3/videos REAL, e callback_id bate com o que a rota
+  // receptora procura ------------------------------------------------------
+  const heygenCallbackWiring = await checkHeygenCallbackWiringPolicy();
+  heygenCallbackWiring.failures.forEach((f) => failures.push(f));
+  heygenCallbackWiring.notes.forEach((n) => note(n));
+
+  // --- 25e-6. G1+G3, SIMPLES-3: ffprobe mede o áudio FINAL (vence o
+  // autorrelato, cai nele em falha), e /videos/:id/cost expõe audioMeasured -
+  const audioMeasured = await checkAudioMeasuredPolicy();
+  audioMeasured.failures.forEach((f) => failures.push(f));
+  audioMeasured.notes.forEach((n) => note(n));
 
   // --- 25f. o vídeo pago não some sem rastro ------------------------------
   //

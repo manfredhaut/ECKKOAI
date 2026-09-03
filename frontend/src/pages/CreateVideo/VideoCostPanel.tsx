@@ -61,6 +61,15 @@ export interface CostResponse {
     costUnknownReason: string | null;
     vendorUnits: number | null;
   } | null;
+  /**
+   * O "medido" INTERMEDIÁRIO — G3, SIMPLES-3 (03/09/2026). A duração REAL do
+   * áudio (ffprobe sobre o arquivo final que viaja como `audio_asset_id`),
+   * disponível ANTES de `actual` acima: `actual` só existe quando o vídeo
+   * TERMINOU no fornecedor; isto aqui já existe enquanto o vídeo está
+   * `processing`/`queued`. Ausente (`undefined`) em `/video-cost-estimate`,
+   * de propósito — antes de existir vídeo não há áudio nenhum sintetizado.
+   */
+  audioMeasured?: { seconds: number; source: string | null } | null;
   difference: { usd: number; factor: number | null } | null;
   failure: { reason: string | null } | null;
   basis: string;
@@ -167,6 +176,21 @@ export function VideoCostPanel({
         }
         detalhe={cost.estimate.costUnknownReason}
       />
+
+      {/* O "medido" INTERMEDIÁRIO — entre a estimativa (por caracteres,
+          antes de qualquer síntese) e o real (`actual`, só depois de o
+          vídeo terminar no fornecedor). Só aparece quando o áudio já foi
+          sintetizado — a janela que antes ficava muda, mostrando "nenhum
+          ainda" enquanto o vídeo processava. Sem custo em dólar: é duração,
+          não dinheiro — por isso `valor` é o próprio número de segundos, não
+          um preço, ao contrário das duas linhas vizinhas. */}
+      {cost.audioMeasured && (
+        <Linha
+          rotulo={t("createVideo.cost.audioMeasured")}
+          valor={`${secs(cost.audioMeasured.seconds)} s`}
+          detalhe={t("createVideo.cost.audioMeasuredDetail")}
+        />
+      )}
 
       {cost.actual ? (
         <Linha

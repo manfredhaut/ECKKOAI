@@ -101,6 +101,15 @@ export interface Video {
    * Ver `FolgaDeSincronizacaoInsuficienteError`, falPipeline.ts.
    */
   sync_folga_recusas: number;
+  /**
+   * A duração REAL do áudio, medida ANTES do vídeo (`requireAudio`) — coluna
+   * `numeric`, migration 037, por isso `string` (node-postgres não converte
+   * `numeric` para `number` sozinho). SIMPLES-3 (G3, 03/09/2026): fonte do
+   * "medido" no passo Gerar, distinto da estimativa por caracteres.
+   */
+  audio_duration_seconds: string | null;
+  /** Ver `DurationSource` em avatarProvider.ts — mesmo vocabulário. */
+  audio_duration_source: string | null;
   status: VideoStatus;
   output_url: string | null;
   provider_job_id: string | null;

@@ -195,17 +195,12 @@ export const MUTANTS: Mutant[] = [
     // quando `extras.voiceId` também está presente. O fornecedor documenta os
     // dois modos de áudio como alternativas exclusivas: um corpo com os dois
     // é o tipo de erro que só aparece no 400 do fornecedor, depois do débito.
-    // B2 (BLOCO HEYGEN-SIMPLES-1, 02/09/2026) inseriu o modo `audio_url`
-    // entre `audioAssetId` e `voiceId` — o `find` precisou crescer para
-    // continuar único (o texto antigo, sem o bloco `audioUrl` no meio,
-    // parou de casar quando esse bloco entrou).
+    // SIMPLES-3 (G2, 03/09/2026) removeu o modo `audio_url` (B2) que vivia
+    // entre os dois — o `find` voltou ao tamanho de antes de B2, sobre os
+    // DOIS modos que sobraram.
     file: "backend/src/services/providers/avatarProvider.ts",
-    find:
-      "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  } else if (extras?.audioUrl) {\n" +
-      "    body.audio_url = extras.audioUrl;\n  } else if (extras?.voiceId) {",
-    replace:
-      "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  } else if (extras?.audioUrl) {\n" +
-      "    body.audio_url = extras.audioUrl;\n  }\n  if (extras?.voiceId) {",
+    find: "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  } else if (extras?.voiceId) {",
+    replace: "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  }\n  if (extras?.voiceId) {",
     expect: "voice_id`/`script` chegaram ao corpo mesmo assim",
   },
   {
@@ -621,13 +616,16 @@ export async function checkVideoContractPolicy(): Promise<VideoContractCheckResu
   }
 
   // ---------------------------------------------------------------------------
-  // 8. B1, BLOCO HEYGEN-SIMPLES-1 (02/09/2026) — os campos SEM call site ainda.
-  //
-  // Omitir `extras` (o caminho de produto de hoje) produz o corpo de sempre;
-  // cada campo simples só entra quando fornecido; e o modo `voice_id` (voz
-  // clonada NA HeyGen, B5) é MUTUAMENTE EXCLUSIVO com `audio_asset_id` — a
-  // doc do fornecedor documenta os dois como alternativas de áudio, nunca
-  // os dois juntos.
+  // 8. B1, BLOCO HEYGEN-SIMPLES-1 (02/09/2026), atualizada em SIMPLES-3 —
+  // `buildHeygenVideoPayload` ISOLADA, chamada direto (não via
+  // `generateVideo()`). Testa a FUNÇÃO PURA: omitir `extras` produz o corpo
+  // de sempre; cada campo simples só entra quando fornecido; e o modo
+  // `voice_id` (inerte por desenho, ver `HeygenPayloadExtras`) é MUTUAMENTE
+  // EXCLUSIVO com `audio_asset_id`. Que o call site REAL (`generateVideoHeygen`)
+  // de fato PASSE `extras` com os quatro campos vivos é outra pergunta,
+  // respondida por `checkHeygenCallbackWiringPolicy.ts` (F1) — uma guarda que
+  // só chamasse esta função direto, como aqui, nunca pegaria um call site que
+  // parasse de passar `extras`.
   // ---------------------------------------------------------------------------
   const semExtras = buildHeygenVideoPayload(
     { ...BASE, providerAvatarId: AVATAR_BASE, scene: null },
@@ -637,9 +635,8 @@ export async function checkVideoContractPolicy(): Promise<VideoContractCheckResu
   for (const campo of ["output_format", "brand_glossary_id", "title", "callback_url", "callback_id", "voice_id", "voice_settings", "script"]) {
     if (campo in semExtras.body) {
       failures.push(
-        `contrato de vídeo: sem \`extras\`, o corpo trouxe \`${campo}\` mesmo assim. Nenhum call site de ` +
-          "produto passa `extras` ainda (B5/B7 não ligados) — um campo vazando aqui muda o corpo de TODA " +
-          "geração de hoje sem ninguém ter pedido.",
+        `contrato de vídeo: sem \`extras\`, o corpo trouxe \`${campo}\` mesmo assim — um campo vazando aqui ` +
+          "muda o corpo de TODA geração de hoje sem ninguém ter pedido.",
       );
     }
   }

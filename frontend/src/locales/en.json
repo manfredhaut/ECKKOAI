@@ -668,6 +668,8 @@
       "estimated": "Estimate ({{seconds}}s from {{chars}} characters)",
       "actual": "Actual cost ({{seconds}}s delivered)",
       "actualLabel": "Actual cost",
+      "audioMeasured": "Measured duration (audio)",
+      "audioMeasuredDetail": "Measured on the audio file before the video — more accurate than the character-count estimate, still not the final duration delivered by the provider.",
       "noneYet": "not measured yet",
       "notMeasured": "no measurement",
       "vendorUnits": "{{units}} vendor quota units",

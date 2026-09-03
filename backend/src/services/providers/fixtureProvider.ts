@@ -26,11 +26,10 @@ import type {
   GenerateVideoResult,
   PollResult,
   TrainAvatarResult,
-  HeygenSpeechResult,
   HeygenVoiceCloneResult,
   HeygenVoiceCloneStatus,
 } from "./avatarProvider.js";
-import { buildHeygenVideoPayload } from "./avatarProvider.js";
+import { buildHeygenVideoPayload, heygenExtrasReais } from "./avatarProvider.js";
 import type { AvatarLook, CreatedAvatarLook } from "./avatarProvider.js";
 import type {
   CloneVoiceResult,
@@ -368,7 +367,12 @@ export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoRe
   //
   // O `audio_asset_id` é um marcador de simulação, e é o único campo falso
   // aqui: em fixture a síntese não acontece, então não há áudio para subir.
-  const { body } = buildHeygenVideoPayload(input, "fixture-audio-asset", fixtureBackgroundAssetId(input));
+  const { body } = buildHeygenVideoPayload(
+    input,
+    "fixture-audio-asset",
+    fixtureBackgroundAssetId(input),
+    heygenExtrasReais(input),
+  );
   logEvent("info", "video_payload_built", {
     context: "fixture.generateVideo",
     simulado: true,
@@ -377,6 +381,12 @@ export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoRe
     motion_prompt: body.motion_prompt ?? "ausente",
     expressiveness: body.expressiveness ?? "ausente",
     engine: body.engine ?? "não enviado (flag desligada)",
+    // F1, SIMPLES-3 — os quatro campos com efeito real, no MESMO payload
+    // simulado. Ver `heygenExtrasReais` em avatarProvider.ts.
+    output_format: body.output_format ?? "ausente",
+    title: body.title ?? "ausente",
+    callback_url: body.callback_url ?? "ausente",
+    callback_id: body.callback_id ?? "ausente",
     avatar_look: input.providerAvatarId,
     aspect_ratio: body.aspect_ratio,
   });
@@ -590,25 +600,18 @@ export function waitForAvatarReadyFixture(providerAvatarId: string): AvatarProvi
 }
 
 // ---------------------------------------------------------------------------
-// B5/B2, BLOCO HEYGEN-SIMPLES-1 (02/09/2026) — TTS e clonagem nativa HeyGen.
-// Nenhum call site de produto usa estas ainda (ver o comentário de topo de
-// cada função real, em avatarProvider.ts); as fixtures existem só para o
-// desvio de `isFixtureMode()` que a guarda de provedor exige de toda função
-// exportada que alcança rede.
+// B5, BLOCO HEYGEN-SIMPLES-1 (02/09/2026) — clonagem nativa HeyGen. Nenhum
+// call site de produto usa a GERAÇÃO destas vozes ainda (a clonagem em si
+// está ligada, `routes/voice.ts` — ver o comentário de topo em
+// avatarProvider.ts); as fixtures existem só para o desvio de
+// `isFixtureMode()` que a guarda de provedor exige de toda função exportada
+// que alcança rede.
+//
+// A TTS nativa (B2, `synthesizeSpeechHeygenFixture`) foi REMOVIDA em
+// SIMPLES-3 (G2, 03/09/2026) junto da função real — media a duração de um
+// áudio que nunca era o mesmo enviado ao vídeo (ver `HeygenPayloadExtras`
+// em avatarProvider.ts).
 // ---------------------------------------------------------------------------
-
-export function synthesizeSpeechHeygenFixture(text: string): HeygenSpeechResult {
-  // Mesma régua de sempre (12,8151 c/s, scriptDuration.ts) só para o número
-  // ser plausível — não é a medição real, que é justamente o que este
-  // caminho existiria para dar ao produto.
-  const durationSeconds = Math.max(0.5, Math.round((text.length / 12.8151) * 100) / 100);
-  return {
-    audioUrl: `/uploads/fixture/heygen-speech-${randomUUID().slice(0, 8)}.mp3`,
-    durationSeconds,
-    requestId: `fixture-speech-${randomUUID().slice(0, 8)}`,
-    wordTimestamps: null,
-  };
-}
 
 export function cloneVoiceHeygenFixture(): HeygenVoiceCloneResult {
   return { voiceCloneId: `fixture-voice-clone-${randomUUID().slice(0, 8)}` };

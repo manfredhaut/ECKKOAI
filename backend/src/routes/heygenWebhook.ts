@@ -1,35 +1,43 @@
 /**
  * A ROTA RECEPTORA de webhook da HeyGen — B7, BLOCO HEYGEN-SIMPLES-1
- * (02/09/2026).
+ * (02/09/2026). `callback_url`/`callback_id` passaram a ser ENVIADOS de
+ * verdade em `POST /v3/videos` desde SIMPLES-3 (F1, 03/09/2026) — ver
+ * `HeygenPayloadExtras`/`generateVideoHeygen` em avatarProvider.ts. A
+ * HeyGen PODE chamar esta rota de verdade a partir de agora.
  *
  * ┌─ O que esta rota é, e o que ela NÃO é ────────────────────────────────────┐
- * │ É a metade RECEPTORA de um mecanismo de duas pontas: `callback_url`/      │
- * │ `callback_id` já entraram no payload de `POST /v3/videos` em B1, mas      │
- * │ nenhum call site real ainda os manda (o Simples continua 100%            │
- * │ ElevenLabs+polling — ver o comentário de `HeygenPayloadExtras` em        │
- * │ avatarProvider.ts). Esta rota EXISTE E VALIDA a assinatura corretamente, │
- * │ mas nada vai chamá-la de verdade até essas duas pontas se encontrarem —  │
- * │ decisão explícita do operador nesta rodada, para não registrar um        │
- * │ webhook endpoint real na conta HeyGen sem necessidade.                   │
+ * │ NÃO substitui o polling. `pollJob` (routes/videos.ts) continua sendo o    │
+ * │ único mecanismo que de fato FINALIZA um vídeo — ele já tem um teto de     │
+ * │ parede explícito (`MAX_POLL_ATTEMPTS = 90` × `POLL_INTERVAL_MS = 5000` =  │
+ * │ 450s ≈ 7,5 min), que já cumpre a parte "retaguarda com teto" pedida pelo  │
+ * │ B7. Esta rota, por decisão explícita do operador (SIMPLES-1) mantida em   │
+ * │ SIMPLES-3, só RECEBE, VALIDA e REGISTRA — nunca finaliza um vídeo.        │
  * │                                                                            │
- * │ NÃO substitui o polling ainda. `pollJob` (routes/videos.ts) continua      │
- * │ sendo o único mecanismo que de fato FINALIZA um vídeo — ele já tem um     │
- * │ teto de parede explícito (`MAX_POLL_ATTEMPTS = 90` × `POLL_INTERVAL_MS =  │
- * │ 5000` = 450s ≈ 7,5 min), que já cumpre a parte "retaguarda com teto"      │
- * │ pedida pelo B7. Esta rota, por ora, só RECEBE, VALIDA e REGISTRA — a      │
- * │ integração que faria o webhook acelerar a finalização (sem duplicar a    │
- * │ lógica de validação de artefato/persistência/estorno que `pollJob` já    │
- * │ tem) é trabalho futuro, fora do escopo desta rodada.                     │
+ * │ H3 (SIMPLES-3, 03/09/2026) — CONCLUSÃO REGISTRADA: como esta rota não     │
+ * │ finaliza nada (não chama `pollJob`, não escreve `status`), reconfirmar o  │
+ * │ evento via `GET /v3/videos/{id}` autenticado ANTES de persistir DEIXOU DE │
+ * │ SER NECESSÁRIO. A reconfirmação existe para proteger uma decisão de       │
+ * │ negócio contra um evento forjado/malformado — aqui a única "decisão" é    │
+ * │ um INSERT de auditoria (`heygen_webhook_events`), já protegido pela       │
+ * │ validação HMAC do corpo inteiro (linha por linha, não campo a campo:      │
+ * │ forjar `callback_id` sem o secret do tenant já falha na assinatura antes  │
+ * │ de qualquer leitura de campo). Se um dia esta rota passar a FINALIZAR     │
+ * │ (chamar `pollJob` ou escrever `status`), a pergunta reabre — decidir      │
+ * │ nesse momento, contra o que a finalização de fato precisa confirmar.      │
+ * │ Integração que faria o webhook acelerar a finalização (sem duplicar a     │
+ * │ lógica de validação de artefato/persistência/estorno que `pollJob` já     │
+ * │ tem) segue trabalho futuro, fora do escopo desta rodada.                  │
  * └────────────────────────────────────────────────────────────────────────────┘
  *
  * VALIDAÇÃO DA ASSINATURA — schema lido por doc pública
  * (developers.heygen.com/docs/webhooks, WebFetch 02/09/2026; NÃO
- * reconfirmado por entrega real, já que nenhum endpoint foi registrado):
- * cada entrega traz três headers — `Heygen-Signature` (HMAC-SHA256 hex do
- * CORPO BRUTO, com o secret do endpoint), `Heygen-Timestamp` e
- * `Heygen-Event-Id` (dedup — um evento pode ser reentregue, retry com
- * backoff exponencial por até 24h). Mesmo padrão de `stripeWebhookRoutes`
- * (raw body parser própria desta rota, comparação em tempo constante).
+ * reconfirmado por entrega real — nenhum webhook endpoint foi registrado na
+ * conta HeyGen ainda, decisão explícita do operador): cada entrega traz três
+ * headers — `Heygen-Signature` (HMAC-SHA256 hex do CORPO BRUTO, com o secret
+ * do endpoint), `Heygen-Timestamp` e `Heygen-Event-Id` (dedup — um evento
+ * pode ser reentregue, retry com backoff exponencial por até 24h). Mesmo
+ * padrão de `stripeWebhookRoutes` (raw body parser própria desta rota,
+ * comparação em tempo constante).
  *
  * DEDUP — migration 078 (`heygen_webhook_events`): um `INSERT ... ON
  * CONFLICT DO NOTHING` na chave `event_id` decide, atomicamente, se este
@@ -37,9 +45,11 @@
  * mesmo evento duas vezes.
  *
  * `callback_id` É O NOSSO `videos.id` — convenção deste projeto, não do
- * fornecedor: quando o dia chegar de popular `HeygenPayloadExtras.
- * callbackId` de verdade, ele precisa ser o UUID do vídeo, porque é assim
- * que esta rota o localiza de volta.
+ * fornecedor. `avatarProvider.ts:generateVideoHeygen` envia
+ * `callback_id: input.videoId` (F1); esta rota faz
+ * `SELECT id FROM videos WHERE id = $1` sobre o MESMO valor (H2, provado por
+ * execução em `checkHeygenCallbackWiringPolicy.ts`, não só por leitura dos
+ * dois arquivos lado a lado).
  */
 import type { FastifyInstance } from "fastify";
 import { createHmac, timingSafeEqual } from "node:crypto";
