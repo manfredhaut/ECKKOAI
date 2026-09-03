@@ -161,9 +161,13 @@ export function AvatarSetupStep({
   // segurança já usada em Cenário/Traje — nada some antes do substituto
   // estar confirmado).
   const [replacingReferenceVideo, setReplacingReferenceVideo] = useState(false);
+  // DISTÂNCIA — BB1/BB3, BLOCO HEYGEN-SIMPLES-10. "padrao" não muda o
+  // comportamento de hoje; a foto de treino sobe do jeito que sempre subiu.
+  const [photoDistance, setPhotoDistance] = useState<"padrao" | "afastado">("padrao");
   useEffect(() => {
     setRetrainRequested(false);
     setReplacingReferenceVideo(false);
+    setPhotoDistance("padrao");
   }, [selectedAvatarId]);
 
   /**
@@ -731,6 +735,7 @@ export function AvatarSetupStep({
         `/avatars/${avatarForTraining.id}/reference-video`,
         recorder.recordedBlob as Blob,
         "reference.webm",
+        { distance: photoDistance },
       );
       updateAvatarForTraining(updated);
       // O substituto foi salvo — volta ao selo "salvo", agora sobre o vídeo
@@ -752,6 +757,7 @@ export function AvatarSetupStep({
         `/avatars/${avatarForTraining.id}/reference-video`,
         file,
         file.name,
+        { distance: photoDistance },
       );
       updateAvatarForTraining(updated);
       setReplacingReferenceVideo(false);
@@ -1809,6 +1815,39 @@ export function AvatarSetupStep({
                     {t("createVideo.avatarSetup.referenceGuidanceEnvironment")}
                   </p>
                 </>
+              )}
+
+              {(!avatarForTraining.reference_video_url || replacingReferenceVideo) && (
+                // DISTÂNCIA — BB1/BB3, BLOCO HEYGEN-SIMPLES-10. Viaja junto do
+                // envio que DISPARA o treino (este, o do vídeo de referência),
+                // mas afeta a FOTO do rosto — é ela que `trainAvatar()` usa
+                // (`existing[0].photo_urls`, routes/avatars.ts), nunca este
+                // vídeo. "Padrão" é NO-OP: a foto sobe do jeito que sempre
+                // subiu.
+                <div style={{ marginBottom: 8 }}>
+                  <label className="text-muted" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
+                    {t("createVideo.avatarSetup.photoDistanceLabel")}
+                  </label>
+                  <div className="chip-group">
+                    <button
+                      type="button"
+                      className={`chip${photoDistance === "padrao" ? " selected" : ""}`}
+                      onClick={() => setPhotoDistance("padrao")}
+                    >
+                      {t("createVideo.avatarSetup.photoDistanceDefault")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`chip${photoDistance === "afastado" ? " selected" : ""}`}
+                      onClick={() => setPhotoDistance("afastado")}
+                    >
+                      {t("createVideo.avatarSetup.photoDistanceFar")}
+                    </button>
+                  </div>
+                  <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+                    {t("createVideo.avatarSetup.photoDistanceHelp")}
+                  </p>
+                </div>
               )}
 
               {avatarForTraining.reference_video_url && !replacingReferenceVideo ? (

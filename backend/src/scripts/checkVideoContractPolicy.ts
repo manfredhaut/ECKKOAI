@@ -127,8 +127,8 @@ export const MUTANTS: Mutant[] = [
     // O schema é `additionalProperties: false` — MEDIDO. Um campo a mais
     // derruba a geração inteira com 400, DEPOIS do débito.
     file: "backend/src/services/providers/avatarProvider.ts",
-    find: "    fit: HEYGEN_FIT,\n  };",
-    replace: '    fit: HEYGEN_FIT,\n    outfit_id: "traje",\n  };',
+    find: "    fit: input.avatarFit ?? HEYGEN_FIT,\n  };",
+    replace: '    fit: input.avatarFit ?? HEYGEN_FIT,\n    outfit_id: "traje",\n  };',
     expect: "campo fora do schema do fornecedor",
   },
   {

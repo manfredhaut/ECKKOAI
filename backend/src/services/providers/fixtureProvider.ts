@@ -29,7 +29,7 @@ import type {
   HeygenVoiceCloneResult,
   HeygenVoiceCloneStatus,
 } from "./avatarProvider.js";
-import { buildHeygenVideoPayload, heygenExtrasReais } from "./avatarProvider.js";
+import { buildHeygenVideoPayload, heygenExtrasReais, persistHeygenVideoPayload } from "./avatarProvider.js";
 import type { AvatarLook, CreatedAvatarLook } from "./avatarProvider.js";
 import type {
   CloneVoiceResult,
@@ -338,7 +338,13 @@ export class FixtureVendorFailure extends Error {
   }
 }
 
-export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoResult {
+// CC1, BLOCO HEYGEN-SIMPLES-10 — assíncrona desde esta rodada, só por causa de
+// `persistHeygenVideoPayload` (I/O de banco) no fim da função. Único call
+// site é `avatarProvider.ts`'s `generateVideo`, que já é `async` e já faz
+// `return generateVideoFixture(input);` sem `await` explícito — uma função
+// async retornada de dentro de outra async encadeia sozinha, então nada mais
+// no repositório precisou mudar.
+export async function generateVideoFixture(input: GenerateVideoInput): Promise<GenerateVideoResult> {
   // Falha ANTES de registrar o job: é o que acontece quando o fornecedor
   // recusa a criação — nenhum job existe do lado dele, e é essa a fronteira do
   // estorno fixada no ESTORNO-1.
@@ -390,6 +396,13 @@ export function generateVideoFixture(input: GenerateVideoInput): GenerateVideoRe
     avatar_look: input.providerAvatarId,
     aspect_ratio: body.aspect_ratio,
   });
+
+  // CC1/CC3, BLOCO HEYGEN-SIMPLES-10 — a simulação persiste também, pela
+  // MESMA função do caminho real: é o que permite provar CC3 (o script de
+  // registro lendo um payload preenchido) sem gastar nada.
+  if (input.videoId) {
+    await persistHeygenVideoPayload(input.videoId, body);
+  }
 
   // Em simulação a síntese não acontece (generateVideo devolve antes de
   // requireAudio), então a duração do áudio é a da fixture de voz. Vai como

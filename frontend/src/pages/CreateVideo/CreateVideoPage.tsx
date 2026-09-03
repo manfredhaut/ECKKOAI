@@ -63,6 +63,9 @@ export function CreateVideoPage() {
     // é o meio-termo; o usuário continua livre para trocar antes de gerar.
     expressiveness: "medium",
     avatarLookId: null,
+    // `null` = padrão do servidor (BB2/BB3, SIMPLES-10) — nenhum vídeo
+    // existente foi afetado por este campo nascer aqui.
+    avatarFit: null,
     publishPlatform: DEFAULT_PUBLISH_PLATFORM,
     // SEM legenda por padrão. A escolha contrária muda o corpo enviado ao
     // fornecedor de um jeito que nenhuma geração deste projeto exercitou.
@@ -228,6 +231,8 @@ export function CreateVideoPage() {
           onExpressivenessChange={(expressiveness) => setWizard((w) => ({ ...w, expressiveness }))}
           avatarLookId={wizard.avatarLookId}
           onAvatarLookChange={(avatarLookId) => setWizard((w) => ({ ...w, avatarLookId }))}
+          avatarFit={wizard.avatarFit}
+          onAvatarFitChange={(avatarFit) => setWizard((w) => ({ ...w, avatarFit }))}
           publishPlatform={wizard.publishPlatform}
           onPublishPlatformChange={(publishPlatform) => setWizard((w) => ({ ...w, publishPlatform }))}
           tierVideo={wizard.tierVideo}

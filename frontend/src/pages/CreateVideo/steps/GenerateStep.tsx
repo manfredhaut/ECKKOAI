@@ -50,6 +50,10 @@ export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string) {
     motion_prompt: wizard.motionPrompt.trim() || null,
     expressiveness: wizard.expressiveness,
     avatar_look_id: wizard.avatarLookId,
+    // BB2/BB3, SIMPLES-10 — `null` = padrão do servidor. Não persistido no
+    // banco (ao contrário dos campos acima): "Gerar novamente" já reenvia o
+    // estado ATUAL da tela, então não há valor salvo a esquecer.
+    avatar_fit: wizard.avatarFit,
     // Vai SEMPRE. O servidor tem padrão para corpo sem este campo, mas depender
     // do padrão dele aqui reproduziria, um andar acima, a mesma omissão que o
     // bloco de formato tirou do payload do fornecedor.

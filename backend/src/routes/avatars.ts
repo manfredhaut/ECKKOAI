@@ -12,7 +12,7 @@ import {
   AvatarPhotoRequiredError,
 } from "../services/providers/avatarProvider.js";
 import type { AvatarVendor } from "../services/providers/vendorCatalog.js";
-import type { AvatarProviderStatus } from "../services/providers/avatarProvider.js";
+import type { AvatarProviderStatus, AvatarPhotoDistance } from "../services/providers/avatarProvider.js";
 // `getCredential` (o genérico) não é chamado por nenhuma rota deste arquivo
 // — as três que resolviam credencial de avatar por ele foram corrigidas para
 // `getCredentialForVendor` (27–28/08). O import fica de propósito: os
@@ -160,7 +160,7 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post<{
     Params: { id: string };
-    Body: { name?: string; imageUrl?: string; imageUrls?: string[]; prompt?: string };
+    Body: { name?: string; imageUrl?: string; imageUrls?: string[]; prompt?: string; distance?: string };
   }>(
     "/avatars/:id/looks",
     { preHandler: requireActiveTenant },
@@ -201,6 +201,11 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         prompt: req.body?.prompt ?? null,
         imageUrl: req.body?.imageUrl ?? null,
         imageUrls: req.body?.imageUrls ?? null,
+        // BB1/BB3, SIMPLES-10 — qualquer valor fora de "afastado" (inclusive
+        // ausente, string vazia, ou um valor inventado) cai em "padrao", que
+        // é NO-OP por desenho. Validado aqui, na borda — createAvatarLook
+        // recebe só um dos dois valores do tipo, nunca uma string solta.
+        distance: req.body?.distance === "afastado" ? "afastado" : "padrao",
         apiKey: credential.apiKey,
         vendor: credential.vendor as AvatarVendor,
       });
@@ -487,6 +492,12 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
     if (!up) return reply;
     const { file, buffer } = up;
 
+    // DISTÂNCIA — BB1/BB3, SIMPLES-10. Mesmo parsing de `replace`/`voice.ts`:
+    // qualquer valor fora de "afastado" (inclusive ausente) cai em "padrao",
+    // que é NO-OP por desenho.
+    const campoDistance = (file.fields as Record<string, { value?: unknown } | undefined>)?.distance;
+    const distance: AvatarPhotoDistance = campoDistance?.value === "afastado" ? "afastado" : "padrao";
+
     // TETO DE DURAÇÃO — o quanto antes, igual à checagem de tamanho acima:
     // antes de buscar o avatar, antes da credencial. Esta gravação treina o
     // avatar E clona a voz no mesmo envio (ver comentário da rota), então o
@@ -564,6 +575,7 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         apiKey: avatarCredential.apiKey,
         vendor: avatarCredential.vendor as "heygen" | "did",
         photoUrls: existing[0].photo_urls,
+        distance,
       }));
     } catch (err) {
       // O fornecedor recusou: nada foi treinado, nenhuma cota externa foi

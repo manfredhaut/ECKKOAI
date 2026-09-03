@@ -23,7 +23,7 @@
  * ---------------------------------------------------------------------------
  */
 import { pool } from "../../db/pool.js";
-import type { AvatarLook, CreatedAvatarLook } from "../providers/avatarProvider.js";
+import type { AvatarLook, AvatarPhotoDistance, CreatedAvatarLook } from "../providers/avatarProvider.js";
 import { createAvatarLook, readAvatarLookStatus } from "../providers/avatarProvider.js";
 import type { AvatarVendor } from "../providers/vendorCatalog.js";
 import { isFixtureMode } from "../providers/providerMode.js";
@@ -70,6 +70,8 @@ export interface CriarLookInput {
    * mesma regra de todo upload deste produto.
    */
   imageUrls?: string[] | null;
+  /** BB1/BB3, SIMPLES-10 — opcional; `"padrao"`/ausente não muda o comportamento de hoje. */
+  distance?: AvatarPhotoDistance | null;
   apiKey: string;
   vendor: AvatarVendor;
 }
@@ -185,6 +187,7 @@ export async function criarLook(input: CriarLookInput): Promise<CriarLookResult>
       name: nome,
       prompt,
       referenceImageUrls: input.imageUrls,
+      distance: input.distance,
     });
   } catch (err) {
     // Estorno pela MESMA fronteira do vídeo: a chamada lançou, o fornecedor não

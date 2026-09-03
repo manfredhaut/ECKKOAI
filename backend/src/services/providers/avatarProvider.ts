@@ -13,7 +13,7 @@ import { mimeDoUpload, readUpload } from "../storage.js";
 // BLOCO HEYGEN-SIMPLES-6, 03/09/2026. `pixelDimensionsFor` é import PRÓPRIO
 // (não de `formatDerivation.ts`, que é do pipeline Normal/Premium) — ver
 // `resizeBackgroundImage` mais abaixo.
-import { runFfmpeg } from "../video/ffmpeg.js";
+import { runFfmpeg, probeVideo } from "../video/ffmpeg.js";
 import { synthesizeSpeech, type VoiceTuning } from "./voiceProvider.js";
 import { processVoiceAudio } from "../audioProcessing.js";
 // A duração REAL do áudio que de fato viaja para o fornecedor — SIMPLES-3
@@ -25,6 +25,12 @@ import { BASE_DOMAIN } from "../../domainConfig.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
 import { vendorSignal } from "./vendorTimeout.js";
 import { recordProviderUsage } from "../billing/usageTracking.js";
+// CC1, BLOCO HEYGEN-SIMPLES-10 — só para persistir o payload real de
+// POST /v3/videos (`persistHeygenVideoPayload`, abaixo). Uso direto e
+// isolado: nenhuma outra escrita de banco deste arquivo passa por `pool`
+// hoje, e não há razão para inventar uma camada intermediária para um
+// INSERT de auditoria de uma tabela satélite específica da HeyGen.
+import { pool } from "../../db/pool.js";
 // De `voiceCost.js`, NUNCA de `providerCost.js`: aquele arquivo participa do
 // anel `providerCost → scriptDuration → voiceProvider → fixtureProvider →
 // avatarProvider`, e importá-lo daqui foi o que o fechou em 24/08 (R5). Este
@@ -110,6 +116,8 @@ export interface TrainAvatarInput {
   apiKey: string;
   vendor: AvatarVendor;
   photoUrls: string[];
+  /** BB1/BB3, SIMPLES-10 — opcional; `"padrao"`/ausente não muda o comportamento de hoje. */
+  distance?: AvatarPhotoDistance | null;
 }
 
 /**
@@ -214,6 +222,17 @@ export interface GenerateVideoInput {
    * caro.
    */
   engineChoice?: HeygenEngine | null;
+  /**
+   * BB2/BB3, BLOCO HEYGEN-SIMPLES-10 — enquadramento ESCOLHIDO NA TELA para
+   * ESTE vídeo, `null`/ausente = usa `HEYGEN_FIT` (o padrão de hoje,
+   * inalterado). `"contain"` é o oposto de `HEYGEN_FIT="cover")`: corta
+   * MENOS (mostra o quadro inteiro, com barra), contra a distância de BB1
+   * (que não corta nada — cresce o CANVAS da foto de referência do avatar,
+   * antes de qualquer geração). Duas respostas para o mesmo problema
+   * ("a pessoa aparece grande demais"), por caminhos diferentes — cabe ao
+   * usuário escolher qual usar, e os dois continuam OPCIONAIS.
+   */
+  avatarFit?: AvatarFit | null;
   /**
    * LEGENDA queimada no vídeo. Padrão do produto: `false`.
    *
@@ -870,6 +889,18 @@ async function pollAvatarStatusHeygen(apiKey: string, avatarId: string): Promise
 const HEYGEN_FIT: "contain" | "cover" = "cover";
 
 /**
+ * BB2, BLOCO HEYGEN-SIMPLES-10 — os MESMOS dois valores de `HEYGEN_FIT`,
+ * como tipo nomeado: a escolha da TELA usa o mesmo vocabulário do
+ * fornecedor, nunca um rótulo nosso que precisaria de tradução.
+ */
+export type AvatarFit = "contain" | "cover";
+
+/** O que veio da tela é um dos dois valores que o fornecedor aceita para `fit`? */
+export function isAvatarFit(value: unknown): value is AvatarFit {
+  return value === "contain" || value === "cover";
+}
+
+/**
  * Os dois valores de `caption`, transcritos do schema do fornecedor lido em
  * 10/08 — `file_format` é um enum cujo único valor documentado é `srt`, e
  * `style` um enum cujo único valor documentado é `default`.
@@ -1036,6 +1067,34 @@ export function heygenExtrasReais(input: Pick<GenerateVideoInput, "videoId">): H
   };
 }
 
+/**
+ * CC1, BLOCO HEYGEN-SIMPLES-10 — grava o payload REAL de `POST /v3/videos`
+ * numa tabela satélite (migration 079), ligado por `video_id`. Resolve a
+ * dependência do buffer de log ao vivo: `tools/registro-geracao.sh`
+ * (SIMPLES-9) já girou 2× antes de alguém copiar a linha `video_payload_built`
+ * — o log é volátil por natureza, e este INSERT é o registro que sobrevive.
+ *
+ * Chamado só quando `videoId` existe (nunca em sondas/testes sem linha em
+ * `videos` — a FK rejeitaria, e não há o que auditar sem um vídeo real por
+ * trás). Nunca lança: como `recordProviderUsage`, é telemetria secundária —
+ * uma falha aqui não pode derrubar a geração paga que ela documenta.
+ */
+export async function persistHeygenVideoPayload(videoId: string, body: unknown): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO heygen_video_payloads (video_id, payload)
+       VALUES ($1, $2)
+       ON CONFLICT (video_id) DO UPDATE SET payload = EXCLUDED.payload, created_at = now()`,
+      [videoId, JSON.stringify(body)],
+    );
+  } catch (err) {
+    logEvent("error", "heygen_video_payload_persist_failed", {
+      video_id: videoId,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export function buildHeygenVideoPayload(
   input: Pick<
     GenerateVideoInput,
@@ -1046,6 +1105,7 @@ export function buildHeygenVideoPayload(
     | "scene"
     | "engineChoice"
     | "captions"
+    | "avatarFit"
   > & {
     /**
      * OPCIONAL aqui, ao contrário de `GenerateVideoInput.script` (sempre
@@ -1084,8 +1144,10 @@ export function buildHeygenVideoPayload(
     resolution: input.format.resolution,
     // Ver `HEYGEN_FIT`. Vai SEMPRE, como aspect_ratio e resolution: o defeito
     // que ele corrige é o da ausência, e um `fit` opcional reabriria a mesma
-    // porta pela qual o formato saía vazio antes.
-    fit: HEYGEN_FIT,
+    // porta pela qual o formato saía vazio antes. BB2, SIMPLES-10 — a
+    // ESCOLHA da tela (`input.avatarFit`) vence quando presente; sem
+    // escolha, `?? HEYGEN_FIT` mantém byte a byte o comportamento de hoje.
+    fit: input.avatarFit ?? HEYGEN_FIT,
   };
 
   // ÁUDIO — DOIS modos MUTUAMENTE EXCLUSIVOS (doc do fornecedor): (1) asset
@@ -1279,6 +1341,84 @@ async function resizeBackgroundImage(
 }
 
 /**
+ * BB1, BLOCO HEYGEN-SIMPLES-10 — "distância até a câmera" como CONTROLE
+ * NOSSO, opcional, sobre a FOTO DE REFERÊNCIA do avatar. Não é campo da
+ * HeyGen: `motion_prompt` documenta escopo só a "avatar body motion and
+ * hand gestures" (M1, SIMPLES-6) — direções de câmera/deslocamento nunca são
+ * respeitadas por ele. Este é o mesmo contorno que `resizeBackgroundImage`
+ * (L2) já usa para o FUNDO, aplicado ao lado oposto: em vez de recortar a
+ * imagem para PREENCHER o quadro (`cover`, que aproxima), aqui o quadro
+ * CRESCE ao redor da foto original — a pessoa ocupa uma fração menor do
+ * resultado, e por construção parece mais distante quando a HeyGen ajusta a
+ * foto ao vídeo final.
+ *
+ * A margem NUNCA é cor sólida — mesma política já fixada em `ffmpeg.ts`
+ * (comentário de topo do arquivo) e usada por `formatDerivation.ts` (pipeline
+ * Normal/Premium) para o mesmo problema de preenchimento: uma extensão
+ * BORRADA do próprio quadro, com `split`+`overlay`, nunca `pad` com cor. A
+ * técnica é a MESMA da fal — reimplementada aqui, não importada de
+ * `formatDerivation.ts`, pela mesma razão de isolamento que já valeu para
+ * `pixelDimensionsFor()` (L2): este arquivo não pode depender de um módulo
+ * do pipeline Normal/Premium.
+ *
+ * "padrao" é NO-OP por desenho (BB3): devolve o buffer intocado, byte a
+ * byte — nenhuma chamada a ffmpeg acontece, e nenhum avatar que não escolher
+ * a distância é afetado.
+ */
+export type AvatarPhotoDistance = "padrao" | "afastado";
+
+/**
+ * Quanto o CANVAS cresce em relação à foto original. `padrao: 1` existe só
+ * para o TIPO aceitar as duas chaves sem estreitamento de controle de fluxo
+ * — na prática nunca é lido: o retorno antecipado abaixo intercepta
+ * "padrao" ANTES desta tabela, e é isso que faz "padrao" ser NO-OP de
+ * verdade (sem re-passar pelo ffmpeg, não só com fator neutro).
+ */
+const AVATAR_DISTANCE_MARGIN_FACTOR: Record<AvatarPhotoDistance, number> = {
+  padrao: 1,
+  afastado: 1.5,
+};
+
+export async function addDistanceMarginToAvatarPhoto(buffer: Buffer, distance: AvatarPhotoDistance): Promise<Buffer> {
+  if (distance === "padrao") return buffer;
+
+  const fator = AVATAR_DISTANCE_MARGIN_FACTOR[distance];
+  const entrada = path.join(os.tmpdir(), `${randomUUID()}-avatar-margin-in.png`);
+  const saida = path.join(os.tmpdir(), `${randomUUID()}-avatar-margin-out.png`);
+  try {
+    await writeFile(entrada, buffer);
+    const { width, height } = await probeVideo(entrada);
+    const canvasWidth = Math.round(width * fator);
+    const canvasHeight = Math.round(height * fator);
+    await runFfmpeg(
+      [
+        "-y",
+        "-i",
+        entrada,
+        "-filter_complex",
+        `[0:v]split=2[bg][fg];` +
+          `[bg]scale=${canvasWidth}:${canvasHeight}:force_original_aspect_ratio=increase,crop=${canvasWidth}:${canvasHeight},` +
+          `boxblur=luma_radius=min(h\\,w)/20:luma_power=1:chroma_radius=min(cw\\,ch)/20:chroma_power=1[bg2];` +
+          // `W`/`H` = dimensões do input PRINCIPAL do overlay (`bg2`, já no
+          // tamanho do canvas); `w`/`h` = dimensões do input SOBREPOSTO
+          // (`fg`, a foto original, intocada). `iw`/`ih` (usados por engano
+          // numa versão anterior) não existem neste contexto — só em
+          // `scale`/`crop` — e o ffmpeg recusa a expressão inteira.
+          `[bg2][fg]overlay=(W-w)/2:(H-h)/2,setsar=1`,
+        "-frames:v",
+        "1",
+        saida,
+      ],
+      "avatar-photo-distance-margin",
+    );
+    return await readFile(saida);
+  } finally {
+    await unlink(entrada).catch(() => {});
+    await unlink(saida).catch(() => {});
+  }
+}
+
+/**
  * A duração MEDIDA do áudio estourou o teto — e a chamada paga NÃO saiu.
  *
  * Classe PRÓPRIA, e não `AvatarProviderError`, pela mesma razão medida que fez
@@ -1413,6 +1553,14 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
     callback_url: body.callback_url ?? "ausente",
     callback_id: body.callback_id ?? "ausente",
   });
+
+  // CC1, BLOCO HEYGEN-SIMPLES-10 — persiste ANTES do fetch, de propósito:
+  // mesmo que a chamada falhe/dê timeout, o payload que ÍAMOS mandar fica
+  // registrado — útil sobretudo quando o vendor falha, que é justamente
+  // quando o log ao vivo é menos confiável de se estar olhando na hora.
+  if (input.videoId) {
+    await persistHeygenVideoPayload(input.videoId, body);
+  }
 
   let res: Response;
   try {
@@ -1886,7 +2034,9 @@ export async function trainAvatar(input: TrainAvatarInput): Promise<TrainAvatarR
         "nenhuma. Envie ao menos 1 foto do rosto e tente novamente.",
     );
   }
-  const photoBuffer = await readUpload(input.photoUrls[0]);
+  const photoBufferOriginal = await readUpload(input.photoUrls[0]);
+  // BB1, SIMPLES-10 — no-op quando `distance` é "padrao"/ausente (BB3).
+  const photoBuffer = await addDistanceMarginToAvatarPhoto(photoBufferOriginal, input.distance ?? "padrao");
   return input.vendor === "did" ? trainAvatarDid(input.apiKey, photoBuffer) : trainAvatarHeygen(input.apiKey, photoBuffer);
 }
 
@@ -2116,6 +2266,8 @@ export async function createAvatarLook(input: {
    * do que fazer 4 uploads pra usar só 3.
    */
   referenceImageUrls?: string[] | null;
+  /** BB1/BB3, SIMPLES-10 — opcional; `"padrao"` (padrão) não altera o comportamento de hoje. */
+  distance?: AvatarPhotoDistance | null;
 }): Promise<CreatedAvatarLook> {
   if (isFixtureMode()) return createAvatarLookFixture(input.providerAvatarId, input.name);
   if (input.vendor === "did") {
@@ -2130,9 +2282,13 @@ export async function createAvatarLook(input: {
     const urlsTruncadas = (input.referenceImageUrls ?? [])
       .filter((u): u is string => Boolean(u))
       .slice(0, MAX_REFERENCE_IMAGES);
+    const distance = input.distance ?? "padrao";
     const referenceImages: { type: "asset_id"; asset_id: string }[] = [];
     for (const url of urlsTruncadas) {
-      const buffer = await readUpload(url);
+      const bufferOriginal = await readUpload(url);
+      // BB1, SIMPLES-10 — no-op quando `distance === "padrao"` (BB3): devolve
+      // o MESMO buffer, sem passar por ffmpeg.
+      const buffer = await addDistanceMarginToAvatarPhoto(bufferOriginal, distance);
       const assetId = await heygenUploadAsset(input.apiKey, buffer, mimeTypeDaExtensao(url));
       referenceImages.push({ type: "asset_id", asset_id: assetId });
     }

@@ -68,6 +68,14 @@ export interface WizardState {
   /** Look do avatar. `null` = o look padrão, que é o que sempre valeu. */
   avatarLookId: string | null;
   /**
+   * ENQUADRAMENTO — BB2/BB3, BLOCO HEYGEN-SIMPLES-10. `null` = usa o padrão
+   * do servidor (`HEYGEN_FIT`, hoje "cover" — corta para preencher o
+   * quadro). `"contain"` é a alternativa: cabe o quadro inteiro, sem
+   * cortar, com barra nas laterais. Só o tier Simples (HeyGen) usa isto —
+   * a fal não tem campo equivalente.
+   */
+  avatarFit: "cover" | "contain" | null;
+  /**
    * Plataforma de publicação. É dela que sai a proporção enviada ao
    * fornecedor — ver `publishPlatforms.ts` e o catálogo do backend. Desde o
    * DEMO-2 ela é escolhida dentro do passo Cena, e não num passo próprio.

@@ -69,6 +69,8 @@ import { checkHeygenVoiceCloneWiringPolicy } from "./checkHeygenVoiceCloneWiring
 import { checkHeygenCallbackWiringPolicy } from "./checkHeygenCallbackWiringPolicy.js";
 import { checkIdempotencyReplayPolicy } from "./checkIdempotencyReplayPolicy.js";
 import { checkBackgroundResizePolicy } from "./checkBackgroundResizePolicy.js";
+import { checkHeygenPayloadPersistencePolicy } from "./checkHeygenPayloadPersistencePolicy.js";
+import { checkAvatarDistanceAndFitPolicy } from "./checkAvatarDistanceAndFitPolicy.js";
 import { checkAudioMeasuredPolicy } from "./checkAudioMeasuredPolicy.js";
 import { checkHeygenWebhookPolicy } from "./checkHeygenWebhookPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
@@ -733,6 +735,18 @@ async function main(): Promise<void> {
   const backgroundResize = await checkBackgroundResizePolicy();
   backgroundResize.failures.forEach((f) => failures.push(f));
   backgroundResize.notes.forEach((n) => note(n));
+
+  // --- 25e-9. CC1, SIMPLES-10: o payload real de POST /v3/videos sobrevive
+  // independente do log ao vivo — persistido em heygen_video_payloads --------
+  const heygenPayloadPersistence = await checkHeygenPayloadPersistencePolicy();
+  heygenPayloadPersistence.failures.forEach((f) => failures.push(f));
+  heygenPayloadPersistence.notes.forEach((n) => note(n));
+
+  // --- 25e-10. BB1+BB2, SIMPLES-10: distância (foto de treino) e
+  // enquadramento (fit por vídeo) — os dois opcionais, medidos por execução real
+  const avatarDistanceAndFit = await checkAvatarDistanceAndFitPolicy();
+  avatarDistanceAndFit.failures.forEach((f) => failures.push(f));
+  avatarDistanceAndFit.notes.forEach((n) => note(n));
 
   // --- 25f. o vídeo pago não some sem rastro ------------------------------
   //

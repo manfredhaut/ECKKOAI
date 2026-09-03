@@ -8,6 +8,7 @@ import {
   heygenIdempotencyKey,
   AudioTooLongError,
   AvatarProviderError,
+  isAvatarFit,
 } from "../services/providers/avatarProvider.js";
 import type { AvatarVendor, ScriptVendor } from "../services/providers/vendorCatalog.js";
 import { hasGenerationPath } from "../services/providers/vendorCatalog.js";
@@ -1344,6 +1345,12 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       /** Look do avatar. Traje é look; ver o passo Cena. */
       avatar_look_id?: string | null;
       /**
+       * BB2/BB3, BLOCO HEYGEN-SIMPLES-10 — enquadramento OPCIONAL, só HeyGen
+       * (`"cover"` ou `"contain"`, ver `HEYGEN_FIT`). Ausente ou inválido cai
+       * em `null`, que mantém o padrão de hoje (`HEYGEN_FIT`).
+       */
+      avatar_fit?: string | null;
+      /**
        * LEGENDA queimada. Ausente = sem legenda, que é o padrão do produto e o
        * comportamento de todos os vídeos gerados até 10/08.
        */
@@ -1388,6 +1395,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       motion_prompt: motionPromptBruto,
       expressiveness: expressividadeBruta,
       engine_choice: engineChoiceBruto,
+      avatar_fit: avatarFitBruto,
       avatar_look_id: avatarLookId,
       tier_video: tierVideoBruto,
       target_duration_seconds: targetDurationBruta,
@@ -1992,6 +2000,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         outfit: outfitParaGerar,
         outfitPrompt: outfitPromptParaGerar,
         engineChoice,
+        // BB2/BB3, SIMPLES-10 — igual a `engineChoice`: só o ramo HeyGen
+        // consome (`fit` não existe no contrato da fal). `null`/ausente
+        // mantém HEYGEN_FIT, o comportamento de hoje.
+        avatarFit: isAvatarFit(avatarFitBruto) ? avatarFitBruto : null,
         captions,
         // A duração REAL, gravada ANTES do `POST /v3/videos`.
         //

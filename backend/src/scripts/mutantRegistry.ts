@@ -112,6 +112,8 @@ import { MUTANTS as idempotencyReplayMutants } from "./checkIdempotencyReplayPol
 import { MUTANTS as backgroundResizeMutants } from "./checkBackgroundResizePolicy.js";
 import { MUTANTS as audioMeasuredMutants } from "./checkAudioMeasuredPolicy.js";
 import { MUTANTS as heygenWebhookMutants } from "./checkHeygenWebhookPolicy.js";
+import { MUTANTS as heygenPayloadPersistenceMutants } from "./checkHeygenPayloadPersistencePolicy.js";
+import { MUTANTS as avatarDistanceAndFitMutants } from "./checkAvatarDistanceAndFitPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 
@@ -230,4 +232,6 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkBackgroundResizePolicy.ts", backgroundResizeMutants),
   ...de("backend/src/scripts/checkAudioMeasuredPolicy.ts", audioMeasuredMutants),
   ...de("backend/src/scripts/checkHeygenWebhookPolicy.ts", heygenWebhookMutants),
+  ...de("backend/src/scripts/checkHeygenPayloadPersistencePolicy.ts", heygenPayloadPersistenceMutants),
+  ...de("backend/src/scripts/checkAvatarDistanceAndFitPolicy.ts", avatarDistanceAndFitMutants),
 ];

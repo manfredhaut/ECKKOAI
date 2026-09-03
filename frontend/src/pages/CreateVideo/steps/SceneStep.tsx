@@ -121,6 +121,8 @@ export function SceneStep({
   onExpressivenessChange,
   avatarLookId,
   onAvatarLookChange,
+  avatarFit,
+  onAvatarFitChange,
   publishPlatform,
   onPublishPlatformChange,
   tierVideo,
@@ -147,6 +149,9 @@ export function SceneStep({
   onExpressivenessChange: (value: WizardState["expressiveness"]) => void;
   avatarLookId: string | null;
   onAvatarLookChange: (value: string | null) => void;
+  /** BB2/BB3, SIMPLES-10 — `null` usa o padrão do servidor. Só tier Simples. */
+  avatarFit: WizardState["avatarFit"];
+  onAvatarFitChange: (value: WizardState["avatarFit"]) => void;
   publishPlatform: string;
   onPublishPlatformChange: (value: string) => void;
   /** Mesmo padrão de `onCaptionsChange` — BLOCO A. Movido de GenerateStep.tsx: o nível é escolhido AQUI, na Cena, antes do resumo final. */
@@ -764,6 +769,34 @@ export function SceneStep({
           ))}
         </div>
       </Field>
+
+      {/* ------------------------------------------------- ENQUADRAMENTO */}
+      {/* BB2/BB3, BLOCO HEYGEN-SIMPLES-10 — só tier Simples (`fit` é campo
+          da HeyGen; a fal não tem equivalente). Duas respostas ao mesmo
+          problema ("a pessoa aparece grande demais no vídeo"): esta corta
+          MENOS (mostra o quadro inteiro, com barra) — a outra (Distância,
+          no traje/foto de referência do avatar, Passo 1) não corta nada,
+          e sim cresce o CANVAS da foto antes de qualquer geração. */}
+      {tierVideo === "simples" && (
+        <Field label={t("createVideo.scene.avatarFitLabel")} help={t("createVideo.scene.avatarFitHelp")}>
+          <div className="chip-group">
+            <button
+              type="button"
+              className={`chip${avatarFit === null ? " selected" : ""}`}
+              onClick={() => onAvatarFitChange(null)}
+            >
+              {t("createVideo.scene.avatarFitDefault")}
+            </button>
+            <button
+              type="button"
+              className={`chip${avatarFit === "contain" ? " selected" : ""}`}
+              onClick={() => onAvatarFitChange("contain")}
+            >
+              {t("createVideo.scene.avatarFitContain")}
+            </button>
+          </div>
+        </Field>
+      )}
 
       {/* -------------------------------------------------------- FORMATO */}
       <PublishStep platform={publishPlatform} onChange={onPublishPlatformChange} tierVideo={tierVideo} />

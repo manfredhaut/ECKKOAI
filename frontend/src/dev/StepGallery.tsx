@@ -249,6 +249,7 @@ function StepUnderGlass({
       motionPrompt: state === "vazio" ? "" : "mãos abertas na altura do peito, gesto calmo",
       expressiveness: state === "vazio" ? null : ("medium" as const),
       avatarLookId: null,
+      avatarFit: null,
       // O estado "vazio" recebe o padrão, e não string vazia: a plataforma
       // nasce escolhida no wizard real, e uma galeria que mostrasse o passo
       // sem seleção retrataria um estado que o produto não produz.
@@ -303,6 +304,8 @@ function StepUnderGlass({
           onExpressivenessChange={noop}
           avatarLookId={wizard.avatarLookId}
           onAvatarLookChange={noop}
+          avatarFit={wizard.avatarFit}
+          onAvatarFitChange={noop}
           publishPlatform={state === "vazio" ? DEFAULT_PUBLISH_PLATFORM : "reels_tiktok"}
           onPublishPlatformChange={noop}
           tierVideo={wizard.tierVideo}

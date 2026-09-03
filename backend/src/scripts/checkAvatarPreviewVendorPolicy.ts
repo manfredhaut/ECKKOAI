@@ -46,7 +46,7 @@ const ANCORA_LOOKS_INICIO = 'app.get<{ Params: { id: string } }>("/avatars/:id/l
 const ANCORA_CRIAR_LOOK_INICIO =
   "  app.post<{\n" +
   "    Params: { id: string };\n" +
-  '    Body: { name?: string; imageUrl?: string; imageUrls?: string[]; prompt?: string };\n' +
+  '    Body: { name?: string; imageUrl?: string; imageUrls?: string[]; prompt?: string; distance?: string };\n' +
   "  }>(\n" +
   '    "/avatars/:id/looks",\n' +
   '    { preHandler: requireActiveTenant },\n' +
