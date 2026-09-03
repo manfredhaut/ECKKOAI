@@ -29,6 +29,10 @@
  *       sucesso (dentro do bloco que atribui `heygenVoiceId`), nunca
  *       incondicionalmente.
  *  G-5  a coluna existe na migration 076.
+ *  G-6  PUT /avatars/:id persiste os quatro ajustes de voice_settings
+ *       HeyGen (speed/pitch/volume/locale, migration 077) com o MESMO
+ *       COALESCE dos quatro ElevenLabs já existentes — campo ausente no
+ *       corpo não zera a coluna.
  *
  * Custo: ZERO. Nenhuma rede, nenhum banco — leitura de arquivo.
  */
@@ -37,7 +41,9 @@ import path from "node:path";
 import type { Mutant } from "./mutants.js";
 
 const ROTA_VOICE = "backend/src/routes/voice.ts";
+const ROTA_AVATARS = "backend/src/routes/avatars.ts";
 const MIGRATION_076 = "backend/src/db/migrations/076_heygen_voice_id.sql";
+const MIGRATION_077 = "backend/src/db/migrations/077_heygen_voice_settings.sql";
 
 export const MUTANTS: Mutant[] = [
   {
@@ -90,6 +96,21 @@ export const MUTANTS: Mutant[] = [
     find: "      if (heygenVoiceId && updated[0]) updated[0].heygen_voice_id = heygenVoiceId;",
     replace: "      if (updated[0]) updated[0].heygen_voice_id = heygenVoiceId;",
     expect: "não é mais gravado condicionalmente",
+  },
+  {
+    guard: "PUT /avatars/:id persiste heygen_voice_speed com COALESCE (campo ausente não zera a coluna)",
+    name: "heygen_voice_speed passa a ser sobrescrito sem COALESCE",
+    kind: "esperto",
+    // ESPERTO: a coluna continua sendo atualizada, o parâmetro continua
+    // chegando — só o COALESCE some. Um PUT que só manda `name` (o caso
+    // mais comum: renomear o avatar) passaria a zerar o speed HeyGen de
+    // volta para NULL, e a checagem `heygen_voice_speed ?? null` no
+    // parâmetro mandaria NULL para uma coluna NOT NULL — a query INTEIRA
+    // falharia com violação de constraint, derrubando até a renomeação.
+    file: ROTA_AVATARS,
+    find: "         heygen_voice_speed = COALESCE($17, heygen_voice_speed),",
+    replace: "         heygen_voice_speed = $17,",
+    expect: "não é mais persistido com COALESCE",
   },
 ];
 
@@ -182,6 +203,46 @@ export function checkHeygenVoiceCloneWiringPolicy(repoRoot: string): HeygenVoice
     }
   } catch {
     failures.push(`heygen-voice-clone-wiring: não consegui ler ${MIGRATION_076}.`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // G-6 — PUT /avatars/:id persiste os quatro ajustes HeyGen com COALESCE.
+  // ---------------------------------------------------------------------------
+  try {
+    const migration077 = lerDaRaiz(repoRoot, MIGRATION_077);
+    if (!/ADD COLUMN\s+heygen_voice_speed\s+numeric/i.test(migration077)) {
+      failures.push(
+        `heygen-voice-clone-wiring: ${MIGRATION_077} não declara \`heygen_voice_speed numeric\` — a coluna ` +
+          "que a rota grava não existiria no banco.",
+      );
+    } else {
+      notes.push("    heygen-voice-clone-wiring: migration 077 declara os quatro ajustes heygen_voice_*");
+    }
+  } catch {
+    failures.push(`heygen-voice-clone-wiring: não consegui ler ${MIGRATION_077}.`);
+  }
+
+  const rotaAvatars = lerDaRaiz(repoRoot, ROTA_AVATARS);
+  const camposHeygenVoiceSettings = [
+    "heygen_voice_speed",
+    "heygen_voice_pitch",
+    "heygen_voice_volume",
+    "heygen_voice_locale",
+  ];
+  for (const campo of camposHeygenVoiceSettings) {
+    if (!rotaAvatars.includes(`${campo} = COALESCE(`)) {
+      failures.push(
+        `heygen-voice-clone-wiring: \`${campo}\` não é mais persistido com COALESCE em PUT /avatars/:id ` +
+          `(${ROTA_AVATARS}) — um PUT que só manda outro campo (ex.: renomear o avatar) zeraria este ajuste ` +
+          "de volta ao default.",
+      );
+    }
+  }
+  if (failures.length === 0 || !failures.some((f) => f.includes("heygen_voice_speed"))) {
+    notes.push(
+      "    heygen-voice-clone-wiring: PUT /avatars/:id persiste os quatro ajustes heygen_voice_* com " +
+        "COALESCE, mesmo padrão dos quatro ElevenLabs",
+    );
   }
 
   return { failures, notes };

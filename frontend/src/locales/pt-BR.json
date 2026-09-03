@@ -612,6 +612,18 @@
         "speakerBoostHelp": "Reforço de voz: melhora a semelhança com o locutor, com custo de processamento. Ligado por padrão.",
         "speakerBoostOn": "Reforço ligado",
         "speakerBoostOff": "Reforço desligado"
+      },
+      "heygenVoiceTuning": {
+        "title": "Ajustes da voz (HeyGen)",
+        "help": "Esta voz foi clonada direto na HeyGen — os ajustes disponíveis são outros. Valem só quando este avatar gerar pelo nível Simples.",
+        "speedLabel": "Velocidade",
+        "speedHelp": "Multiplicador da velocidade da fala. 1,00 é o normal.",
+        "pitchLabel": "Tom",
+        "pitchHelp": "Ajuste fino de tom, em semitons. Pequenos ajustes (±5 a ±15) mudam a idade e o timbre percebidos sem soar artificial.",
+        "volumeLabel": "Volume",
+        "volumeHelp": "Nível do áudio da voz. Mais útil ao misturar com música ou efeitos de fundo.",
+        "localeLabel": "Idioma/sotaque (opcional)",
+        "localeHelp": "Código no formato pt-BR, en-US etc. — só para vozes multilíngues. Deixe em branco para o padrão."
       }
     },
     "script": {

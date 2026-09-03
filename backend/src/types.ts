@@ -52,6 +52,18 @@ export interface Avatar {
   voice_style: number;
   voice_speaker_boost: boolean;
   /**
+   * Os quatro ajustes de `voice_settings` da HeyGen — B6, migration 077.
+   * Só têm efeito quando `heygen_voice_id` existe (voz nativa HeyGen); para
+   * voz ElevenLabs, os quatro ajustes acima continuam sendo os que valem.
+   * Ranges lidos por doc pública (developers.heygen.com/reference/
+   * create-video): speed 0,5–1,5 (default 1), pitch -50..+50 semitons
+   * (default 0), volume 0–1 (default 1), locale BCP-47 opcional.
+   */
+  heygen_voice_speed: number;
+  heygen_voice_pitch: number;
+  heygen_voice_volume: number;
+  heygen_voice_locale: string | null;
+  /**
    * Cenário/traje PADRÃO do avatar — migration 068, Fase A item 5 (25/08).
    * Persistidos ao "Concluir configuração" do Passo 1; usados por
    * `POST /videos` como PADRÃO quando o próprio vídeo não manda um valor

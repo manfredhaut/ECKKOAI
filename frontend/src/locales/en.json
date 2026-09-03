@@ -598,6 +598,18 @@
         "speakerBoostHelp": "Speaker boost: improves similarity to the speaker at some processing cost. On by default.",
         "speakerBoostOn": "Boost on",
         "speakerBoostOff": "Boost off"
+      },
+      "heygenVoiceTuning": {
+        "title": "Voice tuning (HeyGen)",
+        "help": "This voice was cloned directly on HeyGen — the available controls are different. They only apply when this avatar generates on the Simple tier.",
+        "speedLabel": "Speed",
+        "speedHelp": "Speech speed multiplier. 1.00 is normal.",
+        "pitchLabel": "Pitch",
+        "pitchHelp": "Fine pitch adjustment, in semitones. Small adjustments (±5 to ±15) shift perceived age and tone without sounding processed.",
+        "volumeLabel": "Volume",
+        "volumeHelp": "Voice audio level. Most useful when mixing with background music or effects.",
+        "localeLabel": "Language/accent (optional)",
+        "localeHelp": "Code in pt-BR, en-US format, etc. — only for multilingual voices. Leave blank for the default."
       }
     },
     "script": {

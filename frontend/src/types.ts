@@ -21,6 +21,13 @@ export interface Avatar {
   photo_urls: string[];
   reference_video_url: string | null;
   voice_id: string | null;
+  /**
+   * A voz clonada DIRETO na HeyGen — B5/B6, BLOCO HEYGEN-SIMPLES-1
+   * (migration 076). Paralela a `voice_id` (sempre ElevenLabs). Presente
+   * (não `null`) é o sinal que a tela usa para mostrar os sliders HeyGen
+   * (speed/pitch/volume/locale) em vez dos ElevenLabs — ver AvatarSetupStep.
+   */
+  heygen_voice_id: string | null;
   provider_avatar_id: string | null;
   // ready | processing | unknown | null. Só "processing" impede gerar vídeo;
   // null (avatar antigo) e "unknown" liberam — ver migration 036.
@@ -36,6 +43,16 @@ export interface Avatar {
   voice_similarity_boost: string;
   voice_style: string;
   voice_speaker_boost: boolean;
+  /**
+   * Os quatro ajustes de voice_settings da HeyGen — migration 077, B6. Só
+   * têm efeito quando `heygen_voice_id` existe. `numeric` chega como
+   * STRING pelo mesmo motivo dos ElevenLabs acima. Ranges: speed 0,5–1,5,
+   * pitch -50..+50, volume 0–1 (developers.heygen.com/reference/create-video).
+   */
+  heygen_voice_speed: string;
+  heygen_voice_pitch: string;
+  heygen_voice_volume: string;
+  heygen_voice_locale: string | null;
   /**
    * Cenário/traje PADRÃO do avatar — migration 068, 25/08. Persistidos ao
    * "Concluir configuração" do Passo 1 (AvatarSetupStep.tsx).

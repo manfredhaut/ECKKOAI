@@ -271,6 +271,12 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         | "voice_similarity_boost"
         | "voice_style"
         | "voice_speaker_boost"
+        // Os quatro ajustes de voice_settings HeyGen — migration 077, B6.
+        // Mesmo padrão de COALESCE dos quatro ElevenLabs acima.
+        | "heygen_voice_speed"
+        | "heygen_voice_pitch"
+        | "heygen_voice_volume"
+        | "heygen_voice_locale"
         // Cenário/traje PADRÃO do avatar — migration 068, Fase A item 5
         // (25/08). Mesmo padrão de COALESCE dos demais: campo ausente no
         // corpo não zera a coluna, mantém o valor salvo.
@@ -302,6 +308,10 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       voice_similarity_boost,
       voice_style,
       voice_speaker_boost,
+      heygen_voice_speed,
+      heygen_voice_pitch,
+      heygen_voice_volume,
+      heygen_voice_locale,
       scenario,
       scenario_prompt,
       outfit,
@@ -322,7 +332,11 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
          scenario = CASE WHEN $15 THEN NULL ELSE COALESCE($11, scenario) END,
          scenario_prompt = COALESCE($12, scenario_prompt),
          outfit = CASE WHEN $16 THEN NULL ELSE COALESCE($13, outfit) END,
-         outfit_prompt = COALESCE($14, outfit_prompt)
+         outfit_prompt = COALESCE($14, outfit_prompt),
+         heygen_voice_speed = COALESCE($17, heygen_voice_speed),
+         heygen_voice_pitch = COALESCE($18, heygen_voice_pitch),
+         heygen_voice_volume = COALESCE($19, heygen_voice_volume),
+         heygen_voice_locale = COALESCE($20, heygen_voice_locale)
        WHERE id = $1 AND tenant_id = $2 RETURNING *`,
       [
         req.params.id,
@@ -341,6 +355,10 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         outfit_prompt ?? null,
         scenario_clear === true,
         outfit_clear === true,
+        heygen_voice_speed ?? null,
+        heygen_voice_pitch ?? null,
+        heygen_voice_volume ?? null,
+        heygen_voice_locale ?? null,
       ],
     );
     if (!rows[0]) return reply.code(404).send({ error: "Avatar not found" });

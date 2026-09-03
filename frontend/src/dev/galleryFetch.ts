@@ -39,6 +39,9 @@ const FAKE_AVATAR: Avatar = {
   photo_urls: [],
   reference_video_url: "/uploads/exemplo/referencia.mp4",
   voice_id: "gallery-voice-1",
+  // `null` — a galeria exercita o caminho ElevenLabs (sem voz HeyGen), o
+  // mesmo estado de todo avatar hoje sem credencial HeyGen conectada.
+  heygen_voice_id: null,
   provider_avatar_id: "gallery-provider-avatar-1",
   provider_status: "ready",
   audio_treatment_enabled: true,
@@ -51,6 +54,13 @@ const FAKE_AVATAR: Avatar = {
   voice_similarity_boost: "0.75",
   voice_style: "0.0",
   voice_speaker_boost: true,
+  // Os quatro ajustes HeyGen — migration 077, B6. Defaults do fornecedor
+  // (mesmos da coluna): a galeria não exercita o caminho HeyGen aqui
+  // (heygen_voice_id é null acima), então estes valores nunca aparecem na tela.
+  heygen_voice_speed: "1",
+  heygen_voice_pitch: "0",
+  heygen_voice_volume: "1",
+  heygen_voice_locale: null,
   // Cenário/traje padrão — migration 068. `null` nos quatro: a galeria já
   // exercita o caminho preenchido via `FILLED_DEFAULTS` (estado do wizard),
   // e um avatar de exemplo SEM padrão persistido é o estado mais comum hoje

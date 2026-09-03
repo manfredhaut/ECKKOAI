@@ -109,6 +109,12 @@ export function AvatarSetupStep({
   const [existingVoiceStabilityDraft, setExistingVoiceStabilityDraft] = useState(0.5);
   const [existingVoiceSimilarityDraft, setExistingVoiceSimilarityDraft] = useState(0.75);
   const [existingVoiceStyleDraft, setExistingVoiceStyleDraft] = useState(0);
+  // Os quatro ajustes de voice_settings HeyGen — B6, migration 077. MESMO
+  // padrão de draft/commit-no-soltar dos três ElevenLabs acima; só aparecem
+  // (ver o JSX abaixo) quando `selectedAvatar.heygen_voice_id` existe.
+  const [existingHeygenSpeedDraft, setExistingHeygenSpeedDraft] = useState(1);
+  const [existingHeygenPitchDraft, setExistingHeygenPitchDraft] = useState(0);
+  const [existingHeygenVolumeDraft, setExistingHeygenVolumeDraft] = useState(1);
   // MESMO padrão dos três acima, para o bloco de Tratamento de Áudio (LUFS)
   // do avatar JÁ EXISTENTE — Item 2, fecha a lacuna de navegação (o bloco só
   // existia no assistente de criação).
@@ -344,6 +350,10 @@ export function AvatarSetupStep({
       setExistingVoiceStyleDraft(Number(selectedAvatar.voice_style));
       // Item 2 — mesma regra: resincroniza só na troca de avatar selecionado.
       setExistingTargetLufsDraft(Number(selectedAvatar.audio_treatment_target_lufs));
+      // B6 — mesma regra, para os três de voice_settings HeyGen.
+      setExistingHeygenSpeedDraft(Number(selectedAvatar.heygen_voice_speed));
+      setExistingHeygenPitchDraft(Number(selectedAvatar.heygen_voice_pitch));
+      setExistingHeygenVolumeDraft(Number(selectedAvatar.heygen_voice_volume));
     }
   }, [selectedAvatar?.id]);
 
@@ -998,7 +1008,96 @@ export function AvatarSetupStep({
             Mesmo `PUT /avatars/:id`, nenhuma rota nova, nenhuma migration nova.
             NÃO leva o bloco de Tratamento de Áudio (LUFS) junto — fora do
             escopo desta rodada por decisão explícita do operador. */}
-        {selectedAvatar && (
+        {/* B6, BLOCO HEYGEN-SIMPLES-1 (02/09/2026) — os controles mudam por
+            VENDOR da voz clonada. `heygen_voice_id` presente é o único sinal
+            que a tela tem: é o que a clonagem dupla (ligação de B5,
+            routes/voice.ts) grava quando a MESMA gravação também foi clonada
+            na HeyGen. Sem ele (o caminho de todo avatar hoje, e de todo
+            tenant sem credencial HeyGen), os quatro ajustes ElevenLabs
+            continuam sendo os que valem — comportamento idêntico ao de
+            antes desta rodada. */}
+        {selectedAvatar && selectedAvatar.heygen_voice_id ? (
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-title">{t("createVideo.avatarSetup.heygenVoiceTuning.title")}</div>
+            <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
+              {t("createVideo.avatarSetup.heygenVoiceTuning.help")}
+            </p>
+
+            <Field
+              label={`${t("createVideo.avatarSetup.heygenVoiceTuning.speedLabel")} (${existingHeygenSpeedDraft.toFixed(2)})`}
+              help={t("createVideo.avatarSetup.heygenVoiceTuning.speedHelp")}
+            >
+              <input
+                type="range"
+                min={0.5}
+                max={1.5}
+                step={0.05}
+                value={existingHeygenSpeedDraft}
+                onChange={(e) => setExistingHeygenSpeedDraft(Number(e.target.value))}
+                onMouseUp={() =>
+                  commitExistingVoiceTuning({ heygen_voice_speed: String(existingHeygenSpeedDraft) })
+                }
+                onTouchEnd={() =>
+                  commitExistingVoiceTuning({ heygen_voice_speed: String(existingHeygenSpeedDraft) })
+                }
+              />
+            </Field>
+
+            <Field
+              label={`${t("createVideo.avatarSetup.heygenVoiceTuning.pitchLabel")} (${existingHeygenPitchDraft.toFixed(0)})`}
+              help={t("createVideo.avatarSetup.heygenVoiceTuning.pitchHelp")}
+            >
+              <input
+                type="range"
+                min={-50}
+                max={50}
+                step={1}
+                value={existingHeygenPitchDraft}
+                onChange={(e) => setExistingHeygenPitchDraft(Number(e.target.value))}
+                onMouseUp={() =>
+                  commitExistingVoiceTuning({ heygen_voice_pitch: String(existingHeygenPitchDraft) })
+                }
+                onTouchEnd={() =>
+                  commitExistingVoiceTuning({ heygen_voice_pitch: String(existingHeygenPitchDraft) })
+                }
+              />
+            </Field>
+
+            <Field
+              label={`${t("createVideo.avatarSetup.heygenVoiceTuning.volumeLabel")} (${existingHeygenVolumeDraft.toFixed(2)})`}
+              help={t("createVideo.avatarSetup.heygenVoiceTuning.volumeHelp")}
+            >
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={existingHeygenVolumeDraft}
+                onChange={(e) => setExistingHeygenVolumeDraft(Number(e.target.value))}
+                onMouseUp={() =>
+                  commitExistingVoiceTuning({ heygen_voice_volume: String(existingHeygenVolumeDraft) })
+                }
+                onTouchEnd={() =>
+                  commitExistingVoiceTuning({ heygen_voice_volume: String(existingHeygenVolumeDraft) })
+                }
+              />
+            </Field>
+
+            <Field
+              label={t("createVideo.avatarSetup.heygenVoiceTuning.localeLabel")}
+              help={t("createVideo.avatarSetup.heygenVoiceTuning.localeHelp")}
+            >
+              <input
+                type="text"
+                defaultValue={selectedAvatar.heygen_voice_locale ?? ""}
+                placeholder="pt-BR"
+                onBlur={(e) =>
+                  commitExistingVoiceTuning({ heygen_voice_locale: e.target.value.trim() || null })
+                }
+              />
+            </Field>
+          </div>
+        ) : selectedAvatar ? (
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title">{t("createVideo.avatarSetup.voiceTuning.title")}</div>
             <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
@@ -1094,7 +1193,7 @@ export function AvatarSetupStep({
               </div>
             </Field>
           </div>
-        )}
+        ) : null}
 
         {/* TRATAMENTO DE ÁUDIO (LUFS) — mesmo bloco do assistente de criação,
             agora também no avatar JÁ EXISTENTE — Item 2, 25/08. Mesmo motivo
