@@ -5,11 +5,11 @@ Always respond in Brazilian Portuguese.
 > O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
 > — não duplicado aqui de propósito, para não haver dois textos podendo
 > discordar um do outro. **Dentro da Seção 6, o bloco mais novo é
-> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-7 (03/09)", no FIM da seção — leia-o
-> antes de todos os blocos anteriores (SIMPLES-6, SIMPLES-5, SIMPLES-4 e
-> SIMPLES-3 03/09 tarde, SIMPLES-1 03/09 manhã, primeiro vídeo Normal/Wan
-> 3.0 02/09, V34 01/09, 28/08, 27/08, 26/08, 25/08), que estão superados
-> no que algum deles conflitar.**
+> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-9 (03/09)", no FIM da seção — leia-o
+> antes de todos os blocos anteriores (SIMPLES-7, SIMPLES-6, SIMPLES-5,
+> SIMPLES-4 e SIMPLES-3 03/09 tarde, SIMPLES-1 03/09 manhã, primeiro vídeo
+> Normal/Wan 3.0 02/09, V34 01/09, 28/08, 27/08, 26/08, 25/08), que estão
+> superados no que algum deles conflitar.**
 > Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
 > existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
 > isso o texto antigo saiu daqui.
@@ -827,3 +827,27 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > ### (d) Gate e custo
 >
 > Nenhum código de produto tocado — só o probe novo (`probeSimples7SaldoCheck.ts`, descartável, mantido como artefato histórico, mesmo padrão dos outros `probe*.ts` já no repositório). Gate verde, `tsc` limpo. **Custo real: US$ 0,00** — a única chamada real desta sessão foi um `GET` de saldo.
+
+> ⚠️ **FECHAMENTO — BLOCO HEYGEN-SIMPLES-9 (03/09/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Partes W (prontidão de produção — só investigação, nenhum deploy), X (fecha o gap de US$0,06 entre o registrado por nós e o painel HeyGen), Y (instrumenta o log e entrega o comando de registro pedido). **HEAD ao fechar: `2268a95` + este commit.**
+>
+> ### (a) W — o gap de produção, só o lado que dá para medir daqui
+>
+> **W1 — MEDIDO, só do lado local.** `git rev-list --count 7cf2b8d..HEAD` = **153 commits**, `7cf2b8d` datado de 20/08/2026 (`git show -s --format=%cI`). Cobre o arco HeyGen-Simples inteiro (F a Q, blocos 1-7) mais trabalho não relacionado a HeyGen. **Que `7cf2b8d` seja de fato o último deploy em produção é premissa DO OPERADOR** — eu só confirmo que o commit existe no histórico local e calculo a distância até o HEAD atual; não tenho como verificar de forma independente o que está rodando na VPS.
+>
+> **W2/W3 — NÃO RESPONDIDAS, por bloqueio de memória permanente.** [[feedback_no_ssh_prod]] proíbe SSH e leitura de `.env` na VPS de produção (`eckko-prod`, `103.101.202.185`) mesmo com comando pronto colado na mensagem, mesmo leitura pura, mesmo valores mascarados — e esta Parte W pedia exatamente isso. Os comandos exatos (`printenv` dentro do container de produção, para `PROVIDER_MODE`/`PROVIDER_LIVE_CONFIRM`/`PROVIDER_LIVE_MAX_GENERATIONS`) foram entregues ao operador no chat, para ele rodar e, se quiser, colar a saída de volta numa sessão futura. **Nenhum deploy, nenhuma troca de modo, nenhum acesso à VPS foi executado.**
+>
+> ### (b) X — o gap de US$0,06, causa identificada por leitura
+>
+> **X1 — MEDIDO por query direta** (`tools/registro-geracao.sql`, item Y abaixo). O vídeo real de teste (`eb40f9b0-1e97-4913-a13a-bcbf4ceb0f3c`, criado 03/09 12:44:46, tenant `dev-c77a5b`) tem exatamente **2 linhas em `provider_usage`**: `voice/elevenlabs` US$0,0171 (171 caracteres) + `avatar/heygen` US$0,539 (14,0462s medidos pelo fornecedor, `requested_unit_count=15`) — **soma US$0,5561**.
+>
+> **X2 — causa mais provável identificada por leitura de código, NÃO medida de forma independente.** `heygenUploadAsset(input.apiKey, audio.buffer, "audio/mpeg")` em [avatarProvider.ts:1351](backend/src/services/providers/avatarProvider.ts:1351) — o upload do áudio sintetizado (`POST /v3/assets`) é a **2ª requisição HeyGen** de toda geração real (a 1ª é `POST /v3/videos`). Confirmado por grep: `recordProviderUsage` só é chamado em duas linhas do arquivo — 405 (ElevenLabs) e 631 (HeyGen `/v3/videos`) — o upload de asset loga só um evento genérico `vendor_response` (via `fetchJson(res, "HeyGen", "heygen.uploadAsset")`), sem gravar linha própria de custo. Isso bate com o "2 solicitações" que o painel da HeyGen mostrou contra o único registro que temos — mas fica como **HIPÓTESE RAZOÁVEL**, não medição: eu não estava presente na chamada real para isolar o custo dessa requisição especificamente, e não há tarifa documentada publicamente para `POST /v3/assets` (mesma lacuna já registrada em SIMPLES-7, item P).
+>
+> ### (c) Y — instrumentado, testado ponta a ponta, sem gastar
+>
+> `video_payload_built` ([avatarProvider.ts](backend/src/services/providers/avatarProvider.ts), ~linha 1388) ganhou o campo `video_id: input.videoId ?? "ausente"` explícito, no topo do objeto — grep direto por vídeo sem depender de saber que `callback_id` É o `videoId` quando presente (F1), e que não some quando `callback_id` estiver "ausente" (sondas sem `videoId`). Confirmado no log real de uma execução em fixture desta sessão: `"video_id":"11111111-1111-4111-8111-1111111c6cb1"` quando presente, `"video_id":"ausente"` nas sondas sem id.
+>
+> `tools/registro-geracao.sh` (novo, chama `tools/registro-geracao.sql`) — um único comando que imprime: (1) a última linha `video_payload_built` real do log ao vivo do backend (`docker compose logs backend --tail 500` — o teto de 500 é o gotcha já documentado deste projeto: `--tail` maior devolve arquivo rotacionado e congelado; o script NUNCA conclui ausência de geração a partir de busca vazia, só relata o que achou); (2) o vídeo e cada linha de `provider_usage` da geração HeyGen real mais recente (banco, fonte de verdade independente do log). **Testado ponta a ponta** contra `eb40f9b0…`: a seção de banco bate exatamente com X1; a seção de log não encontrou a linha (esperado — o buffer já tinha girado há horas desde a geração real), e o script relatou isso explicitamente em vez de fingir que não houve geração.
+>
+> ### (d) Gate, custo e ambiente
+>
+> Gate verde (fixture), `tsc` limpo nos dois lados. **1 commit de código** (`2268a95`) — só o campo `video_id` no log e os dois arquivos novos em `tools/`; nenhum arquivo de `falPipeline.ts` tocado (isolamento do Normal preservado por não-toque, não por prova nova nesta rodada — esta sessão não mexeu em geração de vídeo nenhuma). **Custo real: US$ 0,00** — nenhuma chamada paga a HeyGen/ElevenLabs; toda verificação foi gate em fixture + leitura de banco/código. Ambiente reconfirmado INALTERADO ao fechar (`printenv` no processo real): `PROVIDER_MODE=live`, `PROVIDER_LIVE_CONFIRM` armado (len=28), `PROVIDER_LIVE_MAX_GENERATIONS=3` — mesmo estado deixado por SIMPLES-5/6/7.

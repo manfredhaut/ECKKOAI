@@ -15,6 +15,55 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
+> ⚠️ **BLOCO HEYGEN-SIMPLES-9, FECHADO em 03/09/2026. HEAD `2268a95` + este
+> commit.** Partes W (prontidão de produção, só investigação), X (fecha o
+> gap de US$0,06), Y (instrumenta o log + comando de registro).
+>
+> **W1 — gap LOCAL medido: 153 commits entre `7cf2b8d` (20/08, hipótese do
+> operador de último deploy) e o HEAD anterior a este bloco.** Cobre TODO o
+> arco HEYGEN-SIMPLES (F a Q) mais trabalho não relacionado. **`7cf2b8d`
+> como "último deploy real" é premissa DO OPERADOR, não verificada por
+> mim** — só confirmo que o commit existe localmente e calculo a
+> distância. **W2/W3 NÃO respondidas** — exigem SSH na VPS de produção,
+> bloqueado por [[feedback_no_ssh_prod]] (memória permanente: nunca SSH
+> nem leitura de `.env` de produção, mesmo com comando colado pronto).
+> Comandos exatos entregues ao operador no chat para ele rodar e colar a
+> saída de volta, se quiser W2/W3 respondidas. **Nenhum deploy executado.**
+>
+> **X1 — MEDIDO por query direta.** O vídeo real de teste (`eb40f9b0…`,
+> 03/09 12:44) tem exatamente **2 linhas em `provider_usage`**: ElevenLabs
+> US$0,0171 (171 caracteres) + HeyGen US$0,539 (14,0462s medidos,
+> `requested_unit_count=15`) — **total US$0,5561**.
+>
+> **X2 — causa mais provável do gap de US$0,06 identificada por leitura,
+> NÃO medida de forma independente.** `heygenUploadAsset(input.apiKey,
+> audio.buffer, "audio/mpeg")` em [avatarProvider.ts:1351](backend/src/services/providers/avatarProvider.ts:1351)
+> — o upload do áudio (`POST /v3/assets`) é a 2ª requisição HeyGen por
+> vídeo. Confirmado por grep: `recordProviderUsage` só é chamado nas
+> linhas 405 (ElevenLabs) e 631 (HeyGen `/v3/videos`) — o upload de asset
+> loga só um `vendor_response` genérico (via `fetchJson`), sem linha
+> dedicada de custo. É a explicação mais provável para o "2 solicitações"
+> do painel HeyGen batendo só 1 registro nosso, mas fica como HIPÓTESE
+> RAZOÁVEL, não medição — eu não estava presente na chamada real para
+> isolar o custo dessa requisição especificamente.
+>
+> **Y1/Y2 — instrumentado e testado ponta a ponta.** `video_payload_built`
+> ganhou campo `video_id` explícito (topo do objeto), confirmado no log
+> real de uma execução em fixture desta sessão. `tools/registro-geracao.sh`
+> (novo, chama `tools/registro-geracao.sql`) imprime o payload real
+> enviado (log ao vivo do backend, `--tail 500` por causa do gotcha de
+> log rotacionado — nunca conclui ausência, só diz o que achou) + o vídeo
+> e cada linha de `provider_usage` da geração HeyGen real mais recente
+> (banco, fonte de verdade independente do log). Testado contra
+> `eb40f9b0…`: banco bate exatamente com X1; log não encontrou a linha
+> (esperado — girou do buffer há horas), e o script relata isso em vez de
+> fingir que não houve geração.
+>
+> Gate verde (fixture), `tsc` limpo nos dois lados. 1 commit de código
+> (`2268a95`). Custo real desta sessão: **US$ 0,00** — nenhuma chamada
+> paga a HeyGen/ElevenLabs. Ambiente reconfirmado inalterado ao fechar:
+> `live`, `PROVIDER_LIVE_CONFIRM` armado (len=28), `MAX_GENERATIONS=3`.
+>
 > ⚠️ **BLOCO HEYGEN-SIMPLES-7, FECHADO em 03/09/2026. HEAD `0711cc1` +
 > este commit.** Só investigação — fecha 3 lacunas do fechamento do
 > SIMPLES-6, nenhuma mudança nas Partes L/M/N.
