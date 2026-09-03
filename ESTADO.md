@@ -15,6 +15,57 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
+> ⚠️ **DÉCIMA DIVERGÊNCIA, MEDIDA em 03/09/2026 — este arquivo NÃO foi
+> reconciliado nesta sessão, por escopo (mesma dívida da nona, um degrau a
+> mais).** HEAD real no fechamento: `5ebc13e` — 1 commit à frente da nona
+> divergência (`c675635`+doc, que por sua vez já estava 14 à frente do topo
+> da §1). A sessão de 03/09 (tarde) é o **BLOCO HEYGEN-SIMPLES-3**: liga de
+> verdade os call sites que HEYGEN-SIMPLES-1 tinha deixado prontos, mas
+> nunca chamados.
+>
+> **F1** — `output_format`/`title`/`callback_url`/`callback_id` chegam de
+> verdade a `POST /v3/videos`, via `heygenExtrasReais()` (nova função,
+> compartilhada entre a chamada real e a simulação — a fixture continua
+> mostrando "o payload REAL"). `voice_id`/`voice_settings`/
+> `brand_glossary_id` seguem inertes por desenho (ElevenLabs sempre
+> sintetiza a fala). **G1** — `requireAudio` mede a duração REAL por
+> `ffprobe` sobre o buffer final, com fallback ao autorrelato do ElevenLabs
+> só quando o ffprobe falha. **G2** — B2 (TTS nativo HeyGen,
+> `synthesizeSpeechHeygen`/`requestSpeechAndRecordUsage`) removido: nunca
+> esteve no caminho de produção e media o áudio errado. **G3** —
+> `GET /videos/:id/cost` expõe `audioMeasured`; confirmado AO VIVO no
+> wizard (fixture): **"Duração medida (áudio): 3,00 s"** apareceu na tela
+> durante o processamento. **H2** — confirmado por execução que
+> `callback_id` enviado é o mesmo `videoId` que a rota receptora procura.
+> **H3** — comentário do webhook registra que a reconfirmação via GET
+> deixou de ser necessária (a rota só audita). **I1** — a proteção contra
+> gasto dobrado sob o mesmo teto já tinha guarda própria
+> (`checkLiveBudgetPolicy`), independente do fix da rodada anterior.
+>
+> **9 mutantes novos/atualizados** (3 em `checkHeygenCallbackWiringPolicy.ts`
+> novo, 3 em `checkAudioMeasuredPolicy.ts` novo, 1 atualizado em
+> `checkVideoContractPolicy.ts`, 4 renomeados sem mudança de conteúdo em
+> `checkHeygenVoiceClonePolicy.ts` — ex-`checkHeygenSpeechPolicy.ts`, B2
+> removido de lá), todos provados reprovando isoladamente ANTES do commit.
+> **Registro: 512 mutantes declarados** (era 508 no fechamento anterior).
+> Passada completa (após todo o refactor, incluindo a extração de
+> `heygenExtrasReais`): **492/512**, 20 anomalias — TODAS confirmadas por
+> grep negativo como a mesma dívida pré-existente (nenhuma menciona
+> heygen/callback/áudio medido/extras/fixture). Log em
+> `mutants-heygen-simples-3-completa-v2.log`, scratchpad da sessão — a
+> primeira passada completa (`-completa.log`, sem o sufixo `-v2`) ficou
+> ANCORADA ANTES do refactor de `heygenExtrasReais` (lançada em background
+> cedo demais nesta sessão) e por isso NÃO reflete o código final; só a
+> `-v2` vale como prova.
+>
+> **Custo real: US$ 0,00.** Backend trocado para `fixture` só durante a
+> demonstração (mesmo procedimento autorizado nas duas rodadas anteriores)
+> e devolvido a `live` ao final — `PROVIDER_MODE=live`,
+> `PROVIDER_LIVE_MAX_GENERATIONS=1`, `PROVIDER_LIVE_CONFIRM` armado,
+> confirmado por `printenv` idêntico ao estado de antes da sessão. Vídeo de
+> demonstração (`8629c344…`, `simulated=true`, `status=ready`) ficou na
+> Biblioteca do tenant `dev-c77a5b` — não apagado, mencionado ao operador.
+>
 > ⚠️ **NONA DIVERGÊNCIA, MEDIDA em 03/09/2026 — este arquivo NÃO foi
 > reconciliado nesta sessão, por escopo (mesma dívida da oitava, um degrau
 > a mais).** HEAD real no fechamento: `c675635` — **14 commits à frente**

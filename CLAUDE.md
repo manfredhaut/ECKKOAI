@@ -5,10 +5,10 @@ Always respond in Brazilian Portuguese.
 > O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
 > — não duplicado aqui de propósito, para não haver dois textos podendo
 > discordar um do outro. **Dentro da Seção 6, o bloco mais novo é
-> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-1 (03/09)", no FIM da seção — leia-o
-> antes de todos os blocos anteriores (primeiro vídeo Normal/Wan 3.0 02/09,
-> V34 01/09, 28/08, 27/08, 26/08, 25/08), que estão superados no que algum
-> deles conflitar.**
+> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-3 (03/09, tarde)", no FIM da seção —
+> leia-o antes de todos os blocos anteriores (SIMPLES-1 03/09 manhã,
+> primeiro vídeo Normal/Wan 3.0 02/09, V34 01/09, 28/08, 27/08, 26/08,
+> 25/08), que estão superados no que algum deles conflitar.**
 > Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
 > existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
 > isso o texto antigo saiu daqui.
@@ -704,3 +704,47 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > ### (h) Nenhuma chamada paga ocorreu nesta sessão
 >
 > Regra inegociável do bloco: nenhum `POST /v3/videos`, `/v3/avatars`, `/v3/voices/clone` ou `/v3/voices/speech` real foi disparado pelo assistente — só GET e "fusíveis" (chamadas que falham em 400/404 antes de qualquer débito), e mesmo essas só na Parte A (reconhecimento). Toda a Parte B foi exercitada em fixture. O clique real fica para o operador — ver a ficha de cliques entregue no chat ao fim desta sessão, não duplicada aqui.
+
+> ⚠️ **FECHAMENTO — BLOCO HEYGEN-SIMPLES-3 (03/09/2026, tarde) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão de IMPLEMENTAÇÃO, encadeada a partir de `ca2fc4b` (fechamento de SIMPLES-1) — SIMPLES-2 (investigação D1-D3/E1-E6) não gerou commit próprio além do fix de hermetismo de guarda (`70304d1`), já incorporado. Objetivo: ligar de verdade os call sites que SIMPLES-1 tinha deixado prontos mas nunca chamados (F1: `output_format`/`title`/`callback_url`/`callback_id`; G1: medição real por ffprobe; H2/H3: confirmação do webhook). **HEAD ao fechar: `5ebc13e` + este commit de documentação.**
+>
+> ### (a) F1 — os quatro campos, ligados de verdade
+>
+> `heygenExtrasReais(input)` (nova função, [avatarProvider.ts:1018](backend/src/services/providers/avatarProvider.ts:1018)) monta `output_format:"mp4"` sempre, e `title`/`callback_url`/`callback_id` só quando `input.videoId` existe. Chamada em DOIS lugares — `generateVideoHeygen` (a chamada paga) **e** `generateVideoFixture` (a simulação) — porque o comentário de topo de `fixtureProvider.ts` promete "o payload REAL, montado pelo montador REAL, mesmo sem rede", e uma simulação que omitisse esses quatro campos quebraria essa promessa justamente para o único jeito de provar F1 sem gastar. `voice_id`/`voice_settings`/`brand_glossary_id` documentados como INERTES POR DESENHO (não pendência esquecida): a arquitetura confirmada em SIMPLES-2 é ElevenLabs sempre sintetizando a fala, que chega como `audio_asset_id` — e esse sempre vence no bloco de áudio de `buildHeygenVideoPayload`. `Idempotency-Key` já existia antes deste bloco (`heygenIdempotencyKey`/`heygenVideoRequestHeaders`) — só citado como evidência (F3).
+>
+> ### (b) G1+G2 — a medição de verdade, e a remoção do que media errado
+>
+> `requireAudio` ([avatarProvider.ts](backend/src/services/providers/avatarProvider.ts)) agora roda `probeSampleDurationSeconds` (ffprobe, reaproveitado de `voiceSampleAudio.ts`) sobre o `buffer` FINAL — pós `processVoiceAudio` (loudnorm) —, não mais sobre o autorrelato do ElevenLabs medido ANTES do tratamento. Fallback ao autorrelato só quando o ffprobe falha (arquivo corrompido). B2 inteiro (`synthesizeSpeechHeygen`/`requestSpeechAndRecordUsage`, `POST /v3/voices/speech`) foi REMOVIDO — nunca teve call site de produção (confirmado por grep antes da remoção) e media a duração de um áudio HeyGen que nunca era o mesmo enviado ao vídeo (o `audio_asset_id` do ElevenLabs sempre vence). `checkHeygenSpeechPolicy.ts` renomeado para `checkHeygenVoiceClonePolicy.ts`, mantendo só os 4 mutantes de B5 (clone/status/delete/countSlots), sem mudança de conteúdo.
+>
+> ### (c) G3 — "medido" na tela, confirmado AO VIVO
+>
+> `GET /videos/:id/cost` expõe `audioMeasured: {seconds, source}` a partir de `videos.audio_duration_seconds`/`_source` (já persistidas por `onAudioMeasured`, antes do `POST /v3/videos`). `VideoCostPanel.tsx` mostra a linha "Duração medida (áudio)" sempre que presente — entre a estimativa (por caracteres) e o custo real (só depois de o vídeo terminar). **Confirmado duas vezes no navegador real**, wizard completo (fixture): a tela mostrou **"Duração medida (áudio): 3,00 s"** durante `status=processing`, antes de qualquer custo real existir.
+>
+> ### (d) H2+H3
+>
+> H2 provado por EXECUÇÃO (`checkHeygenCallbackWiringPolicy.ts`): `callback_id` enviado é byte-a-byte o mesmo `videoId` que `heygenWebhook.ts` usa no `SELECT`. Reconfirmado numa geração real do navegador: `callback_id` no log = `8629c344-e5bf-487a-af40-f47854578478` = `videos.id` da linha (conferido por query direta). H3 — o comentário de topo de `heygenWebhook.ts` registra a conclusão: como a rota só audita (nunca chama `pollJob`, nunca escreve `status`), reconfirmar via `GET /v3/videos/{id}` autenticado deixou de ser necessário; a pergunta reabre só se a rota um dia passar a FINALIZAR.
+>
+> ### (e) I1 — a proteção contra gasto dobrado já existia
+>
+> `checkLiveBudgetPolicy()` ([checkLiveBudgetPolicy.ts:175](backend/src/scripts/checkLiveBudgetPolicy.ts:175)) já prova, com `PROVIDER_LIVE_MAX_GENERATIONS=1`, que uma segunda operação sob o mesmo teto é recusada — cobertura do MECANISMO (`consumeLiveGeneration`), independente do fix de hermetismo em `checkOutfitPolicy.ts` (SIMPLES-2, `70304d1`), que corrigia um artefato de DOIS testes de cenário compartilhando contador, não uma lacuna de proteção real.
+>
+> ### (f) Gate e arnês
+>
+> `tsc` limpo nos dois lados. **9 mutantes novos/atualizados** — 3 em `checkHeygenCallbackWiringPolicy.ts` (novo), 3 em `checkAudioMeasuredPolicy.ts` (novo), 1 atualizado em `checkVideoContractPolicy.ts` (âncora do find cresceu/encolheu com a remoção do modo `audio_url`), 4 renomeados sem mudança de conteúdo (`checkHeygenVoiceClonePolicy.ts`) — todos provados reprovando ISOLADAMENTE antes do commit, com um achado de processo registrado: **um mutante cujo `find` referenciava um campo fora do tipo estreito `Pick<GenerateVideoInput,"videoId">` de `heygenExtrasReais` quebrava o `tsc` em vez de mudar comportamento (AMBÍGUO) — mesma classe de bug já documentada em SIMPLES-1 (B5-linking, B7); corrigido trocando o alvo da mutação para um valor que preserva o tipo** (`input.videoId + "-mutado"` em vez de `input.providerAvatarId`). **Registro: 512 mutantes declarados** (era 508 no fechamento de SIMPLES-1/2). Passada completa, rodada DUAS vezes: a primeira (`mutants-heygen-simples-3-completa.log`) foi lançada em background CEDO DEMAIS — antes da extração de `heygenExtrasReais` e do fix do caminho de fixture, então não reflete o código final, só ficou registrada como histórico. A segunda (`-completa-v2.log`), rodada depois de todo o refactor: **492/512**, **20 anomalias** — confirmadas por grep negativo (`callback|heygen|audiomeasured|áudio medido|extras|voice_id|fixture`) como pertencentes à mesma dívida pré-existente de rodadas anteriores; nenhum dos 9 mutantes de hoje está entre elas.
+>
+> ### (g) Achado de processo: mutação sob carga concorrente é flaky
+>
+> Rodar `npm run check` em primeiro plano enquanto uma passada completa (`node tools/run-mutants.mjs`, 6 workers paralelos) rodava em background produziu falhas intermitentes e não-determinísticas em `checkFixtureFormatEnsaioPolicy.ts` (ffmpeg/ffprobe reais, sensíveis a contenção de CPU — carga medida em 19,6–23,4 num host de 12 núcleos). Confirmado que NÃO é regressão: o arquivo-fonte do teste (`simulated-video-9x16.mp4`) provou-se íntegro por `ffprobe` manual, e as falhas desapareceram assim que a passada em background terminou. **Lição para a próxima sessão:** não rodar `npm run check` em primeiro plano contra o mesmo backend enquanto uma passada completa roda em background — esperar ela terminar, ou usar `--guard` filtrado (mais leve, menos contenção).
+>
+> ### (h) Achado de processo: `ARNES_EM_CURSO` e arquivos novos não commitados
+>
+> Dois gotchas de diagnóstico registrados nesta sessão, ambos já com causa raiz identificada e resolvida:
+> 1. **Reproduzir um mutante à mão exige `ARNES_EM_CURSO=1`** (`docker compose exec -e ARNES_EM_CURSO=1 backend npm run check`) — sem isso, o autoteste "registro de mutantes: todo find casa exatamente 1x" ([checkMutantRegistryPolicy.ts:129](backend/src/scripts/checkMutantRegistryPolicy.ts:129)) reprova contra a própria mutação manual, mascarando a mensagem real da guarda sob teste.
+> 2. **Arquivo de guarda novo, não commitado, precisa de `git add` (sem commitar) antes de QUALQUER passada do arnês** — a Ocorrência 4 já documentada em `docs-internal/08-ocorrencias.md` (SIMPLES-1) se repetiu aqui: `checkHeygenCallbackWiringPolicy.ts`/`checkAudioMeasuredPolicy.ts` ficaram `??` (untracked) por alguns minutos, e as duas primeiras tentativas de `--guard` deram AMBÍGUO com mensagem genérica, não a mensagem esperada — porque o worktree temporário da passada não continha o arquivo novo.
+>
+> ### (i) Custo real: US$ 0,00
+>
+> Backend trocado para `PROVIDER_MODE=fixture` só durante a demonstração (permissão pedida e concedida no chat, mesmo procedimento das duas rodadas anteriores) e devolvido a `live` ao final — `PROVIDER_LIVE_MAX_GENERATIONS=1` preservado explicitamente (não reconciliado para o `3` do `.env`), `PROVIDER_LIVE_CONFIRM` armado, confirmado por `printenv` idêntico ao estado de antes da sessão. **Nenhuma chamada real a HeyGen/ElevenLabs ocorreu.** O vídeo de demonstração (`8629c344…`, `simulated=true`, `status=ready`, tenant `dev-c77a5b`) ficou na Biblioteca — não apagado; decisão de manter ou excluir é do operador.
+>
+> ### (j) Achado à parte, ainda não investigado
+>
+> `twinai_local_dump.sql` — a mesma pergunta em aberto de SIMPLES-1 (dump do Postgres reaparecendo sozinho na raiz do repositório, origem não identificada). Não reapareceu nesta sessão especificamente, mas também não foi procurado; segue como pergunta para o operador.
