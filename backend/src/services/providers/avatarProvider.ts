@@ -685,6 +685,46 @@ export function heygenVideoRequestHeaders(
   };
 }
 
+/**
+ * `voice_settings` do fornecedor — schema lido em 02/09/2026 (BLOCO
+ * HEYGEN-SIMPLES-1, item B1). Todos os campos são opcionais no fornecedor;
+ * aqui também, e cada um só entra no corpo quando fornecido — mesma regra do
+ * resto deste montador (`background`, `motion_prompt`, `caption`).
+ */
+export interface HeygenVoiceSettings {
+  speed?: number | null;
+  pitch?: number | null;
+  volume?: number | null;
+  locale?: string | null;
+  engineSettings?: Record<string, unknown> | null;
+}
+
+/**
+ * Os campos do payload que NENHUM caminho de produto alimenta ainda —
+ * B1 do BLOCO HEYGEN-SIMPLES-1, 02/09/2026. Existem para o montador aceitar
+ * o contrato COMPLETO do fornecedor e serem exercitados por guarda própria,
+ * mas `generateVideoHeygen` (o único call site real) não passa `extras`
+ * hoje: nenhum deles tem fonte de dado no produto ainda (voz clonada NA
+ * HeyGen é B5; callback é B7). Passar um objeto vazio ou omitir produz o
+ * MESMO corpo de antes desta rodada — nenhum campo novo é enviado por
+ * default.
+ */
+export interface HeygenPayloadExtras {
+  /**
+   * Voz clonada DIRETO na HeyGen (não confundir com a voz ElevenLabs de
+   * `GenerateVideoInput.voiceId`). MUTUAMENTE EXCLUSIVO com `audioAssetId`
+   * — a doc do fornecedor documenta os dois como alternativas de áudio, nunca
+   * os dois juntos. Só tem efeito quando `audioAssetId` é `null`.
+   */
+  voiceId?: string | null;
+  voiceSettings?: HeygenVoiceSettings | null;
+  outputFormat?: "mp4" | "webm" | null;
+  brandGlossaryId?: string | null;
+  title?: string | null;
+  callbackUrl?: string | null;
+  callbackId?: string | null;
+}
+
 export function buildHeygenVideoPayload(
   input: Pick<
     GenerateVideoInput,
@@ -695,14 +735,30 @@ export function buildHeygenVideoPayload(
     | "scene"
     | "engineChoice"
     | "captions"
-  >,
-  audioAssetId: string,
+  > & {
+    /**
+     * OPCIONAL aqui, ao contrário de `GenerateVideoInput.script` (sempre
+     * presente): só é lido no ramo `voice_id` sem áudio pré-sintetizado —
+     * ver `HeygenPayloadExtras`. Opcional para não quebrar os chamadores
+     * (guardas e `generateVideoHeygen`) que nunca exercitam esse ramo.
+     */
+    script?: string;
+  },
+  /**
+   * `null` quando este vídeo não tem áudio pré-sintetizado — ver
+   * `HeygenPayloadExtras.voiceId`, o modo alternativo. Todo call site de
+   * produto hoje passa uma string (o áudio já veio do ElevenLabs); `null` só
+   * é exercitado pela guarda deste campo, até B5 ligar a clonagem HeyGen.
+   */
+  audioAssetId: string | null,
   /**
    * Asset do fundo já subido, quando a cena tem imagem. Resolvido por quem
    * chama — igual ao áudio — para que este montador continue sem I/O e possa
    * ser exercitado com `fetch` substituído e mais nada.
    */
   backgroundAssetId?: string | null,
+  /** Ver `HeygenPayloadExtras`. Omitido, o corpo produzido é idêntico a antes desta rodada. */
+  extras?: HeygenPayloadExtras | null,
 ): { body: Record<string, unknown>; engine: HeygenEngine | null; engineReason: EngineReason | "flag_off" } {
   const selection = selectEngine(input.supportedEngines);
   const scene = normalizeScene(input.scene ?? {});
@@ -710,7 +766,6 @@ export function buildHeygenVideoPayload(
   const body: Record<string, unknown> = {
     type: "avatar",
     avatar_id: input.providerAvatarId,
-    audio_asset_id: audioAssetId,
     // Os dois campos que faltavam. Sem eles, o vídeo saía no padrão da conta —
     // 1280×720 16:9 na passada medida — e o cliente que escolheu Reels recebia
     // horizontal sem que nada no sistema soubesse que havia uma escolha.
@@ -721,6 +776,26 @@ export function buildHeygenVideoPayload(
     // porta pela qual o formato saía vazio antes.
     fit: HEYGEN_FIT,
   };
+
+  // ÁUDIO — dois modos MUTUAMENTE EXCLUSIVOS (doc do fornecedor): asset já
+  // sintetizado (o caminho de produto de sempre, ElevenLabs) OU script+voice_id
+  // (voz clonada NA HeyGen, B5 — sem call site real ainda). `audioAssetId`
+  // decide qual: não há ramo em que os dois entram juntos.
+  if (audioAssetId) {
+    body.audio_asset_id = audioAssetId;
+  } else if (extras?.voiceId) {
+    body.script = input.script;
+    body.voice_id = extras.voiceId;
+    if (extras.voiceSettings) {
+      const vs: Record<string, unknown> = {};
+      if (extras.voiceSettings.speed != null) vs.speed = extras.voiceSettings.speed;
+      if (extras.voiceSettings.pitch != null) vs.pitch = extras.voiceSettings.pitch;
+      if (extras.voiceSettings.volume != null) vs.volume = extras.voiceSettings.volume;
+      if (extras.voiceSettings.locale) vs.locale = extras.voiceSettings.locale;
+      if (extras.voiceSettings.engineSettings) vs.engine_settings = extras.voiceSettings.engineSettings;
+      if (Object.keys(vs).length > 0) body.voice_settings = vs;
+    }
+  }
 
   // CENÁRIO. Cor vai como valor; imagem vai como asset do fornecedor, e nunca
   // como a nossa URL: `/uploads/...` é servido por um host que a HeyGen não
@@ -798,6 +873,15 @@ export function buildHeygenVideoPayload(
   if (input.captions) {
     body.caption = { file_format: CAPTION_FILE_FORMAT, style: CAPTION_STYLE };
   }
+
+  // OS CAMPOS SEM CALL SITE AINDA — B1. Cada um só entra no corpo quando
+  // `extras` o traz; sem `extras` (o caminho de produto de hoje), o corpo é
+  // idêntico ao de antes desta rodada.
+  if (extras?.outputFormat) body.output_format = extras.outputFormat;
+  if (extras?.brandGlossaryId) body.brand_glossary_id = extras.brandGlossaryId;
+  if (extras?.title) body.title = extras.title;
+  if (extras?.callbackUrl) body.callback_url = extras.callbackUrl;
+  if (extras?.callbackId) body.callback_id = extras.callbackId;
 
   if (!input.engineEnabled) {
     return { body, engine: null, engineReason: "flag_off" };

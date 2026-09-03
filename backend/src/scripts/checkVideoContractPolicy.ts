@@ -186,6 +186,49 @@ export const MUTANTS: Mutant[] = [
       "    [params.tenantId, params.avatarLookId, params.avatarId],",
     expect: "look_outro_avatar",
   },
+  {
+    guard: "contrato de vídeo: sem `extras` o corpo é o de sempre; com `extras`, voice_id+script é mutuamente exclusivo com audio_asset_id",
+    name: "o modo voice_id deixa de ser exclusivo — passa a rodar mesmo com audio_asset_id presente",
+    kind: "esperto",
+    // ESPERTO: os dois `if` continuam sintaticamente válidos, `audio_asset_id`
+    // continua no corpo — só que `voice_id`/`script` PASSAM A ENTRAR JUNTO
+    // quando `extras.voiceId` também está presente. O fornecedor documenta os
+    // dois modos de áudio como alternativas exclusivas: um corpo com os dois
+    // é o tipo de erro que só aparece no 400 do fornecedor, depois do débito.
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  } else if (extras?.voiceId) {",
+    replace: "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  }\n  if (extras?.voiceId) {",
+    expect: "voice_id`/`script` chegaram ao corpo mesmo assim",
+  },
+  {
+    guard: "contrato de vídeo: sem `extras` o corpo é o de sempre",
+    name: "output_format entra no corpo mesmo sem extras",
+    kind: "esperto",
+    // ESPERTO: o campo continua com valor válido do schema — só passa a
+    // aparecer em TODA geração, inclusive as que nunca passaram `extras`
+    // (todo call site de produto hoje). Um vídeo que sempre pediu o default
+    // do fornecedor passaria a pedir webm sempre, sem ninguém ter escolhido.
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find: '  if (extras?.outputFormat) body.output_format = extras.outputFormat;',
+    replace: '  body.output_format = extras?.outputFormat ?? "mp4";',
+    expect: "sem `extras`, o corpo trouxe `output_format` mesmo assim",
+  },
+  {
+    guard: "contrato de vídeo: `voice_settings` só traz os subcampos fornecidos",
+    name: "voice_settings passa a incluir pitch/volume mesmo quando não fornecidos",
+    kind: "esperto",
+    // ESPERTO: `speed`/`locale` continuam corretos — só `pitch`/`volume`
+    // passam a aparecer como `undefined` no objeto (que `JSON.stringify`
+    // omite na SERIALIZAÇÃO, mas `"pitch" in vs` continua `true` em memória,
+    // que é o que este vetor mede — o mesmo tipo de vazamento silencioso que
+    // já foi medido neste projeto no `background` sem `remove_background`).
+    file: "backend/src/services/providers/avatarProvider.ts",
+    find:
+      "      if (extras.voiceSettings.pitch != null) vs.pitch = extras.voiceSettings.pitch;\n" +
+      "      if (extras.voiceSettings.volume != null) vs.volume = extras.voiceSettings.volume;",
+    replace: "      vs.pitch = extras.voiceSettings.pitch;\n      vs.volume = extras.voiceSettings.volume;",
+    expect: "voice_settings` trouxe um subcampo não fornecido",
+  },
 ];
 
 /**
@@ -569,6 +612,122 @@ export async function checkVideoContractPolicy(): Promise<VideoContractCheckResu
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // 8. B1, BLOCO HEYGEN-SIMPLES-1 (02/09/2026) — os campos SEM call site ainda.
+  //
+  // Omitir `extras` (o caminho de produto de hoje) produz o corpo de sempre;
+  // cada campo simples só entra quando fornecido; e o modo `voice_id` (voz
+  // clonada NA HeyGen, B5) é MUTUAMENTE EXCLUSIVO com `audio_asset_id` — a
+  // doc do fornecedor documenta os dois como alternativas de áudio, nunca
+  // os dois juntos.
+  // ---------------------------------------------------------------------------
+  const semExtras = buildHeygenVideoPayload(
+    { ...BASE, providerAvatarId: AVATAR_BASE, scene: null },
+    "asset-de-audio",
+    null,
+  );
+  for (const campo of ["output_format", "brand_glossary_id", "title", "callback_url", "callback_id", "voice_id", "voice_settings", "script"]) {
+    if (campo in semExtras.body) {
+      failures.push(
+        `contrato de vídeo: sem \`extras\`, o corpo trouxe \`${campo}\` mesmo assim. Nenhum call site de ` +
+          "produto passa `extras` ainda (B5/B7 não ligados) — um campo vazando aqui muda o corpo de TODA " +
+          "geração de hoje sem ninguém ter pedido.",
+      );
+    }
+  }
+
+  const comExtrasSimples = buildHeygenVideoPayload(
+    { ...BASE, providerAvatarId: AVATAR_BASE, scene: null },
+    "asset-de-audio",
+    null,
+    {
+      outputFormat: "webm",
+      brandGlossaryId: "glossario-1",
+      title: "titulo-do-video",
+      callbackUrl: "https://exemplo.test/callback",
+      callbackId: "callback-1",
+    },
+  );
+  const camposEsperados: Record<string, string> = {
+    output_format: "webm",
+    brand_glossary_id: "glossario-1",
+    title: "titulo-do-video",
+    callback_url: "https://exemplo.test/callback",
+    callback_id: "callback-1",
+  };
+  for (const [campo, valor] of Object.entries(camposEsperados)) {
+    if ((comExtrasSimples.body as Record<string, unknown>)[campo] !== valor) {
+      failures.push(
+        `contrato de vídeo: com \`extras\` preenchido, \`${campo}\` não chegou ao corpo (veio ` +
+          `${JSON.stringify((comExtrasSimples.body as Record<string, unknown>)[campo])}, esperado ` +
+          `${JSON.stringify(valor)}).`,
+      );
+    }
+  }
+
+  // O MODO voice_id — só existe quando `audioAssetId` é `null`. Com áudio já
+  // sintetizado (o caminho de hoje), `voice_id` NUNCA aparece, mesmo que
+  // `extras.voiceId` esteja preenchido — é a exclusão mútua.
+  const audioVenceVoiceId = buildHeygenVideoPayload(
+    { ...BASE, providerAvatarId: AVATAR_BASE, scene: null, script: "roteiro de teste" },
+    "asset-de-audio",
+    null,
+    { voiceId: "voz-heygen-1" },
+  );
+  if ("voice_id" in audioVenceVoiceId.body || "script" in audioVenceVoiceId.body) {
+    failures.push(
+      "contrato de vídeo: com `audioAssetId` presente, `voice_id`/`script` chegaram ao corpo mesmo " +
+        "assim. O fornecedor documenta os dois modos de áudio como MUTUAMENTE EXCLUSIVOS — mandar os " +
+        "dois juntos é o tipo de corpo que só se descobre errado no 400 do fornecedor, depois do débito.",
+    );
+  }
+  if (audioVenceVoiceId.body.audio_asset_id !== "asset-de-audio") {
+    failures.push(
+      "contrato de vídeo: com `audioAssetId` presente, o corpo deixou de levar `audio_asset_id`.",
+    );
+  }
+
+  const semAudioComVoiceId = buildHeygenVideoPayload(
+    { ...BASE, providerAvatarId: AVATAR_BASE, scene: null, script: "roteiro de teste" },
+    null,
+    null,
+    {
+      voiceId: "voz-heygen-1",
+      voiceSettings: { speed: 1.1, locale: "pt-BR" },
+    },
+  );
+  if (semAudioComVoiceId.body.voice_id !== "voz-heygen-1") {
+    failures.push(
+      "contrato de vídeo: sem `audioAssetId` e com `extras.voiceId`, `voice_id` não chegou ao corpo — o " +
+        "modo alternativo de áudio (voz clonada na HeyGen, B5) ficaria sem como se conectar.",
+    );
+  }
+  if (semAudioComVoiceId.body.script !== "roteiro de teste") {
+    failures.push(
+      "contrato de vídeo: no modo `voice_id`, `script` não chegou ao corpo — sem ele o fornecedor não " +
+        "tem o que sintetizar.",
+    );
+  }
+  if ("audio_asset_id" in semAudioComVoiceId.body) {
+    failures.push(
+      "contrato de vídeo: no modo `voice_id`, `audio_asset_id` apareceu mesmo assim — os dois modos de " +
+        "áudio não podem coexistir no mesmo corpo.",
+    );
+  }
+  const voiceSettingsEnviado = semAudioComVoiceId.body.voice_settings as Record<string, unknown> | undefined;
+  if (voiceSettingsEnviado?.speed !== 1.1 || voiceSettingsEnviado?.locale !== "pt-BR") {
+    failures.push(
+      `contrato de vídeo: \`voice_settings\` não chegou com os campos fornecidos (veio ` +
+        `${JSON.stringify(voiceSettingsEnviado)}, esperado speed=1.1 e locale="pt-BR").`,
+    );
+  }
+  if (voiceSettingsEnviado && ("pitch" in voiceSettingsEnviado || "volume" in voiceSettingsEnviado)) {
+    failures.push(
+      `contrato de vídeo: \`voice_settings\` trouxe um subcampo não fornecido (${JSON.stringify(voiceSettingsEnviado)}) — ` +
+        "só os campos que quem chama de fato passou deveriam aparecer.",
+    );
+  }
+
   if (failures.length === 0) {
     notes.push(
       "  contrato de vídeo: o look escolhido vai como `avatar_id` (e o avatar base quando ninguém " +
@@ -585,6 +744,11 @@ export async function checkVideoContractPolicy(): Promise<VideoContractCheckResu
     notes.push(
       `  contrato de vídeo: chave de idempotência no header do POST, estável na mesma tentativa e ` +
         `distinta em ${variacoes.length} variação(ões), dentro do padrão do fornecedor`,
+    );
+    notes.push(
+      "  contrato de vídeo: sem `extras` o corpo é o de sempre; com `extras`, output_format/" +
+        "brand_glossary_id/title/callback_url/callback_id só entram se fornecidos, e voice_id+script " +
+        "(voz HeyGen nativa) é mutuamente exclusivo com audio_asset_id",
     );
   }
 
