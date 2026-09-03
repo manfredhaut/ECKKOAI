@@ -15,9 +15,69 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-> ⚠️ **BLOCO HEYGEN-SIMPLES-9, FECHADO em 03/09/2026. HEAD `2268a95` + este
-> commit.** Partes W (prontidão de produção, só investigação), X (fecha o
-> gap de US$0,06), Y (instrumenta o log + comando de registro).
+> ⚠️ **BLOCO HEYGEN-SIMPLES-10, FECHADO em 03/09/2026. HEAD `030403e` + este
+> commit.** CC1-3 (payload persiste no banco, resolve a dependência do log
+> ao vivo), AA (Seedance Avatar Shots — investigado, NÃO serve ao pipeline
+> hoje), BB1-3 (Distância + Enquadramento, dois controles opcionais).
+>
+> **CC1/CC2 — `heygen_video_payloads` (migration 079).** O payload real de
+> `POST /v3/videos` é gravado ANTES do fetch (sobrevive mesmo quando o
+> vendor recusa), ligado por `video_id`. `tools/registro-geracao.sh` deixou
+> de depender do log ao vivo (que já girou 2× — SIMPLES-9) — lê do banco,
+> aceita um `video_id` opcional para mostrar um vídeo específico (real ou
+> de fixture). **CC3 confirmado com um vídeo de fixture REAL**, criado por
+> um script descartável (`_tempCC3FixtureVideo.ts`, não commitado) —
+> `generateVideoFixture` virou `async` (única mudança de assinatura) para
+> persistir também no caminho simulado. 2 mutantes novos
+> ([checkHeygenPayloadPersistencePolicy.ts](backend/src/scripts/checkHeygenPayloadPersistencePolicy.ts)),
+> provados isolados: a chamada existe e sobrevive à falha do vendor; o
+> `ON CONFLICT DO UPDATE` faz um "Refazer vídeo" atualizar o payload, não
+> duplicar nem ficar parado no primeiro.
+>
+> **AA — Seedance Avatar Shots NÃO serve hoje.** É real via API
+> (`type: "cinematic_avatar"`, `POST /v3/videos` — confirmado por WebFetch
+> na doc oficial, 03/09/2026), não exclusivo do Studio. Mas não aceita
+> `script`/`voice_id`/`audio_asset_id` — o parâmetro é só `prompt`,
+> SUBSTITUINDO script+voz por desenho ("Instead of a script and a voice,
+> you describe the shot"), teto de 4-15s, `aspect_ratio` sem 4:5. Sem jeito
+> de fazer o avatar falar o roteiro exato na voz clonada. Investigação só,
+> nenhum código.
+>
+> **BB1 — "Distância" na foto de treino.** `addDistanceMarginToAvatarPhoto`
+> ([avatarProvider.ts](backend/src/services/providers/avatarProvider.ts))
+> cresce o CANVAS da foto do rosto antes do upload — mesma técnica de
+> `resizeBackgroundImage` (L2, blur-extend, nunca cor sólida), reimplementada
+> (não importada de `formatDerivation.ts`) pela mesma razão de isolamento
+> do Normal. Ligada em `trainAvatar()`; campo opcional na tela de
+> configuração do avatar (multipart field, mesmo padrão de
+> `replace`/`voice.ts`). "padrao" é NO-OP por desenho (BB3).
+>
+> **BB2 — "Enquadramento" por vídeo.** `input.avatarFit` vence `HEYGEN_FIT`
+> quando presente; controle novo na tela Cena, só tier Simples. NÃO
+> persistido no banco (decisão deliberada — "Gerar novamente" já reenvia o
+> estado atual da tela, diferente dos outros 5 controles).
+>
+> **3 mutantes novos**
+> ([checkAvatarDistanceAndFitPolicy.ts](backend/src/scripts/checkAvatarDistanceAndFitPolicy.ts)),
+> provados isolados por EXECUÇÃO real: ffprobe mede a foto real capturada
+> em `POST /v3/assets` (cresce 1,5× com "afastado", byte-idêntica com
+> "padrao"); o `fit` real capturado em `POST /v3/videos` reflete a escolha
+> quando presente e preserva o padrão quando ausente. **Achado no
+> caminho:** a expressão `overlay=(W-w)/2:(H-h)/2` (não `iw/ih`, que o
+> ffmpeg recusa nesse contexto — erro só descoberto ao rodar de verdade) e
+> a tabela de fatores precisou aceitar `"padrao"` (fator 1, nunca lido de
+> fato) para o mutante óbvio quebrar por COMPORTAMENTO, não por erro de
+> `tsc` (mesma classe de gotcha já documentada em blocos anteriores).
+>
+> **Registro: 520 mutantes declarados** (era 515). Gate verde, `tsc`
+> limpo nos dois lados. **Verificado AO VIVO no navegador** (sem clicar em
+> Gerar — nenhuma chamada paga): os dois controles novos (Distância no
+> Passo 1, Enquadramento no Passo 3, só tier Simples) renderizam com o
+> texto certo e alternam estado ao clicar, confirmado por leitura direta
+> do DOM (`className` do chip). Custo real desta sessão: **US$ 0,00**.
+> **Passada COMPLETA (520, sem filtro) LANÇADA EM BACKGROUND ao fechar esta
+> sessão — NÃO terminou; ponteiro do log fica para a próxima sessão
+> confirmar.**
 >
 > **W1 — gap LOCAL medido: 153 commits entre `7cf2b8d` (20/08, hipótese do
 > operador de último deploy) e o HEAD anterior a este bloco.** Cobre TODO o

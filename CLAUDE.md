@@ -5,11 +5,11 @@ Always respond in Brazilian Portuguese.
 > O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
 > — não duplicado aqui de propósito, para não haver dois textos podendo
 > discordar um do outro. **Dentro da Seção 6, o bloco mais novo é
-> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-9 (03/09)", no FIM da seção — leia-o
-> antes de todos os blocos anteriores (SIMPLES-7, SIMPLES-6, SIMPLES-5,
-> SIMPLES-4 e SIMPLES-3 03/09 tarde, SIMPLES-1 03/09 manhã, primeiro vídeo
-> Normal/Wan 3.0 02/09, V34 01/09, 28/08, 27/08, 26/08, 25/08), que estão
-> superados no que algum deles conflitar.**
+> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-10 (03/09)", no FIM da seção — leia-o
+> antes de todos os blocos anteriores (SIMPLES-9, SIMPLES-7, SIMPLES-6,
+> SIMPLES-5, SIMPLES-4 e SIMPLES-3 03/09 tarde, SIMPLES-1 03/09 manhã,
+> primeiro vídeo Normal/Wan 3.0 02/09, V34 01/09, 28/08, 27/08, 26/08,
+> 25/08), que estão superados no que algum deles conflitar.**
 > Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
 > existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
 > isso o texto antigo saiu daqui.
@@ -851,3 +851,41 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > ### (d) Gate, custo e ambiente
 >
 > Gate verde (fixture), `tsc` limpo nos dois lados. **1 commit de código** (`2268a95`) — só o campo `video_id` no log e os dois arquivos novos em `tools/`; nenhum arquivo de `falPipeline.ts` tocado (isolamento do Normal preservado por não-toque, não por prova nova nesta rodada — esta sessão não mexeu em geração de vídeo nenhuma). **Custo real: US$ 0,00** — nenhuma chamada paga a HeyGen/ElevenLabs; toda verificação foi gate em fixture + leitura de banco/código. Ambiente reconfirmado INALTERADO ao fechar (`printenv` no processo real): `PROVIDER_MODE=live`, `PROVIDER_LIVE_CONFIRM` armado (len=28), `PROVIDER_LIVE_MAX_GENERATIONS=3` — mesmo estado deixado por SIMPLES-5/6/7.
+
+> ⚠️ **FECHAMENTO — BLOCO HEYGEN-SIMPLES-10 (03/09/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Parte CC (payload persiste no banco, resolve a dependência do log ao vivo), Parte AA (Seedance Avatar Shots — investigado, não serve ao pipeline hoje), Parte BB (Distância + Enquadramento, dois controles opcionais que resolvem "a pessoa aparece grande demais" por caminhos diferentes). **HEAD ao fechar: `030403e` + este commit de documentação.**
+>
+> ### (a) CC — o payload sobrevive ao log ao vivo
+>
+> **CC1.** `heygen_video_payloads` (migration 079, `video_id uuid PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE`) — `persistHeygenVideoPayload()` ([avatarProvider.ts](backend/src/services/providers/avatarProvider.ts)) grava o payload real ANTES do `fetch` de `POST /v3/videos`, com `ON CONFLICT (video_id) DO UPDATE`. A posição ANTES do fetch é deliberada: mesmo quando o vendor recusa (400), a linha persiste — é justamente na falha que o log ao vivo é menos confiável de se estar olhando na hora. `generateVideoFixture` ([fixtureProvider.ts](backend/src/services/providers/fixtureProvider.ts)) virou `async` (única mudança de assinatura em todo o repositório — um único call site, já dentro de uma função `async`, então nada mais precisou mudar) para persistir também no caminho simulado, preservando a promessa "o payload REAL, montado pelo montador REAL, mesmo sem rede" que já valia para o log.
+>
+> **CC2.** `tools/registro-geracao.sh`/`.sql` deixaram de depender do buffer de log ao vivo do backend (que SIMPLES-9 já tinha visto girar 2× antes de alguém copiar a linha). A seção "PAYLOAD ENVIADO" agora lê `heygen_video_payloads` — e o script ganhou um argumento opcional (`./tools/registro-geracao.sh <video-uuid>`), via variável `psql -v video_id`, para mostrar um vídeo ESPECÍFICO (real ou de fixture) em vez do "mais recente real" default — o comportamento sem argumento é BYTE A BYTE o de SIMPLES-9 (`NULLIF(:'video_id', '') IS NULL` preserva o filtro `simulated = false` original).
+>
+> **CC3.** Confirmado com um vídeo de fixture REAL, criado por um script descartável (`_tempCC3FixtureVideo.ts`, rodado uma vez dentro do container, não commitado): `PROVIDER_MODE=fixture` de verdade (não live+fetch-mocado), `generateVideo()` completo, `video_id` real gravado em `videos` (tenant `dev-c77a5b`, `simulated=true`), depois apagado (o `DELETE` em `videos` cascateou para `heygen_video_payloads`, confirmado por contagem zero pós-exclusão). `./tools/registro-geracao.sh <esse-uuid>` mostrou o payload completo (`fit`, `aspect_ratio`, `output_format`, `title`, `callback_url`, `callback_id`) sem tocar em log nenhum.
+>
+> **2 mutantes novos** ([checkHeygenPayloadPersistencePolicy.ts](backend/src/scripts/checkHeygenPayloadPersistencePolicy.ts)), execução real contra um vídeo REAL (tenant `dev-c77a5b`, apagado ao final — o `DELETE` cascateia): a chamada existe e sobrevive à recusa do vendor (fetch mocado para devolver 400); o `ON CONFLICT DO UPDATE` faz uma 2ª chamada (redo, formato diferente) atualizar o payload em vez de ficar parado no 1º. Os dois provados reprovando isolados, árvore limpa.
+>
+> ### (b) AA — Seedance Avatar Shots não serve ao pipeline hoje
+>
+> Pesquisado via WebSearch + WebFetch direto na doc oficial (`developers.heygen.com/cinematic-avatar` e `/reference/create-video`, 03/09/2026). **É real via API, não exclusivo do Studio**: `type: "cinematic_avatar"` em `POST /v3/videos` (o MESMO endpoint que já usamos — não é um `engine` novo; `engine.type` continua só `avatar_iii`/`avatar_iv`/`avatar_v`). Schema documentado: `prompt` (1-10.000 car., substitui script+voz), `avatar_id` (array de 1-3 LOOK ids), `references` (até 3 vídeos/9 imagens), `aspect_ratio` (16:9/9:16/1:1 — sem 4:5), `resolution` (720p/1080p), `duration` (4-15s, ou `auto_duration`).
+>
+> **Por que não serve:** confirmado explicitamente por WebFetch — "Instead of a script and a voice, you describe the shot you want in natural language." Não existe `script`, `voice_id` nem `audio_asset_id` — o endpoint inteiro troca o paradigma de "avatar narra o roteiro exato na voz clonada" (o que este produto faz hoje) por "descreva a cena e deixe o modelo decidir." Sem controle de fala exata, sem voz do usuário, com teto de 15s (a maioria dos roteiros deste produto passa disso) e sem 4:5. Investigação só — nenhum código tocado, nenhuma chamada real feita.
+>
+> ### (c) BB — dois controles opcionais, dois caminhos diferentes para "a pessoa aparece grande demais"
+>
+> **BB1 — Distância**, na foto de treino. `addDistanceMarginToAvatarPhoto()` ([avatarProvider.ts](backend/src/services/providers/avatarProvider.ts)) cresce o CANVAS da foto do rosto em 1,5× (fundo desfocado-estendido via `split`+`overlay`, NUNCA cor sólida — mesma política já fixada em `ffmpeg.ts` e usada por `formatDerivation.ts`/Normal para o mesmo problema de preenchimento; reimplementada aqui, não importada, pela mesma razão de isolamento que já valeu para `pixelDimensionsFor()` em L2) antes do upload — a pessoa ocupa uma fração menor do quadro resultante. Ligada em `trainAvatar()` (a única função que lê a foto do rosto do avatar antes de subir ao fornecedor). Campo `distance` chega por multipart field em `POST /avatars/:id/reference-video` (mesmo padrão de `replace`/`confirm_avatar_name` em `voice.ts` — `file.fields`, nunca query string). UI: seletor "Padrão"/"Mais afastado" na tela de configuração do avatar (Passo 1), junto do upload/gravação do vídeo de referência — a foto é a de ROSTO, já enviada antes; o texto de ajuda diz isso explicitamente. "padrao" é NO-OP por desenho: devolve o buffer intocado, sem chamar ffmpeg.
+>
+> **BB2 — Enquadramento**, por vídeo. `input.avatarFit` (novo campo em `GenerateVideoInput`) vence `HEYGEN_FIT` quando presente — `fit: input.avatarFit ?? HEYGEN_FIT` no corpo real de `POST /v3/videos`. Controle novo na tela Cena ("Padrão"/"Mostrar tudo (sem cortar)"), visível só no tier Simples (HeyGen — `fit` não existe no contrato da fal). **NÃO persistido no banco** — decisão deliberada, diferente dos outros 5 controles de cena: "Gerar novamente" já reenvia o estado ATUAL da tela (não um valor salvo), então não há o que esquecer num redo.
+>
+> **BB3 — os dois OPCIONAIS**, confirmado por execução: sem escolher nada, o payload sai byte-idêntico ao comportamento de antes desta rodada (fit continua "cover", a foto de treino continua subindo sem passar por ffmpeg).
+>
+> **3 mutantes novos** ([checkAvatarDistanceAndFitPolicy.ts](backend/src/scripts/checkAvatarDistanceAndFitPolicy.ts)), execução real: `ffprobe` mede a foto REAL capturada em `POST /v3/assets` (cresce 1,5× nos dois eixos com "afastado", medido dentro de 5% de tolerância; byte-idêntica ao arquivo original com "padrao"); o `fit` REAL capturado em `POST /v3/videos` reflete `"contain"` quando escolhido e preserva `"cover"` quando ausente. Os 3 provados reprovando isolados (a 1ª tentativa em conjunto deu AMBÍGUO por contenção de paralelismo — mesma classe já documentada em SIMPLES-6/7 — reconfirmados isolados e depois juntos de novo, limpos os 3).
+>
+> **Dois achados de processo no caminho, corrigidos ANTES do commit:**
+> 1. A expressão de `overlay` copiada por engano de uma tentativa anterior usava `iw`/`ih` (válidos em `scale`/`crop`, mas não em `overlay`) em vez de `W`/`w`/`H`/`h` (dimensões do input principal/sobreposto) — o ffmpeg recusava a expressão inteira ("Undefined constant"). Só apareceu ao rodar de verdade contra uma imagem real; corrigido para `overlay=(W-w)/2:(H-h)/2`, mesma forma já usada em `formatDerivation.ts`.
+> 2. O mutante óbvio de BB1 (remover o `if (distance === "padrao") return buffer;`) quebrava o `tsc` em vez de mudar comportamento — `AVATAR_DISTANCE_MARGIN_FACTOR` era tipada `Record<"afastado", number>`, e sem o retorno antecipado o estreitamento de tipo que permitia indexar com `distance: "afastado"` desaparecia. Corrigido alargando a tabela para `Record<AvatarPhotoDistance, number>` com `padrao: 1` (nunca lido de fato — o retorno antecipado continua interceptando antes) — o mesmo gotcha "mutante que não compila vira AMBÍGUO, não reprovação real" já documentado em blocos anteriores (SIMPLES-3, SIMPLES-4).
+>
+> ### (d) Gate, custo, ambiente
+>
+> **Registro: 520 mutantes declarados** (era 515). Gate verde (fixture), `tsc` limpo nos dois lados. **Verificado AO VIVO no navegador** (fixture NÃO ligado — a verificação foi só de tela, sem submeter geração nenhuma, então não exigiu trocar o modo): os dois controles novos renderizam com o texto certo (confirmado por `get_page_text`) e alternam estado ao clicar (confirmado por leitura direta do `className` do chip via JS — "chip selected" migra do botão certo para o outro). Um avatar de teste descartável criado durante a verificação (photo_urls vazio, nunca enviado) foi apagado ao final. **Custo real: US$ 0,00** — nenhuma chamada paga a HeyGen/ElevenLabs; toda prova de execução roda com `fetch` substituído. Ambiente reconfirmado INALTERADO ao fechar: `PROVIDER_MODE=live`, `PROVIDER_LIVE_CONFIRM` armado (len=28), `PROVIDER_LIVE_MAX_GENERATIONS=3`.
+>
+> **Passada COMPLETA (520, sem filtro) lançada em background ao fechar esta sessão — NÃO terminou a tempo do fechamento.** Log em `mutants-simples-10-completa.log`, no scratchpad da sessão. A próxima sessão confirma o resultado antes de considerar o bloco provado na completa, não só nos mutantes isolados (que já reprovaram corretamente, um a um).
