@@ -5,9 +5,10 @@ Always respond in Brazilian Portuguese.
 > O estado corrente vive só na [Seção 6 · Bloco de retomada](#6--bloco-de-retomada--cole-numa-sessão-nova)
 > — não duplicado aqui de propósito, para não haver dois textos podendo
 > discordar um do outro. **Dentro da Seção 6, o bloco mais novo é
-> "FECHAMENTO — primeiro vídeo Normal/Wan 3.0 completo (02/09)", no FIM da
-> seção — leia-o antes de todos os blocos anteriores (V34 01/09, 28/08,
-> 27/08, 26/08, 25/08), que estão superados no que algum deles conflitar.**
+> "FECHAMENTO — BLOCO HEYGEN-SIMPLES-1 (03/09)", no FIM da seção — leia-o
+> antes de todos os blocos anteriores (primeiro vídeo Normal/Wan 3.0 02/09,
+> V34 01/09, 28/08, 27/08, 26/08, 25/08), que estão superados no que algum
+> deles conflitar.**
 > Este bloco chegou a descrever "Avatar deste vídeo" como bloco ainda
 > existente; foi removido na mesma sessão que fechou o bloco de 25/08, e por
 > isso o texto antigo saiu daqui.
@@ -660,3 +661,46 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > **DÍVIDA DOCUMENTADA, não corrigida por decisão do operador**: a escalada de margem no "Refazer" (`/redo-video`, `margemDuracaoWan3ExtraSegundos`) cobre só o caminho de tomada única — `animarTomadaUnicaComAudioReal` é o único lugar que lê esse campo. O caminho FRACIONADO (roteiro >30s estimados, múltiplos blocos), se recusar por folga insuficiente, não escalona margem automaticamente e pode reproduzir o mesmo déficit num retry manual, porque cada bloco continua vindo de `escolherDuracao` (seleção por caracteres, 5s/10s), sem margem nenhuma para escalar. **A parte que importa permanece segura nos dois caminhos**: a recusa em si nunca cobra e nunca deixa `sync_mode: cut_off` cortar narração em silêncio — só falta a escalada "inteligente" no fracionado. Não testado nesta sessão (todo teste real foi por tomada única) e secundário nesta linha de trabalho; fica para quando o operador quiser abrir.
 >
 > **Tier Normal/Wan 3.0 considerado CONSOLIDADO pelo operador ao fechar esta sessão** — 4 linhas fechadas (as 3 causas do marcador vazado + a folga de sincronização), primeiro vídeo completo ponta a ponta medido, guardas de regressão para as 4. Nada além do já registrado ficou pendente. O gap de `provider_usage` para `compor`/`animar`, a composição rotativa das anomalias pré-existentes, e a migration 075 não aplicada localmente (parágrafo acima) são as únicas dívidas que esta sessão encontrou e não tentou fechar, por estarem fora do escopo pedido ou exigirem um restart não solicitado.
+
+> ⚠️ **FECHAMENTO — BLOCO HEYGEN-SIMPLES-1 (03/09/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão de IMPLEMENTAÇÃO, encadeada a partir do commit `5bd4140`. Objetivo: fechar o nível Simples inteiro dentro da chave HeyGen (avatar, traje/cenário como look, clonagem de voz, medição de duração por TTS, geração com o conjunto máximo de parâmetros da API v3), com o pipeline Normal/fal (`falPipeline.ts`) explicitamente ISOLADO — condição de aceite que invalidaria a rodada inteira se violada. **HEAD ao fechar: `c675635` + este commit de documentação.**
+>
+> ### (a) A6-e — o ponto de roteamento por tier, e a única violação de isolamento encontrada (corrigida antes de tocar HeyGen)
+>
+> `vendorRequiredByTier()` e 5 funções irmãs (`videoTierParaPipeline`, `isVideoTier`, `maxReachableSecondsForTier`, `VIDEO_TIERS`, `DEFAULT_VIDEO_TIER`) viviam dentro de `falPipeline.ts` — o arquivo do pipeline Normal/fal decidindo, de dentro de si mesmo, se um vídeo é Simples/HeyGen. Isso violaria a regra "nenhum arquivo do Normal é tocado" assim que B1-B7 precisassem consultar o roteamento. **Extraído mecanicamente para `backend/src/services/video/videoTier.ts` (novo), com `falPipeline.ts` reduzido a um `export { ... } from "./videoTier.js"` de compatibilidade** — nenhuma lógica mudou, só a casa. Commits `b80c857` (extração) + `401b7b5` (sonda de reconhecimento A1-A5, GET-only, sem custo). Prova B-ISO desta extração: geração Normal em fixture, payload/roteamento/custo estimado byte-idênticos antes e depois (`git stash`/checkout comparativo do `ensaioSimulado.ts`).
+>
+> ### (b) O que foi implementado — 8 commits, B1 a B7 (B3 já existia)
+>
+> | Item | Commit | O quê |
+> |---|---|---|
+> | B1 | `9f0956d` | Payload HeyGen v3 completo: `output_format`, `brand_glossary_id`, `title`, `callback_url`/`callback_id`, `voice_id`+`voice_settings` (speed/pitch/volume/locale/engine_settings), 3 modos de áudio mutuamente exclusivos (`audio_asset_id` > `audio_url` > `script`+`voice_id`) |
+> | B2 | `634db55` | `POST /v3/voices/speech` mede a duração REAL antes do vídeo (`synthesizeSpeechHeygen`/`requestSpeechAndRecordUsage`) — a régua por caractere vira só pré-visualização |
+> | B3 | *(nenhum)* | Seletor de duração-alvo 15/30/45/60/Mais e teto de caracteres por alvo já existiam no código, sem trabalho necessário |
+> | B4 | `2139df9` | `POST /v3/avatars type:"prompt"` com até 3 `reference_images` (traje/cenário como look novo) — implementado, disparo deixado atrás de confirmação do operador |
+> | B5 | `3423fb4` | Clonagem de voz nativa HeyGen: `cloneVoiceHeygen`/`readHeygenVoiceCloneStatus`/`deleteVoiceHeygen`/`countHeygenVoiceSlots` — caminho isolado, ainda não ligado a nenhum avatar |
+> | B5→ligação | `021800f` | `POST /avatars/:id/voice-sample` clona TAMBÉM na HeyGen, best-effort (nunca derruba a resposta principal se falhar) — migration 076 (`avatars.heygen_voice_id`) |
+> | B6 | `008648a` | Sliders de voz na tela do avatar existente: HeyGen (speed/pitch/volume/locale) quando `heygen_voice_id` existe, ElevenLabs (stability/similarity/style) caso contrário — migration 077 (4 colunas), verificado NA TELA |
+> | B7 | `c675635` | Rota receptora `/webhooks/heygen`: validação HMAC-SHA256 (`timingSafeEqual`), dedup por `event_id` (migration 078), **deliberadamente NÃO chama `pollVideoJob` nem escreve `status='ready'`** — só registra o evento, por decisão do operador ("só a rota receptora, sem registrar endpoint") |
+>
+> ### (c) Prova de isolamento (B-ISO) — repetida ao fim da rodada inteira, não só na extração
+>
+> Diff completo de `5bd4140` → `c675635`: **zero linhas tocadas em `falPipeline.ts`** (só o `export {...} from "./videoTier.js"` de compatibilidade, que já vinha do commit `b80c857`, anterior a qualquer trabalho de HeyGen). Nenhum arquivo de `PIPELINE_TETO_USD`/`autorizarGasto`/`compor()`/`animar()`/`narrar()`/`sincronizar()` aparece no diff. Geração Normal em fixture rodada antes de `b80c857` e depois de `c675635`: payload, roteamento e custo estimado **byte-idênticos** (única diferença observada foi um timestamp de log, não-determinístico por natureza). Guardas de guarda do Normal/Premium tocadas nesta rodada: nenhuma — `checkTierVendorPolicy.ts` teve só o `file:` do seu mutante atualizado (de `PIPELINE` para `TIER_ROUTING`, apontando para o arquivo novo), sem mudança de veredito em nenhum mutante.
+>
+> ### (d) Gate e arnês
+>
+> `tsc` limpo nos dois lados e gate estático (`npm run check`, fixture) verde em cada um dos 8 commits. **Mutantes declarados: 509** (eram 480 no fechamento anterior — 29 novos, todos com prova isolada de reprovação, `expect` transcrito literal, nunca parafraseado, árvore limpa em cada reversão). Passada COMPLETA (509, sem filtro), rodada depois do último commit: **489/509**, **20 anomalias** — confirmadas por grep negativo (`heygen|traje|reference_images|voice_clone|webhook`) como pertencentes TODAS à mesma classe de dívida pré-existente já documentada nos fechamentos anteriores (guardas de rodadas passadas, sensíveis a paralelismo ou com `expect` desalinhado da mensagem real) — **nenhuma delas nasceu nesta rodada**, e todos os 29 mutantes novos aparecem "ok" na completa. Log em `mutants-heygen-simples-1-completa.log`, no scratchpad da sessão (não commitado — mesmo padrão já usado em rodadas anteriores para logs de passada).
+>
+> ### (e) Validação visual real, no browser (fixture, custo zero)
+>
+> Wizard percorrido nos 4 passos com o avatar "Teste de telas de confirmação", tier Simples. **Confirmou ao vivo o A7** (a divergência de preço entre o passo 2 e o passo 4 sobre o mesmo roteiro): passo 2 mostrou US$1,21 com o tier default do wizard ("normal", régua fal); passo 4 mostrou US$0,42 depois de escolher tier "simples" (régua HeyGen) — **são duas réguas de preço diferentes respondendo perguntas diferentes**, não um bug. Tela final mostrou "Custo real (5,00 s entregues) US$ 0,19" e "Geração simulada — nenhum valor foi cobrado". `PROVIDER_MODE` foi trocado para `fixture` só para esta demonstração e devolvido a `live` logo depois — confirmado por `printenv` (`PROVIDER_LIVE_CONFIRM` armado, `PROVIDER_LIVE_MAX_GENERATIONS=1` no processo, sem mudança).
+>
+> ### (f) O que NÃO foi ligado — registrado, não escondido
+>
+> A GERAÇÃO de vídeo do tier Simples continua inteiramente pelo caminho ElevenLabs+polling (`generateVideoHeygen`/`requireAudio` sem mudança nesta rodada) — `heygen_voice_id` existe na tela e nos sliders, mas nenhum vídeo real usa essa voz nativa ainda; ligar isso é decisão de produto para uma rodada futura, não pedida nesta. B7 é só a rota receptora — nenhum webhook foi registrado na conta HeyGen de verdade.
+>
+> ### (g) Achado à parte, fora do escopo — não investigado a fundo
+>
+> `twinai_local_dump.sql` (dump do Postgres, 50-100 MB) apareceu duas vezes na raiz do repositório durante a sessão, recriado por um processo NÃO identificado (nada que este bloco tocou o gera). Movido duas vezes para o scratchpad da sessão (preservado, nunca apagado) só para não travar `git stash create` do arnês. Fica como pergunta em aberto para o operador.
+>
+> ### (h) Nenhuma chamada paga ocorreu nesta sessão
+>
+> Regra inegociável do bloco: nenhum `POST /v3/videos`, `/v3/avatars`, `/v3/voices/clone` ou `/v3/voices/speech` real foi disparado pelo assistente — só GET e "fusíveis" (chamadas que falham em 400/404 antes de qualquer débito), e mesmo essas só na Parte A (reconhecimento). Toda a Parte B foi exercitada em fixture. O clique real fica para o operador — ver a ficha de cliques entregue no chat ao fim desta sessão, não duplicada aqui.

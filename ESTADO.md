@@ -15,6 +15,76 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
+> ⚠️ **NONA DIVERGÊNCIA, MEDIDA em 03/09/2026 — este arquivo NÃO foi
+> reconciliado nesta sessão, por escopo (mesma dívida da oitava, um degrau
+> a mais).** HEAD real no fechamento: `c675635` — **14 commits à frente**
+> da oitava divergência (`5489c6d`), que por sua vez já estava 15 à frente
+> do topo da §1. A sessão de 03/09 é o **BLOCO HEYGEN-SIMPLES-1**: fechar o
+> nível Simples inteiro dentro da chave HeyGen (avatar, traje/cenário, voz,
+> medição de duração, geração), com o pipeline Normal/fal explicitamente
+> ISOLADO — nenhuma linha de `falPipeline.ts` foi editada sem prova de
+> isolamento (B-ISO: diff justificado, geração Normal em fixture idêntica
+> antes/depois de TODAS as 14 mudanças, mutantes de guarda do Normal sem
+> mudança de veredito).
+>
+> **Resumo do bloco, 14 commits em sequência a partir de `5bd4140`:**
+> `b80c857`+`401b7b5` (A6-e: `vendorRequiredByTier` e 6 funções irmãs
+> extraídas de `falPipeline.ts` para `videoTier.ts` — o roteamento por tier
+> não pertencia ao arquivo do pipeline fal), `9f0956d` (B1: payload HeyGen
+> v3 completo — output_format/brand_glossary_id/title/callback_url+id/
+> voice_id+voice_settings), `634db55` (B2: `POST /v3/voices/speech`,
+> medição de duração ANTES do vídeo), `2139df9` (B4: até 3 reference_images
+> em `POST /v3/avatars`), `3423fb4` (B5: clone/status/delete/contagem de
+> slots HeyGen, caminho isolado), `021800f` (liga B5 de verdade —
+> `POST /avatars/:id/voice-sample` clona TAMBÉM na HeyGen, best-effort,
+> migration 076 `heygen_voice_id`), `008648a` (B6: sliders de voz
+> condicionais por vendor, migration 077, verificado NA TELA), `c675635`
+> (B7: rota receptora de webhook HeyGen, validação HMAC, dedup, sem religar
+> a finalização). B3 (seletor de duração-alvo + teto de caracteres do
+> fornecedor) já estava pronto no código, sem commit necessário.
+>
+> **Gate final: 501/509 mutantes declarados casam, 0 violações. tsc limpo
+> nos dois lados em cada commit.** Passada COMPLETA (509 mutantes, sem
+> filtro), MEDIDA depois do último commit: **489/509**, com **20
+> anomalias** — TODAS confirmadas (grep negativo por nome) como a MESMA
+> classe de dívida pré-existente já documentada nesta sessão e nas
+> anteriores (guardas de rodadas anteriores, sensíveis a paralelismo ou com
+> `expect` desalinhado — ex.: "corrigirCor vira sempre true", "pipeline:
+> laço de polling tem teto"); **nenhuma pertence às guardas criadas nesta
+> rodada** (`checkHeygenSpeechPolicy.ts`, `checkHeygenVoiceCloneWiringPolicy.ts`,
+> `checkHeygenWebhookPolicy.ts`, e as extensões em `checkOutfitPolicy.ts`/
+> `checkVideoContractPolicy.ts`/`checkTierVendorPolicy.ts`), todos os
+> mutantes novos aparecem "ok" na passada. Log completo em
+> `mutants-heygen-simples-1-completa.log`, no scratchpad da sessão — não
+> commitado ao repositório.
+>
+> **Demonstração visual completa, no browser real** (avatar "Teste de
+> telas de confirmação"): wizard Simples percorrido dos 4 passos em
+> fixture, confirmando ao vivo a divergência do item A7 (passo 2 mostrou
+> US$1,21 sem tier explícito — default "normal" do wizard — e o passo 4
+> mostrou US$0,42 com tier "simples" escolhido, sobre o MESMO roteiro),
+> "Custo real (5,00 s entregues) US$ 0,19", "Geração simulada — nenhum
+> valor foi cobrado". Ambiente trocado para `fixture` só para esta
+> demonstração e devolvido a `live` (mesma config de antes:
+> `PROVIDER_LIVE_CONFIRM` preenchido, `PROVIDER_LIVE_MAX_GENERATIONS=1` no
+> processo) logo em seguida — confirmado por `printenv`.
+>
+> **NÃO LIGADO nesta rodada, registrado como pendência clara:** a GERAÇÃO
+> de vídeo do tier Simples continua 100% ElevenLabs+polling
+> (`generateVideoHeygen`/`requireAudio` sem mudança) — `heygen_voice_id`
+> existe e a tela já mostra os sliders certos, mas nenhum vídeo real ainda
+> usa essa voz nativa. B7 é só a rota RECEPTORA (nenhum webhook endpoint
+> foi registrado na conta HeyGen, decisão do operador). Ficha de cliques
+> pagos e o relatório MEDIDO/DEDUZIDO/NÃO VERIFICADO completo estão na
+> resposta final desta sessão ao operador, não duplicados aqui.
+>
+> Um arquivo `twinai_local_dump.sql` (dump do Postgres, ~50-100 MB) foi
+> encontrado sendo recriado periodicamente na raiz do projeto por um
+> processo NÃO identificado nesta sessão (não é gerado por nada que este
+> bloco tocou) — movido duas vezes para o scratchpad da sessão (preservado,
+> nunca apagado) só para não atrapalhar `git status`/o arnês. Fica como
+> pergunta para o operador, não investigado further.
+>
 > ⚠️ **OITAVA DIVERGÊNCIA, MEDIDA em 02/09/2026 — este arquivo NÃO foi
 > reconciliado nesta sessão, por escopo.** HEAD real no fechamento:
 > `5489c6d` (três commits à frente de `44b2159`) — 15 commits à frente do
