@@ -89,6 +89,19 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
     billable: false,
     note: "leitura de cota; usada pelo teste de credencial. SUNSET declarado para 2026-10-31.",
   },
+  {
+    vendor: "heygen",
+    path: "/v3/voices/speech",
+    method: "POST",
+    billable: true,
+    // BLOCO HEYGEN-SIMPLES-1, item B2 (02/09/2026). Schema lido por doc
+    // pública (developers.heygen.com/docs/voices/speech, WebFetch):
+    // síncrono, devolve {audio_url, duration, request_id, word_timestamps}.
+    // Preço NÃO documentado pela doc pública lida — sem call site real
+    // ainda (nenhuma geração pelo nível Simples/HeyGen usa este caminho
+    // até B5 ligar a clonagem de voz nativa), então também NÃO MEDIDO.
+    note: "TTS nativo da HeyGen — mede duration/audio_url ANTES do vídeo. Preço NÃO documentado, NÃO MEDIDO.",
+  },
   // ---------------------------------------------------------------- D-ID
   {
     vendor: "did",

@@ -64,6 +64,7 @@ import { checkOutfitPolicy } from "./checkOutfitPolicy.js";
 import { checkLegacyEndpointPolicy } from "./checkLegacyEndpointPolicy.js";
 import { checkPreflightSummaryPolicy } from "./checkPreflightSummaryPolicy.js";
 import { checkVideoContractPolicy } from "./checkVideoContractPolicy.js";
+import { checkHeygenSpeechPolicy } from "./checkHeygenSpeechPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
 import { checkFalPollRecoveryPolicy } from "./checkFalPollRecoveryPolicy.js";
 import { checkBlockResumePolicy } from "./checkBlockResumePolicy.js";
@@ -685,6 +686,12 @@ async function main(): Promise<void> {
   const videoContract = await checkVideoContractPolicy();
   videoContract.failures.forEach((f) => failures.push(f));
   videoContract.notes.forEach((n) => note(n));
+
+  // --- 25e-2. B2: medição de duração via /v3/voices/speech, e o modo
+  // audio_url em buildHeygenVideoPayload -----------------------------------
+  const heygenSpeech = await checkHeygenSpeechPolicy();
+  heygenSpeech.failures.forEach((f) => failures.push(f));
+  heygenSpeech.notes.forEach((n) => note(n));
 
   // --- 25f. o vídeo pago não some sem rastro ------------------------------
   //

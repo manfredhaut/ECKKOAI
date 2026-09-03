@@ -104,9 +104,15 @@ export const MUTANTS: Mutant[] = [
     // geração não muda em nada. O consumo de voz volta a nascer sem ponte com
     // o vídeo — o estado medido de todas as 12 linhas anteriores ao R5, e o
     // consumo que mais se repete por vídeo (uma síntese por clique).
+    // Âncora estendida até `vendor: "elevenlabs"` — B2 (BLOCO
+    // HEYGEN-SIMPLES-1, 02/09/2026) acrescentou um SEGUNDO
+    // `recordProviderUsage({ videoId: ..., provider: "voice", ... })`
+    // (`requestSpeechAndRecordUsage`, vendor "heygen"), e sem o vendor no
+    // texto do `find` os dois casavam — ambíguo, exatamente o gotcha que
+    // este arquivo já documenta em outros mutantes.
     file: AVATAR_PROVIDER,
-    find: "    videoId: input.videoId ?? null,\n    provider: \"voice\",",
-    replace: "    provider: \"voice\",",
+    find: "    videoId: input.videoId ?? null,\n    provider: \"voice\",\n    vendor: \"elevenlabs\",",
+    replace: "    provider: \"voice\",\n    vendor: \"elevenlabs\",",
     expect: "atribuição: o consumo de voz não leva videoId",
   },
   {

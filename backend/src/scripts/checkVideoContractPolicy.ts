@@ -195,9 +195,17 @@ export const MUTANTS: Mutant[] = [
     // quando `extras.voiceId` também está presente. O fornecedor documenta os
     // dois modos de áudio como alternativas exclusivas: um corpo com os dois
     // é o tipo de erro que só aparece no 400 do fornecedor, depois do débito.
+    // B2 (BLOCO HEYGEN-SIMPLES-1, 02/09/2026) inseriu o modo `audio_url`
+    // entre `audioAssetId` e `voiceId` — o `find` precisou crescer para
+    // continuar único (o texto antigo, sem o bloco `audioUrl` no meio,
+    // parou de casar quando esse bloco entrou).
     file: "backend/src/services/providers/avatarProvider.ts",
-    find: "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  } else if (extras?.voiceId) {",
-    replace: "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  }\n  if (extras?.voiceId) {",
+    find:
+      "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  } else if (extras?.audioUrl) {\n" +
+      "    body.audio_url = extras.audioUrl;\n  } else if (extras?.voiceId) {",
+    replace:
+      "  if (audioAssetId) {\n    body.audio_asset_id = audioAssetId;\n  } else if (extras?.audioUrl) {\n" +
+      "    body.audio_url = extras.audioUrl;\n  }\n  if (extras?.voiceId) {",
     expect: "voice_id`/`script` chegaram ao corpo mesmo assim",
   },
   {

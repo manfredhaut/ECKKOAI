@@ -105,6 +105,7 @@ import { MUTANTS as recomposeLateralPhotoMutants } from "./checkRecomposeLateral
 import { MUTANTS as wanBlockOrchestrationMutants } from "./checkWanBlockOrchestrationPolicy.js";
 import { MUTANTS as colorMatchDefaultMutants } from "./checkColorMatchDefaultPolicy.js";
 import { MUTANTS as wanPromptQuoteHeuristicMutants } from "./checkWanPromptQuoteHeuristicPolicy.js";
+import { MUTANTS as heygenSpeechMutants } from "./checkHeygenSpeechPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 
@@ -216,4 +217,5 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkWanBlockOrchestrationPolicy.ts", wanBlockOrchestrationMutants),
   ...de("backend/src/scripts/checkColorMatchDefaultPolicy.ts", colorMatchDefaultMutants),
   ...de("backend/src/scripts/checkWanPromptQuoteHeuristicPolicy.ts", wanPromptQuoteHeuristicMutants),
+  ...de("backend/src/scripts/checkHeygenSpeechPolicy.ts", heygenSpeechMutants),
 ];

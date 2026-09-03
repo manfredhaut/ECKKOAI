@@ -497,6 +497,113 @@ async function heygenUploadAsset(apiKey: string, buffer: Buffer, mimeType: strin
   return assetId;
 }
 
+/** A rota do fornecedor, para `provider_usage.endpoint_id` — ver `endpointCatalog.ts`. */
+const HEYGEN_TTS_ENDPOINT = "/v3/voices/speech";
+
+/**
+ * O resultado MEDIDO de `POST /v3/voices/speech` — B2, BLOCO
+ * HEYGEN-SIMPLES-1, 02/09/2026.
+ *
+ * `durationSeconds` é a mesma classe de número que os timestamps do
+ * ElevenLabs já dão em `requireAudio`: MEDIDO pelo fornecedor, não
+ * estimado pela régua de caracteres — a régua continua existindo só como
+ * PRÉVIA antes desta chamada (ver `ScriptCounter.tsx`/`/video-cost-estimate`),
+ * nunca como o número que decide o custo real.
+ */
+export interface HeygenSpeechResult {
+  audioUrl: string;
+  durationSeconds: number;
+  requestId: string | null;
+  wordTimestamps: unknown[] | null;
+}
+
+/**
+ * `POST /v3/voices/speech` — TTS nativo da HeyGen, síncrono (schema lido por
+ * doc pública em 02/09/2026, NÃO reconfirmado por chamada real: esta rota
+ * está nas PROIBIDAS desta rodada, junto de `/v3/videos`/`/v3/avatars`/
+ * `/v3/voices/clone` — ver o bloco de trabalho). Só é exercitada com `fetch`
+ * substituído, pela guarda deste arquivo.
+ *
+ * Existe para medir a duração ANTES do vídeo, do MESMO jeito que
+ * `requireAudio` já faz para o caminho ElevenLabs — a diferença é só o
+ * fornecedor: aqui a voz é clonada DIRETO na HeyGen (B5), sem passar pelo
+ * ElevenLabs. `audioUrl` é o que `buildHeygenVideoPayload` consome depois,
+ * no modo `audio_url` — nunca `voice_id`+`script` direto no vídeo, que
+ * deixaria o fornecedor sintetizar de novo SEM a medição desta chamada.
+ */
+export async function synthesizeSpeechHeygen(
+  apiKey: string,
+  voiceId: string,
+  text: string,
+  opts?: { speed?: number | null; locale?: string | null },
+): Promise<HeygenSpeechResult> {
+  const body: Record<string, unknown> = { text, voice_id: voiceId };
+  if (opts?.speed != null) body.speed = opts.speed;
+  if (opts?.locale) body.locale = opts.locale;
+
+  let res: Response;
+  try {
+    res = await fetch(`${HEYGEN_BASE}/v3/voices/speech`, {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: vendorSignal(),
+    });
+  } catch (err) {
+    logProviderNetworkError("avatarProvider.heygen", err);
+    throw new AvatarProviderError(`Could not reach HeyGen API: ${describeNetworkError(err)}`);
+  }
+  const json = await fetchJson(res, "HeyGen", "heygen.synthesizeSpeech");
+  const data = json?.data ?? json;
+  if (typeof data?.audio_url !== "string" || typeof data?.duration !== "number") {
+    throw new AvatarProviderError(
+      unexpectedShapeMessage("heygen.synthesizeSpeech", "data.audio_url / data.duration", json),
+    );
+  }
+  return {
+    audioUrl: data.audio_url,
+    durationSeconds: data.duration,
+    requestId: typeof data.request_id === "string" ? data.request_id : null,
+    wordTimestamps: Array.isArray(data.word_timestamps) ? data.word_timestamps : null,
+  };
+}
+
+/**
+ * `requestSpeechAndRecordUsage` faz a chamada acima E registra o consumo —
+ * mesmo par de responsabilidades de `requireAudio` para o ElevenLabs.
+ * Separado da função pura de cima para o mutante de payload poder ser
+ * exercitado sem `videoId`/`tenantId`, e para não duplicar o registro de
+ * uso em quem só quer o corpo da chamada (a guarda de contrato).
+ */
+export async function requestSpeechAndRecordUsage(input: {
+  apiKey: string;
+  voiceId: string;
+  text: string;
+  tenantId: string;
+  videoId?: string | null;
+  speed?: number | null;
+  locale?: string | null;
+}): Promise<HeygenSpeechResult> {
+  const result = await synthesizeSpeechHeygen(input.apiKey, input.voiceId, input.text, {
+    speed: input.speed,
+    locale: input.locale,
+  });
+  await recordProviderUsage({
+    tenantId: input.tenantId,
+    videoId: input.videoId ?? null,
+    provider: "voice",
+    vendor: "heygen",
+    unitType: "characters",
+    unitCount: input.text.length,
+    endpointId: HEYGEN_TTS_ENDPOINT,
+    keySource: "tenant_byok",
+    // NÃO MEDIDO — ver o comentário de `endpointCatalog.ts` para este path.
+    // `null`, nunca 0: zero afirmaria "de graça", que não é o que se sabe.
+    estimatedCostUsd: null,
+  });
+  return result;
+}
+
 async function trainAvatarHeygen(apiKey: string, photoBuffer: Buffer): Promise<TrainAvatarResult> {
   const assetId = await heygenUploadAsset(apiKey, photoBuffer, "image/jpeg");
 
@@ -711,10 +818,26 @@ export interface HeygenVoiceSettings {
  */
 export interface HeygenPayloadExtras {
   /**
+   * O áudio JÁ SINTETIZADO e MEDIDO por `synthesizeSpeechHeygen` (B2) —
+   * `POST /v3/voices/speech` devolve `audio_url` com `duration` conhecida
+   * ANTES do vídeo. Este é o modo PREFERIDO quando a voz é clonada na
+   * HeyGen: ele preserva a mesma propriedade que `audioAssetId` já dá para
+   * o caminho ElevenLabs — duração exata, sabida antes de pagar a etapa
+   * cara. MUTUAMENTE EXCLUSIVO com `audioAssetId` e com `voiceId` (ver
+   * abaixo); só tem efeito quando `audioAssetId` é `null`.
+   */
+  audioUrl?: string | null;
+  /**
    * Voz clonada DIRETO na HeyGen (não confundir com a voz ElevenLabs de
-   * `GenerateVideoInput.voiceId`). MUTUAMENTE EXCLUSIVO com `audioAssetId`
-   * — a doc do fornecedor documenta os dois como alternativas de áudio, nunca
-   * os dois juntos. Só tem efeito quando `audioAssetId` é `null`.
+   * `GenerateVideoInput.voiceId`), no modo em que É O PRÓPRIO `POST
+   * /v3/videos` que sintetiza — sem medição prévia da duração. Preterido a
+   * `audioUrl` acima quando os dois estão presentes: sintetizar duas vezes
+   * (uma em `/v3/voices/speech` para medir, outra aqui) seria pagar a
+   * síntese em dobro por engano de configuração, e `audioUrl` já contém a
+   * medição que `voiceId` sozinho não dá. MUTUAMENTE EXCLUSIVO com
+   * `audioAssetId` — a doc do fornecedor documenta os três como
+   * alternativas de áudio, nunca duas juntas. Só tem efeito quando
+   * `audioAssetId` é `null` e `audioUrl` está ausente.
    */
   voiceId?: string | null;
   voiceSettings?: HeygenVoiceSettings | null;
@@ -777,12 +900,19 @@ export function buildHeygenVideoPayload(
     fit: HEYGEN_FIT,
   };
 
-  // ÁUDIO — dois modos MUTUAMENTE EXCLUSIVOS (doc do fornecedor): asset já
-  // sintetizado (o caminho de produto de sempre, ElevenLabs) OU script+voice_id
-  // (voz clonada NA HeyGen, B5 — sem call site real ainda). `audioAssetId`
-  // decide qual: não há ramo em que os dois entram juntos.
+  // ÁUDIO — TRÊS modos MUTUAMENTE EXCLUSIVOS (doc do fornecedor), nesta
+  // ordem de prioridade: (1) asset já sintetizado — o caminho de produto de
+  // sempre, ElevenLabs; (2) `audio_url` MEDIDO por `synthesizeSpeechHeygen`
+  // (B2) — voz HeyGen nativa, com duração conhecida ANTES do vídeo, mesma
+  // propriedade que o modo (1) já dá; (3) `script`+`voice_id` direto no
+  // vídeo (B1, sem call site real ainda) — a HeyGen sintetiza SEM medição
+  // prévia, e por isso perde para o modo (2) quando os dois estão
+  // presentes: usar os dois pagaria a síntese em dobro por engano de
+  // configuração. Nunca há ramo em que dois modos entram juntos.
   if (audioAssetId) {
     body.audio_asset_id = audioAssetId;
+  } else if (extras?.audioUrl) {
+    body.audio_url = extras.audioUrl;
   } else if (extras?.voiceId) {
     body.script = input.script;
     body.voice_id = extras.voiceId;
