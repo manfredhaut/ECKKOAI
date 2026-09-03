@@ -10,7 +10,8 @@
  * torna tier-aware:
  *
  *  G-1  `vendorRequiredByTier` — "simples" exige heygen; "normal"/"premium"
- *       exigem fal (`falPipeline.ts`)
+ *       exigem fal (`videoTier.ts` — extraído de `falPipeline.ts` no BLOCO
+ *       HEYGEN-SIMPLES-1, 02-03/09/2026, e reexportado lá byte a byte)
  *  G-2  `getCredential` (a genérica, usada pelos 11 call sites NÃO-tier-
  *       aware) é DETERMINÍSTICA — `ORDER BY is_default DESC LIMIT 1`
  *  G-3  `getCredentialForVendor` filtra pelo vendor pedido, nunca devolve a
@@ -62,11 +63,14 @@ import type { Mutant } from "./mutants.js";
 import { pool } from "../db/pool.js";
 import { encrypt } from "../services/crypto.js";
 import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
-import { vendorRequiredByTier, type VideoTier } from "../services/video/falPipeline.js";
+import { vendorRequiredByTier, type VideoTier } from "../services/video/videoTier.js";
 import { rearmVideoPolling } from "../routes/videos.js";
 import type { VideoEmVoo } from "../services/video/recovery.js";
 
-const PIPELINE = "backend/src/services/video/falPipeline.ts";
+// EXTRAÍDO de falPipeline.ts para videoTier.ts no BLOCO HEYGEN-SIMPLES-1
+// (02-03/09/2026) — ver o comentário de topo de videoTier.ts. O mutante
+// abaixo segue o código: aponta para onde a linha vive HOJE.
+const TIER_ROUTING = "backend/src/services/video/videoTier.ts";
 const CREDENTIAL_LOOKUP = "backend/src/services/credentialLookup.ts";
 const ROTA_DE_VIDEOS = "backend/src/routes/videos.ts";
 
@@ -80,7 +84,7 @@ export const MUTANTS: Mutant[] = [
     // sites — só o VEREDITO inverte. Um tenant heygen-only passaria a ver
     // "Normal"/"Premium" disponíveis e "Simples" recusado; o inverso para
     // fal-only.
-    file: PIPELINE,
+    file: TIER_ROUTING,
     find: '  return tier === "simples" ? "heygen" : "fal";',
     replace: '  return tier === "simples" ? "fal" : "heygen";',
     expect: "vendor por tier: vendorRequiredByTier deu o veredito errado",

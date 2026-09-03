@@ -39,20 +39,17 @@ import { logEvent, redactDeep } from "../log/safeLog.js";
 import { readUpload } from "../storage.js";
 import { PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd, tetoNormalUsd } from "../billing/providerCost.js";
 import { custoDe } from "../billing/providerPrices.js";
-import { HEYGEN_MAX_SCRIPT_CHARS, estimateSecondsFromChars } from "./scriptDuration.js";
 import { concatVideos, assertAspectRatio, apararSobraMuda, probeVideo } from "./ffmpeg.js";
 import {
   fracionarRoteiro,
   segundosTotaisDosBlocos,
   ScriptFractioningError,
   NORMAL_MAX_BLOCOS,
-  NORMAL_MAX_TARGET_SECONDS,
   type BlocoDeAnimacao,
 } from "./scriptFractioning.js";
 import { montarPlanoDosBlocosWan } from "./wanOrchestration.js";
 import { direcaoComExpressividade, type Expressiveness } from "../providers/videoScene.js";
 import type { AspectRatio } from "../providers/videoFormat.js";
-import type { AvatarVendor } from "../providers/vendorCatalog.js";
 
 // ---------------------------------------------------------------------------
 // A RÉGUA DESTE PIPELINE — separada da do caminho HeyGen, DE PROPÓSITO
@@ -94,97 +91,27 @@ import {
 // divergem em silêncio.
 export { PRECOS_FAL, PIPELINE_TETO_USD_PREMIUM, custoSeedanceUsd, tetoNormalUsd } from "../billing/providerCost.js";
 
-/**
- * O NÍVEL escolhido pelo tenant, dentro do caminho da fal — BLOCO A, 21/08.
- *
- * `"simples"` (HeyGen) não aparece aqui: este arquivo é só o pipeline da fal,
- * e o tier simples nunca o alcança — ver `routes/videos.ts`, onde o
- * despacho por VENDOR (heygen/did/fal) continua decidido pela credencial do
- * tenant, e só dentro do vendor "fal" é que `tier_video` escolhe o MOTOR.
- *
- * Default `"normal"` em todo lugar que recebe isto opcionalmente: é o único
- * tier que já tinha motor funcionando (Wan) antes do BLOCO A, e é o
- * comportamento que toda corrida anterior a ele teve sem ter escolhido nada.
- */
-export type PipelineTier = "normal" | "premium";
-
-/**
- * O NÍVEL DE PRODUTO inteiro — os TRÊS, `"simples"` incluído.
- *
- * `PipelineTier` acima é só os dois que este arquivo conhece; `VideoTier` é o
- * que a TELA oferece e o que `videos.tier_video` (migration 058) guarda.
- * `videoTierParaPipeline` faz a ponte: "simples" nunca chega a este arquivo
- * (o vendor heygen não passa pelo pipeline da fal), então ele cai no default
- * do orquestrador — o valor é irrelevante na prática, mas precisa ser
- * alguma coisa do tipo para o TypeScript aceitar a chamada.
- */
-export type VideoTier = "simples" | PipelineTier;
-
-export const VIDEO_TIERS: readonly VideoTier[] = ["simples", "normal", "premium"];
-
-/** O tier de toda linha criada antes do BLOCO A, e de todo corpo que não escolhe um. */
-export const DEFAULT_VIDEO_TIER: VideoTier = "normal";
-
-export function isVideoTier(value: unknown): value is VideoTier {
-  return typeof value === "string" && (VIDEO_TIERS as readonly string[]).includes(value);
-}
-
-/** `"simples"` vira `"normal"` aqui — ver o comentário de `VideoTier`. */
-export function videoTierParaPipeline(tier: VideoTier): PipelineTier {
-  return tier === "premium" ? "premium" : "normal";
-}
-
-/**
- * O VENDOR que este tier EXIGE — Fase C (multi-vendor de avatar), 22/08.
- *
- * Antes da Fase C, o vendor (heygen/did/fal) era decidido inteiramente pela
- * credencial default do tenant, e `tier_video` só escolhia o MOTOR dentro do
- * pipeline da fal — daí um tenant fal-only ver "Simples" produzir o mesmo
- * vídeo do "Normal" (o defeito que abriu esta linha de trabalho, ver
- * `checkTierAvailabilityPolicy.ts`). A partir daqui, `tier_video` decide os
- * DOIS: "simples" é HeyGen puro; "normal"/"premium" passam pela fal. Os 3
- * call sites de `routes/videos.ts` usam isto para buscar a credencial do
- * vendor EXIGIDO (`getCredentialForVendor`), nunca mais a default do tenant.
- */
-export function vendorRequiredByTier(tier: VideoTier): AvatarVendor {
-  return tier === "simples" ? "heygen" : "fal";
-}
-
-/**
- * A maior duração que este tier consegue ALCANÇAR DE VERDADE hoje — F2,
- * 22/08/2026. Não é `MAX_SCRIPT_SECONDS` nem `PIPELINE_DURACAO_MAXIMA`
- * sozinhos: é o que sobra depois do teto mais apertado de cada caminho.
- *
- * "simples" (HeyGen): o roteiro para de crescer em `HEYGEN_MAX_SCRIPT_CHARS`
- * (5.000 caracteres, teto do FORNECEDOR — ver `scriptDuration.ts`), que
- * hoje binda ANTES do teto de segundos (`MAX_SCRIPT_SECONDS`, 600 s) —
- * 5.000 caracteres estimam ≈459 s, não 600. Um vídeo de 600 s não existe
- * neste tier hoje, mesmo o número aparecendo como teto "de dinheiro".
- *
- * "premium" (fal/Seedance): `PREMIUM_DURACAO_MAXIMA` (15 s) — o enum que o
- * motor aceita POR CHAMADA, "não emenda clipes" (ver
- * `PREMIUM_DURATION_OPTIONS`). Fracionamento não foi estendido a este tier
- * nesta rodada (BLOCO FRACOES-1, 28/08 — ver `docs-internal/plano-fracoes-2026-08-28.md`,
- * escopo explícito "só Normal por enquanto"). PRÓPRIO desde a migração do
- * Normal para `reference-to-video/flash` (item 2, 29/08) — o teto do Wan
- * apertou para 10s; o do Premium (Seedance, endpoint diferente) não muda.
- *
- * "normal" (fal/Wan): `NORMAL_MAX_TARGET_SECONDS` (120 s = 8 blocos de 15 s)
- * desde o BLOCO FRACOES-1 — ANTES disso era o mesmo teto de UM bloco do
- * Premium. `fracionarRoteiro()` é quem de fato decide, roteiro a roteiro, se
- * o pedido cabe; este número é só o TETO SUPERIOR que a tela pode prometer
- * antes de qualquer roteiro existir.
- *
- * Existe para a tabela de referência de custo (`/video-cost-reference`)
- * distinguir "não sabemos o preço" (`sem medição`, fal em qualquer
- * duração ALCANÇÁVEL) de "essa duração não existe neste nível"
- * (qualquer ponto acima deste teto, nos dois vendors).
- */
-export function maxReachableSecondsForTier(tier: VideoTier): number {
-  if (tier === "simples") return estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS);
-  if (tier === "premium") return PREMIUM_DURACAO_MAXIMA;
-  return NORMAL_MAX_TARGET_SECONDS;
-}
+// ---------------------------------------------------------------------------
+// O ROTEAMENTO POR TIER — EXTRAÍDO para `videoTier.ts` no BLOCO
+// HEYGEN-SIMPLES-1 (02-03/09/2026), mesma razão que já tirou
+// `pipelineDuration.ts` daqui: `vendorRequiredByTier` (e os tipos/funções
+// irmãos) não é lógica do PIPELINE fal — é o roteamento que decide se o
+// pipeline fal é alcançado ou não, e o caminho do Simples precisa dele sem
+// precisar importar as cinco etapas pagas deste arquivo. REEXPORTADO aqui,
+// byte a byte no NOME e no VALOR — nenhum import externo (`routes/videos.ts`,
+// `avatarProvider.ts`, as guardas) precisa saber que o endereço mudou.
+// ---------------------------------------------------------------------------
+export {
+  type PipelineTier,
+  type VideoTier,
+  VIDEO_TIERS,
+  DEFAULT_VIDEO_TIER,
+  isVideoTier,
+  videoTierParaPipeline,
+  vendorRequiredByTier,
+  maxReachableSecondsForTier,
+} from "./videoTier.js";
+import type { PipelineTier } from "./videoTier.js";
 
 /**
  * Teto do laço de polling. Ver `aguardarConclusao`.
