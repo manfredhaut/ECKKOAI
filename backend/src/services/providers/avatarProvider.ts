@@ -1387,6 +1387,11 @@ async function generateVideoHeygen(input: GenerateVideoInput): Promise<GenerateV
   // também não é legível, e o que se quer ver aqui é se o campo existe.
   logEvent("info", "video_payload_built", {
     context: "heygen.generateVideo",
+    // Y1, BLOCO HEYGEN-SIMPLES-9 — campo EXPLÍCITO para grep por vídeo, sem
+    // depender de saber que `callback_id` (abaixo) É `input.videoId` quando
+    // presente (F1). Redundante de propósito: `video_id` autoexplica, e não
+    // some quando `callback_id` estiver "ausente" (sem videoId — só sondas).
+    video_id: input.videoId ?? "ausente",
     campos: Object.keys(body),
     background: body.background ? (body.background as { type: string }).type : "ausente",
     motion_prompt: body.motion_prompt ? "presente" : "ausente",
