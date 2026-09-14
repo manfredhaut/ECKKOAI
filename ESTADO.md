@@ -15,6 +15,180 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
+> ⚠️ **BLOCO STUDIO-EDIT-1, FECHADO em 14/09/2026. HEAD: reportado ao
+> operador no chat desta sessão — este commit de documentação não foi
+> seguido de commit de código automático (regra do assistente: só commitar
+> quando o operador pedir). LEIA ESTE PRIMEIRO.** Implementação completa da
+> aba "5. Studio Movie Edit" (era "5. Editar"), a partir do protótipo
+> aprovado `uploads/_prova/studio-movie-edit/aba5-editar-splice.html`.
+>
+> **MUDANÇA DE MODELO, registrada antes de qualquer código:**
+> `RELATORIO-aba5-edicao.md` (28/08) descrevia CUTAWAY (sobreposição, duração
+> constante) e afirmava "a voz é contínua e não é cortada — se ela puder ser
+> cortada, o produto vira um editor de verdade e este documento não vale
+> mais". O protótipo aprovado é EMENDA (splice): V1 é uma SEQUÊNCIA de
+> trechos, um b-roll entra como trecho EXCLUSIVO com áudio próprio, a voz é
+> cortada ali, e a duração final CRESCE. Esse relatório está formalmente
+> SUPERADO nesse ponto — não apagado, mas não vale mais como descrição do
+> comportamento atual.
+>
+> **Parte 1 — lógica pura, duplicada em
+> [backend/src/services/video/editProject.ts](backend/src/services/video/editProject.ts)
+> e [frontend/src/pages/CreateVideo/editProject.ts](frontend/src/pages/CreateVideo/editProject.ts)**
+> (mesma convenção de `scriptDuration.ts`, que já vive em três lugares por
+> isolamento de pipeline — aqui é por não haver pacote compartilhado entre
+> front e back neste projeto). `duracaoFinal` MUDOU de assinatura: é a SOMA
+> dos trechos da sequência, não `saida - entrada` de um único vídeo — quem
+> chamava a versão antiga (não havia chamador de produção; só o protótipo)
+> não precisou de conserto. **Teste de mesa RODADO de verdade** (script
+> descartável via `tsx`, removido depois): base 8s dividida em 3s + b-roll
+> de 2,5s → duração final **10,5**, offsets **[0, 3, 5.5]**, voz total
+> **8** — bateu exato, `TESTE DE MESA: PASSOU`. `TrechoNaLinha<T>` precisou
+> virar um tipo CONDICIONAL (`T extends Trecho ? T & {...} : never`), não
+> uma interseção direta — `T & {...}` sozinho não distribui sobre a união
+> `Trecho`, e `.filter()`/narrowing por `isBase` paravam de enxergar
+> `entrada`/`saida` mesmo no ramo correto; motivou `isBaseNaLinha`, uma
+> segunda função de guarda tipada para o item PÓS `linhaDoTempo`.
+>
+> **Parte 2 — migration 080 (`edit_projects`), aditiva.** `payload` jsonb
+> guarda `{trechos, insercoes, volVoz, fundo}` no formato que o protótipo
+> produz, sem coluna por campo — normalizar cada controle do editor exigiria
+> uma migration a cada controle novo, e o editor ainda está mudando de
+> modelo. `source_video_id` e `duration_seconds` saem para colunas próprias
+> por serem consultados fora do editor (listagem, exibição de duração sem
+> reabrir o projeto).
+>
+> **Parte 2-bis — upload/exclusão, rota própria
+> ([routes/editProjects.ts](backend/src/routes/editProjects.ts) +
+> [services/video/editAssets.ts](backend/src/services/video/editAssets.ts)),
+> SEPARADA de `/documents` (que segue em 1 MiB, problema à parte).**
+> `POST /tenant/edit-assets` grava em STREAMING (`pipeline` do
+> `node:stream/promises` para `fs.createWriteStream`, nunca buffer inteiro
+> em memória — diferente do padrão `toBuffer()` já usado em `takeUpload()`
+> para as outras rotas de upload deste projeto). Teto `EDIT_ASSET_MAX_MB`
+> (padrão 150 MB); estouro detectado por `data.file.truncated` do
+> `@fastify/multipart` e recusado com 413 + mensagem legível, arquivo
+> parcial apagado. **Sem tabela de asset:** o arquivo vira
+> `uploads/<tenant>/edit-assets/<uuid>.<ext>`, e `GET`/`DELETE` acham o
+> arquivo por prefixo depois de validar `asset_id` contra um regex de UUID
+> estrito — a GUARDA DE CAMINHO pedida no bloco, nunca concatenação direta.
+> `DELETE` é idempotente (404 quando já não existe; o frontend trata isso em
+> silêncio). `GET /tenant/edit-assets/:asset_id` serve por proxy (nunca
+> `/uploads/...` cru) — reaproveita `contentTypeForExtension` de
+> `downloadProxy.ts`. Rotas de projeto (`POST`/`PUT`/`GET /tenant/edit-projects`
+> + `GET .../by-video/:videoId`) não estavam nomeadas como "Parte" própria no
+> pedido, mas eram necessárias para o PRONTO QUANDO 5 — acrescentadas.
+>
+> **Parte 3 — a tela
+> ([steps/StudioMovieEditStep.tsx](frontend/src/pages/CreateVideo/steps/StudioMovieEditStep.tsx)),
+> 5º passo do wizard (`CreateVideoPage.tsx` — `canProceed` ganhou
+> `|| step === 3` para o Gerar deixar de travar o Avançar agora que não é
+> mais o último passo).** NÃO PORTADO, por decisão de escopo: análise de
+> onda por Web Audio e detecção de pausas (dependem de saber se os
+> timestamps do ElevenLabs já são persistidos — item explicitamente adiado
+> no próprio bloco); arraste do mouse para redimensionar clipe na timeline
+> (o ajuste é feito pelos campos numéricos do inspetor, que o próprio
+> protótipo também tinha ao lado do arraste); "Carregar mp4 local" do
+> protótipo (dispositivo só para testar sem backend — aqui o vídeo BASE já
+> vem de um vídeo real do tenant, nunca de um arquivo local); "Exportar"
+> fica desabilitado, com o motivo explicado na tela (nenhuma rota de
+> exportação existe, `FORA DE ESCOPO` explícito no bloco). "O que vai ser
+> enviado" deriva de `montarCorpo(base, trechos, insercoes, volVoz, fundo)` —
+> nunca do estado bruto (G1). Upload IMEDIATO ao escolher arquivo
+> (`api.upload` já envia o `Blob` direto, sem `URL.createObjectURL` em
+> lugar nenhum do código de produção — G3 é satisfeita por construção, não
+> só por disciplina); troca/remoção sempre chama `DELETE` do asset antigo
+> DEPOIS do novo confirmado (G4).
+>
+> **Parte 4 — as 4 guardas
+> ([checkStudioMovieEditPolicy.ts](backend/src/scripts/checkStudioMovieEditPolicy.ts)),
+> registradas em `checkPolicy.ts` + `mutantRegistry.ts`. Registro: 524
+> mutantes declarados (era 520).** G1 (corpo deriva de `montarCorpo`, não do
+> formulário) e G4 (troca/remoção sempre exclui o asset antigo) são
+> checagem ESTÁTICA ancorada no corpo de cada handler/expressão — mesma
+> técnica de `checkPreflightSummaryPolicy.ts`/`checkPhotoRemovalPolicy.ts`.
+> G2 (colisão sobreposição×b-roll é recusada) e G3 (payload nunca grava
+> `url`, só `assetId`) são EXECUÇÃO REAL da lógica pura (import dinâmico do
+> módulo do backend, sem rede, sem banco) — mais forte que ler texto.
+> **Achado de processo:** a passada em lote com `--guard "studio-movie-edit:"`
+> (6 workers paralelos) devolveu **AMBÍGUO** para os mutantes G1 e G4 —
+> mesma classe de contenção já documentada em SIMPLES-6/7/10. **Reproduzidos
+> À MÃO, isolados** (`Edit` direto no arquivo + `docker compose exec -e
+> ARNES_EM_CURSO=1 backend npm run check`, revertido depois): os DOIS deram
+> a mensagem EXATA esperada, confirmando que são guardas saudáveis e a
+> discordância do lote era ruído de contenção, não defeito. G2 e G3 saíram
+> "ok" já no lote, sem precisar de reconfirmação isolada.
+>
+> **Parte 5 — bloco de leitura da VPS, escrito e NÃO executado** (memória
+> [[feedback_no_ssh_prod]]: SSH para produção é ação do operador). Entregue
+> no chat.
+>
+> **Achado de processo, fora das 4 guardas: o backend deste ambiente sobe
+> com `npm run serve` (`tsx src/index.ts`), SEM watch.** Editar
+> `app.ts`/rotas não recarrega sozinho — precisou de
+> `docker compose restart backend` no meio da verificação em navegador
+> (primeira tentativa de upload real deu 404 "Route POST:/tenant/edit-assets
+> not found" com o código já commitado em disco, porque o processo antigo
+> ainda não conhecia a rota). Depois do restart: `RestartCount=0`,
+> `PROVIDER_MODE` continuou `fixture` (o restart usa o env já materializado
+> no container, não o `.env` em disco — diferente de `up -d`, que reconcilia
+> com o `.env`).
+>
+> **VERIFICADO NO NAVEGADOR REAL, fixture, custo zero, tenant `dev-c77a5b`**
+> (login `demo@eckko.ai`, avatar "test um", vídeo real selecionado:
+> `8629c344…`, "Segunda prova de fechamento do BLOCO HEYGEN-SIMPLES-3", 5s):
+>
+> 1. **Monta base → b-roll → base, duração crescendo — CONFIRMADO.** Cursor
+>    em 2,32s (clique na trilha V2 vazia, que não tem clipe cobrindo o
+>    ponto), "+ B-roll": duração final foi de **5,00s para 8,00s**, V1
+>    mostrou três clipes — **2,32s (base) → 3,00s (b-roll) → 2,68s
+>    (base)** — e o "ao vivo" mostrou "bloqueada no b-roll" (V2), "b-roll ·
+>    sem arquivo" (V1), "calada" (A1), exatamente como desenhado.
+> 2. **Upload real — CONFIRMADO.** Um mp4 real (201.373 bytes, de um vídeo
+>    fixture já existente em disco) enviado via `input.files`/`DataTransfer`
+>    (simula a escolha de arquivo real; native file-picker não é
+>    automatizável pelo Browser pane) produziu `POST /tenant/edit-assets` →
+>    **201**, arquivo apareceu em
+>    `uploads/c77a5b8a…/edit-assets/7bfd8cfe-….mp4` — **fora de `/tmp`**,
+>    201.373 bytes, medido por `ls -la` real. `▶ Reproduzir` avançou o
+>    relógio de 2,32s até 8,00s (fim), trocando de vídeo corretamente na
+>    fronteira base↔b-roll — sem erro de console atribuível a este código
+>    (os poucos erros 401/404/502 no console são de chamadas não
+>    relacionadas — mediapipe/notificações — anteriores a este teste).
+> 3. **Exclusão real — CONFIRMADA, com prova ANTES/DEPOIS colada.** "Tirar
+>    b-roll": `ls -la uploads/…/edit-assets/` ANTES mostrava o arquivo de
+>    201.373 bytes; DEPOIS, diretório **vazio**. A rota respondeu via a
+>    mesma chamada `DELETE`, e o trecho sumiu da timeline (duração voltou a
+>    5,00s, os dois trechos de base NÃO se fundiram automaticamente — é o
+>    comportamento correto; "Juntar com o próximo" existe para isso).
+> 5. **Projeto salvo/recarregado devolve a mesma sequência — CONFIRMADO.**
+>    Um segundo b-roll (`broll-para-salvar.mp4`) enviado, "Guardar o
+>    projeto" → linha real em `edit_projects` medida por `psql` direto:
+>    `duration_seconds=8`, `payload` com **`assetId` (uuid real) e NUNCA
+>    `url`** para o trecho de b-roll — exatamente a forma que G3 exige.
+>    Depois de um RELOAD COMPLETO da página (`navigate` para a raiz — a
+>    sessão de cookie sobreviveu, sem novo login) e reconstrução do wizard
+>    do zero (passos 1-4 são estado só em memória, sem persistência de
+>    rascunho — não fazia parte do escopo desta rodada), reselecionar o
+>    MESMO vídeo mostrou **imediatamente "0,00s / 8,00s"** e os três clipes
+>    na mesma disposição, com o inspetor do b-roll mostrando
+>    "broll-para-salvar.mp4 · Trocar arquivo" — o `assetId` foi reidratado
+>    corretamente em `url` via `urlDoAsset()`.
+> 4/6. Teste de mesa (item 4) e as 4 guardas com gate em 0 (item 6) — ver
+>    acima.
+>
+> **PENDÊNCIA REGISTRADA, NÃO RESOLVIDA — dívida explícita do próprio
+> bloco:** um arquivo enviado para um projeto que nunca é salvo ("Guardar o
+> projeto" nunca clicado) fica ÓRFÃO em `uploads/<tenant>/edit-assets/` —
+> não há coleta de lixo. Não implementar agora; é trabalho de uma rodada
+> futura dedicada a isso.
+>
+> **Custo real desta sessão: US$ 0,00.** Todo teste em `PROVIDER_MODE=fixture`
+> (confirmado por `printenv`, restaurado ao valor de abertura da sessão —
+> **live** — ao final, já que a sessão tinha aberto com `PROVIDER_MODE=live`
+> e a troca para fixture foi só para este bloco). Nenhuma chamada a
+> HeyGen/ElevenLabs/fal.
+>
 > ⚠️ **BLOCO HEYGEN-SIMPLES-10, FECHADO em 03/09/2026. HEAD `030403e` + este
 > commit.** CC1-3 (payload persiste no banco, resolve a dependência do log
 > ao vivo), AA (Seedance Avatar Shots — investigado, NÃO serve ao pipeline
