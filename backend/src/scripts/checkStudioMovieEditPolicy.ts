@@ -51,8 +51,14 @@ export const MUTANTS: Mutant[] = [
     // O botão Guardar/Exportar deixaria de travar exatamente no caso que o
     // protótipo desenhou para pegar: b-roll é EXCLUSIVO, e uma sobreposição
     // sobre ele nunca apareceria (V2 nunca desenha por cima de um b-roll).
+    // ACHADO em 14/09/2026 (BLOCO STUDIO-EDIT-2, item 2): a checagem de
+    // colisão virou a função própria `insercaoColideComBroll` (para a
+    // marcação visual do bloco em vermelho usar a MESMA lógica, sem duplicar
+    // a expressão) — o `find` antigo (a linha inline `if (colide) ...`)
+    // apodreceu junto com esse refactor e passou a casar 0x. Atualizado para
+    // o call site novo.
     file: LOGICA_PURA,
-    find: '    if (colide) b.push({ code: "sobreposicaoSobreBroll", params: { indice: n + 1, nome: i.nome } });\n',
+    find: '    if (insercaoColideComBroll(i, linha)) {\n      b.push({ code: "sobreposicaoSobreBroll", params: { indice: n + 1, nome: i.nome } });\n    }\n',
     replace: "",
     expect: "studio-movie-edit: sobreposição sobre b-roll não foi recusada",
   },

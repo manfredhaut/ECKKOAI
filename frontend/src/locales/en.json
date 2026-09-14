@@ -841,6 +841,7 @@
       "musicTitle": "Background music",
       "musicEmpty": "runs across the whole video, b-rolls included",
       "addMusic": "+ Upload background music",
+      "removeMusic": "Remove",
       "summaryTitle": "What will be sent",
       "summaryBase": "Base",
       "summarySequence": "Sequence",
@@ -870,10 +871,10 @@
         "semVideoEscolhido": "No generated video was chosen.",
         "sequenciaVazia": "The sequence is empty.",
         "semDuracao": "The cut left the video with no duration.",
-        "brollSemArquivo": "The b-roll of segment {{indice}} ({{nome}}) has no file.",
-        "sobreposicaoPassaDoFim": "Overlay {{indice}} ({{nome}}) goes past the end of the video.",
+        "brollSemArquivo": "The b-roll of segment {{indice}}{{nomeParen}} has no file.",
+        "sobreposicaoPassaDoFim": "Overlay {{indice}}{{nomeParen}} goes past the end of the video.",
         "sobreposicaoSemArquivo": "Overlay {{indice}} has no file.",
-        "sobreposicaoSobreBroll": "Overlay {{indice}} ({{nome}}) falls over a b-roll — only the b-roll plays there."
+        "sobreposicaoSobreBroll": "Overlay {{indice}}{{nomeParen}} falls over a b-roll — only the b-roll plays there."
       }
     },
     "blocked": {

@@ -13,6 +13,7 @@ import {
   montarCorpo,
   decidirRota,
   listarBloqueios,
+  insercaoColideComBroll,
   payloadDoProjeto,
   urlDoAsset,
   type Trecho,
@@ -444,6 +445,13 @@ export function StudioMovieEditStep() {
     }
   }
 
+  function removerFundo() {
+    const assetIdAntigo = fundo.assetId;
+    setFundo((f) => ({ ...f, nome: null, assetId: null, url: null }));
+    mexeu();
+    if (assetIdAntigo) excluirEditAsset(assetIdAntigo);
+  }
+
   async function guardarProjeto() {
     if (bloqueios.length || !base.id) return;
     setSalvando(true);
@@ -684,10 +692,18 @@ export function StudioMovieEditStep() {
             </div>
           </div>
 
+          {/* Régua adaptativa: 1s até ~20s de duração final, 5s até ~60s, 10s acima disso. */}
+          <div style={{ display: "grid", gridTemplateColumns: "112px 1fr", gap: 8, marginBottom: 4 }}>
+            <div />
+            <Regua dur={dur} />
+          </div>
+
           {/* V2 */}
           <TrackRow label={t("createVideo.studioEdit.trackOverlays")} sub={t("createVideo.studioEdit.trackOverlaysSub")}>
             <div style={{ position: "relative", height: 42, background: "#282C25", border: "1px solid #3A4034", borderRadius: 8 }} onClick={buscarNaPista}>
-              {insercoes.map((i) => (
+              {insercoes.map((i) => {
+                const colide = insercaoColideComBroll(i, linha);
+                return (
                 <div
                   key={i.id}
                   onClick={(e) => {
@@ -703,6 +719,8 @@ export function StudioMovieEditStep() {
                     borderRadius: 6,
                     background: i.tipo === "video" ? "#1F7A3A" : "#7C3AED",
                     border: i.id === sel ? "2px solid var(--color-primary)" : "2px solid transparent",
+                    outline: colide ? "2px solid var(--color-tertiary)" : "none",
+                    outlineOffset: colide ? "1px" : undefined,
                     color: "#fff",
                     fontSize: 11,
                     display: "flex",
@@ -721,7 +739,8 @@ export function StudioMovieEditStep() {
                     {seg(i.duracao)}
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </TrackRow>
 
@@ -888,6 +907,15 @@ export function StudioMovieEditStep() {
                       }}
                     />
                   </label>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: 11, padding: "3px 8px" }}
+                    disabled={!!enviandoIds.fundo}
+                    onClick={removerFundo}
+                  >
+                    {t("createVideo.studioEdit.removeMusic")}
+                  </button>
                 </div>
               ) : (
                 <div
@@ -1227,11 +1255,15 @@ export function StudioMovieEditStep() {
           <div className="card-title">{t("createVideo.studioEdit.saveTitle")}</div>
           {bloqueios.length > 0 && (
             <ul style={{ margin: "12px 0 0", paddingLeft: 16, fontSize: 12.5, color: "var(--color-tertiary)" }}>
-              {bloqueios.map((b, i) => (
-                <li key={i}>
-                  {t(`createVideo.studioEdit.blocked.${b.code}`, b.params as Record<string, unknown>)}
-                </li>
-              ))}
+              {bloqueios.map((b, i) => {
+                // Omite os parênteses quando não há nome, em vez de mostrar "()" vazio.
+                const nomeParen = b.params?.nome ? ` (${b.params.nome})` : "";
+                return (
+                  <li key={i}>
+                    {t(`createVideo.studioEdit.blocked.${b.code}`, { ...b.params, nomeParen })}
+                  </li>
+                );
+              })}
             </ul>
           )}
           <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
@@ -1277,6 +1309,47 @@ function TrackRow({
         {extra && <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 3 }}>{extra}</div>}
       </div>
       {children}
+    </div>
+  );
+}
+
+/**
+ * Espaçamento da régua: 1s até ~20s de duração final, 5s até ~60s, 10s
+ * acima disso — números legíveis mesmo quando a sequência fica longa
+ * (empilhar b-rolls facilmente passa dos 60s).
+ */
+function passoDaRegua(dur: number): number {
+  if (dur <= 20) return 1;
+  if (dur <= 60) return 5;
+  return 10;
+}
+
+function Regua({ dur }: { dur: number }) {
+  if (dur <= 0) return <div style={{ height: 16 }} />;
+  const passo = passoDaRegua(dur);
+  const marcas: number[] = [];
+  for (let t = 0; t <= dur + 0.001; t += passo) marcas.push(Math.round(t * 100) / 100);
+  return (
+    <div style={{ position: "relative", height: 16 }}>
+      {marcas.map((t) => {
+        const ultima = t >= dur - 0.001;
+        return (
+          <span
+            key={t}
+            style={{
+              position: "absolute",
+              left: `${(t / dur) * 100}%`,
+              transform: t === 0 ? undefined : ultima ? "translateX(-100%)" : "translateX(-50%)",
+              fontFamily: "ui-monospace, monospace",
+              fontSize: 9.5,
+              color: "#767F6C",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {Number.isInteger(t) ? `${t}s` : `${t.toFixed(1)}s`}
+          </span>
+        );
+      })}
     </div>
   );
 }

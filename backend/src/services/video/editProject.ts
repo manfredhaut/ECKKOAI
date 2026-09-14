@@ -313,6 +313,16 @@ export interface Bloqueio {
   params?: { indice?: number; nome?: string };
 }
 
+/**
+ * Uma sobreposição cai sobre um b-roll quando os dois intervalos se
+ * sobrepõem no tempo — usada tanto por `listarBloqueios` (recusa) quanto
+ * pela tela (marcação visual do bloco em vermelho), para as duas nunca
+ * divergirem sobre o que conta como colisão.
+ */
+export function insercaoColideComBroll(i: Insercao, linha: TrechoNaLinha[]): boolean {
+  return linha.some((t) => t.tipo === "broll" && i.inicio < t.fim - 0.01 && i.inicio + i.duracao > t.offset + 0.01);
+}
+
 /** Bloqueios travam Guardar/Exportar. Estruturados (não string pronta) para a tela traduzir via `t()`. */
 export function listarBloqueios(base: BaseVideo, trechos: Trecho[], insercoes: Insercao[]): Bloqueio[] {
   const b: Bloqueio[] = [];
@@ -331,10 +341,9 @@ export function listarBloqueios(base: BaseVideo, trechos: Trecho[], insercoes: I
       b.push({ code: "sobreposicaoPassaDoFim", params: { indice: n + 1, nome: i.nome } });
     }
     if (!i.assetId) b.push({ code: "sobreposicaoSemArquivo", params: { indice: n + 1 } });
-    const colide = linha.some(
-      (t) => t.tipo === "broll" && i.inicio < t.fim - 0.01 && i.inicio + i.duracao > t.offset + 0.01,
-    );
-    if (colide) b.push({ code: "sobreposicaoSobreBroll", params: { indice: n + 1, nome: i.nome } });
+    if (insercaoColideComBroll(i, linha)) {
+      b.push({ code: "sobreposicaoSobreBroll", params: { indice: n + 1, nome: i.nome } });
+    }
   });
   return b;
 }
