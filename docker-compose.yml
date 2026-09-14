@@ -110,6 +110,13 @@ services:
       # Repassado aos DOIS serviços para que cliente e servidor concordem por
       # construção — o servidor continua sendo a autoridade.
       IMAGE_UPLOAD_MAX_BYTES: ${IMAGE_UPLOAD_MAX_BYTES:-}
+      # Teto dos arquivos de edição (b-roll, sobreposição, fundo musical) da
+      # aba Studio Movie Edit — services/video/editAssets.ts. Vazio = 150 MB.
+      # GAP fechado em 14/09/2026 (BLOCO STUDIO-EDIT-1-VERIF): a variável já
+      # existia no código desde o bloco anterior, mas nunca tinha sido
+      # repassada aqui — preenchê-la no .env não tinha efeito nenhum até
+      # agora, achado ao tentar testar a recusa por tamanho.
+      EDIT_ASSET_MAX_MB: ${EDIT_ASSET_MAX_MB:-}
       # Teto de DURAÇÃO do vídeo/áudio de referência do avatar. Vazio = 120 s.
       # MESMA variável do frontend (vite.config.ts) — lá ela para a gravação
       # da câmera sozinha; aqui ela é a checagem REAL, por ffprobe, em

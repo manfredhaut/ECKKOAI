@@ -114,6 +114,7 @@ import { MUTANTS as audioMeasuredMutants } from "./checkAudioMeasuredPolicy.js";
 import { MUTANTS as heygenWebhookMutants } from "./checkHeygenWebhookPolicy.js";
 import { MUTANTS as heygenPayloadPersistenceMutants } from "./checkHeygenPayloadPersistencePolicy.js";
 import { MUTANTS as avatarDistanceAndFitMutants } from "./checkAvatarDistanceAndFitPolicy.js";
+import { MUTANTS as studioMovieEditMutants } from "./checkStudioMovieEditPolicy.js";
 import type { Mutant } from "./mutants.js";
 
 
@@ -234,4 +235,5 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkHeygenWebhookPolicy.ts", heygenWebhookMutants),
   ...de("backend/src/scripts/checkHeygenPayloadPersistencePolicy.ts", heygenPayloadPersistenceMutants),
   ...de("backend/src/scripts/checkAvatarDistanceAndFitPolicy.ts", avatarDistanceAndFitMutants),
+  ...de("backend/src/scripts/checkStudioMovieEditPolicy.ts", studioMovieEditMutants),
 ];

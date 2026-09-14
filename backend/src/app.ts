@@ -25,6 +25,7 @@ import { credentialRoutes } from "./routes/credentials.js";
 import { scriptRoutes } from "./routes/scripts.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { documentRoutes } from "./routes/documents.js";
+import { editProjectRoutes } from "./routes/editProjects.js";
 import { referenceImageRoutes } from "./routes/referenceImages.js";
 import { notificationRoutes } from "./routes/notifications.js";
 import { jobRoutes } from "./routes/jobs.js";
@@ -92,6 +93,7 @@ export async function buildApp() {
     await protectedApp.register(uploadRoutes);
     await protectedApp.register(scriptRoutes);
     await protectedApp.register(documentRoutes);
+    await protectedApp.register(editProjectRoutes);
     await protectedApp.register(referenceImageRoutes);
     await protectedApp.register(notificationRoutes);
     await protectedApp.register(jobRoutes);

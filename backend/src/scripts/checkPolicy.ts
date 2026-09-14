@@ -71,6 +71,7 @@ import { checkIdempotencyReplayPolicy } from "./checkIdempotencyReplayPolicy.js"
 import { checkBackgroundResizePolicy } from "./checkBackgroundResizePolicy.js";
 import { checkHeygenPayloadPersistencePolicy } from "./checkHeygenPayloadPersistencePolicy.js";
 import { checkAvatarDistanceAndFitPolicy } from "./checkAvatarDistanceAndFitPolicy.js";
+import { checkStudioMovieEditPolicy } from "./checkStudioMovieEditPolicy.js";
 import { checkAudioMeasuredPolicy } from "./checkAudioMeasuredPolicy.js";
 import { checkHeygenWebhookPolicy } from "./checkHeygenWebhookPolicy.js";
 import { checkVideoRecoveryPolicy } from "./checkVideoRecoveryPolicy.js";
@@ -747,6 +748,14 @@ async function main(): Promise<void> {
   const avatarDistanceAndFit = await checkAvatarDistanceAndFitPolicy();
   avatarDistanceAndFit.failures.forEach((f) => failures.push(f));
   avatarDistanceAndFit.notes.forEach((n) => note(n));
+
+  // --- 25e-11. BLOCO STUDIO-EDIT-1: aba "5. Studio Movie Edit" — o corpo
+  // exibido deriva da função pura, colisão sobreposição×b-roll é recusada,
+  // payloadDoProjeto nunca grava url, e trocar/remover arquivo sempre exclui
+  // o asset antigo
+  const studioMovieEdit = await checkStudioMovieEditPolicy(process.env.REPO_ROOT ?? "/repo");
+  studioMovieEdit.failures.forEach((f) => failures.push(f));
+  studioMovieEdit.notes.forEach((n) => note(n));
 
   // --- 25f. o vídeo pago não some sem rastro ------------------------------
   //

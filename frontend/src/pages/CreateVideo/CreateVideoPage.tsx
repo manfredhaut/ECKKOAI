@@ -5,6 +5,7 @@ import { AvatarSetupStep } from "./steps/AvatarSetupStep";
 import { ScriptStep } from "./steps/ScriptStep";
 import { SceneStep } from "./steps/SceneStep";
 import { GenerateStep } from "./steps/GenerateStep";
+import { StudioMovieEditStep } from "./steps/StudioMovieEditStep";
 import { DEFAULT_PUBLISH_PLATFORM } from "./publishPlatforms";
 import type { WizardState } from "./types";
 
@@ -36,6 +37,7 @@ export function CreateVideoPage() {
     t("createVideo.steps.script"),
     t("createVideo.steps.scene"),
     t("createVideo.steps.generate"),
+    t("createVideo.steps.studioMovieEdit"),
   ];
   const [step, setStep] = useState(0);
   const [wizard, setWizard] = useState<WizardState>({
@@ -148,7 +150,10 @@ export function CreateVideoPage() {
     (step === 1 && wizard.script.trim().length > 0) ||
     // Cena nunca trava: todos os controles dela são opcionais, e nenhum campo
     // vazio vai para o payload.
-    step === 2;
+    step === 2 ||
+    // Gerar também nunca trava — o clique em "Gerar vídeo" é uma ação dentro
+    // do próprio passo, independente de avançar para Studio Movie Edit.
+    step === 3;
 
   /**
    * O que falta para poder avançar, em uma linha.
@@ -243,6 +248,7 @@ export function CreateVideoPage() {
       {step === 3 && (
         <GenerateStep wizard={wizard} onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))} />
       )}
+      {step === 4 && <StudioMovieEditStep />}
 
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
         {step > 0 && (
