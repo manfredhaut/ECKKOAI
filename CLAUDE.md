@@ -934,3 +934,37 @@ docker compose exec -T backend sh -c 'printf "%s len=%s\n" "$PROVIDER_MODE" "${#
 > Um arquivo enviado para um projeto que nunca chega a ser salvo ("Guardar o projeto" nunca clicado) fica ÓRFÃO em `uploads/<tenant>/edit-assets/` — não existe coleta de lixo. Não implementado nesta rodada por instrução explícita do pedido; fica para uma rodada futura dedicada a isso.
 >
 > **Custo real desta sessão: US$ 0,00.** Todo teste em `PROVIDER_MODE=fixture` (a sessão tinha aberto em `live`; trocado para `fixture` só para este bloco e devolvido a `live` ao fechar, confirmado por `printenv`). Nenhuma chamada a HeyGen/ElevenLabs/fal. Nenhum commit de código foi criado automaticamente — por regra do assistente, commit só acontece quando o operador pede; o HEAD exato desta rodada (quando commitada) fica registrado no chat da sessão, não neste arquivo, para evitar a auto-referência impossível de um commit citar o próprio hash.
+>
+> **CORREÇÃO, do fechamento do BLOCO STUDIO-EDIT-2 (14/09/2026): este bloco FOI commitado depois desta sessão** — `469bef5` (código) + `505d152` (documentação), a pedido do operador na sessão seguinte. A frase acima ("nenhum commit de código foi criado automaticamente") descrevia a intenção correta NO MOMENTO em que foi escrita; não reabrir por causa disso.
+
+> ⚠️ **FECHAMENTO — BLOCO STUDIO-EDIT-2 (14/09/2026) — MAIS NOVO QUE O BLOCO ACIMA, LEIA ESTE PRIMEIRO.** Sessão de fechamento pré-deploy do editor "Studio Movie Edit", encadeada a partir do commit `505d152` (fechamento do STUDIO-EDIT-1). Cinco itens, todos no escopo: régua adaptativa, marcação visual de colisão, remover fundo musical, corrigir o cosmético "()", limpar os dados de teste deixados pela verificação do STUDIO-EDIT-1. **HEAD ao fechar: `3ba746e` (código) + este commit (documentação).**
+>
+> ### (a) O que foi implementado, por item
+>
+> **1. Régua adaptativa.** Não existia (confirmado por `grep` antes de começar). `passoDaRegua(dur)`/`Regua` (novos, [StudioMovieEditStep.tsx](frontend/src/pages/CreateVideo/steps/StudioMovieEditStep.tsx)) — 1s até ~20s de duração final, 5s até ~60s, 10s acima disso — renderizados acima da trilha V2, no mesmo grid `112px + 1fr` das trilhas, para as marcas caírem exatamente sobre os mesmos pontos-no-tempo que os blocos da timeline.
+>
+> **2. Marcação visual da colisão.** A expressão de colisão que vivia inline dentro de `listarBloqueios` virou a função pura `insercaoColideComBroll(i, linha)` (em `editProject.ts`, duplicada nos dois lados — mesma convenção do resto do arquivo), para a mesma lógica servir à recusa (bloqueio) E ao contorno vermelho (`outline: 2px solid var(--color-tertiary)`) do bloco na trilha V2. **Achado de manutenção, corrigido no caminho:** o refactor apodreceu o `find` do mutante G2 em [checkStudioMovieEditPolicy.ts](backend/src/scripts/checkStudioMovieEditPolicy.ts) (a linha `if (colide) b.push(...)` não existe mais) — o gate acusou "0 ocorrências" antes do conserto; atualizado para o novo call site (`if (insercaoColideComBroll(i, linha)) {...}`), reprovando isolado de novo depois.
+>
+> **3. Remover fundo musical.** Só existia "Trocar arquivo" — acrescentado "Tirar" ao lado, chamando `excluirEditAsset` do assetId antigo, mesmo padrão de exclusão real de b-roll/sobreposição.
+>
+> **4. Cosmético "()".** Três chaves de locale (`brollSemArquivo`, `sobreposicaoPassaDoFim`, `sobreposicaoSobreBroll`, pt-BR + en) tinham `({{nome}})` fixo no template — com nome vazio, isso renderizava `"()"`. Trocado por `{{nomeParen}}`, computado na renderização (`b.params?.nome ? " (nome)" : ""`) — uma linha, sem guarda nova, como pedido.
+>
+> **5. Limpeza pré-deploy.** A linha de teste `dbbcc5ec-…` em `edit_projects` (deixada pela verificação do STUDIO-EDIT-1) e os 4 arquivos órfãos em `uploads/c77a5b8a-…/edit-assets/` — apagados depois de confirmar, por `SELECT`, que nenhum OUTRO projeto referenciava qualquer um dos 4 arquivos.
+>
+> ### (b) Prova por item — todas no navegador real, fixture, custo zero
+>
+> - **Régua**: sequência montada empilhando um b-roll de 70,1s sobre a base de 5s (duração final 75,10s) → régua mostrou `0s 10s 20s 30s 40s 50s 60s 70s`, sem sobreposição de números. Degrau de 1s também confirmado com a duração original de 5s.
+> - **Colisão**: `getComputedStyle` do bloco de sobreposição — `outline: "rgb(226, 87, 76) solid"` quando dentro do intervalo do b-roll; `outlineStyle: "none"` quando movido para fora dele (mesmo bloco, mesma sessão de teste).
+> - **Remover fundo**: upload de `fundo-teste-remover.mp3` → `ls -la` mostrou o arquivo (4096 B) em disco → clique em "Tirar" → `ls -la` mostrou diretório vazio, A2 voltou a "+ Carregar fundo musical".
+> - **Cosmético**: b-roll sem arquivo → *"O b-roll do trecho 1 não tem arquivo."* (sem parênteses vazios); sobreposição com nome → *"A sobreposição 1 (imagem-com-nome.png) cai sobre um b-roll..."* (parênteses normais quando há nome).
+> - **Limpeza**: `SELECT count(*) FROM edit_projects` 1→0; `ls -la uploads/c77a5b8a-…/edit-assets/` 4 arquivos → diretório vazio.
+>
+> ### (c) Achado de processo — mesma contenção já documentada, desta vez nas guardas do próprio bloco
+>
+> A passada em lote (`--guard "studio-movie-edit:"`, 6 workers paralelos) devolveu **AMBÍGUO** para 2 mutantes que esta rodada NÃO tocou (`handleUploadBroll` ramo TROCA, `payloadDoProjeto` grava url) — mesma classe de contenção sob paralelismo já documentada em SIMPLES-6/7/10 e no próprio STUDIO-EDIT-1. Reproduzidos isolados (`--name`, um de cada vez): os dois saíram "ok". **Registro de mutantes: 525, sem mudança** — o mutante G2 só teve o `find` corrigido (mesmo comportamento, mesmo `expect`), nenhum mutante novo foi acrescentado nesta rodada.
+>
+> ### (d) Gate, custo, ambiente
+>
+> `tsc` limpo nos dois lados. Gate (fixture) **EXIT 0**, 517/525 mutantes casando por arquivo (8 de ambiente, número estável desde antes desta rodada). **Custo real: US$ 0,00** — `PROVIDER_MODE` trocado para `fixture` só para o teste (`docker compose up -d --force-recreate backend` com override de shell, sem tocar `.env`) e devolvido a `live` ao fechar (`docker compose up -d backend`, sem override), reconfirmado por `printenv`. **Fora de escopo respeitado**: nenhum arraste de mouse, nenhuma rota de exportação/fal/ffmpeg no backend, `/api/documents` intocado.
+>
+> Commits: `3ba746e` (os 6 arquivos de código) + este (CLAUDE.md/ESTADO.md), a pedido explícito do operador — as duas mensagens de commit vieram prontas na instrução, não fui eu quem as redigiu.

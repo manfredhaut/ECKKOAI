@@ -15,12 +15,72 @@ envelheça em silêncio.
 for mais velha que o último commit, ele está desatualizado — conserte antes de
 qualquer outra coisa.
 
-> ⚠️ **BLOCO STUDIO-EDIT-1, FECHADO em 14/09/2026. HEAD: reportado ao
-> operador no chat desta sessão — este commit de documentação não foi
-> seguido de commit de código automático (regra do assistente: só commitar
-> quando o operador pedir). LEIA ESTE PRIMEIRO.** Implementação completa da
-> aba "5. Studio Movie Edit" (era "5. Editar"), a partir do protótipo
-> aprovado `uploads/_prova/studio-movie-edit/aba5-editar-splice.html`.
+> ⚠️ **BLOCO STUDIO-EDIT-2, FECHADO em 14/09/2026. HEAD do commit de código:
+> `3ba746e`; este commit de documentação vem logo em seguida (hash reportado
+> ao operador no chat, não replicado aqui — evita a auto-referência
+> impossível de um commit citar o próprio hash). LEIA ESTE PRIMEIRO, ANTES
+> DO BLOCO STUDIO-EDIT-1 LOGO ABAIXO.** Fechamento pré-deploy do editor:
+> régua adaptativa, marcação visual de colisão, remover fundo musical,
+> corrige o "()" cosmético, limpa os dados de teste deixados pela
+> verificação do STUDIO-EDIT-1.
+>
+> **1. Régua adaptativa — MEDIDO.** Marca a cada 1s até ~20s de duração
+> final, 5s até ~60s, 10s acima disso (`passoDaRegua`/`Regua`, novo, em
+> [StudioMovieEditStep.tsx](frontend/src/pages/CreateVideo/steps/StudioMovieEditStep.tsx)),
+> acima da trilha V2, no mesmo grid `112px + 1fr` das trilhas. Provado no
+> navegador: base de 5s + b-roll de 70,1s (duração final 75,10s) → régua
+> `0s 10s 20s 30s 40s 50s 60s 70s`, sem sobreposição de números.
+>
+> **2. Marcação visual da colisão — MEDIDO.** A checagem de colisão saiu de
+> dentro de `listarBloqueios` para a função pura `insercaoColideComBroll`
+> (em `editProject.ts`, duplicada nos dois lados), usada tanto pela recusa
+> quanto pelo contorno vermelho (`--color-tertiary`) do bloco na timeline.
+> Provado por `getComputedStyle`: `outline: "rgb(226, 87, 76) solid"` em
+> colisão, `outlineStyle: "none"` fora dela. O refactor apodreceu o `find`
+> do mutante G2 em
+> [checkStudioMovieEditPolicy.ts](backend/src/scripts/checkStudioMovieEditPolicy.ts)
+> (0 ocorrências) — atualizado para o novo call site, reprovando isolado de
+> novo.
+>
+> **3. Remover fundo musical — MEDIDO.** Botão "Tirar" ao lado de "Trocar
+> arquivo" na trilha A2, mesmo padrão de exclusão real de b-roll/sobreposição
+> (`excluirEditAsset`). Provado: upload de `fundo-teste-remover.mp3` →
+> `ls -la` mostrou o arquivo em disco → "Tirar" → `ls -la` mostrou diretório
+> vazio, A2 voltou a "+ Carregar fundo musical".
+>
+> **4. Cosmético "()" — MEDIDO.** `nomeParen` computado na renderização
+> (`b.params?.nome ? " (nome)" : ""`), 3 chaves de locale (pt-BR/en)
+> trocadas de `({{nome}})` fixo para `{{nomeParen}}` — sem guarda nova, como
+> pedido. Provado nos dois sentidos: nome vazio → "O b-roll do trecho 1 não
+> tem arquivo." (sem parênteses); nome presente → "A sobreposição 1
+> (imagem-com-nome.png) cai sobre um b-roll..." (parênteses normais).
+>
+> **5. Limpeza pré-deploy — MEDIDO.** Linha de teste `dbbcc5ec-…` apagada de
+> `edit_projects` (`SELECT count(*)` 1→0) e os 4 arquivos órfãos em
+> `uploads/c77a5b8a-…/edit-assets/` apagados (`ls -la` cheio → vazio) —
+> confirmado antes que nenhum outro projeto dependia deles.
+>
+> **Achado de processo, mesma classe de SIMPLES-6/7/10/STUDIO-EDIT-1:** a
+> passada em lote (`--guard "studio-movie-edit:"`) deu AMBÍGUO para 2
+> mutantes não tocados nesta rodada (`handleUploadBroll` ramo TROCA,
+> `payloadDoProjeto`) — reproduzidos isolados, os dois saíram "ok". Registro
+> de mutantes: 525 (sem mudança de contagem — G2 só teve o `find` corrigido,
+> nenhum mutante novo foi acrescentado).
+>
+> Gate (fixture) EXIT 0, `tsc` limpo nos dois lados. **Custo real: US$ 0,00**
+> — `PROVIDER_MODE` trocado para `fixture` só para o teste e devolvido a
+> `live` ao fechar, confirmado por `printenv`. Fora de escopo respeitado:
+> nenhum arraste de mouse, nenhuma rota de exportação/fal/ffmpeg no backend,
+> `/api/documents` intocado.
+>
+> ---
+>
+> ⚠️ **BLOCO STUDIO-EDIT-1, FECHADO em 14/09/2026. HEAD do commit de código:
+> `469bef5`; documentação em `505d152` — SUPERADO pelo bloco STUDIO-EDIT-2
+> acima nos itens que ele lista (régua, marcação de colisão, remover fundo,
+> "()", dados de teste); o resto abaixo continua válido.** Implementação
+> completa da aba "5. Studio Movie Edit" (era "5. Editar"), a partir do
+> protótipo aprovado `uploads/_prova/studio-movie-edit/aba5-editar-splice.html`.
 >
 > **MUDANÇA DE MODELO, registrada antes de qualquer código:**
 > `RELATORIO-aba5-edicao.md` (28/08) descrevia CUTAWAY (sobreposição, duração
