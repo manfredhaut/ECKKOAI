@@ -1710,10 +1710,29 @@ export function AvatarSetupStep({
               <button
                 className="btn btn-primary"
                 onClick={handleFinishSetup}
-                disabled={!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0}
+                disabled={!avatarForTraining.reference_video_url || avatarForTraining.photo_urls.length === 0}
               >
                 {t("createVideo.avatarSetup.finishSetup")}
               </button>
+              {/* Explica o botão cinza — sem isto, um avatar fecha o wizard
+                  sem NUNCA ter enviado o vídeo de referência (basta ter
+                  foto), fica sem treino pra sempre, e ninguém percebe até
+                  investigar o banco. Achado no BLOCO AVATAR-TREINO-1. */}
+              {!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0 && (
+                <p className="text-muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+                  {t("createVideo.avatarSetup.finishSetupMissingBoth")}
+                </p>
+              )}
+              {!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length > 0 && (
+                <p className="text-muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+                  {t("createVideo.avatarSetup.finishSetupMissingVideo")}
+                </p>
+              )}
+              {avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0 && (
+                <p className="text-muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+                  {t("createVideo.avatarSetup.finishSetupMissingPhoto")}
+                </p>
+              )}
             </div>
             <div>
               {/* O erro fica NESTA coluna, e não na da câmera, porque é aqui

@@ -534,6 +534,9 @@
       "imageSaved": "Image saved.",
       "imageSavedNamed": "Image saved: {{name}}. The field above comes back empty on every visit — browsers do not restore a chosen file.",
       "finishSetup": "Finish setup",
+      "finishSetupMissingBoth": "Missing at least 1 photo and the reference video.",
+      "finishSetupMissingVideo": "Missing the reference video.",
+      "finishSetupMissingPhoto": "Missing at least 1 photo.",
       "background": {
         "label": "Virtual background",
         "help": "Applied live to the photos and the reference video — helps the face stand out from the environment.",

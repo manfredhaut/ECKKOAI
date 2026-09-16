@@ -1,23 +1,38 @@
 /**
- * Foto do rosto e vídeo de referência são INDEPENDENTES — decisão de produto
- * registrada nesta rodada, não reabrir. `checkReferenceVideoPhotos()` e sua
- * chamada em `POST /avatars/:id/reference-video` existiram por um commit
- * (`d167183`) e foram removidas nesta mesma rodada porque contradiziam a
- * decisão: 0 fotos tinha de continuar sendo aceito, e o treino passou a
- * depender só do VÍDEO de referência.
+ * Foto do rosto e vídeo de referência são INDEPENDENTES nos itens 1 e 2
+ * abaixo — decisão de produto registrada naquela rodada, não reabrir.
+ * `checkReferenceVideoPhotos()` e sua chamada em `POST
+ * /avatars/:id/reference-video` existiram por um commit (`d167183`) e foram
+ * removidas nesta mesma rodada porque contradiziam a decisão: 0 fotos tinha
+ * de continuar sendo aceito, e o treino passou a depender só do VÍDEO de
+ * referência.
+ *
+ * ⚠️ **ITEM 3 (o botão "Concluir configuração") FOI REVISTO no BLOCO
+ * AVATAR-VALIDACAO-1 — a regra "vídeo OU foto" daquele item, especificamente,
+ * deixou de valer.** O BLOCO AVATAR-TREINO-1 (investigação) mediu que essa
+ * mesma independência, aplicada ao botão de FECHAR o assistente, permitia
+ * fechar com só fotos, SEM NUNCA chamar `/reference-video` — o avatar ficava
+ * sem `provider_avatar_id`/`voice_id` para sempre, sem erro e sem aviso (caso
+ * real medido: avatar "wizard 1"). O botão agora exige os DOIS — vídeo E
+ * pelo menos 1 foto — antes de fechar. **Os itens 1 e 2 abaixo (a ROTA e
+ * `trainAvatar()`) continuam valendo exatamente como antes: eles decidem se
+ * o TREINO em si precisa de foto, o que é uma pergunta diferente de "o
+ * assistente pode fechar sem ter treinado nada".**
  *
  * ┌─ O QUE ESTA GUARDA IMPEDE DE VOLTAR ──────────────────────────────────────┐
  * │ Três exigências de foto, em três lugares, cada uma capaz de reintroduzir  │
- * │ o defeito por conta própria:                                             │
+ * │ um defeito por conta própria — os itens 1 e 2 continuam impedindo a      │
+ * │ EXIGÊNCIA de foto que existia antes de `d167183` ser revertido; o item 3 │
+ * │ agora impede a condição CONTRÁRIA (o "OU" que virou bug):                │
  * │   1. `routes/avatars.ts` — um 422 antes do treino, condicionado a        │
  * │      `photo_urls.length`, dentro do handler de `/reference-video`.       │
  * │   2. `avatarProvider.ts` — o `throw` que existia no topo de              │
  * │      `trainAvatar()`, ANTES do desvio de fixture, então também vetava a  │
  * │      simulação (custo zero) sem foto nenhuma.                            │
- * │   3. `AvatarSetupStep.tsx` — o botão "Concluir configuração" exigia 3    │
- * │      fotos (`photo_urls.length < 3`) além do vídeo, travando a tela      │
- * │      mesmo com o backend já aceitando 0 fotos. Achado na rodada em que   │
- * │      os itens 1 e 2 foram fechados; corrigido nesta.                     │
+ * │   3. `AvatarSetupStep.tsx` — o botão "Concluir configuração" HOJE exige  │
+ * │      vídeo E pelo menos 1 foto (`||` de negações — De Morgan de "vídeo   │
+ * │      && foto"). Impede tanto a exigência antiga de 3 fotos quanto a      │
+ * │      condição "OU" que ficou entre as duas rodadas (AVATAR-TREINO-1).    │
  * └────────────────────────────────────────────────────────────────────────────┘
  *
  * ┌─ ANCORADA NO USO, não na menção ──────────────────────────────────────────┐
@@ -78,15 +93,22 @@ export const MUTANTS: Mutant[] = [
     expect: "volta a exigir foto ANTES do desvio de fixture em trainAvatar()",
   },
   {
-    guard: "o botão Concluir configuração não exige 3 fotos",
-    name: "a exigência de 3 fotos volta para o botão de concluir",
+    guard: "o botão Concluir configuração exige vídeo E foto, nunca só um dos dois",
+    name: "a condição do botão volta a ser OU (fecha só com vídeo, ou só com foto)",
     kind: "esperto",
-    // Reintroduz EXATAMENTE a condição antiga (photo_urls.length < 3),
-    // travando o botão mesmo com vídeo salvo e mesmo com 1 ou 2 fotos.
+    // ESPERTO: reintroduz EXATAMENTE o bug medido no BLOCO AVATAR-TREINO-1 —
+    // a condição "OU" que ficava entre as duas rodadas, não a exigência de 3
+    // fotos de antes de `d167183` (essa é o mutante irmão, já coberto pela
+    // mensagem antiga desta guarda antes da revisão). Com `&&` de volta, um
+    // avatar só com fotos (nunca chamou /reference-video) volta a poder
+    // fechar o assistente sem treino, sem aviso.
     file: STEP,
-    find: "disabled={!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0}",
-    replace: "disabled={avatarForTraining.photo_urls.length < 3 || !avatarForTraining.reference_video_url}",
-    expect: "volta a exigir 3 fotos",
+    find: "disabled={!avatarForTraining.reference_video_url || avatarForTraining.photo_urls.length === 0}",
+    replace: "disabled={!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0}",
+    // Recorte literal da mensagem real do failure() abaixo — MEDIDO rodando
+    // o gate com o mutante aplicado à mão antes de escrever este campo, não
+    // parafraseado de cabeça (o erro que a 1ª tentativa cometeu aqui).
+    expect: "não reconheço a regra atual e não posso afirmar que ela ainda exige vídeo E foto",
   },
 ];
 
@@ -162,6 +184,10 @@ export async function checkReferenceVideoPhotoOptionalPolicy(): Promise<Referenc
   //    (único no arquivo) até o fechamento do próprio botão — nunca no
   //    arquivo inteiro, que também tem outros `disabled={...avatarForTraining...}`
   //    nos controles de câmera/gravação sem relação com este porteiro.
+  //
+  //    REVISTO no BLOCO AVATAR-VALIDACAO-1: a regra deste item deixou de ser
+  //    "vídeo OU foto" — ver o cabeçalho do arquivo para o porquê (achado do
+  //    BLOCO AVATAR-TREINO-1). Hoje exige os DOIS.
   const step = lerDaRaiz(STEP);
   const inicioBotao = step.indexOf("onClick={handleFinishSetup}");
   const fimBotao = step.indexOf("</button>", inicioBotao);
@@ -176,25 +202,27 @@ export async function checkReferenceVideoPhotoOptionalPolicy(): Promise<Referenc
       failures.push(
         `reference-video-photo: o botão "Concluir configuração" volta a exigir 3 fotos ` +
           "(`photo_urls.length < 3`) — trava a tela mesmo com o backend já aceitando 0 fotos e mesmo com " +
-          "vídeo de referência salvo. A regra é vídeo OU pelo menos 1 foto.",
+          "vídeo de referência salvo. A regra é vídeo E pelo menos 1 foto, nunca 3.",
       );
     } else if (
-      !/disabled=\{!avatarForTraining\.reference_video_url && avatarForTraining\.photo_urls\.length === 0\}/.test(
+      !/disabled=\{!avatarForTraining\.reference_video_url \|\| avatarForTraining\.photo_urls\.length === 0\}/.test(
         trechoBotao,
       )
     ) {
       failures.push(
         `reference-video-photo: o botão "Concluir configuração" em ${STEP} não tem a condição esperada ` +
-          "(`!avatarForTraining.reference_video_url && avatarForTraining.photo_urls.length === 0`) — não " +
-          "reconheço a regra atual e não posso afirmar que ela ainda é vídeo-OU-foto.",
+          "(`!avatarForTraining.reference_video_url || avatarForTraining.photo_urls.length === 0`) — não " +
+          "reconheço a regra atual e não posso afirmar que ela ainda exige vídeo E foto (nunca só um dos " +
+          "dois — BLOCO AVATAR-TREINO-1/AVATAR-VALIDACAO-1).",
       );
     }
   }
 
   if (failures.length === 0) {
     notes.push(
-      "    reference-video-photo: nem a rota, nem trainAvatar(), nem o botão de concluir condicionam o " +
-        "treino/avanço à existência de foto além de vídeo-OU-1-foto",
+      "    reference-video-photo: a rota e trainAvatar() continuam sem condicionar o treino à existência de " +
+        "foto (itens 1-2); o botão de concluir agora exige vídeo E pelo menos 1 foto, nunca só um dos dois " +
+        "(item 3, revisto no AVATAR-VALIDACAO-1)",
     );
   }
 

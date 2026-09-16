@@ -548,6 +548,9 @@
       "imageSavedNamed": "Imagem salva: {{name}}. O campo acima volta vazio a cada visita — o navegador não repõe arquivo escolhido.",
       "removeImage": "Remover",
       "finishSetup": "Concluir configuração",
+      "finishSetupMissingBoth": "Falta pelo menos 1 foto e o vídeo de referência.",
+      "finishSetupMissingVideo": "Falta o vídeo de referência.",
+      "finishSetupMissingPhoto": "Falta pelo menos 1 foto.",
       "background": {
         "label": "Fundo virtual",
         "help": "Aplicado ao vivo nas fotos e no vídeo de referência — ajuda o rosto a se destacar do ambiente.",
