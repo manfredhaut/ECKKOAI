@@ -74,6 +74,16 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
     const plan = await findPlan(req.body.planId);
     if (!plan) return reply.code(400).send({ error: "Unknown plan" });
 
+    // Plano pago só vale depois do pagamento: ativá-lo por aqui trocaria
+    // tenants.plan_id sem passar pelo Stripe. A troca livre fica restrita a
+    // planos gratuitos, como o ramo priceCents === 0 de /subscription/checkout.
+    if (plan.priceCents > 0) {
+      return reply.code(403).send({
+        error: "paid_plan_requires_checkout",
+        message: "Planos pagos só podem ser ativados via /subscription/checkout (Stripe).",
+      });
+    }
+
     await pool.query("UPDATE tenants SET plan_id = $1 WHERE id = $2", [plan.id, req.tenantId]);
     return { plan };
   });
