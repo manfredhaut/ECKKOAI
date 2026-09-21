@@ -62,7 +62,6 @@ import {
   checkVoiceSlots,
   effectiveVoiceSlotLimit,
   voiceIdForLog,
-  voiceSlotLimit,
   type VoiceSlotLimitSource,
 } from "../services/voice/voiceSample.js";
 import {
@@ -309,7 +308,11 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         const { failure, message } = toClientVendorError("voice", "voice.listVoices", err);
         return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
       }
-      const limite = voiceSlotLimit();
+      // O MESMO teto efetivo da listagem (/voice/sample-policy) e da reclonagem: assim o
+      // "X de Y slots" da tela e este bloqueio nunca divergem. Leitura não tarifada que
+      // NUNCA lança — `null` cai no ambiente ou no default (ver effectiveVoiceSlotLimit).
+      const assinatura = await readVoiceSubscription(voiceCredential.apiKey);
+      const limite = effectiveVoiceSlotLimit(assinatura?.voiceLimit).limit;
       // `owned`, NUNCA `total`: a resposta do fornecedor inclui as vozes
       // `premade` da biblioteca dele, que não são da pessoa e não ocupam slot.
       // Usar `total` aqui recusou uma clonagem legítima em 04/08 com "25 de 10
