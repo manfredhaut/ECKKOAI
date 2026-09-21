@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api } from "../../api/client";
+import { api, ApiError } from "../../api/client";
 import { Field } from "../../components/ui/Field";
 import type { Plan } from "../../types";
 
@@ -25,6 +25,7 @@ function PlanRow({ plan, onSaved }: { plan: Plan; onSaved: (updated: Plan) => vo
   const [featuresText, setFeaturesText] = useState(featuresToText(plan.features));
   const [active, setActive] = useState(plan.active);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const dirty =
     name !== plan.name ||
@@ -36,6 +37,7 @@ function PlanRow({ plan, onSaved }: { plan: Plan; onSaved: (updated: Plan) => vo
     active !== plan.active;
 
   async function handleSave() {
+    setError(null);
     setSaving(true);
     try {
       const updated = await api.put<Plan>(`/admin/plans/${plan.id}`, {
@@ -48,6 +50,8 @@ function PlanRow({ plan, onSaved }: { plan: Plan; onSaved: (updated: Plan) => vo
         active,
       });
       onSaved(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("errors.generic"));
     } finally {
       setSaving(false);
     }
@@ -108,6 +112,11 @@ function PlanRow({ plan, onSaved }: { plan: Plan; onSaved: (updated: Plan) => vo
         <button className="btn btn-outline" onClick={handleSave} disabled={saving || !dirty}>
           {t("common.save")}
         </button>
+        {error && (
+          <p className="text-muted" style={{ fontSize: 13, color: "var(--color-tertiary)" }}>
+            {error}
+          </p>
+        )}
       </td>
     </tr>
   );

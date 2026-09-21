@@ -636,6 +636,14 @@ export async function adminPanelRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "avatarLimitPerMonth must be a positive integer" });
     }
 
+    // Preço mudou: o Price do Stripe é imutável e não acompanha o banco. Zerar o id
+    // em cache faz o próximo /subscription/checkout criar um novo via
+    // getOrCreateStripePrice. Vem ANTES do updatePlan para que `after` (resposta e
+    // auditoria) já traga stripePriceId nulo. Sem chamada ao Stripe aqui.
+    if (req.body.priceCents !== undefined && req.body.priceCents !== before.priceCents) {
+      await pool.query("UPDATE plans SET stripe_price_id = NULL WHERE id = $1", [req.params.id]);
+    }
+
     const after = await updatePlan(req.params.id, req.body);
 
     await recordAuditLog({
