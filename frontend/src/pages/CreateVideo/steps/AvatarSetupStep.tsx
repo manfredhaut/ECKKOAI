@@ -38,6 +38,32 @@ const LOOK_POLL_INTERVAL_MS = 3_000;
 const LOOK_POLL_WINDOW_MS = 240_000;
 const LOOK_POLL_ATTEMPTS = LOOK_POLL_WINDOW_MS / LOOK_POLL_INTERVAL_MS;
 
+/**
+ * Teclas que MUDAM o valor de um `<input type="range">`. O salvamento por teclado
+ * é no `onKeyUp` — como o mouse salva ao soltar, e nunca a cada `onChange` — e só
+ * para elas: `onKeyUp` também dispara ao soltar Tab (ao chegar no slider) e Shift,
+ * e salvar aí mandaria um PUT sem mudança nenhuma.
+ */
+const SLIDER_VALUE_KEYS = [
+  "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown",
+];
+function isSliderValueKey(key: string): boolean {
+  return SLIDER_VALUE_KEYS.includes(key);
+}
+
+/**
+ * Card de ajustes de voz da HeyGen (velocidade, tom, volume, idioma) OCULTO.
+ *
+ * Nenhum código do backend lê `avatars.heygen_voice_*`: só `PUT /avatars/:id` as
+ * grava. A geração usa sempre o áudio da ElevenLabs (`audio_asset_id`), então esses
+ * controles não mudam nada — e, quando o avatar tinha `heygen_voice_id`, eles
+ * apareciam NO LUGAR dos ajustes da ElevenLabs, que são os que valem. O código do
+ * card e as colunas ficam; só volte a `true` quando o backend passar a enviar
+ * `voice_settings` à HeyGen, e revise antes o texto `heygenVoiceTuning.help`, que
+ * hoje afirma um efeito que não existe.
+ */
+const SHOW_HEYGEN_VOICE_TUNING: boolean = false;
+
 export function AvatarSetupStep({
   selectedAvatarId,
   onSelectAvatar,
@@ -824,7 +850,8 @@ export function AvatarSetupStep({
    *
    * Mesmo caminho de `commitTargetLufs`: `PUT /avatars/:id` com um campo só, e
    * o avatar devolvido substitui o rascunho. O commit é no `onMouseUp`/
-   * `onTouchEnd`, nunca no `onChange` — arrastar um slider dispara dezenas de
+   * `onTouchEnd` (mouse e toque) e no `onKeyUp` (teclado: setas, Home/End,
+   * PageUp/PageDown), nunca no `onChange` — arrastar um slider dispara dezenas de
    * eventos, e um PUT por evento é o que já se evitou uma vez no LUFS.
    */
   async function commitVoiceTuning(patch: Partial<Avatar>) {
@@ -1021,8 +1048,8 @@ export function AvatarSetupStep({
             na HeyGen. Sem ele (o caminho de todo avatar hoje, e de todo
             tenant sem credencial HeyGen), os quatro ajustes ElevenLabs
             continuam sendo os que valem — comportamento idêntico ao de
-            antes desta rodada. */}
-        {selectedAvatar && selectedAvatar.heygen_voice_id ? (
+            antes desta rodada. Card HeyGen OCULTO — ver SHOW_HEYGEN_VOICE_TUNING. */}
+        {SHOW_HEYGEN_VOICE_TUNING && selectedAvatar && selectedAvatar.heygen_voice_id ? (
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title">{t("createVideo.avatarSetup.heygenVoiceTuning.title")}</div>
             <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
@@ -1127,6 +1154,10 @@ export function AvatarSetupStep({
                 onTouchEnd={() =>
                   commitExistingVoiceTuning({ voice_stability: String(existingVoiceStabilityDraft) })
                 }
+                onKeyUp={(e) =>
+                  isSliderValueKey(e.key) &&
+                  commitExistingVoiceTuning({ voice_stability: String(existingVoiceStabilityDraft) })
+                }
               />
             </Field>
 
@@ -1151,6 +1182,12 @@ export function AvatarSetupStep({
                     voice_similarity_boost: String(existingVoiceSimilarityDraft),
                   })
                 }
+                onKeyUp={(e) =>
+                  isSliderValueKey(e.key) &&
+                  commitExistingVoiceTuning({
+                    voice_similarity_boost: String(existingVoiceSimilarityDraft),
+                  })
+                }
               />
             </Field>
 
@@ -1169,6 +1206,10 @@ export function AvatarSetupStep({
                   commitExistingVoiceTuning({ voice_style: String(existingVoiceStyleDraft) })
                 }
                 onTouchEnd={() =>
+                  commitExistingVoiceTuning({ voice_style: String(existingVoiceStyleDraft) })
+                }
+                onKeyUp={(e) =>
+                  isSliderValueKey(e.key) &&
                   commitExistingVoiceTuning({ voice_style: String(existingVoiceStyleDraft) })
                 }
               />
@@ -1248,6 +1289,7 @@ export function AvatarSetupStep({
                   onChange={(e) => setExistingTargetLufsDraft(Number(e.target.value))}
                   onMouseUp={() => commitExistingTargetLufs(existingTargetLufsDraft)}
                   onTouchEnd={() => commitExistingTargetLufs(existingTargetLufsDraft)}
+                  onKeyUp={(e) => isSliderValueKey(e.key) && commitExistingTargetLufs(existingTargetLufsDraft)}
                 />
               </Field>
             )}
@@ -2037,6 +2079,7 @@ export function AvatarSetupStep({
                     onChange={(e) => setTargetLufsDraft(Number(e.target.value))}
                     onMouseUp={() => commitTargetLufs(targetLufsDraft)}
                     onTouchEnd={() => commitTargetLufs(targetLufsDraft)}
+                    onKeyUp={(e) => isSliderValueKey(e.key) && commitTargetLufs(targetLufsDraft)}
                   />
                 </Field>
               )}
@@ -2066,6 +2109,9 @@ export function AvatarSetupStep({
                   onChange={(e) => setVoiceStabilityDraft(Number(e.target.value))}
                   onMouseUp={() => commitVoiceTuning({ voice_stability: String(voiceStabilityDraft) })}
                   onTouchEnd={() => commitVoiceTuning({ voice_stability: String(voiceStabilityDraft) })}
+                  onKeyUp={(e) =>
+                    isSliderValueKey(e.key) && commitVoiceTuning({ voice_stability: String(voiceStabilityDraft) })
+                  }
                 />
               </Field>
 
@@ -2086,6 +2132,10 @@ export function AvatarSetupStep({
                   onTouchEnd={() =>
                     commitVoiceTuning({ voice_similarity_boost: String(voiceSimilarityDraft) })
                   }
+                  onKeyUp={(e) =>
+                    isSliderValueKey(e.key) &&
+                    commitVoiceTuning({ voice_similarity_boost: String(voiceSimilarityDraft) })
+                  }
                 />
               </Field>
 
@@ -2102,6 +2152,9 @@ export function AvatarSetupStep({
                   onChange={(e) => setVoiceStyleDraft(Number(e.target.value))}
                   onMouseUp={() => commitVoiceTuning({ voice_style: String(voiceStyleDraft) })}
                   onTouchEnd={() => commitVoiceTuning({ voice_style: String(voiceStyleDraft) })}
+                  onKeyUp={(e) =>
+                    isSliderValueKey(e.key) && commitVoiceTuning({ voice_style: String(voiceStyleDraft) })
+                  }
                 />
               </Field>
 
