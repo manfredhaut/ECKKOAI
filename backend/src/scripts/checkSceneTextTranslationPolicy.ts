@@ -108,6 +108,16 @@ function lerDaRaiz(repoRoot: string, relativo: string): string {
   return readFileSync(path.join(repoRoot, relativo), "utf8").replace(/\r\n/g, "\n");
 }
 
+// Idêntica à de `checkTranslationPolicy.ts` — não importada de lá de
+// propósito (mesmo padrão do projeto: cada guarda é autocontida).
+function apenasCodigo(fonte: string): string {
+  return fonte
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((linha) => !linha.trim().startsWith("//"))
+    .join("\n");
+}
+
 export async function checkSceneTextTranslationPolicy(
   repoRoot: string,
 ): Promise<SceneTextTranslationCheckResult> {
@@ -143,7 +153,16 @@ export async function checkSceneTextTranslationPolicy(
     globalThis.fetch = fetchOriginal;
   }
 
-  // Falha do fornecedor RECUSA, com o tipo de erro certo.
+  // Falha do fornecedor RECUSA, com o tipo de erro certo — e RESPOSTA
+  // INCOMPLETA também recusa. As duas provas exigem que `complete()` de
+  // fato tente a rede: em PROVIDER_MODE=fixture (o modo do próprio gate),
+  // `complete()` desvia para `completeFixture()` ANTES de qualquer fetch —
+  // sem live, o mock abaixo nunca é alcançado, e os dois mutantes que este
+  // bloco existe para pegar ficam INERTES por a checagem nunca chegar a
+  // executar o trecho mutado. Mesma técnica de `checkTranslationPolicy.ts`
+  // (2a).
+  const modoOriginalFalha = process.env.PROVIDER_MODE;
+  process.env.PROVIDER_MODE = "live";
   globalThis.fetch = (async () => {
     throw new Error("fornecedor de texto fora do ar (simulado pela guarda)");
   }) as typeof fetch;
@@ -156,7 +175,9 @@ export async function checkSceneTextTranslationPolicy(
       outfit: null,
       locale: "pt-BR",
     });
-    failures.push("cena-texto: a falha do modelo não recusou a tradução.");
+    failures.push(
+      "cena-texto: a falha do modelo devolveu os textos de origem em vez de falhar.",
+    );
   } catch (err) {
     if (!(err instanceof SceneTextTranslationError)) {
       failures.push(
@@ -164,8 +185,43 @@ export async function checkSceneTextTranslationPolicy(
           "SceneTextTranslationError.",
       );
     }
+  }
+
+  // RESPOSTA BEM-SUCEDIDA, mas sem um dos dois campos pedidos — o modelo
+  // respondeu só "TRAJE:", nunca "CENARIO:", embora os dois tenham sido
+  // pedidos.
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        candidates: [{ content: { parts: [{ text: "TRAJE: leather jacket" }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 5 },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as typeof fetch;
+  try {
+    await translateSceneText({
+      tenantId: "tenant-de-teste",
+      apiKey: "irrelevante",
+      vendor: "gemini",
+      scenario: "corredor com luz neon",
+      outfit: "leather jacket",
+      locale: "pt-BR",
+    });
+    failures.push(
+      "cena-texto: o modelo não devolveu todos os campos pedidos, e a tradução não recusou.",
+    );
+  } catch (err) {
+    const motivo = err instanceof SceneTextTranslationError ? err.reason : null;
+    if (motivo !== "o modelo não devolveu todos os campos pedidos") {
+      failures.push(
+        "cena-texto: resposta incompleta não recusou com \"o modelo não devolveu todos os campos " +
+          `pedidos\" — recebi ${JSON.stringify(motivo)}.`,
+      );
+    }
   } finally {
     globalThis.fetch = fetchOriginal;
+    if (modoOriginalFalha === undefined) delete process.env.PROVIDER_MODE;
+    else process.env.PROVIDER_MODE = modoOriginalFalha;
   }
 
   // A tradução acontece ANTES do débito — mesma checagem posicional de
@@ -178,6 +234,43 @@ export async function checkSceneTextTranslationPolicy(
       "cena-texto: ela deixou de acontecer ANTES do débito. Traduzir depois obriga a estornar quando o " +
         "modelo falha, e estorno só vale antes do aceite do fornecedor.",
     );
+  }
+
+  // O módulo não pode nem CONHECER o portão de crédito — mesma checagem de
+  // `checkTranslationPolicy.ts`, nunca escrita para este módulo irmão.
+  {
+    const fonteModulo = apenasCodigo(lerDaRaiz(repoRoot, MODULO_SRC));
+    if (/\bdebitCredit\b/.test(fonteModulo)) {
+      failures.push(
+        "cena-texto: debitCredit apareceu no módulo de tradução de cena. A tradução é decisão NOSSA — " +
+          "não pode consumir o saldo que a pessoa reserva para o 'Gerar com IA'.",
+      );
+    }
+  }
+
+  // A flag TRANSLATE_SCENE_TEXT precisa CONTINUAR gatilhando a chamada —
+  // ausência de código (a condição some), mesma técnica do item B abaixo.
+  if (!rota.includes("if (TRANSLATE_SCENE_TEXT && (scenarioPromptParaGerar || outfitPromptParaGerar)) {")) {
+    failures.push(
+      "cena-texto: a flag TRANSLATE_SCENE_TEXT não gatilha mais a tradução de cena — a chamada passaria a " +
+        "rodar mesmo desligada.",
+    );
+  }
+
+  // A composição usa o INGLÊS quando existe, nos dois call sites — criação
+  // (avatarProvider.ts) e aprovação/recompose (routes/videos.ts).
+  const provider = lerDaRaiz(repoRoot, PROVIDER);
+  if (!provider.includes("cenarioTexto: input.scenarioPromptEn ?? input.scenarioPrompt,")) {
+    failures.push("cena-texto: a composição ignora o cenário traduzido (avatarProvider.ts, criação).");
+  }
+  if (!provider.includes("trajeTexto: input.outfitPromptEn ?? input.outfitPrompt,")) {
+    failures.push("cena-texto: a composição ignora o traje traduzido (avatarProvider.ts, criação).");
+  }
+  if (!rota.includes("cenarioTexto: video.scenario_prompt_en ?? video.scenario_prompt,")) {
+    failures.push("cena-texto: a composição ignora o cenário traduzido (routes/videos.ts, aprovação/recompose).");
+  }
+  if (!rota.includes("trajeTexto: video.outfit_prompt_en ?? video.outfit_prompt,")) {
+    failures.push("cena-texto: a composição ignora o traje traduzido (routes/videos.ts, aprovação/recompose).");
   }
 
   // Item B (L1) — a invariante é AUSÊNCIA: nenhuma UPDATE fora da criação
