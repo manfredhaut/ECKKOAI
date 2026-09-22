@@ -64,7 +64,9 @@ export const MUTANTS: Mutant[] = [
     kind: "obvio",
     file: PIPELINE,
     find:
-      "  const { audioUrl, fala } = await narrar(input);\n" +
+      "  const { audioUrl, fala } = input.narracao?.tipo === \"reaproveitar\"\n" +
+      "    ? { audioUrl: input.narracao.audioUrl, fala: { durationSeconds: input.narracao.durationSeconds } }\n" +
+      "    : await narrar(input);\n" +
       "  // V34, item 3 — RECUSA antes de animar quando a fala diverge do alvo\n" +
       "  // escolhido em mais de 8%. Sem alvo (`targetDurationSeconds` ausente),\n" +
       "  // esta chamada não faz nada — comportamento de antes desta rodada.\n" +
@@ -77,7 +79,9 @@ export const MUTANTS: Mutant[] = [
       "    if (!deveEngolirDesvioDeAlvo(err, input.avisarDesvioDeAlvoSemRecusar)) throw err;\n" +
       "  }",
     replace:
-      "  const { audioUrl, fala } = await narrar(input);\n" +
+      "  const { audioUrl, fala } = input.narracao?.tipo === \"reaproveitar\"\n" +
+      "    ? { audioUrl: input.narracao.audioUrl, fala: { durationSeconds: input.narracao.durationSeconds } }\n" +
+      "    : await narrar(input);\n" +
       "  void AlvoDeDuracaoForaDoAlcanceError;\n" +
       "  void deveEngolirDesvioDeAlvo;",
     expect: "compararAlvoComFala: a tomada única deixou de comparar alvo×fala",

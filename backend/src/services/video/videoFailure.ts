@@ -37,6 +37,13 @@ export const VIDEO_FAILURE_REASONS = [
   "insufficient_credits",
   /** Teto NOSSO de sessão live. Nenhuma chamada saiu; o débito foi estornado. */
   "live_budget_exhausted",
+  /**
+   * P2-1, 22/09/2026 — a voz CONGELADA neste vídeo foi apagada do fornecedor
+   * (achado: "Trocar voz" no avatar apaga a anterior) e não há áudio já
+   * narrado para reaproveitar. Nenhuma chamada nova saiu — a checagem é um
+   * GET de leitura, nunca tarifado — então o crédito do vídeo volta.
+   */
+  "frozen_voice_unavailable",
 
   // --- a voz foi sintetizada; o vídeo não chegou a ser pedido --------------
   /**

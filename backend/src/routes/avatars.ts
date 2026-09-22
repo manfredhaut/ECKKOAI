@@ -459,6 +459,18 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       );
       if (!atualizado.rows[0]) return reply.code(404).send({ error: "Avatar not found" });
 
+      // P2-1, 22/09/2026 — um vídeo pode ter CONGELADO esta foto
+      // (`identity_snapshot->'photo_urls'`); apagar o arquivo quebraria o
+      // "Refazer" desse vídeo (leitura de um caminho que já não existe). Só
+      // apaga quando NENHUM vídeo ainda referencia este caminho exato.
+      const { rows: aindaReferenciada } = await pool.query(
+        "SELECT 1 FROM videos WHERE identity_snapshot -> 'photo_urls' @> to_jsonb($1::text) LIMIT 1",
+        [removida],
+      );
+      if (aindaReferenciada.length > 0) {
+        return atualizado.rows[0];
+      }
+
       // Depois do UPDATE, e com o erro engolido: o banco é a verdade sobre
       // quais fotos existem. Um arquivo que resiste ao `unlink` (permissão,
       // volume remoto) não pode fazer a remoção parecer ter falhado quando a

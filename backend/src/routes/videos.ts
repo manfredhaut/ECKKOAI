@@ -112,7 +112,15 @@ import {
   DESVIO_ALVO_MAXIMO_FRACAO,
   type EntradaDeComposicao,
   type VideoTier,
+  type FalPipelineInput,
 } from "../services/video/falPipeline.js";
+import { vozAindaExisteNaElevenLabs } from "../services/providers/voiceProvider.js";
+import {
+  capturarIdentidade,
+  resolverIdentidade,
+  decidirVoz,
+  precisaChecarVozAntesDeNarrar,
+} from "../services/video/frozenIdentity.js";
 import {
   maxCharsForNormalTarget,
   fracionarRoteiro,
@@ -1836,8 +1844,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                            publish_platform, aspect_ratio, resolution,
                            background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id,
                            captions, motion_prompt_en, tier_video, target_duration_seconds,
-                           scenario_prompt_en, outfit_prompt_en)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING *`,
+                           scenario_prompt_en, outfit_prompt_en, identity_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING *`,
       [
         req.tenantId,
         avatar_id,
@@ -1894,6 +1902,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // continua idêntico ao de antes desta rodada.
         scenarioPromptEnParaGerar,
         outfitPromptEnParaGerar,
+        // P2-1 — a ficha, capturada do avatar NESTE INSTANTE.
+        JSON.stringify(capturarIdentidade(avatar)),
       ],
     );
     const video = rows[0];
@@ -2429,13 +2439,18 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * quem fatia por bloco é `wanOrchestration.ts`, do lado de dentro do
    * pipeline.
    */
-  function promptDaComposicaoDaLinha(video: VideoRow, avatar: Avatar): string {
+  /**
+   * P2-1, VERSÃO FINAL — recebe `photoUrls` já resolvido (a própria rota
+   * chama `resolverIdentidade(video, avatar)` UMA vez; ver a checagem G-5,
+   * checkFrozenIdentityPolicy.ts), nunca `avatar.photo_urls` direto.
+   */
+  function promptDaComposicaoDaLinha(video: VideoRow, photoUrls: string[]): string {
     return promptDeComposicaoPosicional({
       temCenario: Boolean(video.scenario),
       cenarioTexto: video.scenario_prompt_en ?? video.scenario_prompt,
       temTraje: Boolean(video.outfit),
       trajeTexto: video.outfit_prompt_en ?? video.outfit_prompt,
-      temLateral: Boolean(avatar.photo_urls?.[1] || avatar.photo_urls?.[2]),
+      temLateral: Boolean(photoUrls[1] || photoUrls[2]),
       direcaoTexto: direcaoDoPrimeiroBloco(video.script, motionPromptDaLinha(video)),
     });
   }
@@ -2491,7 +2506,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * extrair um helper compartilhado tocaria o caminho de criação sem
    * necessidade, e o teto de 4 entradas já é o mesmo dos dois lados.
    */
-  async function entradasDaComposicao(video: VideoRow, avatar: Avatar): Promise<EntradaDeComposicao[]> {
+  /** P2-1, VERSÃO FINAL — `photoUrls` já resolvido pela rota (ver `promptDaComposicaoDaLinha` acima). */
+  async function entradasDaComposicao(video: VideoRow, photoUrls: string[]): Promise<EntradaDeComposicao[]> {
     const extras: EntradaDeComposicao[] = [];
     // ORDEM corrigida em 29/08: era [traje, cenario], TROCADA em relação à
     // ordem real de `avatarProvider.ts` ([cenario, traje]) — MEDIDO ao
@@ -2506,8 +2522,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     if (video.outfit) {
       extras.push({ rotulo: "traje", bytes: await readUpload(video.outfit), mimeType: mimeDoUpload(video.outfit) });
     }
-    const ladoDireitoUrl = avatar.photo_urls?.[1];
-    const ladoEsquerdoUrl = avatar.photo_urls?.[2];
+    const ladoDireitoUrl = photoUrls[1];
+    const ladoEsquerdoUrl = photoUrls[2];
     if (ladoDireitoUrl) {
       extras.push({ rotulo: "lado_direito", bytes: await readUpload(ladoDireitoUrl), mimeType: mimeDoUpload(ladoDireitoUrl) });
     } else if (ladoEsquerdoUrl) {
@@ -2531,19 +2547,148 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
    * imagem composta, byte a byte o comportamento de antes desta correção —
    * nunca recusa a aprovação por causa disto.
    */
-  async function fotoDeIdentidadeDoAvatar(avatar: Avatar): Promise<{ bytes: Buffer; mimeType: string } | null> {
-    const fotoUrl = avatar.photo_urls?.[0];
+  /** P2-1, VERSÃO FINAL — `photoUrls` já resolvido pela rota (ver `promptDaComposicaoDaLinha` acima). */
+  async function fotoDeIdentidadeDoAvatar(
+    avatarId: string,
+    photoUrls: string[],
+  ): Promise<{ bytes: Buffer; mimeType: string } | null> {
+    const fotoUrl = photoUrls[0];
     if (!fotoUrl) return null;
     try {
       return { bytes: await readUpload(fotoUrl), mimeType: mimeDoUpload(fotoUrl) };
     } catch (err) {
       logEvent("error", "fal_foto_identidade_indisponivel", {
         context: "videos.fotoDeIdentidadeDoAvatar",
-        avatarId: avatar.id,
+        avatarId,
         detail: err instanceof Error ? err.message : String(err),
       });
       return null;
     }
+  }
+
+  /**
+   * A DECISÃO de voz antes de narrar — P2-1, VERSÃO FINAL, 22/09/2026.
+   *
+   * Devolve `{ ok: true, narracao }` (a passar ao pipeline) quando pode
+   * seguir — sintetizando (comportamento de sempre) ou reaproveitando um
+   * áudio já pronto. Devolve `{ ok: false, code, body }` quando bloqueia —
+   * ou por erro de rede na checagem (503, nada mudou, clique repetível),
+   * ou porque a voz sumiu de vez e não há o que reaproveitar (409, estorna
+   * quando aplicável).
+   *
+   * `precisaChecarVozAntesDeNarrar` (frozenIdentity.ts) NUNCA olha para
+   * "há áudio existente" — ver o comentário dela para o porquê: excluir a
+   * checagem quando já existe áudio faria `decidirVoz` receber
+   * `vozExiste: null` (não verificado) e cair no ramo "confia" mesmo com a
+   * voz apagada, tentando narrar de novo com uma voz que não existe mais
+   * em vez de reaproveitar o que já estava pronto.
+   */
+  async function resolverNarracaoOuBloquear(input: {
+    tenantId: string;
+    video: VideoRow;
+    avatar: Avatar;
+    apiKeyElevenLabs: string;
+    identidade: ReturnType<typeof resolverIdentidade>;
+    /** true só para /approve-video, quando já há áudio pronto — motivo independente de P2-1 (V33, item 2). */
+    rotaJaReaproveita: boolean;
+    statusEsperado: "awaiting_approval" | "awaiting_approval_video";
+  }): Promise<
+    | { ok: true; narracao: FalPipelineInput["narracao"] }
+    | { ok: false; code: number; body: Record<string, unknown> }
+  > {
+    const { video, avatar, identidade } = input;
+
+    const { rows: audioRows } = await pool.query<{ fal_audio_url: string | null; audio_duration_seconds: string | null }>(
+      "SELECT fal_audio_url, audio_duration_seconds FROM videos WHERE id = $1",
+      [video.id],
+    );
+    const audioExistente = audioRows[0]?.fal_audio_url
+      ? {
+          audioUrl: audioRows[0].fal_audio_url,
+          durationSeconds: audioRows[0].audio_duration_seconds != null ? Number(audioRows[0].audio_duration_seconds) : null,
+        }
+      : null;
+
+    const precisaChecar = precisaChecarVozAntesDeNarrar({
+      origem: identidade.origem,
+      voiceIdCongelada: identidade.origem === "congelada" ? identidade.voiceId : null,
+      voiceIdAtual: avatar.voice_id ?? "",
+      rotaJaReaproveita: input.rotaJaReaproveita,
+    });
+
+    let vozExiste: boolean | null = null;
+    if (precisaChecar) {
+      try {
+        vozExiste = await vozAindaExisteNaElevenLabs(input.apiKeyElevenLabs, identidade.voiceId);
+      } catch (err) {
+        logEvent("error", "frozen_voice_check_failed", {
+          context: "videos.resolverNarracaoOuBloquear",
+          videoId: video.id,
+          reason: err instanceof Error ? err.message : String(err),
+          consequence: "nada foi alterado; o clique pode ser repetido",
+        });
+        return {
+          ok: false,
+          code: 503,
+          body: {
+            error: "frozen_voice_check_failed",
+            message: "Não foi possível conferir a voz agora. Tente novamente em instantes.",
+          },
+        };
+      }
+    }
+
+    const decisao = decidirVoz({
+      origem: identidade.origem,
+      voiceIdCongelada: identidade.origem === "congelada" ? identidade.voiceId : null,
+      voiceIdAtual: avatar.voice_id ?? "",
+      vozExiste,
+      temAudioReutilizavel: Boolean(audioExistente),
+      rotaJaReaproveita: input.rotaJaReaproveita,
+    });
+
+    // OBSERVABILIDADE — item 6: origem e decisão, nunca id de voz ou caminho.
+    logEvent("info", "identidade_e_voz_resolvidas", {
+      context: "videos.resolverNarracaoOuBloquear",
+      videoId: video.id,
+      origem: identidade.origem,
+      decisao,
+    });
+
+    if (decisao === "sintetizar") return { ok: true, narracao: undefined };
+    if (decisao === "reaproveitar") {
+      return {
+        ok: true,
+        narracao: { tipo: "reaproveitar", audioUrl: audioExistente!.audioUrl, durationSeconds: audioExistente!.durationSeconds },
+      };
+    }
+
+    // "bloquear_e_estornar" — UPDATE condicional PRIMEIRO; SÓ estorna se a
+    // linha realmente mudou (rowCount) — clique duplo nunca estorna duas
+    // vezes, mesmo sem essa checagem: credit_ledger_one_refund_per_video
+    // (migration 035) é a segunda trava.
+    const { rowCount } = await pool.query(
+      "UPDATE videos SET status = 'error', failure_reason = $3, error_message = $4 WHERE id = $1 AND status = $2",
+      [
+        video.id,
+        input.statusEsperado,
+        "frozen_voice_unavailable",
+        "A voz usada neste vídeo foi substituída no avatar e não pode mais ser usada.",
+      ],
+    );
+    let estornado = false;
+    if ((rowCount ?? 0) > 0) {
+      estornado = await decidirEEstornar({
+        videoId: video.id,
+        tenantId: input.tenantId,
+        reason: "frozen_voice_unavailable",
+        providerJobId: null,
+      });
+    }
+    const mensagem = estornado
+      ? "A voz usada neste vídeo foi substituída no avatar e não pode mais ser usada. O crédito deste vídeo foi devolvido. Gere um vídeo novo com a voz atual."
+      : "A voz usada neste vídeo foi substituída no avatar e não pode mais ser usada. Gere um vídeo novo com a voz atual.";
+    return { ok: false, code: 409, body: { error: "frozen_voice_unavailable", message: mensagem } };
   }
 
   app.post<{ Params: { id: string } }>(
@@ -2596,6 +2741,21 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      // P2-1, VERSÃO FINAL — a identidade UMA vez, e a decisão de voz ANTES
+      // de abrir corrida: bloquear aqui não desperdiça nem abre um `runId`
+      // para uma corrida que nunca vai existir.
+      const identidade = resolverIdentidade(video, avatar);
+      const decisaoDeVoz = await resolverNarracaoOuBloquear({
+        tenantId: req.tenantId,
+        video,
+        avatar,
+        apiKeyElevenLabs,
+        identidade,
+        rotaJaReaproveita: false,
+        statusEsperado: "awaiting_approval",
+      });
+      if (!decisaoDeVoz.ok) return reply.code(decisaoDeVoz.code).send(decisaoDeVoz.body);
+
       const runId = await abrirCorrida({
         tenantId: req.tenantId,
         videoId: video.id,
@@ -2605,7 +2765,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
         origem: "aprovacao",
       });
-      const fotoDeIdentidade = await fotoDeIdentidadeDoAvatar(avatar);
+      const fotoDeIdentidade = await fotoDeIdentidadeDoAvatar(avatar.id, identidade.photoUrls);
 
       try {
         const r = await aprovarEAnimar({
@@ -2632,10 +2792,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
               {
                 apiKeyFal,
                 apiKeyElevenLabs,
-                voiceId: avatar.voice_id ?? "",
+                voiceId: identidade.voiceId,
                 // Migration 067 — a narração É refeita aqui (`narrarSincronizar`
                 // ressintetiza a cada aprovação), então os ajustes têm de vir.
-                voiceTuning: voiceTuningDoAvatar(avatar),
+                voiceTuning: identidade.voiceTuning,
                 script: video.script,
                 // A composição não é refeita, então nada disto sobe de novo — os
                 // campos existem porque o input é o mesmo tipo. Ver
@@ -2645,7 +2805,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // V24 — SEGUNDA referência de identidade em animar() (Wan),
                 // independente de `fotoBase` acima. Ver `fotoDeIdentidadeDoAvatar`.
                 fotoDeIdentidade,
-                promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
+                promptDeComposicao: promptDaComposicaoDaLinha(video, identidade.photoUrls),
                 // Campo obrigatório do tipo; sem uso no Wan (`tenantId` só
                 // importaria como `end_user_id` do Seedance, tier "Premium" —
                 // não ligado, ver `ENDPOINT_ANIMAR` em falPipeline.ts).
@@ -2683,6 +2843,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                 // alvo×fala ANTES de qualquer `animar()` — ver
                 // `compararAlvoComFala`, falPipeline.ts.
                 targetDurationSeconds: video.target_duration_seconds,
+                // P2-1 — reaproveitar ou sintetizar, decidido acima.
+                narracao: decisaoDeVoz.narracao,
               },
               imagemAprovada,
               video.provider_job_id ?? "",
@@ -2906,7 +3068,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // frontend, aplicada aqui porque este corpo não passa por ele.
       const refazerFeedback = req.body?.feedback?.trim() || null;
 
-      const fotoUrl = avatar.photo_urls?.[0];
+      // P2-1, VERSÃO FINAL — a identidade UMA vez. `/recompose` nunca chega
+      // a narrar (para em "compor"), então `voiceId`/`voiceTuning` abaixo
+      // são campos INERTES do tipo — mesmo assim vêm da ficha, nunca do
+      // avatar direto, para a guarda G-5 cobrir as 5 rotas uniformemente.
+      const identidade = resolverIdentidade(video, avatar);
+
+      const fotoUrl = identidade.photoUrls[0];
       if (!fotoUrl) {
         return reply.code(409).send({
           error: "approval_unavailable",
@@ -2931,17 +3099,17 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         const corrida = await recompor({
           apiKeyFal,
           apiKeyElevenLabs,
-          voiceId: avatar.voice_id ?? "",
-          voiceTuning: voiceTuningDoAvatar(avatar),
+          voiceId: identidade.voiceId,
+          voiceTuning: identidade.voiceTuning,
           script: video.script,
           fotoBase: await readUpload(fotoUrl),
           fotoMimeType: mimeDoUpload(fotoUrl),
-          entradasExtras: await entradasDaComposicao(video, avatar),
+          entradasExtras: await entradasDaComposicao(video, identidade.photoUrls),
           // PRIORIDADE 2, 28/08 — o texto de "o que precisa mudar" deixa de
           // só ser persistido (`refazerFeedback` abaixo) e passa a alterar o
           // prompt de verdade: incorporado como ajuste sobre o cenário/traje
           // já existente, nunca substituindo-o.
-          promptDeComposicao: promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, avatar), refazerFeedback),
+          promptDeComposicao: promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, identidade.photoUrls), refazerFeedback),
           tenantId: req.tenantId,
           aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
           // A recomposição para em `compor` (`PARAR_APOS_RECOMPOR`) e não chega
@@ -3030,15 +3198,6 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const runId = await abrirCorrida({
-        tenantId: req.tenantId,
-        videoId: video.id,
-        script: video.script,
-        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
-        charsPerSecond: PIPELINE_CHARS_PER_SECOND,
-        origem: "aprovacao_video",
-      });
-
       // V33, item 2 (01/09/2026) — `fal_audio_url` só vem preenchido quando
       // `/approve` passou pelo caminho de tomada única (narrou ANTES de
       // animar, ver `animarTomadaUnicaComAudioReal`). Presente: reusa o
@@ -3061,6 +3220,32 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           }
         : null;
 
+      // P2-1, VERSÃO FINAL — a identidade UMA vez. `rotaJaReaproveita` é o
+      // motivo INDEPENDENTE de sempre (V33, item 2, acima) — quando há
+      // áudio, esta rota já reaproveita por causa da variância de duração,
+      // não por causa de P2-1; a checagem de voz só entra quando NÃO há
+      // áudio ainda.
+      const identidade = resolverIdentidade(video, avatar);
+      const decisaoDeVoz = await resolverNarracaoOuBloquear({
+        tenantId: req.tenantId,
+        video,
+        avatar,
+        apiKeyElevenLabs,
+        identidade,
+        rotaJaReaproveita: Boolean(audioPreSintetizado),
+        statusEsperado: "awaiting_approval_video",
+      });
+      if (!decisaoDeVoz.ok) return reply.code(decisaoDeVoz.code).send(decisaoDeVoz.body);
+
+      const runId = await abrirCorrida({
+        tenantId: req.tenantId,
+        videoId: video.id,
+        script: video.script,
+        targetSeconds: escolherDuracao(video.script.length) ?? PIPELINE_DURACAO_MAXIMA,
+        charsPerSecond: PIPELINE_CHARS_PER_SECOND,
+        origem: "aprovacao_video",
+      });
+
       try {
         const r = await aprovarEAnimar({
           videoId: video.id,
@@ -3079,17 +3264,17 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
               {
                 apiKeyFal,
                 apiKeyElevenLabs,
-                voiceId: avatar.voice_id ?? "",
+                voiceId: identidade.voiceId,
                 // Migration 067 — a narração É refeita aqui, EXCETO quando
                 // `audioPreSintetizado` já traz o áudio da tomada única.
-                voiceTuning: voiceTuningDoAvatar(avatar),
+                voiceTuning: identidade.voiceTuning,
                 script: video.script,
                 // Nem a composição nem a animação são refeitas aqui — os
                 // campos existem porque o input é o mesmo tipo. Ver
                 // `runFalPipelineDoVideoMudo`.
                 fotoBase: Buffer.alloc(0),
                 fotoMimeType: "image/jpeg",
-                promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
+                promptDeComposicao: promptDaComposicaoDaLinha(video, identidade.photoUrls),
                 tenantId: req.tenantId,
                 aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
                 promptDeDirecao: motionPromptDaLinha(video),
@@ -3358,6 +3543,20 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      // P2-1, VERSÃO FINAL — a identidade UMA vez, e a decisão de voz ANTES
+      // de abrir corrida — mesmo raciocínio de `/approve`.
+      const identidade = resolverIdentidade(video, avatar);
+      const decisaoDeVoz = await resolverNarracaoOuBloquear({
+        tenantId: req.tenantId,
+        video,
+        avatar,
+        apiKeyElevenLabs,
+        identidade,
+        rotaJaReaproveita: false,
+        statusEsperado: "awaiting_approval_video",
+      });
+      if (!decisaoDeVoz.ok) return reply.code(decisaoDeVoz.code).send(decisaoDeVoz.body);
+
       // Uma corrida NOVA, com teto próprio: `compor` já gastou o que gastou
       // (e não é refeito), e somar as duas faria este "Refazer" ser recusado
       // por dinheiro que já saiu — mesmo raciocínio de `/recompose`.
@@ -3369,22 +3568,22 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         charsPerSecond: PIPELINE_CHARS_PER_SECOND,
         origem: "refazer_video",
       });
-      const fotoDeIdentidade = await fotoDeIdentidadeDoAvatar(avatar);
+      const fotoDeIdentidade = await fotoDeIdentidadeDoAvatar(avatar.id, identidade.photoUrls);
 
       try {
         const corrida = await runFalPipelineDaImagem(
           {
             apiKeyFal,
             apiKeyElevenLabs,
-            voiceId: avatar.voice_id ?? "",
-            voiceTuning: voiceTuningDoAvatar(avatar),
+            voiceId: identidade.voiceId,
+            voiceTuning: identidade.voiceTuning,
             script: video.script,
             fotoBase: Buffer.alloc(0),
             fotoMimeType: "image/jpeg",
             // V24 — SEGUNDA referência de identidade em animar() (Wan),
             // independente de `fotoBase` acima. Ver `fotoDeIdentidadeDoAvatar`.
             fotoDeIdentidade,
-            promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
+            promptDeComposicao: promptDaComposicaoDaLinha(video, identidade.photoUrls),
             tenantId: req.tenantId,
             aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
             promptDeDirecao: motionPromptDaLinha(video),
@@ -3407,6 +3606,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             // P2-5 — "Refazer" nunca recusa por desvio de duração-alvo; o
             // aviso (se houver) é calculado abaixo, com o mesmo teto.
             avisarDesvioDeAlvoSemRecusar: true,
+            // P2-1 — reaproveitar ou sintetizar, decidido acima.
+            narracao: decisaoDeVoz.narracao,
           },
           imagemAprovada,
           // `video.provider_job_id`, neste ponto, é o `request_id` de
@@ -3672,7 +3873,14 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         });
       }
       const chaveFal = await resolveTenantAvatarFalKey(avatarCredential.apiKey);
-      const fotoDeIdentidade = await fotoDeIdentidadeDoAvatar(avatar);
+      // P2-1, VERSÃO FINAL — a identidade UMA vez. `/resume-blocks` nunca
+      // renarraiza (a narração, quando há alvo, já aconteceu e já foi
+      // aprovada numa corrida anterior — ver frozenIdentity.ts), então
+      // `voiceId`/`voiceTuning` abaixo são inertes — mesmo assim vêm da
+      // ficha, nunca do avatar direto, para a guarda G-5 cobrir as 5 rotas
+      // uniformemente.
+      const identidade = resolverIdentidade(video, avatar);
+      const fotoDeIdentidade = await fotoDeIdentidadeDoAvatar(avatar.id, identidade.photoUrls);
       const composicaoRequestId = await requestIdDaEtapa(runId, "compor");
 
       try {
@@ -3680,13 +3888,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
           {
             apiKeyFal: chaveFal.apiKey,
             apiKeyElevenLabs: voiceCredential.apiKey,
-            voiceId: avatar.voice_id ?? "",
-            voiceTuning: voiceTuningDoAvatar(avatar),
+            voiceId: identidade.voiceId,
+            voiceTuning: identidade.voiceTuning,
             script: video.script,
             fotoBase: Buffer.alloc(0),
             fotoMimeType: "image/jpeg",
             fotoDeIdentidade,
-            promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),
+            promptDeComposicao: promptDaComposicaoDaLinha(video, identidade.photoUrls),
             tenantId: req.tenantId,
             aspectRatio: (video.aspect_ratio as AspectRatio | null) ?? undefined,
             promptDeDirecao: motionPromptDaLinha(video),

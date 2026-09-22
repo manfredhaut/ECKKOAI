@@ -190,6 +190,13 @@ export interface Video {
   scenario_prompt_en: string | null;
   outfit_prompt_en: string | null;
   /**
+   * P2-1, 22/09/2026 — a identidade REAL desta geração (fotos, voz, ajustes),
+   * versionada. `null` em vídeo anterior à migration 082 — cai no avatar ao
+   * vivo (`resolverIdentidade`, frozenIdentity.ts). Nunca lido cru: sempre
+   * por `lerIdentidade`/`resolverIdentidade`.
+   */
+  identity_snapshot: unknown;
+  /**
    * A versão COM legenda queimada devolvida pelo fornecedor, quando houve.
    * Guardada AO LADO de `output_url`, nunca no lugar dela.
    */

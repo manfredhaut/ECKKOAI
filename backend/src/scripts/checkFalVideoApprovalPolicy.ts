@@ -200,7 +200,8 @@ export const MUTANTS: Mutant[] = [
     // `ready`, sem nunca oferecer a segunda aprovação. Nada na assinatura da
     // função muda: `pararApos` é opcional no tipo.
     // ÂNCORA ESTENDIDA — V34, item 1/3: `targetDurationSeconds:` entrou
-    // ENTRE `pararApos: "animar",` e o fechamento do objeto.
+    // ENTRE `pararApos: "animar",` e o fechamento do objeto. P2-1, VERSÃO
+    // FINAL, 22/09/2026: `narracao:` entrou depois de `targetDurationSeconds:`.
     file: ROTA_DE_VIDEOS,
     find:
       "                tier: videoTierParaPipeline(video.tier_video),\n" +
@@ -215,11 +216,14 @@ export const MUTANTS: Mutant[] = [
       "                // alvo×fala ANTES de qualquer `animar()` — ver\n" +
       "                // `compararAlvoComFala`, falPipeline.ts.\n" +
       "                targetDurationSeconds: video.target_duration_seconds,\n" +
+      "                // P2-1 — reaproveitar ou sintetizar, decidido acima.\n" +
+      "                narracao: decisaoDeVoz.narracao,\n" +
       "              },\n" +
       "              imagemAprovada,",
     replace:
       "                tier: videoTierParaPipeline(video.tier_video),\n" +
       "                targetDurationSeconds: video.target_duration_seconds,\n" +
+      "                narracao: decisaoDeVoz.narracao,\n" +
       "              },\n" +
       "              imagemAprovada,",
     expect: "aprovação de vídeo: /approve não passa pararApos: \"animar\" — a corrida completaria sozinha até ready",

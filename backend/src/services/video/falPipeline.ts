@@ -1100,6 +1100,17 @@ export interface FalPipelineInput {
    */
   avisarDesvioDeAlvoSemRecusar?: boolean;
   /**
+   * P2-1, 22/09/2026 — a narração desta corrida. Ausente/`{tipo:
+   * "sintetizar"}`: comportamento de sempre, `narrar()` roda. `{tipo:
+   * "reaproveitar", audioUrl, durationSeconds}`: `narrar()` NUNCA é
+   * chamada — nenhum byte de áudio é lido, baixado ou medido de novo; só a
+   * URL (já hospedada na fal, de uma corrida anterior) e a duração já
+   * conhecida atravessam. Existe para quando a voz congelada foi apagada
+   * do fornecedor (`decidirVoz`, frozenIdentity.ts) e há áudio para
+   * reaproveitar — narrar de novo tocaria uma voz que não existe.
+   */
+  narracao?: { tipo: "sintetizar" } | { tipo: "reaproveitar"; audioUrl: string; durationSeconds: number | null };
+  /**
    * Somada a `MARGEM_DURACAO_WAN3_SEGUNDOS` só na tomada única — margem
    * ESCALONADA, achado real de 02/09/2026 (folga insuficiente entre o
    * vídeo animado e a fala real). `/redo-video` a calcula a partir de
@@ -1787,7 +1798,11 @@ export async function runFalPipelineDaImagem(
   // `/approve-video`, exatamente como o caminho de tomada única já faz —
   // ver `FalPipelineResult.audioUrl`/`runFalPipelineDoVideoMudo`.
   const audioPreSintetizado =
-    !ehPremium && input.targetDurationSeconds != null ? await narrar(input) : undefined;
+    input.narracao?.tipo === "reaproveitar"
+      ? { audioUrl: input.narracao.audioUrl, fala: { durationSeconds: input.narracao.durationSeconds } }
+      : !ehPremium && input.targetDurationSeconds != null
+        ? await narrar(input)
+        : undefined;
   // P2-5, 22/09/2026 — mesma engolição de exceção do caminho de tomada única.
   try {
     if (audioPreSintetizado) compararAlvoComFala(input.targetDurationSeconds, audioPreSintetizado.fala);
@@ -1961,7 +1976,9 @@ async function animarTomadaUnicaComAudioReal(
       : null;
 
   // --- NARRAR PRIMEIRO — item 2: é daqui que vem a duração REAL. -----------
-  const { audioUrl, fala } = await narrar(input);
+  const { audioUrl, fala } = input.narracao?.tipo === "reaproveitar"
+    ? { audioUrl: input.narracao.audioUrl, fala: { durationSeconds: input.narracao.durationSeconds } }
+    : await narrar(input);
   // V34, item 3 — RECUSA antes de animar quando a fala diverge do alvo
   // escolhido em mais de 8%. Sem alvo (`targetDurationSeconds` ausente),
   // esta chamada não faz nada — comportamento de antes desta rodada.
@@ -2176,7 +2193,7 @@ interface ContextoDaAnimacao {
    * Mesmo padrão de `runFalPipelineDoVideoMudo(..., audioPreSintetizado)`,
    * V33: nunca ressintetizar um áudio que já existe.
    */
-  audioPreSintetizado?: { audioUrl: string; fala: FalaNarrada };
+  audioPreSintetizado?: { audioUrl: string; fala: Pick<FalaNarrada, "durationSeconds"> };
 }
 
 /**
@@ -2883,7 +2900,10 @@ export class AlvoDeDuracaoForaDoAlcanceError extends Error {
  * em caracteres; inventar uma segunda régua aqui divergiria da primeira na
  * primeira vez que uma delas mudasse sozinha.
  */
-export function compararAlvoComFala(alvoSegundos: number | null | undefined, fala: FalaNarrada): void {
+export function compararAlvoComFala(
+  alvoSegundos: number | null | undefined,
+  fala: Pick<FalaNarrada, "durationSeconds">,
+): void {
   if (alvoSegundos == null) return;
   const falaSegundos = fala.durationSeconds ?? 0;
   const desvio = Math.abs(falaSegundos - alvoSegundos) / alvoSegundos;

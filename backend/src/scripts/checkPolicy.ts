@@ -82,6 +82,7 @@ import { checkScriptLimitPolicy } from "./checkScriptLimitPolicy.js";
 import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
 import { checkSceneTextTranslationPolicy } from "./checkSceneTextTranslationPolicy.js";
+import { checkFrozenIdentityPolicy } from "./checkFrozenIdentityPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
@@ -795,6 +796,11 @@ async function main(): Promise<void> {
   const sceneTextTranslation = await checkSceneTextTranslationPolicy(process.env.REPO_ROOT ?? "/repo");
   sceneTextTranslation.failures.forEach((f) => failures.push(f));
   sceneTextTranslation.notes.forEach((n) => note(n));
+
+  // P2-1 — a ficha de identidade, a equivalência com o avatar ao vivo, e a decisão de voz.
+  const frozenIdentity = await checkFrozenIdentityPolicy(process.env.REPO_ROOT ?? "/repo");
+  frozenIdentity.failures.forEach((f) => failures.push(f));
+  frozenIdentity.notes.forEach((n) => note(n));
 
   // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");

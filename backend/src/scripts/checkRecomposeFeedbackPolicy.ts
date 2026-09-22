@@ -64,15 +64,16 @@ export const MUTANTS: Mutant[] = [
     // ÓBVIO: sem a chamada, a função pode estar perfeita e nunca ser usada
     // pela rota — exatamente o defeito de origem desta prioridade.
     file: ROTA_DE_VIDEOS,
-    // ARQUIVO — 29/08: promptDaComposicaoDaLinha ganhou o parâmetro `avatar`
-    // (amarração por posição, videoScene.ts) — o `find`/`replace` mudaram de
-    // assinatura junto, mesmo conteúdo/intenção do mutante de sempre.
-    find: "          promptDeComposicao: promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, avatar), refazerFeedback),",
-    replace: "          promptDeComposicao: promptDaComposicaoDaLinha(video, avatar),",
+    // ARQUIVO — P2-1, 22/09/2026: promptDaComposicaoDaLinha passou a receber
+    // `identidade.photoUrls` (já resolvido pela rota, ficha ou avatar ao
+    // vivo) em vez de `avatar` — o `find`/`replace` mudaram de assinatura
+    // junto, mesmo conteúdo/intenção do mutante de sempre.
+    find: "          promptDeComposicao: promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, identidade.photoUrls), refazerFeedback),",
+    replace: "          promptDeComposicao: promptDaComposicaoDaLinha(video, identidade.photoUrls),",
     // A mensagem real usa o CAMINHO INTEIRO da constante `ROTA_DE_VIDEOS`,
     // não o texto "/recompose" — mesma classe de erro já visto e corrigido
     // em checkTargetDurationCapPolicy.ts (ScriptStep.tsx) nesta sessão.
-    expect: "não chama promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, avatar), refazerFeedback)",
+    expect: "não chama promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, identidade.photoUrls), refazerFeedback)",
   },
 ];
 
@@ -174,10 +175,10 @@ export async function checkRecomposeFeedbackPolicy(repoRoot: string): Promise<Re
 
   // --- G-4: a rota de fato chama a função, por FORMA ----------------------
   const rotaSrc = readFileSync(path.join(repoRoot, ROTA_DE_VIDEOS), "utf8");
-  if (!rotaSrc.includes("promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, avatar), refazerFeedback)")) {
+  if (!rotaSrc.includes("promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, identidade.photoUrls), refazerFeedback)")) {
     failures.push(
       `recompose: ${ROTA_DE_VIDEOS} não chama promptDeComposicaoComFeedback(promptDaComposicaoDaLinha(video, ` +
-        "avatar), refazerFeedback) — a função pode estar certa e a rota continuar montando o prompt sem o feedback.",
+        "identidade.photoUrls), refazerFeedback) — a função pode estar certa e a rota continuar montando o prompt sem o feedback.",
     );
   }
 

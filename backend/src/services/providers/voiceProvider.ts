@@ -726,3 +726,31 @@ export async function synthesizeSpeech(
     source: "bitrate_estimate",
   };
 }
+
+/**
+ * A voz ainda existe na conta? P2-1 — checagem ANTES de narrar com uma voz
+ * CONGELADA (o avatar pode ter trocado de voz desde a criação deste vídeo,
+ * e "Trocar voz" APAGA a anterior). `GET /v1/voices/{id}` é leitura pura,
+ * nunca tarifada — mesmo padrão já usado para `GET /v1/voices/{id}/settings`.
+ */
+export async function vozAindaExisteNaElevenLabs(apiKey: string, voiceId: string): Promise<boolean> {
+  if (isFixtureMode()) return true;
+  let res: Response;
+  try {
+    res = await fetch(`https://api.elevenlabs.io/v1/voices/${encodeURIComponent(voiceId)}`, {
+      headers: { "xi-api-key": apiKey },
+      signal: vendorSignal(),
+    });
+  } catch (err) {
+    logProviderNetworkError("voiceProvider.vozAindaExisteNaElevenLabs", err);
+    throw new VoiceProviderError(`Could not reach ElevenLabs API: ${describeNetworkError(err)}`);
+  }
+  // A resposta bruta vai ao log ANTES de qualquer decisão — inclusive no
+  // 404, que aqui não é erro nenhum: é o resultado que esta função existe
+  // para produzir.
+  const rawBody = await res.text();
+  logVendorResponse({ context: "voiceProvider.vozAindaExisteNaElevenLabs", vendor: "ElevenLabs", status: res.status, res, rawBody });
+  if (res.status === 404) return false;
+  if (!res.ok) throw new VoiceProviderError(`ElevenLabs respondeu ${res.status} ao conferir a voz.`);
+  return true;
+}
