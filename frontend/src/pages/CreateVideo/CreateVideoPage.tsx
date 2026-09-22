@@ -1,6 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { api } from "../../api/client";
+import type { Video } from "../../types";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { AvatarSetupStep } from "./steps/AvatarSetupStep";
 import { ScriptStep } from "./steps/ScriptStep";
@@ -48,6 +50,10 @@ export function CreateVideoPage() {
   // arrancar a pessoa do passo em que ela está.
   const [searchParams] = useSearchParams();
   const resumeVideoId = searchParams.get("resume") ?? undefined;
+  // P2-8 — "Ajustar este vídeo": o link chega como `create?adjustFrom=<id>`.
+  // Diferente de `resume`, nasce no Passo 1 (não pula pro fim) — a pessoa
+  // pode querer rever/mudar QUALQUER campo, não só aprovar o que já existe.
+  const adjustFromVideoId = searchParams.get("adjustFrom") ?? undefined;
   const [step, setStep] = useState(() => (resumeVideoId ? 3 : 0));
   const [wizard, setWizard] = useState<WizardState>({
     avatarId: null,
@@ -141,6 +147,55 @@ export function CreateVideoPage() {
     [],
   );
 
+  /**
+   * P2-8 — "Ajustar este vídeo": popula o wizard INTEIRO a partir do vídeo
+   * original (`GET /videos/:id`, já existente — reaproveitado do P2-3).
+   *
+   * `seededSceneDefaultsAvatarIds.current.add(avatarId)` ANTES de
+   * `setWizard`: sem isto, ao selecionar o avatar (já vindo preenchido),
+   * `AvatarSetupStep` chamaria `handleSceneDefaultsSeed` normalmente e
+   * SOBRESCREVERIA cenário/traje deste vídeo pelo padrão ATUAL do avatar —
+   * exatamente o inverso do que "Ajustar" promete (as referências do
+   * vídeo original, não o padrão de hoje do avatar).
+   *
+   * `avatarFit` NÃO persiste no `Video` deste tipo como campo obrigatório
+   * (`"cover" | "contain" | null | undefined`) — qualquer outro valor
+   * (incluindo ausência, em vídeo anterior à migration 085) cai em `null`,
+   * o padrão do servidor, igual a hoje.
+   */
+  useEffect(() => {
+    if (!adjustFromVideoId) return;
+    let cancelado = false;
+    api.get<Video>(`/videos/${adjustFromVideoId}`).then((v) => {
+      if (cancelado) return;
+      if (v.avatar_id) seededSceneDefaultsAvatarIds.current.add(v.avatar_id);
+      setWizard((w) => ({
+        ...w,
+        avatarId: v.avatar_id,
+        script: v.script,
+        targetDurationSeconds: v.target_duration_seconds ?? null,
+        background:
+          v.background_type === "color" || v.background_type === "image"
+            ? { type: v.background_type, value: v.background_value ?? "" }
+            : null,
+        scenario: v.scenario ?? null,
+        scenarioPrompt: v.scenario_prompt ?? null,
+        outfit: v.outfit ?? null,
+        outfitPrompt: v.outfit_prompt ?? null,
+        motionPrompt: v.motion_prompt ?? "",
+        expressiveness: v.expressiveness ?? "medium",
+        avatarLookId: v.avatar_look_id ?? null,
+        avatarFit: v.avatar_fit === "cover" || v.avatar_fit === "contain" ? v.avatar_fit : null,
+        publishPlatform: v.publish_platform ?? DEFAULT_PUBLISH_PLATFORM,
+        captions: v.captions ?? false,
+        tierVideo: v.tier_video ?? "normal",
+      }));
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [adjustFromVideoId]);
+
   function goNext() {
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   }
@@ -201,6 +256,7 @@ export function CreateVideoPage() {
           onSelectAvatar={(id) => setWizard((w) => ({ ...w, avatarId: id }))}
           onOutfitPreparingChange={handleOutfitPreparingChange}
           onSceneDefaultsSeed={handleSceneDefaultsSeed}
+          adjustFromVideoId={adjustFromVideoId}
           nextButton={
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <button className="btn btn-primary" onClick={goNext} disabled={!canProceed}>
@@ -259,6 +315,7 @@ export function CreateVideoPage() {
           wizard={wizard}
           onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))}
           resumeVideoId={resumeVideoId}
+          adjustFromVideoId={adjustFromVideoId}
         />
       )}
       {step === 4 && <StudioMovieEditStep />}

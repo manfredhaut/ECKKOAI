@@ -26,6 +26,10 @@ export function ContentPage() {
   // render, e reler por id a cada render é o mesmo custo de guardar o
   // objeto, sem a complicação extra de sincronizar os dois.
   const [detailsFor, setDetailsFor] = useState<Video | null>(null);
+  // P2-8 — "Ver versões": filtra a tabela para uma família só, sem CTE
+  // recursiva nenhuma (a lista inteira já está em memória) — `raizDe`
+  // resolve a raiz da família (o próprio id, se `root_video_id` for null).
+  const [filtroFamilia, setFiltroFamilia] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Avatar[]>("/avatars").then(setAvatars);
@@ -33,6 +37,15 @@ export function ContentPage() {
   }, []);
 
   const playingVideo = videos.find((v) => v.id === playing) ?? null;
+
+  function raizDe(v: Video): string {
+    return v.root_video_id ?? v.id;
+  }
+  const videosExibidos = filtroFamilia
+    ? videos
+        .filter((v) => v.id === filtroFamilia || raizDe(v) === filtroFamilia)
+        .sort((a, b) => (a.version_number ?? 1) - (b.version_number ?? 1))
+    : videos;
 
   /**
    * P2-3 — cancelar direto da Biblioteca. Mesmo padrão de tratamento de
@@ -75,7 +88,7 @@ export function ContentPage() {
         <div className="card">
           {avatars.length === 0 ? (
             <div className="empty-state">
-              {t("content.avatarsEmptyPrefix")} <Link to="create">{t("content.avatarsEmptyLink")}</Link>
+              {t("content.avatarsEmptyPrefix")} <Link to="../create">{t("content.avatarsEmptyLink")}</Link>
             </div>
           ) : (
             <table>
@@ -120,9 +133,17 @@ export function ContentPage() {
       {tab === "videos" && (
         <div className="card">
           {cancelError && <p style={{ color: "var(--color-tertiary)" }}>{cancelError}</p>}
+          {filtroFamilia && (
+            <p style={{ fontSize: 13, marginTop: 0 }}>
+              {t("content.filteringVersions")}{" "}
+              <button className="btn btn-outline" style={{ padding: "2px 8px" }} onClick={() => setFiltroFamilia(null)}>
+                {t("content.clearFilter")}
+              </button>
+            </p>
+          )}
           {videos.length === 0 ? (
             <div className="empty-state">
-              {t("content.videosEmptyPrefix")} <Link to="create">{t("content.videosEmptyLink")}</Link>
+              {t("content.videosEmptyPrefix")} <Link to="../create">{t("content.videosEmptyLink")}</Link>
             </div>
           ) : (
             <table>
@@ -136,7 +157,15 @@ export function ContentPage() {
                 </tr>
               </thead>
               <tbody>
-                {videos.map((v) => (
+                {videosExibidos.map((v) => {
+                  // P2-8 — a família de versões: "Versão N" só aparece quando
+                  // N > 1 (a versão original nunca ganha o rótulo); "Ver
+                  // versões" só quando a família tem MAIS de um membro —
+                  // uma versão original sem nenhum ajuste ainda não tem o
+                  // que listar.
+                  const versao = v.version_number ?? 1;
+                  const temFamilia = videos.some((x) => x.id !== v.id && raizDe(x) === raizDe(v));
+                  return (
                   <tr
                     key={v.id}
                     onClick={() => v.output_url && setPlaying(playing === v.id ? null : v.id)}
@@ -150,6 +179,26 @@ export function ContentPage() {
                       {/* Marca por linha: usa o fato gravado no vídeo, não o
                           modo atual do ambiente. */}
                       <SimulatedBadge compact simulated={v.simulated} />
+                      {versao > 1 && (
+                        <span className="text-muted" style={{ fontSize: 12, marginLeft: 6 }}>
+                          {t("content.versionLabel", { n: versao })}
+                        </span>
+                      )}
+                      {temFamilia && (
+                        <>
+                          {" · "}
+                          <button
+                            className="btn btn-outline"
+                            style={{ padding: "1px 6px", fontSize: 12 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFiltroFamilia(raizDe(v));
+                            }}
+                          >
+                            {t("content.seeVersions")}
+                          </button>
+                        </>
+                      )}
                     </td>
                     <td>{v.duration_seconds}s</td>
                     <td>
@@ -183,16 +232,26 @@ export function ContentPage() {
                       {/* P2-3 — "Retomar aprovação" reabre o wizard direto no
                           passo "4. Gerar", na MESMA tela de aprovação
                           pendente (GenerateStep já sabe renderizar por
-                          `video.status`). Link relativo sem "/" nem "..":
-                          o React Router resolve pela árvore de rotas, não
-                          pela URL — mesmo padrão do link já existente
-                          acima ("avatarsEmptyLink"), que aponta para
-                          `create` de dentro desta mesma página. */}
+                          `video.status`). Link relativo com "../": esta
+                          página é o elemento da Route "/content", uma
+                          folha das <Routes> aninhadas em "/:slug/*" — um
+                          "to" relativo SEM "../" resolve relativo ao
+                          PRÓPRIO caminho da rota que renderizou o link
+                          (aqui, "/:slug/content"), não ao pai comum, e
+                          por isso "create" (sem prefixo) vira
+                          "/:slug/content/create" — path inexistente, tela
+                          em branco. MEDIDO no navegador em 22/09/2026:
+                          o "to" sem "../" gerava exatamente esse href
+                          quebrado. "../create" sobe um nível (para
+                          "/:slug") e desce para "create", chegando em
+                          "/:slug/create" — o mesmo destino, venha o clique
+                          de "/content" ou de "/create" (VideoPlayer.tsx
+                          usa o mesmo "../create" pelo mesmo motivo). */}
                       {(v.status === "awaiting_approval" || v.status === "awaiting_approval_video") && (
                         <>
                           <Link
                             className="btn btn-outline"
-                            to={`create?resume=${v.id}`}
+                            to={`../create?resume=${v.id}`}
                             onClick={(e) => e.stopPropagation()}
                           >
                             {t("content.resumeApproval")}
@@ -208,9 +267,25 @@ export function ContentPage() {
                           </button>
                         </>
                       )}
+                      {/* P2-8 — "Ajustar este vídeo": só quando NÃO está em
+                          voo (nem sendo processado, nem esperando
+                          aprovação — aí o caminho certo é Retomar/Cancelar
+                          acima). `ready`/`error`/`cancelled` são os três
+                          estados TERMINAIS onde faz sentido pedir uma
+                          versão nova a partir deste. */}
+                      {(v.status === "ready" || v.status === "error" || v.status === "cancelled") && (
+                        <Link
+                          className="btn btn-outline"
+                          to={`../create?adjustFrom=${v.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {t("content.adjust")}
+                        </Link>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}

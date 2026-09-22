@@ -85,6 +85,7 @@ import { checkSceneTextTranslationPolicy } from "./checkSceneTextTranslationPoli
 import { checkFrozenIdentityPolicy } from "./checkFrozenIdentityPolicy.js";
 import { checkVideoCancelPolicy } from "./checkVideoCancelPolicy.js";
 import { checkVideoDetailsPolicy } from "./checkVideoDetailsPolicy.js";
+import { checkVideoAdjustPolicy } from "./checkVideoAdjustPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
@@ -813,6 +814,11 @@ async function main(): Promise<void> {
   const videoDetails = checkVideoDetailsPolicy(process.env.REPO_ROOT ?? "/repo");
   videoDetails.failures.forEach((f) => failures.push(f));
   videoDetails.notes.forEach((n) => note(n));
+
+  // P2-8 — "Ajustar este vídeo": família de versões, sem desconto (P5).
+  const videoAdjust = await checkVideoAdjustPolicy(process.env.REPO_ROOT ?? "/repo");
+  videoAdjust.failures.forEach((f) => failures.push(f));
+  videoAdjust.notes.forEach((n) => note(n));
 
   // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");

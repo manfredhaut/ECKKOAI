@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import type { Video } from "../types";
 import { SimulatedNotice } from "./SimulatedBadge";
 
@@ -103,10 +104,23 @@ export function VideoPlayer({ video }: { video: Video }) {
           display: "block",
         }}
       />
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
         <a className="btn btn-outline" href={`/api/videos/${video.id}/download`} download>
           {t("content.download")}
         </a>
+        {/* P2-8 — "Ajustar este vídeo". Este componente é usado tanto em
+            ContentPage.tsx (montada em `/:slug/content`) quanto em
+            GenerateStep.tsx (`/:slug/create`) — um "to" relativo resolve
+            relativo ao PRÓPRIO caminho da rota que renderizou o link, não
+            ao pai comum (MEDIDO no navegador em 22/09/2026: sem "../", o
+            mesmo link virava `/:slug/content/create`, path inexistente).
+            "../create" sobe um nível e desce para "create", chegando em
+            `/:slug/create` nos dois contextos — de dentro de "/create" isso
+            resolve para a própria rota (só troca o `adjustFrom` na URL,
+            sem remontar nada de errado). */}
+        <Link className="btn btn-outline" to={`../create?adjustFrom=${video.id}`}>
+          {t("content.adjust")}
+        </Link>
         <span className="text-muted" style={{ fontSize: 12 }}>
           {duration
             ? duration.estimated

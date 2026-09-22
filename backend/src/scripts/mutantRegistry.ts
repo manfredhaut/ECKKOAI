@@ -62,6 +62,7 @@ import { MUTANTS as sceneTextTranslationMutants } from "./checkSceneTextTranslat
 import { MUTANTS as frozenIdentityMutants } from "./checkFrozenIdentityPolicy.js";
 import { MUTANTS as videoCancelMutants } from "./checkVideoCancelPolicy.js";
 import { MUTANTS as videoDetailsMutants } from "./checkVideoDetailsPolicy.js";
+import { MUTANTS as videoAdjustMutants } from "./checkVideoAdjustPolicy.js";
 import { MUTANTS as directionLimitMutants } from "./checkDirectionLimitPolicy.js";
 import { MUTANTS as expressivenessDefaultMutants } from "./checkExpressivenessDefaultPolicy.js";
 import { MUTANTS as audioDurationGateMutants } from "./checkAudioDurationGatePolicy.js";
@@ -187,6 +188,7 @@ export const ALL_MUTANTS: Mutant[] = [
   ...de("backend/src/scripts/checkFrozenIdentityPolicy.ts", frozenIdentityMutants),
   ...de("backend/src/scripts/checkVideoCancelPolicy.ts", videoCancelMutants),
   ...de("backend/src/scripts/checkVideoDetailsPolicy.ts", videoDetailsMutants),
+  ...de("backend/src/scripts/checkVideoAdjustPolicy.ts", videoAdjustMutants),
   ...de("backend/src/scripts/checkDirectionLimitPolicy.ts", directionLimitMutants),
   ...de("backend/src/scripts/checkExpressivenessDefaultPolicy.ts", expressivenessDefaultMutants),
   ...de("backend/src/scripts/checkAudioDurationGatePolicy.ts", audioDurationGateMutants),

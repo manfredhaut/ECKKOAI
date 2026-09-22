@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import path from "node:path";
+import type { PoolClient } from "pg";
 import { pool } from "../db/pool.js";
 import type { Avatar, Video } from "../types.js";
 import {
@@ -122,6 +123,7 @@ import {
   precisaChecarVozAntesDeNarrar,
 } from "../services/video/frozenIdentity.js";
 import { tentarCancelarVideo } from "../services/video/videoCancel.js";
+import { resolverVersaoDeAjuste, type VersaoDeAjuste } from "../services/video/videoVersions.js";
 import {
   maxCharsForNormalTarget,
   fracionarRoteiro,
@@ -1396,6 +1398,16 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
        * (`MAX_SCRIPT_SECONDS`), o comportamento de sempre.
        */
       target_duration_seconds?: number | null;
+      /**
+       * P2-8, "Ajustar este vídeo" — presente quando esta geração NASCE de
+       * outra (o botão "Ajustar" na Biblioteca/player). Validado por
+       * TENANT antes de qualquer cobrança (`resolverVersaoDeAjuste`,
+       * videoVersions.ts): id de outro tenant ou inexistente vira 404,
+       * sem debitar nada — a mesma regra de qualquer outro recurso
+       * tenant-scoped deste projeto. Ausente = criação normal, versão 1,
+       * comportamento idêntico ao de sempre.
+       */
+      adjust_from_video_id?: string | null;
     };
   }>("/videos", { preHandler: requireActiveTenant }, async (req, reply) => {
     const {
@@ -1413,6 +1425,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       avatar_look_id: avatarLookId,
       tier_video: tierVideoBruto,
       target_duration_seconds: targetDurationBruta,
+      adjust_from_video_id: adjustFromVideoId,
     } = req.body;
     const tierVideo: VideoTier = isVideoTier(tierVideoBruto) ? tierVideoBruto : DEFAULT_VIDEO_TIER;
     const targetDurationSeconds = isTargetDurationSeconds(targetDurationBruta) ? targetDurationBruta : null;
@@ -1840,13 +1853,50 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    const { rows } = await pool.query<Video>(
+    // -----------------------------------------------------------------------
+    // P2-8, "Ajustar este vídeo" — resolve a família de versões ANTES de
+    // debitar qualquer coisa. `client` só existe (e a transação só abre)
+    // quando `adjustFromVideoId` está presente; criação normal continua
+    // usando `pool` direto, sem overhead nenhum.
+    //
+    // O 404 aqui é de GRAÇA: roda depois de readiness/teto diário/avatar já
+    // terem passado, mas ANTES do INSERT e do débito — outro tenant, ou um
+    // id que não existe, nunca chega a criar linha nem a cobrar.
+    // -----------------------------------------------------------------------
+    let versaoDeAjuste: VersaoDeAjuste | null = null;
+    let client: PoolClient | null = null;
+    if (adjustFromVideoId) {
+      client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        versaoDeAjuste = await resolverVersaoDeAjuste(client, req.tenantId, adjustFromVideoId);
+        if (!versaoDeAjuste) {
+          await client.query("ROLLBACK");
+          client.release();
+          return reply.code(404).send({ error: "not_found", message: "Vídeo original não encontrado." });
+        }
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => {});
+        client.release();
+        throw err;
+      }
+    }
+    // `db`: o client da transação de ajuste quando ele existe, `pool` senão
+    // — o MESMO padrão de "uma variável que decide onde a query roda" já
+    // usado no resto do projeto para código que às vezes precisa de
+    // transação e às vezes não.
+    const db = client ?? pool;
+
+    let rows: Video[];
+    try {
+      ({ rows } = await db.query<Video>(
       `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated,
                            publish_platform, aspect_ratio, resolution,
                            background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id,
                            captions, motion_prompt_en, tier_video, target_duration_seconds,
-                           scenario_prompt_en, outfit_prompt_en, identity_snapshot)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING *`,
+                           scenario_prompt_en, outfit_prompt_en, identity_snapshot,
+                           parent_video_id, root_video_id, version_number, avatar_fit)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30) RETURNING *`,
       [
         req.tenantId,
         avatar_id,
@@ -1905,8 +1955,29 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         outfitPromptEnParaGerar,
         // P2-1 — a ficha, capturada do avatar NESTE INSTANTE.
         JSON.stringify(capturarIdentidade(avatar)),
+        // P2-8 — a família de versões. `null`/`null`/`1` numa criação
+        // normal (sem `adjustFromVideoId`) — idêntico ao vídeo que nasce
+        // hoje, sem versionamento nenhum.
+        versaoDeAjuste?.parentId ?? null,
+        versaoDeAjuste?.rootId ?? null,
+        versaoDeAjuste?.versionNumber ?? 1,
+        // P2-8, item 1 — o enquadramento persistido por vídeo, para
+        // "Ajustar" poder reabrir com o mesmo valor. `null` = padrão do
+        // servidor, igual a todo vídeo até agora.
+        isAvatarFit(avatarFitBruto) ? avatarFitBruto : null,
       ],
-    );
+      ));
+    } catch (err) {
+      if (client) {
+        await client.query("ROLLBACK").catch(() => {});
+        client.release();
+      }
+      throw err;
+    }
+    if (client) {
+      await client.query("COMMIT");
+      client.release();
+    }
     const video = rows[0];
 
     // videos itself is the historical/telemetry record here (no separate
@@ -4020,6 +4091,45 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
 
       logEvent("info", "video_cancelado", { context: "videos.cancel", videoId: resultado.video.id });
       return reply.send({ ...withDeliveredSeconds(resultado.video as VideoRow), message: "Vídeo cancelado." });
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // P2-8, "Ajustar este vídeo" — só o AVISO de identidade, nunca a ficha.
+  //
+  // Reaproveita `resolverIdentidade` (P2-1) inteira: ela já sabe ler a
+  // ficha congelada do vídeo original e devolver `.voiceId`. Comparar isso
+  // contra `avatar.voice_id` ATUAL é o mesmo predicado que decide, no
+  // pipeline, se a voz mudou — só que aqui a resposta é um BOOLEANO, nunca
+  // o `voiceId`/snapshot em si (P1: nenhum dado técnico chega ao tenant).
+  // Custo zero — leitura pura, nenhuma chamada a fornecedor.
+  // ---------------------------------------------------------------------
+  app.get<{ Params: { id: string } }>(
+    "/videos/:id/adjust-info",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const { rows } = await pool.query<VideoRow>(
+        "SELECT * FROM videos WHERE id = $1 AND tenant_id = $2",
+        [req.params.id, req.tenantId],
+      );
+      const video = rows[0];
+      if (!video) {
+        return reply.code(404).send({ error: "not_found", message: "Vídeo não encontrado." });
+      }
+      const { rows: avatarRows } = await pool.query<Avatar>(
+        "SELECT * FROM avatars WHERE id = $1 AND tenant_id = $2",
+        [video.avatar_id, req.tenantId],
+      );
+      const avatar = avatarRows[0];
+      // Avatar excluído desde então: não há com o que comparar — sem
+      // aviso, e "Ajustar" segue funcionando (o avatar_id vem junto do
+      // resto do vídeo, e a tela já lida com avatar ausente em qualquer
+      // outro fluxo).
+      if (!avatar) {
+        return reply.send({ voiceChanged: false });
+      }
+      const identidade = resolverIdentidade(video, avatar);
+      return reply.send({ voiceChanged: identidade.voiceId !== (avatar.voice_id ?? "") });
     },
   );
 }

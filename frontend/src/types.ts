@@ -171,6 +171,25 @@ export interface Video {
    * servidor continua sendo o freio real (409 `refacoes_esgotadas`).
    */
   refacoes?: { feitas: number; limite: number };
+  /**
+   * P2-8, "Ajustar este vídeo" — campos que faltava declarar para popular
+   * o wizard a partir de um vídeo existente (nenhuma mudança de backend:
+   * `SELECT v.*` já os devolvia).
+   */
+  background_type?: "color" | "image" | null;
+  background_value?: string | null;
+  avatar_look_id?: string | null;
+  publish_platform?: string | null;
+  /**
+   * A família de versões (migration 085). `root_video_id` aponta sempre
+   * para a PRIMEIRA versão — "Ver versões" filtra por ele, sem CTE
+   * recursiva nenhuma do lado do cliente.
+   */
+  parent_video_id?: string | null;
+  root_video_id?: string | null;
+  version_number?: number;
+  /** Enquadramento persistido por vídeo — `null` = padrão do servidor. */
+  avatar_fit?: "cover" | "contain" | null;
 }
 
 /** Resposta de `GET /dashboard-summary` — saldo de crédito e custo do mês. */

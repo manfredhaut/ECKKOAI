@@ -396,6 +396,11 @@
     "hideVideo": "Hide",
     "resumeApproval": "Resume approval",
     "cancelVideo": "Cancel",
+    "adjust": "Adjust",
+    "versionLabel": "Version {{n}}",
+    "seeVersions": "See versions",
+    "filteringVersions": "Showing this video's versions.",
+    "clearFilter": "See all",
     "voiceCloned": "Voice cloned",
     "durationDelivered": "{{seconds}}s delivered",
     "durationEstimated": "~{{seconds}}s estimated",
@@ -509,6 +514,7 @@
     },
     "avatarSetup": {
       "scopeNote": "This screen sets up your reusable avatar: photos, reference video and voice. It applies to every video you generate with it. What changes from video to video — script, background, performance, outfit and format — lives in the next steps. The virtual background here only affects the avatar PHOTO, to make the face stand out; the video background is chosen in the Scene step.",
+      "voiceChangedWarning": "This avatar's voice has changed since this video was made. This new version will use the current voice.",
       "yourAvatars": "Your avatars",
       "noAvatarsYet": "No avatars saved yet. Set one up once, then reuse it for every video.",
       "photosVoiceStatus": "{{count}}/3 photos · {{voiceStatus}}",
@@ -731,6 +737,8 @@
       "title": "Generate & review",
       "summaryTitle": "What will be sent",
       "summaryNone": "none",
+      "summaryImageOnly": "Image uploaded",
+      "summaryAvatarFallback": "Avatar selected",
       "summary": {
         "avatar": "Avatar",
         "scenario": "Scenario",

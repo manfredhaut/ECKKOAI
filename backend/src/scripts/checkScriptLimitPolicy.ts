@@ -172,11 +172,15 @@ export const MUTANTS: Mutant[] = [
     name: "o formulário deixa de propagar a duração-alvo",
     kind: "obvio",
     file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
+    // ÂNCORA ATUALIZADA — P2-8 inseriu `adjust_from_video_id` logo depois
+    // desta linha, dentro de `corpoDaGeracao`; a mesma linha também
+    // aparece em `evaluateGenerationReadiness` (fora desta função), então
+    // o `find` precisa do comentário que só existe NESTA ocorrência para
+    // não casar a errada.
     find:
       "    target_duration_seconds: wizard.targetDurationSeconds,\n" +
-      "  };\n" +
-      "}",
-    replace: "  };\n}",
+      '    // P2-8, "Ajustar este vídeo"',
+    replace: '    // P2-8, "Ajustar este vídeo"',
     expect: "a duração-alvo não chega ao payload pelo formulário",
   },
   {

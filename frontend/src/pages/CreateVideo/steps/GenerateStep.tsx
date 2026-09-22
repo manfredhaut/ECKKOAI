@@ -23,7 +23,7 @@ import { GenerationSummary } from "../GenerationSummary";
  * sabemos como o fornecedor lê a diferença. O servidor normaliza de novo, mas
  * mandar limpo daqui é o que mantém o corpo legível no log de prova.
  */
-export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string) {
+export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string, adjustFromVideoId?: string) {
   return {
     avatar_id: wizard.avatarId,
     script: wizard.script,
@@ -81,6 +81,11 @@ export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string) {
     // no corpo, e é o servidor (`evaluateGenerationReadiness`) quem recusa de
     // verdade acima dela, não esta tela.
     target_duration_seconds: wizard.targetDurationSeconds,
+    // P2-8, "Ajustar este vídeo" — presente só quando esta geração NASCE de
+    // outra (o botão "Ajustar"). `null` = criação normal, versão 1 — o
+    // comportamento de sempre. Validado por TENANT no servidor, ANTES de
+    // qualquer cobrança (`resolverVersaoDeAjuste`, videoVersions.ts).
+    adjust_from_video_id: adjustFromVideoId ?? null,
   };
 }
 
@@ -105,6 +110,7 @@ export function GenerateStep({
   wizard,
   onCaptionsChange,
   resumeVideoId,
+  adjustFromVideoId,
 }: {
   wizard: WizardState;
   /** Mesma forma dos outros passos: o estado mora na página, o passo avisa. */
@@ -125,6 +131,12 @@ export function GenerateStep({
    * pendente).
    */
   resumeVideoId?: string;
+  /**
+   * P2-8 — "Ajustar este vídeo". Presente, entra no corpo do `POST /videos`
+   * como `adjust_from_video_id` — o servidor valida por tenant e calcula a
+   * família de versões; esta tela não decide nada sobre isso, só repassa.
+   */
+  adjustFromVideoId?: string;
 }) {
   // `i18n.language` é o gatilho da tradução da Interpretação no servidor. Sai
   // daqui, e não de uma detecção de língua sobre o texto: o idioma da interface
@@ -420,7 +432,10 @@ export function GenerateStep({
     setSubmitting(true);
     setError(null);
     try {
-      const created = await api.post<Video>("/videos", corpoDaGeracao(wizard, i18n.language));
+      const created = await api.post<Video>(
+        "/videos",
+        corpoDaGeracao(wizard, i18n.language, adjustFromVideoId),
+      );
       setVideo(created);
       pollRef.current = window.setInterval(async () => {
         const latest = await api.get<Video>(`/videos/${created.id}`);

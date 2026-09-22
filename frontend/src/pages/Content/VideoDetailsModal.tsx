@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import type { Avatar, Video } from "../../types";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { durationLabel } from "../../features/VideoPlayer";
+import { ASPECT_RATIO_LABELS } from "../../features/aspectRatioLabels";
 
 /**
  * P2-7, 22/09/2026 — "Detalhes" na Biblioteca. Nenhum dado NOVO: todo campo
@@ -18,13 +19,6 @@ import { durationLabel } from "../../features/VideoPlayer";
  * `ContentPage.tsx` já carrega para a própria aba "Avatares" — sem chamada
  * nova, sem alterar o backend.
  */
-
-const ASPECT_RATIO_LABELS: Record<string, string> = {
-  "16:9": "Horizontal (16:9)",
-  "9:16": "Vertical (9:16)",
-  "1:1": "Quadrado (1:1)",
-  "4:5": "Retrato (4:5)",
-};
 
 function Linha({ label, value }: { label: string; value: string }) {
   return (

@@ -80,7 +80,7 @@ export const MUTANTS: Mutant[] = [
     // linhas — e a que sai é justamente a que ninguém confere de cabeça. É a
     // forma que a ausência silenciosa toma quando alguém "limpa" a lista.
     file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
-    find: '    { campo: "format", value: plataforma ? plataforma.aspectRatio : null },',
+    find: '    { campo: "format", value: plataforma ? aspectRatioLabel(plataforma.aspectRatio) : null },',
     replace: "",
     expect: "gerar: o resumo não mostra o formato",
   },
@@ -93,9 +93,45 @@ export const MUTANTS: Mutant[] = [
     // varredura de 28/08. Um mutante que a remove de novo é a forma mais
     // direta de garantir que ela não some outra vez do mesmo jeito, calada.
     file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
-    find: '    { campo: "scenario", value: corpo.scenario_prompt || corpo.scenario || null },',
+    find: '    { campo: "scenario", value: cenario.value, imageUrl: cenario.imageUrl },',
     replace: "",
     expect: "gerar: o resumo não mostra o cenário",
+  },
+  {
+    guard: "gerar: um campo que existe como IMAGEM (upload) nunca mostra o caminho /uploads/ cru — vira rótulo + miniatura (F16, P1)",
+    name: "linhaTextoOuImagem volta a mostrar a URL crua quando só há imagem",
+    kind: "esperto",
+    // ESPERTO: a função continua existindo, continua devolvendo `imageUrl`
+    // (a miniatura continua aparecendo) — só o TEXTO ao lado da miniatura
+    // volta a ser o caminho de upload cru, em vez do rótulo "Imagem
+    // enviada". É o mesmo defeito que motivou o F16: dado técnico visível
+    // numa tela que existe para o cliente conferir antes de pagar.
+    file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
+    find: "  if (imagemUrl) return { value: rotuloSoImagem, imageUrl: imagemUrl };",
+    replace: "  if (imagemUrl) return { value: imagemUrl, imageUrl: imagemUrl };",
+    expect: "gerar: o resumo voltou a mostrar o caminho de upload cru",
+  },
+  {
+    guard: "gerar: formato aparece traduzido (\"Vertical (9:16)\"), nunca a proporção crua, e pela MESMA tabela da janela de Detalhes",
+    name: "o formato deixa de usar aspectRatioLabel",
+    kind: "esperto",
+    // ESPERTO: a linha do formato continua existindo, continua não-vazia
+    // (não é o mutante "campo some") — só deixa de traduzir, voltando a
+    // mostrar "9:16" cru em vez de "Vertical (9:16)".
+    file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
+    find: '    { campo: "format", value: plataforma ? aspectRatioLabel(plataforma.aspectRatio) : null },',
+    replace: '    { campo: "format", value: plataforma ? plataforma.aspectRatio : null },',
+    expect: "gerar: o resumo voltou a mostrar o formato cru",
+  },
+  {
+    guard: "gerar: expressividade aparece traduzida (Baixa/Média/Alta), nunca low/medium/high",
+    name: "a expressividade deixa de ser traduzida no resumo",
+    kind: "esperto",
+    file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
+    find:
+      "      value: corpo.expressiveness ? t(`createVideo.scene.expressiveness_${corpo.expressiveness}`) : null,",
+    replace: "      value: corpo.expressiveness,",
+    expect: "gerar: o resumo voltou a mostrar a expressividade em inglês",
   },
   {
     guard: "gerar: o resumo mostra os sete campos antes de gastar",
@@ -150,7 +186,7 @@ export const MUTANTS: Mutant[] = [
     // nenhum" sempre, mesmo quando o Traje Padrão do Passo 1 está sendo
     // enviado de verdade — o mesmo rótulo cosmético que este conserto fechou.
     file: "frontend/src/pages/CreateVideo/GenerationSummary.tsx",
-    find: '    { campo: "outfit", value: corpo.outfit_prompt || corpo.outfit || null },',
+    find: '    { campo: "outfit", value: traje.value, imageUrl: traje.imageUrl },',
     replace: '    { campo: "outfit", value: corpo.avatar_look_id ? (nomes.look ?? corpo.avatar_look_id) : null },',
     expect: "gerar: o resumo deixou de ser derivado do corpo em o traje",
   },
@@ -247,6 +283,41 @@ export async function checkPreflightSummaryPolicy(
           "Campo vazio tem de virar a palavra \"nenhum\" numa linha visível, e não uma linha a menos.",
       );
     }
+
+    // F16 (22/09/2026), P1 — um campo que existe como IMAGEM (upload) nunca
+    // pode mostrar o caminho `/uploads/...` cru: `linhaTextoOuImagem` (a
+    // função central de Cenário/Traje/Fundo-imagem) tem de devolver o
+    // RÓTULO, nunca a URL, no ramo "só imagem".
+    if (!resumo.includes("if (imagemUrl) return { value: rotuloSoImagem, imageUrl: imagemUrl };")) {
+      failures.push(
+        "gerar: o resumo voltou a mostrar o caminho de upload cru — `linhaTextoOuImagem` não devolve mais " +
+          `\`rotuloSoImagem\` como valor em ${RESUMO}. Cenário/Traje/Fundo enviados como arquivo mostrariam ` +
+          "/uploads/... na tela de conferência, um dado técnico que não diz nada a quem vai pagar.",
+      );
+    }
+    // F16, P1 — expressividade traduzida (Baixa/Média/Alta), nunca o valor
+    // técnico em inglês.
+    if (!resumo.includes("t(`createVideo.scene.expressiveness_${corpo.expressiveness}`)")) {
+      failures.push(
+        "gerar: o resumo voltou a mostrar a expressividade em inglês — a tradução por " +
+          `\`createVideo.scene.expressiveness_*\` sumiu de ${RESUMO}.`,
+      );
+    }
+    // F16, P1 — formato traduzido (\"Vertical (9:16)\"), nunca a proporção
+    // crua, e pela MESMA tabela da janela de Detalhes (P2-7) — nunca uma
+    // segunda tabela que pudesse divergir.
+    if (!resumo.includes("aspectRatioLabel(plataforma.aspectRatio)")) {
+      failures.push(
+        "gerar: o resumo voltou a mostrar o formato cru (\"9:16\") — a chamada a `aspectRatioLabel` sumiu " +
+          `de ${RESUMO}.`,
+      );
+    }
+    if (!resumo.includes('from "../../features/aspectRatioLabels"')) {
+      failures.push(
+        `gerar: o resumo deixou de importar a tabela compartilhada de formatos — ${RESUMO} não importa ` +
+          "mais de features/aspectRatioLabels.ts, e pode ter voltado a duplicar a tabela.",
+      );
+    }
   }
 
   if (gerar) {
@@ -333,6 +404,8 @@ export async function checkPreflightSummaryPolicy(
     ...CAMPOS.map((c) => ({ caminho: ["createVideo", "generate", "summary", c.chave], nome: c.chave })),
     { caminho: ["createVideo", "generate", "summaryTitle"], nome: "summaryTitle" },
     { caminho: ["createVideo", "generate", "summaryNone"], nome: "summaryNone" },
+    { caminho: ["createVideo", "generate", "summaryImageOnly"], nome: "summaryImageOnly" },
+    { caminho: ["createVideo", "generate", "summaryAvatarFallback"], nome: "summaryAvatarFallback" },
     { caminho: ["createVideo", "blocked", "outfitPreparing"], nome: "blocked.outfitPreparing" },
     { caminho: ["createVideo", "avatarSetup", "imageSavedNamed"], nome: "imageSavedNamed" },
   ];

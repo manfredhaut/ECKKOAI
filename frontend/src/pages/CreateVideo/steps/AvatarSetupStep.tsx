@@ -69,6 +69,7 @@ export function AvatarSetupStep({
   onSelectAvatar,
   onOutfitPreparingChange,
   onSceneDefaultsSeed,
+  adjustFromVideoId,
   nextButton,
 }: {
   selectedAvatarId: string | null;
@@ -97,6 +98,12 @@ export function AvatarSetupStep({
     outfit: string | null,
     outfitPrompt: string | null,
   ) => void;
+  /**
+   * P2-8 — "Ajustar este vídeo". Presente, dispara a busca de
+   * `GET /videos/:id/adjust-info` (custo zero) para o AVISO de identidade
+   * abaixo — nunca a ficha em si (P1: só um booleano cruza a rede).
+   */
+  adjustFromVideoId?: string;
   // Rendered by the parent (CreateVideoPage owns goNext/canProceed) — this
   // step is the one place the wizard's "next" button moves inline instead
   // of sitting in the shared footer, so the element is built once by the
@@ -110,6 +117,23 @@ export function AvatarSetupStep({
     t("createVideo.avatarSetup.slotLeft"),
   ];
   const [avatars, setAvatars] = useState<Avatar[]>([]);
+  // P2-8 — o AVISO, nunca a ficha. `resolverIdentidade` (P2-1) já decide se
+  // a voz congelada no vídeo original diverge da voz ATUAL do avatar; a
+  // rota devolve só este booleano, e é ele que decide o texto abaixo.
+  const [voiceChangedWarning, setVoiceChangedWarning] = useState(false);
+  useEffect(() => {
+    if (!adjustFromVideoId) return;
+    let cancelado = false;
+    api
+      .get<{ voiceChanged: boolean }>(`/videos/${adjustFromVideoId}/adjust-info`)
+      .then((info) => {
+        if (!cancelado) setVoiceChangedWarning(info.voiceChanged);
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, [adjustFromVideoId]);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [draftAvatar, setDraftAvatar] = useState<Avatar | null>(null);
@@ -1494,6 +1518,17 @@ export function AvatarSetupStep({
             avançar. Quem lê de cima para baixo vê o bloco de voz por
             construção, sem precisar rolar procurando. */}
         {selectedAvatar && <AvatarReadinessNotice avatarId={selectedAvatar.id} />}
+
+        {/* P2-8 — só o AVISO, nunca a ficha (P1). Aparece assim que
+            `adjust-info` responde, e some se a pessoa trocar de avatar
+            (a comparação é sempre contra o avatar ATUALMENTE selecionado
+            no vídeo original, e trocar de avatar aqui já é outra decisão,
+            fora do escopo deste aviso). */}
+        {selectedAvatar && voiceChangedWarning && (
+          <p className="text-muted" style={{ fontSize: 13, marginTop: 8 }}>
+            {t("createVideo.avatarSetup.voiceChangedWarning")}
+          </p>
+        )}
 
         {nextButton && <div style={{ marginTop: 20 }}>{nextButton}</div>}
       </div>

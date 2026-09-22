@@ -396,6 +396,11 @@
     "hideVideo": "Ocultar",
     "resumeApproval": "Retomar aprovação",
     "cancelVideo": "Cancelar",
+    "adjust": "Ajustar",
+    "versionLabel": "Versão {{n}}",
+    "seeVersions": "Ver versões",
+    "filteringVersions": "Mostrando as versões deste vídeo.",
+    "clearFilter": "Ver todos",
     "voiceCloned": "Voz clonada",
     "durationDelivered": "{{seconds}} s entregues",
     "durationEstimated": "~{{seconds}} s estimados",
@@ -509,6 +514,7 @@
     },
     "avatarSetup": {
       "scopeNote": "Esta tela configura seu avatar reutilizável: fotos, vídeo de referência e voz. Ela vale para todos os vídeos que você gerar com ele. O que muda de vídeo para vídeo — roteiro, fundo, interpretação, traje e formato — fica nos passos seguintes. O fundo virtual daqui é só da FOTO do avatar, para destacar o rosto; o fundo do vídeo é escolhido no passo Cena.",
+      "voiceChangedWarning": "A voz deste avatar mudou desde que este vídeo foi feito. Esta nova versão vai usar a voz atual.",
       "yourAvatars": "Seus avatares",
       "noAvatarsYet": "Nenhum avatar salvo ainda. Configure um avatar uma vez e reutilize-o em todos os vídeos.",
       "photosVoiceStatus": "{{count}}/3 fotos · {{voiceStatus}}",
@@ -745,6 +751,8 @@
       "title": "Gerar e revisar",
       "summaryTitle": "O que vai ser enviado",
       "summaryNone": "nenhum",
+      "summaryImageOnly": "Imagem enviada",
+      "summaryAvatarFallback": "Avatar selecionado",
       "summary": {
         "avatar": "Avatar",
         "scenario": "Cenário",

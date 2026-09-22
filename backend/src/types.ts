@@ -219,6 +219,21 @@ export interface Video {
    */
   tier_video: "simples" | "normal" | "premium";
   created_at: string;
+  /**
+   * P2-8, "Ajustar este vídeo", migration 085 — a família de versões.
+   * `root_video_id` é denormalizado (aponta sempre para a PRIMEIRA versão,
+   * nunca recalculado depois de gravado) para listar "todas as versões"
+   * sem CTE recursiva: `WHERE id = raiz OR root_video_id = raiz`.
+   */
+  parent_video_id: string | null;
+  root_video_id: string | null;
+  version_number: number;
+  /**
+   * P2-8, item 1 — enquadramento (cover/contain, só tier Simples/HeyGen)
+   * persistido por vídeo, para "Ajustar" reabrir com o mesmo valor. `null`
+   * = padrão do servidor (HEYGEN_FIT) — todo vídeo anterior a esta coluna.
+   */
+  avatar_fit: string | null;
 }
 
 export type CredentialProvider = "avatar" | "voice" | "script";

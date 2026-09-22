@@ -5,6 +5,7 @@ import type { Avatar, AvatarLooksResponse } from "../../types";
 import { PUBLISH_PLATFORMS } from "./publishPlatforms";
 import type { WizardState } from "./types";
 import { corpoDaGeracao } from "./steps/GenerateStep";
+import { aspectRatioLabel } from "../../features/aspectRatioLabels";
 
 /**
  * O QUE VAI SER ENVIADO, na última tela antes de o dinheiro sair.
@@ -69,6 +70,27 @@ import { corpoDaGeracao } from "./steps/GenerateStep";
 export interface SummaryRow {
   campo: string;
   value: string | null;
+  /** Miniatura a mostrar ao lado do valor — cenário/traje/fundo enviados como arquivo. */
+  imageUrl?: string | null;
+  /** Chip de cor a mostrar ao lado do valor — fundo tipo "color". */
+  colorSwatch?: string | null;
+}
+
+/**
+ * F16, 22/09/2026 — P1: a tela de conferência não pode mostrar dado
+ * técnico. Um campo que existe como IMAGEM (upload) tinha o CAMINHO
+ * `/uploads/...` exibido cru — aqui ele vira um RÓTULO (`rotuloSoImagem`) +
+ * a miniatura da própria imagem, nunca o caminho. Usada pelos três campos
+ * que podem ser upload: cenário, traje e fundo (quando `type === "image"`).
+ */
+function linhaTextoOuImagem(
+  texto: string | null,
+  imagemUrl: string | null,
+  rotuloSoImagem: string,
+): { value: string | null; imageUrl: string | null } {
+  if (texto) return { value: texto, imageUrl: imagemUrl || null };
+  if (imagemUrl) return { value: rotuloSoImagem, imageUrl: imagemUrl };
+  return { value: null, imageUrl: null };
 }
 
 /**
@@ -79,6 +101,7 @@ export interface SummaryRow {
 export function resumoDaGeracao(
   wizard: WizardState,
   nomes: { avatar?: string | null; look?: string | null },
+  t: (chave: string) => string,
 ): SummaryRow[] {
   // O locale entra só para satisfazer a assinatura: nenhuma linha deste resumo
   // depende dele. E é isso que se quer — o que o passo 4 mostra é o texto do
@@ -86,30 +109,49 @@ export function resumoDaGeracao(
   // fornecedor não passa por aqui e nunca chega ao navegador.
   const corpo = corpoDaGeracao(wizard, "pt-BR");
   const plataforma = PUBLISH_PLATFORMS.find((p) => p.id === corpo.publish_platform);
+  const rotuloImagem = t("createVideo.generate.summaryImageOnly");
+  // CENÁRIO — 28/08. `scenario_prompt` (texto legível) tem prioridade sobre
+  // `scenario` (URL do arquivo), mesmo padrão de `outfit`/`background`
+  // logo abaixo. Campo por vídeo desde 27/08 (Cena) — não vem mais de
+  // nenhum padrão do Passo 1. F16 — sem texto, a URL nunca aparece crua:
+  // vira o rótulo "Imagem enviada" + a miniatura da própria imagem.
+  const cenario = linhaTextoOuImagem(corpo.scenario_prompt, corpo.scenario, rotuloImagem);
+  // TRAJE — Fase A, item 3 (25/08): o dropdown "Traje" (avatar_look_id) saiu
+  // da tela em 25/08 — ler esse campo aqui mostrava "Traje: nenhum" mesmo
+  // quando o traje estava sendo enviado de verdade. Campo por vídeo desde
+  // 28/08 (Cena) — mesmo padrão do Cenário acima. `outfit_prompt` (texto
+  // legível) tem prioridade sobre `outfit` (URL do arquivo). F16: mesma
+  // regra do Cenário — sem texto, a URL vira rótulo + miniatura.
+  const traje = linhaTextoOuImagem(corpo.outfit_prompt, corpo.outfit, rotuloImagem);
+  // FUNDO — "color" mostra o hex com um chip visual ao lado (não é caminho
+  // de arquivo, então o valor cru é aceitável, só ganha apoio visual);
+  // "image" segue a MESMA regra de Cenário/Traje (rótulo + miniatura,
+  // nunca a URL crua).
+  const fundo = !corpo.background
+    ? { value: null as string | null, imageUrl: null as string | null, colorSwatch: null as string | null }
+    : corpo.background.type === "color"
+      ? { value: corpo.background.value, imageUrl: null, colorSwatch: corpo.background.value }
+      : { ...linhaTextoOuImagem(null, corpo.background.value, rotuloImagem), colorSwatch: null };
   return [
-    { campo: "avatar", value: corpo.avatar_id ? (nomes.avatar ?? corpo.avatar_id) : null },
-    // CENÁRIO — 28/08. `scenario_prompt` (texto legível) tem prioridade sobre
-    // `scenario` (URL do arquivo), mesmo padrão de `outfit`/`background`
-    // logo abaixo. Campo por vídeo desde 27/08 (Cena) — não vem mais de
-    // nenhum padrão do Passo 1.
-    { campo: "scenario", value: corpo.scenario_prompt || corpo.scenario || null },
-    // TRAJE — Fase A, item 3 (25/08): o dropdown "Traje" (avatar_look_id) saiu
-    // da tela em 25/08 — ler esse campo aqui mostrava "Traje: nenhum" mesmo
-    // quando o traje estava sendo enviado de verdade. Campo por vídeo desde
-    // 28/08 (Cena) — mesmo padrão do Cenário acima. `outfit_prompt` (texto
-    // legível) tem prioridade sobre `outfit` (URL do arquivo).
-    { campo: "outfit", value: corpo.outfit_prompt || corpo.outfit || null },
     {
-      campo: "background",
-      value: corpo.background
-        ? corpo.background.type === "color"
-          ? `${corpo.background.value}`
-          : corpo.background.value
-        : null,
+      campo: "avatar",
+      value: corpo.avatar_id ? (nomes.avatar ?? t("createVideo.generate.summaryAvatarFallback")) : null,
     },
+    { campo: "scenario", value: cenario.value, imageUrl: cenario.imageUrl },
+    { campo: "outfit", value: traje.value, imageUrl: traje.imageUrl },
+    { campo: "background", value: fundo.value, imageUrl: fundo.imageUrl, colorSwatch: fundo.colorSwatch },
     { campo: "motionPrompt", value: corpo.motion_prompt },
-    { campo: "expressiveness", value: corpo.expressiveness },
-    { campo: "format", value: plataforma ? plataforma.aspectRatio : null },
+    // EXPRESSIVIDADE — F16: valor técnico ("low"/"medium"/"high") traduzido
+    // com as MESMAS chaves já usadas no seletor do passo Cena — nunca uma
+    // segunda tradução que pudesse divergir da primeira.
+    {
+      campo: "expressiveness",
+      value: corpo.expressiveness ? t(`createVideo.scene.expressiveness_${corpo.expressiveness}`) : null,
+    },
+    // FORMATO — F16: mesma tabela compartilhada da janela de Detalhes
+    // (P2-7, aspectRatioLabels.ts) — as duas nunca podem discordar sobre o
+    // que "9:16" significa em português.
+    { campo: "format", value: plataforma ? aspectRatioLabel(plataforma.aspectRatio) : null },
   ];
 }
 
@@ -150,7 +192,7 @@ export function GenerationSummary({ wizard }: { wizard: WizardState }) {
     };
   }, [wizard.avatarId, wizard.avatarLookId]);
 
-  const linhas = resumoDaGeracao(wizard, { avatar: avatarName, look: lookName });
+  const linhas = resumoDaGeracao(wizard, { avatar: avatarName, look: lookName }, t);
 
   return (
     <div className="generation-summary" style={{ marginTop: 16, marginBottom: 16 }}>
@@ -159,14 +201,39 @@ export function GenerationSummary({ wizard }: { wizard: WizardState }) {
       </div>
       <dl style={{ margin: 0, fontSize: 13 }}>
         {linhas.map((l) => (
-          <div key={l.campo} style={{ display: "flex", gap: 8, padding: "3px 0" }}>
+          <div key={l.campo} style={{ display: "flex", gap: 8, padding: "3px 0", alignItems: "center" }}>
             <dt className="text-muted" style={{ minWidth: 140 }}>
               {t(`createVideo.generate.summary.${l.campo}`)}
             </dt>
             <dd
-              style={{ margin: 0, fontStyle: l.value === null ? "italic" : undefined }}
+              style={{
+                margin: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontStyle: l.value === null ? "italic" : undefined,
+              }}
               className={l.value === null ? "text-muted" : undefined}
             >
+              {l.imageUrl && (
+                <img
+                  src={l.imageUrl}
+                  alt=""
+                  style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }}
+                />
+              )}
+              {l.colorSwatch && (
+                <span
+                  style={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: 4,
+                    background: l.colorSwatch,
+                    border: "1px solid var(--color-border)",
+                    flexShrink: 0,
+                  }}
+                />
+              )}
               {l.value ?? t("createVideo.generate.summaryNone")}
             </dd>
           </div>
