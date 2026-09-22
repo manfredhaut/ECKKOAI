@@ -203,7 +203,7 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({
           error: "no_voice_credential",
           message:
-            "Conecte a chave do provedor de voz em Configurações antes de gravar uma amostra.",
+            "A gravação de voz não está disponível no seu plano no momento. Fale com o suporte.",
         });
       }
 

@@ -1671,9 +1671,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({
           error: "direction_translation_unavailable",
           message:
-            "A Interpretação precisa ser traduzida antes de ir ao fornecedor, e nenhum provedor de texto " +
-            "está conectado. Conecte a chave em Configurações, ou apague o texto da Interpretação para " +
-            "gerar sem ela. Nada foi cobrado.",
+            "A tradução da Interpretação não está disponível no seu plano. Fale com o suporte, ou apague " +
+            "o texto para gerar sem ela. Nada foi cobrado.",
         });
       }
       // AS JANELAS — RODADA 3, 29/08, só para o tier Normal. `readiness` acima

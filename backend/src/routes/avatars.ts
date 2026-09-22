@@ -189,7 +189,7 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       if (!credential) {
         return reply.code(400).send({
           error: "no_avatar_credential",
-          message: "Nenhum provedor de avatar está conectado. Conecte a chave em Configurações.",
+          message: "A criação de traje não está disponível no seu plano no momento. Fale com o suporte. Nada foi cobrado.",
         });
       }
 

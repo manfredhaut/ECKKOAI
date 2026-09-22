@@ -294,8 +294,7 @@ export async function evaluateGenerationReadiness(
       code: "no_avatar_credential",
       status: 400,
       message:
-        "Nenhum provedor de avatar está conectado. Vá em Configurações e conecte a chave de API do " +
-        "provedor de vídeo (HeyGen ou D-ID) antes de gerar.",
+        "A geração de vídeo não está disponível no seu plano no momento. Fale com o suporte.",
     });
   }
   // A credencial de VOZ não entra: ela é opcional por desenho — sem ela,
