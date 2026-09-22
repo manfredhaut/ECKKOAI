@@ -289,10 +289,18 @@ export interface GenerateVideoInput {
   scenario?: string | null;
   /** O cenário descrito em TEXTO. Entra no prompt de composição. */
   scenarioPrompt?: string | null;
+  /**
+   * O cenário em INGLÊS, já traduzido — atrás de `TRANSLATE_SCENE_TEXT`
+   * (routes/videos.ts). `undefined`/`null`: `promptDaComposicao` cai no
+   * texto em português (`scenarioPrompt`), mesmo comportamento de sempre.
+   */
+  scenarioPromptEn?: string | null;
   /** Caminho `/uploads/...` da imagem de TRAJE, quando veio por arquivo. */
   outfit?: string | null;
   /** O traje descrito em TEXTO. Entra no prompt de composição. */
   outfitPrompt?: string | null;
+  /** O traje em INGLÊS — mesma regra de `scenarioPromptEn`. */
+  outfitPromptEn?: string | null;
   /**
    * O DIÁRIO da corrida, injetado.
    *
@@ -1826,9 +1834,12 @@ async function checkDidConnection(apiKey: string): Promise<void> {
 function promptDaComposicao(input: GenerateVideoInput): string {
   return promptDeComposicaoPosicional({
     temCenario: Boolean(input.scenario),
-    cenarioTexto: input.scenarioPrompt,
+    // `?? input.scenarioPrompt`: sem tradução (flag desligada, ou vídeo
+    // antigo à migration 081), cai no texto em português — byte a byte o
+    // comportamento de antes desta rodada.
+    cenarioTexto: input.scenarioPromptEn ?? input.scenarioPrompt,
     temTraje: Boolean(input.outfit),
-    trajeTexto: input.outfitPrompt,
+    trajeTexto: input.outfitPromptEn ?? input.outfitPrompt,
     temLateral: Boolean(input.photoUrls?.[1] || input.photoUrls?.[2]),
     direcaoTexto: direcaoDoPrimeiroBloco(input.script, promptDaDirecao(input)),
   });

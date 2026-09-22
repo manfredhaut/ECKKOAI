@@ -117,7 +117,12 @@ export const MUTANTS: Mutant[] = [
     // função devolve a linha inteira. É o defeito na forma mais silenciosa: a
     // proteção existe, roda, e não protege nada.
     file: "backend/src/services/video/tenantView.ts",
-    find: "export const CAMPOS_VELADOS: readonly string[] = [\"motion_prompt_en\"];",
+    find:
+      "export const CAMPOS_VELADOS: readonly string[] = [\n" +
+      '  "motion_prompt_en",\n' +
+      '  "scenario_prompt_en",\n' +
+      '  "outfit_prompt_en",\n' +
+      "];",
     replace: "export const CAMPOS_VELADOS: readonly string[] = [];",
     expect: "a versão traduzida saiu na resposta do tenant",
   },
@@ -349,6 +354,9 @@ export async function checkTranslationPolicy(repoRoot: string): Promise<Translat
   // chave, nem como valor em canto nenhum do JSON.
   // ---------------------------------------------------------------------------
   const MARCA = "PROVA-DO-VEU-hands-open-at-chest-height";
+  // Mesma marca para os dois — a checagem é sobre a COLUNA (chave presente
+  // no objeto), não sobre distinguir o texto de um campo do outro.
+  const MARCA_CENA = "PROVA-DO-VEU-corredor-neon-em-ingles";
   const serializada = withDeliveredSeconds({
     id: "v-guarda",
     tenant_id: "t",
@@ -359,12 +367,20 @@ export async function checkTranslationPolicy(repoRoot: string): Promise<Translat
     captions: false,
     motion_prompt: "mãos abertas na altura do peito",
     motion_prompt_en: MARCA,
+    scenario_prompt_en: MARCA_CENA,
+    outfit_prompt_en: MARCA_CENA,
     aspect_ratio: "16:9",
     delivered_seconds: "16.136",
     delivered_source: "vendor_response",
   } as never);
   const json = JSON.stringify(serializada);
-  if (json.includes(MARCA) || "motion_prompt_en" in (serializada as Record<string, unknown>)) {
+  if (
+    json.includes(MARCA) ||
+    json.includes(MARCA_CENA) ||
+    "motion_prompt_en" in (serializada as Record<string, unknown>) ||
+    "scenario_prompt_en" in (serializada as Record<string, unknown>) ||
+    "outfit_prompt_en" in (serializada as Record<string, unknown>)
+  ) {
     failures.push(
       "tradução: a versão traduzida saiu na resposta do tenant. Ela existe para auditoria — log de " +
         "servidor e painel admin — e o modelo do produto é que quem escreve vê e revisa sempre o " +

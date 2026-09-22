@@ -81,6 +81,10 @@ import {
   resolveInterfaceLocale,
   translateDirection,
 } from "../services/video/directionTranslation.js";
+import {
+  SceneTextTranslationError,
+  translateSceneText,
+} from "../services/video/sceneTextTranslation.js";
 import { ehTimeoutDeFornecedor } from "../services/providers/vendorTimeout.js";
 import type { VideoEmVoo } from "../services/video/recovery.js";
 import { mimeDoUpload, readUpload } from "../services/storage.js";
@@ -1772,12 +1776,68 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
+    // -----------------------------------------------------------------------
+    // CENÁRIO/TRAJE (texto) — TRADUÇÃO FIEL, atrás de flag. Mesmo ponto e
+    // mesma garantia do bloco da Interpretação acima: antes da linha, antes
+    // do débito, falhar aqui custa zero.
+    //
+    // Desligada (`false`, hoje): nenhuma chamada extra, os dois `*_en` ficam
+    // NULL, e a composição usa o texto em português como sempre usou — byte
+    // a byte o comportamento de antes deste bloco existir.
+    // -----------------------------------------------------------------------
+    const TRANSLATE_SCENE_TEXT: boolean = false;
+    let scenarioPromptEnParaGerar: string | null = null;
+    let outfitPromptEnParaGerar: string | null = null;
+    if (TRANSLATE_SCENE_TEXT && (scenarioPromptParaGerar || outfitPromptParaGerar)) {
+      const sceneTextCredential = await getCredential(req.tenantId, "script");
+      if (!sceneTextCredential) {
+        logEvent("error", "scene_text_translation_unavailable", {
+          context: "videos.create",
+          tenantId: req.tenantId,
+        });
+        // P4 — chaves são centralizadas pela plataforma, por plano; o
+        // cliente NUNCA conecta a própria. "Conecte a chave em Configurações"
+        // (mensagem irmã de `direction_translation_unavailable`, que tem o
+        // mesmo problema e não foi tocada nesta rodada) pediria uma ação que
+        // este produto não oferece a ele.
+        return reply.code(400).send({
+          error: "scene_text_translation_unavailable",
+          message:
+            "A tradução do Cenário/Traje não está disponível no seu plano. Fale com o suporte, ou apague " +
+            "o texto para gerar sem ele. Nada foi cobrado.",
+        });
+      }
+      try {
+        const traducaoCena = await translateSceneText({
+          tenantId: req.tenantId,
+          apiKey: sceneTextCredential.apiKey,
+          vendor: sceneTextCredential.vendor as ScriptVendor,
+          scenario: scenarioPromptParaGerar,
+          outfit: outfitPromptParaGerar,
+          locale: interfaceLocale,
+        });
+        scenarioPromptEnParaGerar = traducaoCena.scenarioEnglish;
+        outfitPromptEnParaGerar = traducaoCena.outfitEnglish;
+      } catch (err) {
+        if (err instanceof SceneTextTranslationError) {
+          logEvent("error", "scene_text_translation_response_502", {
+            tenantId: req.tenantId,
+            reason: err.reason,
+            message: err.message,
+          });
+          return reply.code(502).send({ error: "scene_text_translation_failed", message: err.message });
+        }
+        throw err;
+      }
+    }
+
     const { rows } = await pool.query<Video>(
       `INSERT INTO videos (tenant_id, avatar_id, script, scenario, outfit, scenario_prompt, outfit_prompt, duration_seconds, status, provider_vendor, simulated,
                            publish_platform, aspect_ratio, resolution,
                            background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id,
-                           captions, motion_prompt_en, tier_video, target_duration_seconds)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) RETURNING *`,
+                           captions, motion_prompt_en, tier_video, target_duration_seconds,
+                           scenario_prompt_en, outfit_prompt_en)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING *`,
       [
         req.tenantId,
         avatar_id,
@@ -1829,6 +1889,11 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // pipeline compara contra a fala real — ver `compararAlvoComFala`
         // em falPipeline.ts.
         targetDurationSeconds,
+        // Mesma garantia de `motion_prompt_en`: SOBRESCRITA a cada clique,
+        // nunca acúmulo. NULL com a flag desligada — coluna aditiva, vídeo
+        // continua idêntico ao de antes desta rodada.
+        scenarioPromptEnParaGerar,
+        outfitPromptEnParaGerar,
       ],
     );
     const video = rows[0];
@@ -1997,8 +2062,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         photoUrls: avatar.photo_urls ?? null,
         scenario: scenarioParaGerar,
         scenarioPrompt: scenarioPromptParaGerar,
+        scenarioPromptEn: scenarioPromptEnParaGerar,
         outfit: outfitParaGerar,
         outfitPrompt: outfitPromptParaGerar,
+        outfitPromptEn: outfitPromptEnParaGerar,
         engineChoice,
         // BB2/BB3, SIMPLES-10 — igual a `engineChoice`: só o ramo HeyGen
         // consome (`fit` não existe no contrato da fal). `null`/ausente
@@ -2365,9 +2432,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
   function promptDaComposicaoDaLinha(video: VideoRow, avatar: Avatar): string {
     return promptDeComposicaoPosicional({
       temCenario: Boolean(video.scenario),
-      cenarioTexto: video.scenario_prompt,
+      cenarioTexto: video.scenario_prompt_en ?? video.scenario_prompt,
       temTraje: Boolean(video.outfit),
-      trajeTexto: video.outfit_prompt,
+      trajeTexto: video.outfit_prompt_en ?? video.outfit_prompt,
       temLateral: Boolean(avatar.photo_urls?.[1] || avatar.photo_urls?.[2]),
       direcaoTexto: direcaoDoPrimeiroBloco(video.script, motionPromptDaLinha(video)),
     });
@@ -3604,7 +3671,13 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             promptDeDirecao: motionPromptDaLinha(video),
             expressiveness: isExpressiveness(video.expressiveness) ? video.expressiveness : null,
             diario: criarDiarioNoBanco(runId),
-            tier: "normal",
+            // A retomada reanima o MESMO vídeo que a corrida original —
+            // trocar de motor no meio da retomada sairia com um vídeo
+            // Premium (Seedance) animado por Wan, ou o oposto. P2-2,
+            // 21/09/2026: antes forçava "normal" incondicionalmente; agora
+            // relê o tier da PRÓPRIA linha, mesma conversão que
+            // /approve, /approve-video e /redo-video já usam.
+            tier: videoTierParaPipeline(video.tier_video),
             // Mesmo freio do primeiro clique (`/approve`): a retomada
             // termina a ANIMAÇÃO e para no vídeo mudo, aguardando o
             // segundo clique humano de sempre (`/approve-video`) — nunca

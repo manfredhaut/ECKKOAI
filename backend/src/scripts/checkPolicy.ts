@@ -81,6 +81,7 @@ import { checkWan3TomadaUnicaPolicy } from "./checkWan3TomadaUnicaPolicy.js";
 import { checkScriptLimitPolicy } from "./checkScriptLimitPolicy.js";
 import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
+import { checkSceneTextTranslationPolicy } from "./checkSceneTextTranslationPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
@@ -789,6 +790,11 @@ async function main(): Promise<void> {
   const translation = await checkTranslationPolicy(process.env.REPO_ROOT ?? "/repo");
   translation.failures.forEach((f) => failures.push(f));
   translation.notes.forEach((n) => note(n));
+
+  // L1 — irmã de checkTranslationPolicy, para a tradução FIEL de Cenário/Traje.
+  const sceneTextTranslation = await checkSceneTextTranslationPolicy(process.env.REPO_ROOT ?? "/repo");
+  sceneTextTranslation.failures.forEach((f) => failures.push(f));
+  sceneTextTranslation.notes.forEach((n) => note(n));
 
   // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");

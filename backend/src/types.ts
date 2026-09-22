@@ -182,6 +182,14 @@ export interface Video {
    */
   motion_prompt_en: string | null;
   /**
+   * O Cenário/Traje (texto) traduzidos para inglês — mesma lógica de
+   * `motion_prompt_en`, atrás de `TRANSLATE_SCENE_TEXT` (routes/videos.ts,
+   * hoje `false`). NULL enquanto a flag estiver desligada, ou em vídeos sem
+   * texto de cenário/traje. **VELADOS** — ver `CAMPOS_VELADOS`.
+   */
+  scenario_prompt_en: string | null;
+  outfit_prompt_en: string | null;
+  /**
    * A versão COM legenda queimada devolvida pelo fornecedor, quando houve.
    * Guardada AO LADO de `output_url`, nunca no lugar dela.
    */

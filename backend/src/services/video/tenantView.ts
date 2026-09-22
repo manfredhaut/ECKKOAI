@@ -37,7 +37,11 @@
 // está errado: INERTE. É o mesmo defeito já medido em `VOICE_SPEED` e pago de
 // novo em `MAX_SCRIPT_SECONDS`; aqui ele foi pego pelo `tsc` antes de custar um
 // mutante.
-export const CAMPOS_VELADOS: readonly string[] = ["motion_prompt_en"];
+export const CAMPOS_VELADOS: readonly string[] = [
+  "motion_prompt_en",
+  "scenario_prompt_en",
+  "outfit_prompt_en",
+];
 
 /**
  * A linha sem os campos velados.
