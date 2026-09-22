@@ -38,6 +38,7 @@ import {
   compararAlvoComFala,
   AlvoDeDuracaoForaDoAlcanceError,
   DESVIO_ALVO_MAXIMO_FRACAO,
+  deveEngolirDesvioDeAlvo,
 } from "../services/video/falPipeline.js";
 import { classifyVendorFailure, vendorErrorStatus, toClientVendorError } from "../services/providers/vendorError.js";
 
@@ -67,10 +68,18 @@ export const MUTANTS: Mutant[] = [
       "  // V34, item 3 — RECUSA antes de animar quando a fala diverge do alvo\n" +
       "  // escolhido em mais de 8%. Sem alvo (`targetDurationSeconds` ausente),\n" +
       "  // esta chamada não faz nada — comportamento de antes desta rodada.\n" +
-      "  compararAlvoComFala(input.targetDurationSeconds, fala);",
+      "  // P2-5, 22/09/2026 — \"Refazer\" (avisarDesvioDeAlvoSemRecusar) nunca\n" +
+      "  // recusa por isto: a exceção é ENGOLIDA por `deveEngolirDesvioDeAlvo`,\n" +
+      "  // nunca a comparação em si (que roda sempre, mesmo teto de 8%).\n" +
+      "  try {\n" +
+      "    compararAlvoComFala(input.targetDurationSeconds, fala);\n" +
+      "  } catch (err) {\n" +
+      "    if (!deveEngolirDesvioDeAlvo(err, input.avisarDesvioDeAlvoSemRecusar)) throw err;\n" +
+      "  }",
     replace:
       "  const { audioUrl, fala } = await narrar(input);\n" +
-      "  void AlvoDeDuracaoForaDoAlcanceError;",
+      "  void AlvoDeDuracaoForaDoAlcanceError;\n" +
+      "  void deveEngolirDesvioDeAlvo;",
     expect: "compararAlvoComFala: a tomada única deixou de comparar alvo×fala",
   },
   {
@@ -79,9 +88,27 @@ export const MUTANTS: Mutant[] = [
     kind: "obvio",
     file: PIPELINE,
     find:
-      '  if (audioPreSintetizado) compararAlvoComFala(input.targetDurationSeconds, audioPreSintetizado.fala);',
-    replace: "  void audioPreSintetizado;",
+      "  // P2-5, 22/09/2026 — mesma engolição de exceção do caminho de tomada única.\n" +
+      "  try {\n" +
+      "    if (audioPreSintetizado) compararAlvoComFala(input.targetDurationSeconds, audioPreSintetizado.fala);\n" +
+      "  } catch (err) {\n" +
+      "    if (!deveEngolirDesvioDeAlvo(err, input.avisarDesvioDeAlvoSemRecusar)) throw err;\n" +
+      "  }",
+    replace: "  void audioPreSintetizado;\n  void deveEngolirDesvioDeAlvo;",
     expect: "compararAlvoComFala: o fracionado deixou de comparar alvo×fala",
+  },
+  {
+    guard: "'Refazer' (avisarDesvioDeAlvoSemRecusar) NUNCA recusa por desvio de duração-alvo",
+    name: "deveEngolirDesvioDeAlvo passa a engolir mesmo sem a flag pedir",
+    kind: "esperto",
+    // ESPERTO: troca `&&` por `||` — a função continua engolindo quando a
+    // flag está ligada (G-7a continuaria verde), só que passa a engolir
+    // TAMBÉM quando ela está ausente/false — exatamente o caso de `/approve`
+    // (criação), que precisa CONTINUAR recusando.
+    file: PIPELINE,
+    find: "  return Boolean(avisarSemRecusar) && err instanceof AlvoDeDuracaoForaDoAlcanceError;",
+    replace: "  return Boolean(avisarSemRecusar) || err instanceof AlvoDeDuracaoForaDoAlcanceError;",
+    expect: "deveEngolirDesvioDeAlvo: engoliu com a flag AUSENTE",
   },
 ];
 
@@ -236,12 +263,41 @@ export function checkAlvoDeDuracaoPolicy(): AlvoDeDuracaoCheckResult {
     }
   }
 
+  // --- G-7: P2-5 — deveEngolirDesvioDeAlvo só engole quando PEDIDO, e só o
+  // erro CERTO. Puro e síncrono: nenhuma narração/animação de verdade.
+  const erroDeAlvo = new AlvoDeDuracaoForaDoAlcanceError(100, 108.1, 3);
+  if (!deveEngolirDesvioDeAlvo(erroDeAlvo, true)) {
+    failures.push(
+      "deveEngolirDesvioDeAlvo: deveria engolir AlvoDeDuracaoForaDoAlcanceError quando avisarSemRecusar=true " +
+        "— sem isto, 'Refazer' continuaria recusando por desvio de duração-alvo.",
+    );
+  }
+  if (deveEngolirDesvioDeAlvo(erroDeAlvo, false)) {
+    failures.push(
+      "deveEngolirDesvioDeAlvo: engoliu mesmo com avisarSemRecusar=false — a criação/`/approve` passaria a " +
+        "nunca mais recusar por desvio de duração-alvo.",
+    );
+  }
+  if (deveEngolirDesvioDeAlvo(erroDeAlvo, undefined)) {
+    failures.push(
+      "deveEngolirDesvioDeAlvo: engoliu com a flag AUSENTE — `/approve` (criação) não passa a flag, e " +
+        "precisa continuar recusando por desenho.",
+    );
+  }
+  if (deveEngolirDesvioDeAlvo(new Error("outra falha qualquer"), true)) {
+    failures.push(
+      "deveEngolirDesvioDeAlvo: engoliu um erro de OUTRA classe — só AlvoDeDuracaoForaDoAlcanceError pode " +
+        "ser engolido; qualquer outra falha (rede, fornecedor) tem de propagar normalmente.",
+    );
+  }
+
   if (failures.length === 0) {
     notes.push(
       `    duração-alvo: compararAlvoComFala tolera exatamente ${(DESVIO_ALVO_MAXIMO_FRACAO * 100).toFixed(0)}% de ` +
         "desvio (fronteira passa, um passo além recusa nos dois sentidos), a mensagem nomeia alvo/fala/ajuste " +
         "com o verbo certo, sem alvo não faz nada, a recusa classifica como script_invalid/422 ponta a ponta, " +
-        "e os dois call sites (tomada única, fracionado) continuam chamando a comparação",
+        "os dois call sites (tomada única, fracionado) continuam chamando a comparação, e \"Refazer\" " +
+        "(avisarDesvioDeAlvoSemRecusar) engole SÓ o próprio erro e SÓ quando pedido — nunca sem a flag",
     );
   }
 

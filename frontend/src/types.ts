@@ -75,6 +75,12 @@ export interface Video {
   scenario_prompt: string | null;
   outfit_prompt: string | null;
   /**
+   * P2-5, 22/09/2026 — presente só na resposta de `/redo-video`, quando a
+   * fala divergiu do alvo escolhido em mais de 8%. Nunca persistido: é
+   * calculado na hora, a cada "Refazer", e não sobrevive a um reload da tela.
+   */
+  duration_target_warning?: string | null;
+  /**
    * Duração ESTIMADA, em segundos inteiros, gravada quando o vídeo nasceu.
    *
    * Até o bloco DURAÇÃO-1 isto guardava o chip de 15/30/60 s do passo 3 — um

@@ -1090,6 +1090,16 @@ export interface FalPipelineInput {
    */
   targetDurationSeconds?: number | null;
   /**
+   * P2-5, 22/09/2026 — decisão de produto: "Refazer" (`/redo-video`) NUNCA
+   * recusa por desvio de duração-alvo, só avisa. Default `false`/ausente:
+   * comportamento de sempre (recusa via `compararAlvoComFala`), usado por
+   * `/approve` e pela criação. `/redo-video` é o único call site que passa
+   * `true` — `/recompose` nunca chega a narrar (para em "compor") e
+   * `/resume-blocks` reaproveita a narração já aprovada numa corrida
+   * anterior, então nenhuma das duas tem o que comparar de novo.
+   */
+  avisarDesvioDeAlvoSemRecusar?: boolean;
+  /**
    * Somada a `MARGEM_DURACAO_WAN3_SEGUNDOS` só na tomada única — margem
    * ESCALONADA, achado real de 02/09/2026 (folga insuficiente entre o
    * vídeo animado e a fala real). `/redo-video` a calcula a partir de
@@ -1778,7 +1788,12 @@ export async function runFalPipelineDaImagem(
   // ver `FalPipelineResult.audioUrl`/`runFalPipelineDoVideoMudo`.
   const audioPreSintetizado =
     !ehPremium && input.targetDurationSeconds != null ? await narrar(input) : undefined;
-  if (audioPreSintetizado) compararAlvoComFala(input.targetDurationSeconds, audioPreSintetizado.fala);
+  // P2-5, 22/09/2026 — mesma engolição de exceção do caminho de tomada única.
+  try {
+    if (audioPreSintetizado) compararAlvoComFala(input.targetDurationSeconds, audioPreSintetizado.fala);
+  } catch (err) {
+    if (!deveEngolirDesvioDeAlvo(err, input.avisarDesvioDeAlvoSemRecusar)) throw err;
+  }
 
   return animarNarrarSincronizar(input, {
     imagemUrl: imagemCompostaUrl,
@@ -1950,7 +1965,14 @@ async function animarTomadaUnicaComAudioReal(
   // V34, item 3 — RECUSA antes de animar quando a fala diverge do alvo
   // escolhido em mais de 8%. Sem alvo (`targetDurationSeconds` ausente),
   // esta chamada não faz nada — comportamento de antes desta rodada.
-  compararAlvoComFala(input.targetDurationSeconds, fala);
+  // P2-5, 22/09/2026 — "Refazer" (avisarDesvioDeAlvoSemRecusar) nunca
+  // recusa por isto: a exceção é ENGOLIDA por `deveEngolirDesvioDeAlvo`,
+  // nunca a comparação em si (que roda sempre, mesmo teto de 8%).
+  try {
+    compararAlvoComFala(input.targetDurationSeconds, fala);
+  } catch (err) {
+    if (!deveEngolirDesvioDeAlvo(err, input.avisarDesvioDeAlvoSemRecusar)) throw err;
+  }
   // `duration` do Wan 3.0 é INTEIRO (ver `corpoAnimarWan`) — por isso o
   // `Math.ceil` envolve a SOMA inteira (áudio + margem fracionária), não
   // mais "ceil(áudio) + margem" em dois passos: com a margem em 0,5s
@@ -2868,6 +2890,21 @@ export function compararAlvoComFala(alvoSegundos: number | null | undefined, fal
   if (desvio <= DESVIO_ALVO_MAXIMO_FRACAO) return;
   const caracteresParaAjustar = Math.max(1, Math.round(Math.abs(falaSegundos - alvoSegundos) * PIPELINE_CHARS_PER_SECOND));
   throw new AlvoDeDuracaoForaDoAlcanceError(alvoSegundos, falaSegundos, caracteresParaAjustar);
+}
+
+/**
+ * P2-5 — decide se `compararAlvoComFala` deve ter sua exceção ENGOLIDA pelo
+ * chamador, em vez de recusar. Extraída como função PURA e exportada
+ * separadamente para poder ser testada em isolamento, sem narrar/animar de
+ * verdade — mesma razão de `expressividadeParaDirecao` viver fora de linha.
+ *
+ * Só engole a MESMA classe que `compararAlvoComFala` lança, e só quando o
+ * chamador pediu explicitamente (`avisarSemRecusar: true`) — qualquer outro
+ * erro, ou a flag ausente/`false`, propaga exatamente como antes desta
+ * rodada.
+ */
+export function deveEngolirDesvioDeAlvo(err: unknown, avisarSemRecusar: boolean | undefined): boolean {
+  return Boolean(avisarSemRecusar) && err instanceof AlvoDeDuracaoForaDoAlcanceError;
 }
 
 /**

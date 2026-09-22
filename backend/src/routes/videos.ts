@@ -109,6 +109,7 @@ import {
   LIMITE_TAKE_UNICO_SEGUNDOS,
   FolgaDeSincronizacaoInsuficienteError,
   ESCALADA_MARGEM_POR_RECUSA_SEGUNDOS,
+  DESVIO_ALVO_MAXIMO_FRACAO,
   type EntradaDeComposicao,
   type VideoTier,
 } from "../services/video/falPipeline.js";
@@ -3403,6 +3404,9 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
             // não teve deficit de folga) — byte a byte o comportamento de
             // antes desta correção.
             margemDuracaoWan3ExtraSegundos: video.sync_folga_recusas * ESCALADA_MARGEM_POR_RECUSA_SEGUNDOS,
+            // P2-5 — "Refazer" nunca recusa por desvio de duração-alvo; o
+            // aviso (se houver) é calculado abaixo, com o mesmo teto.
+            avisarDesvioDeAlvoSemRecusar: true,
           },
           imagemAprovada,
           // `video.provider_job_id`, neste ponto, é o `request_id` de
@@ -3452,7 +3456,25 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
               "vídeo mudo novo está gravado no diário da corrida e não foi perdido.",
           });
         }
-        return reply.send(withDeliveredSeconds(refeito[0] as VideoRow));
+        // P2-5, 22/09/2026 — o mesmo teto de `compararAlvoComFala`
+        // (`DESVIO_ALVO_MAXIMO_FRACAO`), calculado AQUI porque o pipeline
+        // (com `avisarDesvioDeAlvoSemRecusar: true`) engoliu a exceção em
+        // vez de lançar. Nenhuma conta nova: os dois números já existiam —
+        // `video.target_duration_seconds` (gravado na criação) e
+        // `corrida.audioDurationSeconds` (medido por `FalPipelineResult`).
+        let avisoDuracaoAlvo: string | null = null;
+        if (video.target_duration_seconds != null && corrida.audioDurationSeconds != null) {
+          const alvo = video.target_duration_seconds;
+          const falaSegundos = corrida.audioDurationSeconds;
+          const desvio = Math.abs(falaSegundos - alvo) / alvo;
+          if (desvio > DESVIO_ALVO_MAXIMO_FRACAO) {
+            // P1 — vírgula decimal, espaço antes do "s": número em português.
+            avisoDuracaoAlvo =
+              `A fala ficou com ${falaSegundos.toFixed(1).replace(".", ",")} s e o alvo era ${alvo} s. ` +
+              "O vídeo segue normalmente.";
+          }
+        }
+        return reply.send({ ...withDeliveredSeconds(refeito[0] as VideoRow), duration_target_warning: avisoDuracaoAlvo });
       } catch (err) {
         await fecharCorrida(runId, "failed", err instanceof Error ? err.message : String(err));
         const { failure, message } = toClientVendorError("avatar", "videos.redoVideo", err);

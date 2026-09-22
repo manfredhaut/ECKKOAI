@@ -765,6 +765,11 @@ export function GenerateStep({
                   style={{ maxWidth: "100%", borderRadius: 8, display: "block" }}
                 />
               )}
+              {video.duration_target_warning && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+                  {video.duration_target_warning}
+                </p>
+              )}
               <div className="field" style={{ marginTop: 12 }}>
                 <label>{t("createVideo.generate.feedbackLabel")}</label>
                 <textarea
