@@ -371,6 +371,29 @@ button.nav-link {
   padding: 20px;
 }
 
+/* P2-7 — mínimo para a janela de Detalhes (ContentPage). O corpo do modal
+   reaproveita `.card` (mesmo fundo/borda do tema, claro ou escuro) — só o
+   overlay e o teto de largura/altura são novos. Genérico de propósito: não
+   é específico da tela admin, que já tem o próprio `.admin-modal-scrim`
+   com cores fixas. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(13, 13, 13, 0.62);
+}
+
+.modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
 .card-title {
   font-size: 13px;
   font-weight: 600;

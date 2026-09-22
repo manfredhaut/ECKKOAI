@@ -7,6 +7,7 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { SimulatedBadge } from "../../features/SimulatedBadge";
 import { VideoPlayer } from "../../features/VideoPlayer";
+import { VideoDetailsModal } from "./VideoDetailsModal";
 
 type Tab = "avatars" | "videos";
 
@@ -20,6 +21,11 @@ export function ContentPage() {
   // nenhum outro fluxo desta tela): sem ele, uma rejeição de `handleCancelVideo`
   // vira "Uncaught (in promise)" no console, sem nada visível na tela.
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // P2-7 — a janela de Detalhes. O vídeo inteiro fica no estado (não só o
+  // id): a lista `videos` pode reordenar/atualizar entre o clique e o
+  // render, e reler por id a cada render é o mesmo custo de guardar o
+  // objeto, sem a complicação extra de sincronizar os dois.
+  const [detailsFor, setDetailsFor] = useState<Video | null>(null);
 
   useEffect(() => {
     api.get<Avatar[]>("/avatars").then(setAvatars);
@@ -151,6 +157,16 @@ export function ContentPage() {
                     </td>
                     <td>{new Date(v.created_at).toLocaleDateString()}</td>
                     <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {/* P2-7 — sempre visível, qualquer status. */}
+                      <button
+                        className="btn btn-outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDetailsFor(v);
+                        }}
+                      >
+                        {t("content.details")}
+                      </button>
                       {v.output_url && (
                         <button
                           className="btn btn-outline"
@@ -192,7 +208,6 @@ export function ContentPage() {
                           </button>
                         </>
                       )}
-                      {!v.output_url && v.status !== "awaiting_approval" && v.status !== "awaiting_approval_video" && "—"}
                     </td>
                   </tr>
                 ))}
@@ -209,6 +224,10 @@ export function ContentPage() {
             </div>
           )}
         </div>
+      )}
+
+      {detailsFor && (
+        <VideoDetailsModal video={detailsFor} avatars={avatars} onClose={() => setDetailsFor(null)} />
       )}
     </>
   );

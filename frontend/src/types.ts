@@ -107,6 +107,23 @@ export interface Video {
   delivered_source?: string | null;
   /** Estimativa fracionária derivada do roteiro, para exibir antes da medição. */
   estimated_seconds?: number;
+  /**
+   * P2-7, 22/09/2026 — os 5 campos abaixo JÁ eram devolvidos por
+   * `GET /videos`/`GET /videos/:id` (`SELECT v.*`); faltava só declará-los
+   * aqui. Nenhuma mudança de backend — achado ao construir a janela de
+   * Detalhes da Biblioteca.
+   */
+  tier_video?: "simples" | "normal" | "premium";
+  /** "720p"/"1080p" — `null` em vídeos anteriores à coluna existir. */
+  resolution?: string | null;
+  /** A duração-alvo escolhida no passo Roteiro, ou `null` para "mais". */
+  target_duration_seconds?: number | null;
+  /**
+   * SÓ o texto em português do usuário. `motion_prompt_en` é velado
+   * (`CAMPOS_VELADOS`, tenantView.ts) — nunca chega ao frontend, P1.
+   */
+  motion_prompt?: string | null;
+  expressiveness?: "low" | "medium" | "high" | null;
   status: VideoStatus;
   /** A imagem-base a aprovar, quando `status === "awaiting_approval"`. */
   fal_composed_image_url?: string | null;

@@ -84,6 +84,7 @@ import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
 import { checkSceneTextTranslationPolicy } from "./checkSceneTextTranslationPolicy.js";
 import { checkFrozenIdentityPolicy } from "./checkFrozenIdentityPolicy.js";
 import { checkVideoCancelPolicy } from "./checkVideoCancelPolicy.js";
+import { checkVideoDetailsPolicy } from "./checkVideoDetailsPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
@@ -807,6 +808,11 @@ async function main(): Promise<void> {
   const videoCancel = await checkVideoCancelPolicy(process.env.REPO_ROOT ?? "/repo");
   videoCancel.failures.forEach((f) => failures.push(f));
   videoCancel.notes.forEach((n) => note(n));
+
+  // P2-7 — a janela "Detalhes" (Biblioteca) nunca exibe *_en/identity_snapshot.
+  const videoDetails = checkVideoDetailsPolicy(process.env.REPO_ROOT ?? "/repo");
+  videoDetails.failures.forEach((f) => failures.push(f));
+  videoDetails.notes.forEach((n) => note(n));
 
   // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");

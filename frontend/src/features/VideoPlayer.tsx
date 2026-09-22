@@ -56,7 +56,10 @@ const MAX_WIDTH: Record<string, number> = {
  * ela dizia "15s" num arquivo de 37 s — o número com menos relação possível com
  * o que estava tocando na tela logo acima.
  */
-function durationLabel(video: Video): { seconds: number; estimated: boolean } | null {
+// EXPORTADA (P2-7) para a janela de Detalhes reaproveitar — a mesma
+// lógica de "medida vs. estimada" não pode existir em dois lugares que
+// podem divergir.
+export function durationLabel(video: Video): { seconds: number; estimated: boolean } | null {
   if (video.delivered_seconds != null) return { seconds: video.delivered_seconds, estimated: false };
   if (video.estimated_seconds != null) return { seconds: video.estimated_seconds, estimated: true };
   return null;

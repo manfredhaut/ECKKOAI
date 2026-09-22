@@ -122,9 +122,23 @@ export const MUTANTS: Mutant[] = [
       '  "motion_prompt_en",\n' +
       '  "scenario_prompt_en",\n' +
       '  "outfit_prompt_en",\n' +
+      '  "identity_snapshot",\n' +
       "];",
     replace: "export const CAMPOS_VELADOS: readonly string[] = [];",
     expect: "a versão traduzida saiu na resposta do tenant",
+  },
+  {
+    guard: "tradução: o VÉU — identity_snapshot (P2-1) nunca sai para o tenant",
+    name: "identity_snapshot sai da lista de campos velados",
+    kind: "esperto",
+    // ESPERTO: os 3 campos `_en` continuam velados — só a ficha de identidade
+    // congelada (P2-1, achada ao construir a janela de Detalhes do P2-7)
+    // volta a vazar. Uma guarda que só olhasse "a lista está vazia?" não
+    // pegaria isto.
+    file: "backend/src/services/video/tenantView.ts",
+    find: '  "identity_snapshot",\n];',
+    replace: "];",
+    expect: "identity_snapshot",
   },
 ];
 
@@ -357,6 +371,10 @@ export async function checkTranslationPolicy(repoRoot: string): Promise<Translat
   // Mesma marca para os dois — a checagem é sobre a COLUNA (chave presente
   // no objeto), não sobre distinguir o texto de um campo do outro.
   const MARCA_CENA = "PROVA-DO-VEU-corredor-neon-em-ingles";
+  // P2-1/P2-7 — a ficha de identidade congelada. Marca PRÓPRIA: se ela
+  // vazasse junto de MARCA/MARCA_CENA, o `includes` do texto ainda pegaria,
+  // mas separar deixa a falha nomeada (qual dos quatro campos vazou).
+  const MARCA_IDENTIDADE = "PROVA-DO-VEU-voice-id-congelada";
   const serializada = withDeliveredSeconds({
     id: "v-guarda",
     tenant_id: "t",
@@ -369,6 +387,7 @@ export async function checkTranslationPolicy(repoRoot: string): Promise<Translat
     motion_prompt_en: MARCA,
     scenario_prompt_en: MARCA_CENA,
     outfit_prompt_en: MARCA_CENA,
+    identity_snapshot: { v: 1, voice_id: MARCA_IDENTIDADE },
     aspect_ratio: "16:9",
     delivered_seconds: "16.136",
     delivered_source: "vendor_response",
@@ -377,15 +396,17 @@ export async function checkTranslationPolicy(repoRoot: string): Promise<Translat
   if (
     json.includes(MARCA) ||
     json.includes(MARCA_CENA) ||
+    json.includes(MARCA_IDENTIDADE) ||
     "motion_prompt_en" in (serializada as Record<string, unknown>) ||
     "scenario_prompt_en" in (serializada as Record<string, unknown>) ||
-    "outfit_prompt_en" in (serializada as Record<string, unknown>)
+    "outfit_prompt_en" in (serializada as Record<string, unknown>) ||
+    "identity_snapshot" in (serializada as Record<string, unknown>)
   ) {
     failures.push(
-      "tradução: a versão traduzida saiu na resposta do tenant. Ela existe para auditoria — log de " +
-        "servidor e painel admin — e o modelo do produto é que quem escreve vê e revisa sempre o " +
-        "próprio texto. Uma tela que mostrasse as duas transformaria uma decisão interna numa segunda " +
-        "caixa de texto a revisar, e numa que não dá para editar.",
+      "tradução: a versão traduzida (ou a ficha de identidade congelada) saiu na resposta do tenant. " +
+        "Ela existe para auditoria — log de servidor e painel admin — e o modelo do produto é que quem " +
+        "escreve vê e revisa sempre o próprio texto. Uma tela que mostrasse as duas transformaria uma " +
+        "decisão interna numa segunda caixa de texto a revisar, e numa que não dá para editar.",
     );
   }
   // O contraponto: o texto do usuário CONTINUA saindo. Sem ele, uma guarda que

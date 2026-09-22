@@ -37,10 +37,16 @@
 // está errado: INERTE. É o mesmo defeito já medido em `VOICE_SPEED` e pago de
 // novo em `MAX_SCRIPT_SECONDS`; aqui ele foi pego pelo `tsc` antes de custar um
 // mutante.
+// P2-1/P2-7, 22/09/2026 — `identity_snapshot` entrou na lista: é a ficha de
+// identidade congelada (frozenIdentity.ts), uso INTERNO
+// (resolverIdentidade/decidirVoz), nunca da tela do tenant. `SELECT v.*` a
+// trazia sem ninguém ter decidido isso — o mesmo defeito que motivou este véu
+// para os campos `_en`, achado ao construir a janela de Detalhes (P2-7).
 export const CAMPOS_VELADOS: readonly string[] = [
   "motion_prompt_en",
   "scenario_prompt_en",
   "outfit_prompt_en",
+  "identity_snapshot",
 ];
 
 /**

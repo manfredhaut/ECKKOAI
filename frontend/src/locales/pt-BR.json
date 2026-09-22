@@ -399,7 +399,30 @@
     "voiceCloned": "Voz clonada",
     "durationDelivered": "{{seconds}} s entregues",
     "durationEstimated": "~{{seconds}} s estimados",
-    "durationUnknown": "duração não medida"
+    "durationUnknown": "duração não medida",
+    "details": "Detalhes",
+    "detailsTitle": "Detalhes do vídeo",
+    "detailsTier": "Nível",
+    "detailsAspectRatio": "Formato",
+    "detailsResolution": "Resolução",
+    "detailsTargetDuration": "Duração-alvo",
+    "detailsSeconds": "{{seconds}} s",
+    "detailsDeliveredDuration": "Duração entregue",
+    "detailsScenarioText": "Cenário",
+    "detailsScenarioImage": "Imagem de cenário",
+    "detailsOutfitText": "Traje",
+    "detailsOutfitImage": "Imagem de traje",
+    "detailsMotionPrompt": "Interpretação",
+    "detailsExpressiveness": "Expressividade",
+    "detailsCaptions": "Legendas",
+    "detailsCaptionsYes": "Pedidas e entregues",
+    "detailsCaptionsMissing": "Pedidas, mas não entregues",
+    "detailsCaptionsNo": "Não pedidas",
+    "detailsAvatar": "Avatar usado",
+    "detailsStatus": "Status",
+    "detailsCreatedAt": "Criado em",
+    "detailsHasImage": "Com imagem",
+    "detailsNoImage": "Sem imagem"
   },
   "settings": {
     "title": "Configurações",
@@ -482,7 +505,7 @@
       "script": "Roteiro",
       "generate": "Gerar",
       "scene": "Cena",
-      "studioMovieEdit": "Studio Movie Edit"
+      "studioMovieEdit": "Estúdio de Edição"
     },
     "avatarSetup": {
       "scopeNote": "Esta tela configura seu avatar reutilizável: fotos, vídeo de referência e voz. Ela vale para todos os vídeos que você gerar com ele. O que muda de vídeo para vídeo — roteiro, fundo, interpretação, traje e formato — fica nos passos seguintes. O fundo virtual daqui é só da FOTO do avatar, para destacar o rosto; o fundo do vídeo é escolhido no passo Cena.",
@@ -806,7 +829,7 @@
       "refacoesEsgotadas": "Você já refez este vídeo {{feitas}} de {{limite}} vezes. Cada refação paga o fornecedor de novo — aprove o que está aí ou comece um vídeo novo."
     },
     "studioEdit": {
-      "title": "Studio Movie Edit",
+      "title": "Estúdio de Edição",
       "chooseVideoTitle": "Vídeo a editar",
       "noVideos": "Nenhum vídeo pronto para editar ainda.",
       "loadingVideos": "Carregando vídeos…",
