@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { AvatarSetupStep } from "./steps/AvatarSetupStep";
@@ -39,7 +40,15 @@ export function CreateVideoPage() {
     t("createVideo.steps.generate"),
     t("createVideo.steps.studioMovieEdit"),
   ];
-  const [step, setStep] = useState(0);
+  // P2-3 — "Retomar aprovação" (Biblioteca, ContentPage.tsx): o link chega
+  // como `create?resume=<id>`. Presente, o wizard nasce DIRETO no passo
+  // "4. Gerar" (índice 3) — não faz sentido passar pelos passos 1-3 para
+  // retomar um vídeo que já existe. Lido uma vez só (`useState` inicial,
+  // não um efeito): trocar de query string depois de montado não deve
+  // arrancar a pessoa do passo em que ela está.
+  const [searchParams] = useSearchParams();
+  const resumeVideoId = searchParams.get("resume") ?? undefined;
+  const [step, setStep] = useState(() => (resumeVideoId ? 3 : 0));
   const [wizard, setWizard] = useState<WizardState>({
     avatarId: null,
     script: "",
@@ -246,7 +255,11 @@ export function CreateVideoPage() {
         />
       )}
       {step === 3 && (
-        <GenerateStep wizard={wizard} onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))} />
+        <GenerateStep
+          wizard={wizard}
+          onCaptionsChange={(captions) => setWizard((w) => ({ ...w, captions }))}
+          resumeVideoId={resumeVideoId}
+        />
       )}
       {step === 4 && <StudioMovieEditStep />}
 

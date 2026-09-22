@@ -8,6 +8,12 @@
  * - `awaiting_approval_video`: `animar` também já foi pago, o VÍDEO MUDO
  *   existe, e as duas etapas mais caras (narrar + sincronizar) esperam um
  *   segundo clique. FASE 2 (Modo B), 21/08, migration 059.
+ *
+ * `cancelled` — P2-3, 22/09/2026: o cliente cancelou uma das duas
+ * aprovações acima. TERMINAL, nunca reprocessado (fora de
+ * `STATUS_VARRIDOS`, recovery.ts), NUNCA estorna crédito (P5: a
+ * plataforma não paga pelo aprendizado do cliente — a etapa paga já
+ * rodou nos dois status de onde se cancela). Migration 084.
  */
 export type VideoStatus =
   | "queued"
@@ -15,7 +21,8 @@ export type VideoStatus =
   | "awaiting_approval"
   | "awaiting_approval_video"
   | "ready"
-  | "error";
+  | "error"
+  | "cancelled";
 
 export interface Avatar {
   id: string;

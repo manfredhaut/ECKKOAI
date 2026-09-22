@@ -121,6 +121,7 @@ import {
   decidirVoz,
   precisaChecarVozAntesDeNarrar,
 } from "../services/video/frozenIdentity.js";
+import { tentarCancelarVideo } from "../services/video/videoCancel.js";
 import {
   maxCharsForNormalTarget,
   fracionarRoteiro,
@@ -3988,6 +3989,37 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         });
         return reply.code(vendorErrorStatus(failure)).send({ error: "resume_blocks_failed", message });
       }
+    },
+  );
+
+  // ---------------------------------------------------------------------
+  // P2-3, 22/09/2026 — CANCELAR uma aprovação pendente.
+  //
+  // A decisão em si (o UPDATE condicional, o estorno — aqui, NUNCA — e o
+  // motivo da recusa) vive em `tentarCancelarVideo` (videoCancel.ts), pela
+  // mesma razão de sempre: uma decisão dentro do corpo de uma rota não é
+  // exercitável sem subir a aplicação inteira. Esta rota só traduz o
+  // resultado em HTTP.
+  // ---------------------------------------------------------------------
+  app.post<{ Params: { id: string } }>(
+    "/videos/:id/cancel",
+    { preHandler: requireActiveTenant },
+    async (req, reply) => {
+      const resultado = await tentarCancelarVideo(req.tenantId, req.params.id);
+      if (!resultado.ok) {
+        if (resultado.motivo === "not_found") {
+          return reply.code(404).send({ error: "not_found", message: "Vídeo não encontrado." });
+        }
+        // P1 — sem status técnico na mensagem: "processing"/"ready"/etc não
+        // significam nada para quem não lê o código.
+        return reply.code(409).send({
+          error: "cancel_not_pending",
+          message: "Este vídeo não está mais aguardando aprovação. Nada foi alterado.",
+        });
+      }
+
+      logEvent("info", "video_cancelado", { context: "videos.cancel", videoId: resultado.video.id });
+      return reply.send({ ...withDeliveredSeconds(resultado.video as VideoRow), message: "Vídeo cancelado." });
     },
   );
 }

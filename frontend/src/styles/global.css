@@ -594,6 +594,13 @@ button.nav-link {
   border-color: var(--color-tertiary);
 }
 
+/* P2-3 — terminal, mas NEUTRO: cancelar não é erro nem falha do produto,
+   é decisão do cliente. Sem preenchimento, para não parecer o mesmo alerta
+   de `status-error`. */
+.status-pill.status-cancelled {
+  color: var(--color-text-muted);
+}
+
 .status-pill.status-connected {
   color: var(--color-primary-text);
   background: var(--color-primary);

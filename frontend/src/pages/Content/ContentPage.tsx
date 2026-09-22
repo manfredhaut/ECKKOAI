@@ -16,6 +16,10 @@ export function ContentPage() {
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [playing, setPlaying] = useState<string | null>(null);
+  // P2-3 — erro do cancelamento. Precisa de dono próprio (não o `error` de
+  // nenhum outro fluxo desta tela): sem ele, uma rejeição de `handleCancelVideo`
+  // vira "Uncaught (in promise)" no console, sem nada visível na tela.
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Avatar[]>("/avatars").then(setAvatars);
@@ -23,6 +27,24 @@ export function ContentPage() {
   }, []);
 
   const playingVideo = videos.find((v) => v.id === playing) ?? null;
+
+  /**
+   * P2-3 — cancelar direto da Biblioteca. Mesmo padrão de tratamento de
+   * erro do resto do produto (F10): `ApiError` (que estende `Error`) vira
+   * `err.message`; qualquer outra coisa cai em `errors.generic`. Nunca
+   * deixa a promise rejeitar sem dono.
+   */
+  async function handleCancelVideo(v: Video) {
+    const confirmKey = v.status === "awaiting_approval_video" ? "cancelConfirmVideo" : "cancelConfirmImage";
+    if (!window.confirm(t(`createVideo.generate.${confirmKey}`))) return;
+    setCancelError(null);
+    try {
+      const updated = await api.post<Video>(`/videos/${v.id}/cancel`, {});
+      setVideos((vs) => vs.map((x) => (x.id === updated.id ? updated : x)));
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : t("errors.generic"));
+    }
+  }
 
   return (
     <>
@@ -91,6 +113,7 @@ export function ContentPage() {
 
       {tab === "videos" && (
         <div className="card">
+          {cancelError && <p style={{ color: "var(--color-tertiary)" }}>{cancelError}</p>}
           {videos.length === 0 ? (
             <div className="empty-state">
               {t("content.videosEmptyPrefix")} <Link to="create">{t("content.videosEmptyLink")}</Link>
@@ -127,8 +150,8 @@ export function ContentPage() {
                       <StatusPill status={v.status} />
                     </td>
                     <td>{new Date(v.created_at).toLocaleDateString()}</td>
-                    <td>
-                      {v.output_url ? (
+                    <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {v.output_url && (
                         <button
                           className="btn btn-outline"
                           onClick={(e) => {
@@ -140,9 +163,36 @@ export function ContentPage() {
                         >
                           {playing === v.id ? t("content.hideVideo") : t("content.watch")}
                         </button>
-                      ) : (
-                        "—"
                       )}
+                      {/* P2-3 — "Retomar aprovação" reabre o wizard direto no
+                          passo "4. Gerar", na MESMA tela de aprovação
+                          pendente (GenerateStep já sabe renderizar por
+                          `video.status`). Link relativo sem "/" nem "..":
+                          o React Router resolve pela árvore de rotas, não
+                          pela URL — mesmo padrão do link já existente
+                          acima ("avatarsEmptyLink"), que aponta para
+                          `create` de dentro desta mesma página. */}
+                      {(v.status === "awaiting_approval" || v.status === "awaiting_approval_video") && (
+                        <>
+                          <Link
+                            className="btn btn-outline"
+                            to={`create?resume=${v.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {t("content.resumeApproval")}
+                          </Link>
+                          <button
+                            className="btn btn-outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleCancelVideo(v);
+                            }}
+                          >
+                            {t("content.cancelVideo")}
+                          </button>
+                        </>
+                      )}
+                      {!v.output_url && v.status !== "awaiting_approval" && v.status !== "awaiting_approval_video" && "—"}
                     </td>
                   </tr>
                 ))}

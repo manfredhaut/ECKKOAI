@@ -83,6 +83,7 @@ import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
 import { checkSceneTextTranslationPolicy } from "./checkSceneTextTranslationPolicy.js";
 import { checkFrozenIdentityPolicy } from "./checkFrozenIdentityPolicy.js";
+import { checkVideoCancelPolicy } from "./checkVideoCancelPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
@@ -801,6 +802,11 @@ async function main(): Promise<void> {
   const frozenIdentity = await checkFrozenIdentityPolicy(process.env.REPO_ROOT ?? "/repo");
   frozenIdentity.failures.forEach((f) => failures.push(f));
   frozenIdentity.notes.forEach((n) => note(n));
+
+  // P2-3 — cancelar uma aprovação pendente, sem estorno (P5).
+  const videoCancel = await checkVideoCancelPolicy(process.env.REPO_ROOT ?? "/repo");
+  videoCancel.failures.forEach((f) => failures.push(f));
+  videoCancel.notes.forEach((n) => note(n));
 
   // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");

@@ -97,15 +97,34 @@ const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   awaiting_approval_video: 75,
   ready: 100,
   error: 100,
+  // P2-3 — terminal, igual a ready/error.
+  cancelled: 100,
 };
 
 export function GenerateStep({
   wizard,
   onCaptionsChange,
+  resumeVideoId,
 }: {
   wizard: WizardState;
   /** Mesma forma dos outros passos: o estado mora na página, o passo avisa. */
   onCaptionsChange: (captions: boolean) => void;
+  /**
+   * P2-3 — "Retomar aprovação" (Biblioteca). Quando presente, esta tela
+   * NÃO cria um vídeo novo: busca o vídeo existente por `GET /videos/:id`
+   * e reaproveita toda a renderização condicional por `video.status` que
+   * já existe abaixo — nenhuma lógica nova de aprovação, só um jeito
+   * diferente de POPULAR `video` pela primeira vez.
+   *
+   * Não reinicia o polling (`pollRef`, só ligado dentro de
+   * `handleGenerate`): correto para `awaiting_approval`/
+   * `awaiting_approval_video` (terminais para o polling, esperam clique
+   * humano — é exatamente o caso de uso deste prop). Um vídeo retomado
+   * que estivesse em `queued`/`processing` ficaria sem poll até a pessoa
+   * recarregar — fora do escopo pedido (retomar serve só para aprovação
+   * pendente).
+   */
+  resumeVideoId?: string;
 }) {
   // `i18n.language` é o gatilho da tradução da Interpretação no servidor. Sai
   // daqui, e não de uma detecção de língua sobre o texto: o idioma da interface
@@ -114,6 +133,17 @@ export function GenerateStep({
   const [video, setVideo] = useState<Video | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const pollRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!resumeVideoId || video) return;
+    let cancelled = false;
+    api.get<Video>(`/videos/${resumeVideoId}`).then((v) => {
+      if (!cancelled) setVideo(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [resumeVideoId, video]);
 
   // Sem este estado (e o catch abaixo), um 403 de crédito, um 409 de avatar em
   // treino ou um 429 de teto viravam promise rejeitada sem dono: o botão
@@ -270,7 +300,10 @@ export function GenerateStep({
   // e um botão cinza sem dizer qual delas está rodando é pior que nenhum.
   const [approvingVideo, setApprovingVideo] = useState(false);
   const [redoingVideo, setRedoingVideo] = useState(false);
-  const busy = approving || recomposing || approvingVideo || redoingVideo;
+  // P2-3 — cancelar uma das duas aprovações pendentes. Estado PRÓPRIO, mesma
+  // razão dos quatro acima.
+  const [cancelling, setCancelling] = useState(false);
+  const busy = approving || recomposing || approvingVideo || redoingVideo || cancelling;
 
   /**
    * O LIMITE DE REFAÇÕES, na tela — W3.1b, 24/08.
@@ -360,6 +393,26 @@ export function GenerateStep({
       setError(err instanceof Error ? err.message : t("errors.generic"));
     } finally {
       setRedoingVideo(false);
+    }
+  }
+
+  /**
+   * P2-3 — cancelar a aprovação pendente. `confirmKey` distingue a 1ª
+   * aprovação (imagem) da 2ª (vídeo mudo): P5 exige que o texto diga QUAL
+   * etapa paga já rodou, não uma frase genérica. Sem estorno — a rota
+   * nunca devolve crédito (ver videoCancel.ts).
+   */
+  async function handleCancel(confirmKey: "cancelConfirmImage" | "cancelConfirmVideo") {
+    if (!video) return;
+    if (!window.confirm(t(`createVideo.generate.${confirmKey}`))) return;
+    setCancelling(true);
+    setError(null);
+    try {
+      setVideo(await api.post<Video>(`/videos/${video.id}/cancel`, {}));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -733,6 +786,16 @@ export function GenerateStep({
                 >
                   {recomposing ? t("createVideo.generate.recomposing") : t("createVideo.generate.recompose")}
                 </button>
+                {/* P2-3 — P5: a imagem JÁ foi gerada (etapa paga), então
+                    cancelar aqui nunca devolve crédito. A confirmação diz
+                    isso antes do clique valer. */}
+                <button
+                  className="btn btn-outline"
+                  onClick={() => void handleCancel("cancelConfirmImage")}
+                  disabled={busy}
+                >
+                  {cancelling ? t("createVideo.generate.cancelling") : t("createVideo.generate.cancel")}
+                </button>
               </div>
               {refacoesEsgotadas && (
                 <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
@@ -795,6 +858,17 @@ export function GenerateStep({
                 >
                   {redoingVideo ? t("createVideo.generate.redoingVideo") : t("createVideo.generate.redoVideo")}
                 </button>
+                {/* P2-3 — P5: aqui a imagem E a animação já rodaram (as
+                    duas etapas mais caras da corrida), então cancelar
+                    nunca devolve crédito — mesmo texto do bloco de cima,
+                    trocando "imagem" por "vídeo já foi animado". */}
+                <button
+                  className="btn btn-outline"
+                  onClick={() => void handleCancel("cancelConfirmVideo")}
+                  disabled={busy}
+                >
+                  {cancelling ? t("createVideo.generate.cancelling") : t("createVideo.generate.cancel")}
+                </button>
               </div>
               {refacoesEsgotadas && (
                 <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
@@ -805,6 +879,13 @@ export function GenerateStep({
                 {t("createVideo.generate.approveVideoCost")}
               </p>
             </>
+          )}
+
+          {/* P2-3 — terminal, sem player nem botão de refazer. */}
+          {video.status === "cancelled" && (
+            <p className="text-muted" style={{ fontSize: 14 }}>
+              {t("createVideo.generate.cancelledNotice")}
+            </p>
           )}
 
           {video.status === "ready" && video.output_url && (
