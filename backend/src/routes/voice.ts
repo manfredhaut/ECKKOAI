@@ -77,6 +77,18 @@ import {
   voiceNameWithTimestamp,
 } from "../services/voice/voicePreview.js";
 
+/**
+ * Clonagem PARALELA da voz na HeyGen (bloco 6c de `POST /avatars/:id/voice-sample`)
+ * DESLIGADA. Decisão D2 (SIMPLES-2/3): a voz da geração vem SEMPRE da ElevenLabs
+ * (`audio_asset_id`; ver `HeygenPayloadExtras` em avatarProvider.ts), e
+ * `avatars.heygen_voice_id` não é lido por ninguém: nem pela geração, nem pela tela
+ * (o card de ajustes HeyGen está oculto por `SHOW_HEYGEN_VOICE_TUNING`). Ligada, ela
+ * gasta upload e clonagem na conta HeyGen do tenant (custo não medido, sem teto de
+ * slots) por uma voz que nada usa. O código do bloco e as colunas continuam.
+ * Religar = `true`, e só junto com quem passar a consumir `heygen_voice_id`.
+ */
+const HEYGEN_PARALLEL_VOICE_CLONE: boolean = false;
+
 export async function voiceRoutes(app: FastifyInstance): Promise<void> {
   /**
    * Os números que a TELA precisa para desabilitar o botão pelo mesmo critério
@@ -428,7 +440,7 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       // heygen" separado para resolver — é a credencial de avatar mesmo.
       let heygenVoiceId: string | null = null;
       const heygenCredential = await getCredentialForVendor(req.tenantId, "avatar", "heygen");
-      if (heygenCredential) {
+      if (HEYGEN_PARALLEL_VOICE_CLONE && heygenCredential) {
         try {
           const clonado = await cloneVoiceHeygenFromBufferAndRecordUsage({
             apiKey: heygenCredential.apiKey,

@@ -21,7 +21,9 @@
  *       genérico `getCredential`, mesma regra já usada para treino/preview.
  *  G-2  a clonagem HeyGen só é TENTADA quando essa credencial existe —
  *       sem ela, pula em silêncio (comportamento de hoje, tenant sem
- *       HeyGen conectada).
+ *       HeyGen conectada). A condição pode vir precedida da constante
+ *       `HEYGEN_PARALLEL_VOICE_CLONE &&` (hoje `false`, decisão D2): a guarda
+ *       exige a checagem da credencial, não que a clonagem esteja ligada.
  *  G-3  a chamada está dentro de um `try/catch` que NÃO relança — uma
  *       falha da HeyGen vira log, nunca um 5xx sobre uma clonagem
  *       ElevenLabs que já teve sucesso e já consumiu o slot.
@@ -149,9 +151,10 @@ export function checkHeygenVoiceCloneWiringPolicy(repoRoot: string): HeygenVoice
         `heygen-voice-clone-wiring: getCredentialForVendor não achado no bloco de clonagem HeyGen em ${ROTA_VOICE}.`,
       );
     }
-    if (!/if\s*\(heygenCredential\)\s*\{/.test(corpo)) {
+    if (!/if\s*\(\s*(?:HEYGEN_PARALLEL_VOICE_CLONE\s*&&\s*)?heygenCredential\s*\)\s*\{/.test(corpo)) {
       failures.push(
-        "heygen-voice-clone-wiring: a clonagem HeyGen não está condicionada a `if (heygenCredential)` em " +
+        "heygen-voice-clone-wiring: a clonagem HeyGen não está condicionada a `if (heygenCredential)` " +
+          "(opcionalmente precedido de `HEYGEN_PARALLEL_VOICE_CLONE &&`) em " +
           `${ROTA_VOICE} — sem credencial, a tentativa deveria pular em silêncio, não falhar tentando.`,
       );
     }
