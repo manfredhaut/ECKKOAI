@@ -71,6 +71,7 @@ export const config = {
   // primeiro, BYOK do tenant como retaguarda. Não é "armazenar e validar
   // apenas"; a decisão de migrar já foi tomada para este vendor.
   platformFalApiKey: optional("PLATFORM_FAL_API_KEY"),
+  platformHiggsfieldApiKey: optional("PLATFORM_HIGGSFIELD_API_KEY"),
   // Saída de emergência da precedência. Por padrão o BANCO vence o .env, para
   // que gravar pelo painel valha sem reiniciar. Com isto em "1" o .env volta a
   // vencer — o caso de uso é uma chave ruim gravada pelo painel trancando do

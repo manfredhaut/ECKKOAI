@@ -139,6 +139,7 @@ services:
       # (resolveTenantAvatarFalKey). Mesma retaguarda: painel primeiro, esta
       # variável só entra se a tabela estiver vazia.
       PLATFORM_FAL_API_KEY: ${PLATFORM_FAL_API_KEY:-}
+      PLATFORM_HIGGSFIELD_API_KEY: ${PLATFORM_HIGGSFIELD_API_KEY:-}
       # Inverte a precedência: o .env volta a vencer o painel. Saída de
       # emergência para uma chave ruim gravada pela tela — ver
       # services/platformCredentialStore.ts.

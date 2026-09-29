@@ -12,7 +12,7 @@
  */
 import { config } from "../config.js";
 
-export type PlatformCredentialId = "google" | "copilot" | "embedding" | "heygen" | "elevenlabs" | "fal";
+export type PlatformCredentialId = "google" | "copilot" | "embedding" | "heygen" | "elevenlabs" | "fal" | "higgsfield";
 
 /**
  * Como a credencial é validada. Nenhuma destas formas gera nada:
@@ -168,6 +168,33 @@ export const PLATFORM_CREDENTIALS: Record<PlatformCredentialId, PlatformCredenti
     readsBalance: false,
     balanceUnavailable: "a fal.ai não expõe endpoint de saldo/cota por chave.",
     readEnv: () => config.platformFalApiKey,
+  },
+  higgsfield: {
+    id: "higgsfield",
+    envVar: "PLATFORM_HIGGSFIELD_API_KEY",
+    label: "Higgsfield — criativos (imagem e vídeo)",
+    // ABAS-4, 29/09/2026 — ARMAZENAMENTO SÓ. A Higgsfield entrega a
+    // credencial já como UM par "KeyID:Secret" (confirmado pelo operador,
+    // não a forma de dois-campos que o levantamento original supôs), então
+    // esta entrada segue o MESMO molde de qualquer chave de string única
+    // acima — nenhum tratamento especial de armazenamento.
+    //
+    // `validation: null` aqui é TEMPORÁRIO, ao contrário do da fal (que é
+    // permanente — o fornecedor não tem endpoint de saldo). Aqui a razão é
+    // que ninguém verificou ainda a URL real de POST /estimate/<slug> nem
+    // tem uma conta de desenvolvimento Higgsfield para testar contra —
+    // pré-requisito da etapa 1 do plano ("abrir conta em open.higgsfield.ai,
+    // creditar US$ 10"). Escrever a sonda antes disso seria uma URL de
+    // fornecedor fabricada de memória, entrando numa allowlist
+    // (`PROBE_ENDPOINTS`) que `npm run check` trata como contrato. Assim que
+    // a etapa 1 acontecer, esta entrada ganha `validation: "higgsfield_estimate"`,
+    // um novo `PlatformValidationKind` e a função de sonda em platformKeyProbe.ts.
+    servedBy: "imagens de referência, propagandas e b-rolls da aba Gerar Vídeos & Imagens, quando o tenant não tem chave própria",
+    validation: null,
+    readsBalance: false,
+    balanceUnavailable:
+      "a API da Higgsfield não documenta endpoint de saldo; conferir em console.higgsfield.ai.",
+    readEnv: () => config.platformHiggsfieldApiKey,
   },
 };
 
