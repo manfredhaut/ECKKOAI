@@ -510,6 +510,7 @@
       "script": "Roteiro",
       "generate": "Gerar vídeo Avatar",
       "scene": "Cena",
+      "creatives": "Gerar Vídeos & Imagens",
       "studioMovieEdit": "Estúdio de Edição"
     },
     "avatarSetup": {
@@ -666,6 +667,42 @@
         "localeLabel": "Idioma/sotaque (opcional)",
         "localeHelp": "Código no formato pt-BR, en-US etc. — só para vozes multilíngues. Deixe em branco para o padrão."
       }
+    },
+    "creatives": {
+      "referencesTitle": "Referências",
+      "referencesHint": "Até 8 imagens por cartão. Fotos e prompts ficam aqui para uso nesta rodada e nas próximas — sem envio real ainda.",
+      "card": {
+        "produto": "Produto",
+        "cenario": "Cenário",
+        "personagem": "Personagem",
+        "marca": "Marca"
+      },
+      "chooseFiles": "Escolher arquivos",
+      "createTitle": "Criar",
+      "mode": {
+        "imagem": "Imagem",
+        "propaganda": "Propaganda",
+        "broll": "B-roll",
+        "sobreposicao": "Sobreposição"
+      },
+      "materialTitleLabel": "Título do material",
+      "materialTitleHelp": "Nomeia o arquivo exportado e aparece na Galeria e no Estúdio de Edição. Não é enviado ao fornecedor.",
+      "materialTitlePlaceholder": "Ex.: Produto na bancada, aproximação lenta",
+      "insertReferenceLabel": "Inserir referência:",
+      "promptLabel": "Prompt",
+      "promptPlaceholder": "Descreva a cena e o movimento…",
+      "promptHint": "B-roll: áudio desligado e proporção do vídeo atual. Descreva só o movimento, uma cena por clipe.",
+      "modelLabel": "Modelo",
+      "durationLabel": "Duração",
+      "costLabel": "Custo estimado",
+      "costSimulatedNote": "Disponível quando o motor de jobs estiver ligado",
+      "generateButton": "Gerar",
+      "generateDisabledHint": "Aguardando o bloco seguinte do plano (credencial e motor de jobs)",
+      "galleryTitle": "Galeria",
+      "galleryHint": "Exemplos de como o material aparece quando pronto — nenhum destes é um job real.",
+      "jobReady": "Pronto (exemplo)",
+      "exampleBrollTitle": "Produto na bancada, aproximação lenta",
+      "exampleImageTitle": "Bancada de mármore"
     },
     "script": {
       "titleLabel": "Título do vídeo",
@@ -846,6 +883,8 @@
     },
     "studioEdit": {
       "title": "Estúdio de Edição",
+      "creativesComingSoonTitle": "Vídeos e imagens gerados",
+      "creativesComingSoonBody": "Materiais prontos na aba \"5. Gerar Vídeos & Imagens\" vão aparecer aqui para inserir na linha do tempo. Ainda não disponível nesta rodada.",
       "chooseVideoTitle": "Vídeo a editar",
       "noVideos": "Nenhum vídeo pronto para editar ainda.",
       "loadingVideos": "Carregando vídeos…",

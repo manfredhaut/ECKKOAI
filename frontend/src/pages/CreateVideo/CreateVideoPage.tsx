@@ -8,6 +8,7 @@ import { AvatarSetupStep } from "./steps/AvatarSetupStep";
 import { ScriptStep } from "./steps/ScriptStep";
 import { SceneStep } from "./steps/SceneStep";
 import { GenerateStep } from "./steps/GenerateStep";
+import { CreativesStep } from "./steps/CreativesStep";
 import { StudioMovieEditStep } from "./steps/StudioMovieEditStep";
 import { DEFAULT_PUBLISH_PLATFORM } from "./publishPlatforms";
 import type { WizardState } from "./types";
@@ -40,6 +41,7 @@ export function CreateVideoPage() {
     t("createVideo.steps.script"),
     t("createVideo.steps.scene"),
     t("createVideo.steps.generate"),
+    t("createVideo.steps.creatives"),
     t("createVideo.steps.studioMovieEdit"),
   ];
   // P2-3 — "Retomar aprovação" (Biblioteca, ContentPage.tsx): o link chega
@@ -222,7 +224,10 @@ export function CreateVideoPage() {
     step === 2 ||
     // Gerar também nunca trava — o clique em "Gerar vídeo" é uma ação dentro
     // do próprio passo, independente de avançar para Studio Movie Edit.
-    step === 3;
+    step === 3 ||
+    // ABAS-2 — a aba "Gerar Vídeos & Imagens" é semi-independente: abre sem
+    // vídeo gerado, e nenhum controle dela é obrigatório para avançar.
+    step === 4;
 
   /**
    * O que falta para poder avançar, em uma linha.
@@ -325,7 +330,8 @@ export function CreateVideoPage() {
           adjustFromVideoId={adjustFromVideoId}
         />
       )}
-      {step === 4 && <StudioMovieEditStep />}
+      {step === 4 && <CreativesStep />}
+      {step === 5 && <StudioMovieEditStep />}
 
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
         {step > 0 && (

@@ -1320,6 +1320,19 @@ export function StudioMovieEditStep() {
           </div>
         </div>
 
+        {/* ABAS-2, 29/09/2026 — aviso estático: a aba 5 (Gerar Vídeos &
+            Imagens) ainda não grava creative_jobs (migration 088, bloco
+            seguinte do plano), então não há dado real para listar aqui. O
+            cartão existe para o lugar já nascer certo quando a biblioteca
+            funcional chegar, em vez de fingir uma integração que ainda não
+            existe. */}
+        <div className="card">
+          <div className="card-title">{t("createVideo.studioEdit.creativesComingSoonTitle")}</div>
+          <p className="text-muted" style={{ marginTop: 6, fontSize: 13 }}>
+            {t("createVideo.studioEdit.creativesComingSoonBody")}
+          </p>
+        </div>
+
         <div className="card">
           <div className="card-title">{t("createVideo.studioEdit.summaryTitle")}</div>
           <div style={{ marginTop: 12, display: "grid", gap: 4, fontSize: 13.5 }}>

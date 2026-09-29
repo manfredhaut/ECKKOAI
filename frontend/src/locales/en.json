@@ -510,6 +510,7 @@
       "script": "Script",
       "generate": "Generate Avatar Video",
       "scene": "Scene",
+      "creatives": "Generate Videos & Images",
       "studioMovieEdit": "Studio Movie Edit"
     },
     "avatarSetup": {
@@ -659,6 +660,42 @@
         "localeLabel": "Language/accent (optional)",
         "localeHelp": "Code in pt-BR, en-US format, etc. — only for multilingual voices. Leave blank for the default."
       }
+    },
+    "creatives": {
+      "referencesTitle": "References",
+      "referencesHint": "Up to 8 images per card. Photos and prompts stay here for this round and the next — no real upload yet.",
+      "card": {
+        "produto": "Product",
+        "cenario": "Scenario",
+        "personagem": "Character",
+        "marca": "Brand"
+      },
+      "chooseFiles": "Choose files",
+      "createTitle": "Create",
+      "mode": {
+        "imagem": "Image",
+        "propaganda": "Ad",
+        "broll": "B-roll",
+        "sobreposicao": "Overlay"
+      },
+      "materialTitleLabel": "Material title",
+      "materialTitleHelp": "Names the exported file and shows up in the Gallery and the Studio. Not sent to the vendor.",
+      "materialTitlePlaceholder": "e.g. Product on the counter, slow push-in",
+      "insertReferenceLabel": "Insert reference:",
+      "promptLabel": "Prompt",
+      "promptPlaceholder": "Describe the scene and the movement…",
+      "promptHint": "B-roll: audio off, current video's aspect ratio. Describe only the movement, one scene per clip.",
+      "modelLabel": "Model",
+      "durationLabel": "Duration",
+      "costLabel": "Estimated cost",
+      "costSimulatedNote": "Available once the job engine is wired",
+      "generateButton": "Generate",
+      "generateDisabledHint": "Waiting on the next block of the plan (credential and job engine)",
+      "galleryTitle": "Gallery",
+      "galleryHint": "Examples of how ready material looks — none of these is a real job.",
+      "jobReady": "Ready (example)",
+      "exampleBrollTitle": "Product on the counter, slow push-in",
+      "exampleImageTitle": "Marble counter"
     },
     "script": {
       "titleLabel": "Video title",
@@ -839,6 +876,8 @@
     },
     "studioEdit": {
       "title": "Studio Movie Edit",
+      "creativesComingSoonTitle": "Generated videos and images",
+      "creativesComingSoonBody": "Material ready in the \"5. Generate Videos & Images\" tab will appear here to insert into the timeline. Not available yet in this round.",
       "chooseVideoTitle": "Video to edit",
       "noVideos": "No video ready to edit yet.",
       "loadingVideos": "Loading videos…",
