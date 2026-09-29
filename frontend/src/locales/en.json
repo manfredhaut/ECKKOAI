@@ -508,7 +508,7 @@
     "steps": {
       "avatarSetup": "Avatar setup",
       "script": "Script",
-      "generate": "Generate",
+      "generate": "Generate Avatar Video",
       "scene": "Scene",
       "studioMovieEdit": "Studio Movie Edit"
     },

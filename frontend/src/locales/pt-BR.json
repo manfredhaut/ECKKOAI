@@ -508,7 +508,7 @@
     "steps": {
       "avatarSetup": "Configurar avatar",
       "script": "Roteiro",
-      "generate": "Gerar",
+      "generate": "Gerar vídeo Avatar",
       "scene": "Cena",
       "studioMovieEdit": "Estúdio de Edição"
     },

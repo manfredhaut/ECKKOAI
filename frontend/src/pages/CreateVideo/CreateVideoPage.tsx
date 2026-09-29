@@ -13,7 +13,7 @@ import { DEFAULT_PUBLISH_PLATFORM } from "./publishPlatforms";
 import type { WizardState } from "./types";
 
 /**
- * Criar vídeo, em QUATRO passos: Avatar · Roteiro · Cena · Gerar.
+ * Criar vídeo, em QUATRO passos: Avatar · Roteiro · Cena · Gerar vídeo Avatar.
  *
  * Eram seis, e dois saíram por motivos diferentes:
  *
@@ -44,7 +44,7 @@ export function CreateVideoPage() {
   ];
   // P2-3 — "Retomar aprovação" (Biblioteca, ContentPage.tsx): o link chega
   // como `create?resume=<id>`. Presente, o wizard nasce DIRETO no passo
-  // "4. Gerar" (índice 3) — não faz sentido passar pelos passos 1-3 para
+  // "4. Gerar vídeo Avatar" (índice 3) — não faz sentido passar pelos passos 1-3 para
   // retomar um vídeo que já existe. Lido uma vez só (`useState` inicial,
   // não um efeito): trocar de query string depois de montado não deve
   // arrancar a pessoa do passo em que ela está.
