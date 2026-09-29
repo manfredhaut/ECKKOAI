@@ -30,6 +30,7 @@ import { readProviderMode } from "../services/providers/providerMode.js";
 import { PLATFORM_CREDENTIALS, PLATFORM_CREDENTIAL_IDS } from "../services/platformCredentials.js";
 import { listPlatformCredentials } from "../services/platformCredentialStore.js";
 import { MIN_VIDEO_BYTES, validateVideoArtifact } from "../services/videoArtifact.js";
+import { getCredential, getCredentialForVendor } from "../services/credentialLookup.js";
 
 /**
  * NENHUMA chave de plataforma bloqueia a passagem para live, e isso não é
@@ -39,9 +40,13 @@ import { MIN_VIDEO_BYTES, validateVideoArtifact } from "../services/videoArtifac
  * TENANT. As duas coisas não podiam ser verdade ao mesmo tempo.
  *
  * Quem manda é o código: `routes/videos.ts` e `routes/avatars.ts` leem
- * `getCredential(tenantId, ...)`. A chave de plataforma de vídeo/voz é hoje
- * só armazenada. Então o que bloqueia live é a credencial do tenant existir —
- * e é isso que se verifica abaixo.
+ * `getCredential(tenantId, ...)` / `getCredentialForVendor(...)`, que tentam
+ * a chave de PLATAFORMA primeiro (platformInheritance.ts) e só caem no BYOK
+ * do tenant sem cobertura (W1, 24/08). CORRIGIDO 29/09/2026: esta guarda
+ * contava linhas de `api_credentials` com `encrypted_key` — ignorava a
+ * herança e dava FALTA falsa para todo tenant sem chave própria, mesmo
+ * quando a plataforma cobre. Abaixo ela resolve a credencial de VERDADE,
+ * para o tenant em TEST_TENANT_ID, do jeito que a geração resolve.
  *
  * Reprovar por algo que live não precisa é pior que não verificar nada:
  * ensina a ignorar o preflight, e aí ele deixa de valer para o que importa.
@@ -80,23 +85,42 @@ async function main(): Promise<void> {
     );
   }
 
-  // Quem a geração REALMENTE usa. Esta é a linha que bloqueia, e não as de
-  // cima — ver o comentário de TENANT_PROVIDERS_FOR_LIVE.
-  for (const provider of TENANT_PROVIDERS_FOR_LIVE) {
-    const { rows } = await pool.query<{ total: string }>(
-      `SELECT count(*)::text AS total
-         FROM api_credentials
-        WHERE provider = $1 AND encrypted_key IS NOT NULL`,
-      [provider],
-    );
-    const total = Number(rows[0].total);
+  // Quem a geração REALMENTE usa, PARA O TENANT que vai gerar em live —
+  // mesma resolução de routes/videos.ts e routes/avatars.ts: chave de
+  // PLATAFORMA primeiro (platformInheritance.ts), BYOK do tenant depois.
+  // Substitui a contagem antiga de encrypted_key, que ignorava a herança —
+  // ver o comentário de TENANT_PROVIDERS_FOR_LIVE.
+  void TENANT_PROVIDERS_FOR_LIVE;
+  const testTenantId = process.env.TEST_TENANT_ID;
+  if (!testTenantId) {
     record(
-      total > 0,
+      false,
       true,
-      `credencial de ${provider} do tenant`,
-      total > 0
-        ? `${total} tenant(s) com a chave conectada — é ela que a geração usa`
-        : "nenhum tenant tem esta chave conectada; em live a geração falha antes de chamar o fornecedor",
+      "TEST_TENANT_ID",
+      "variável de ambiente TEST_TENANT_ID não definida — o preflight precisa saber qual tenant vai " +
+        "gerar em live para checar a credencial REAL (plataforma ou do próprio tenant).",
+    );
+  } else {
+    const avatarHeygen = await getCredentialForVendor(testTenantId, "avatar", "heygen");
+    record(
+      avatarHeygen !== null,
+      true,
+      "credencial de avatar (heygen) para o tenant de teste",
+      avatarHeygen ? `origem: ${avatarHeygen.source}` : "sem chave de plataforma nem do tenant para heygen",
+    );
+    const avatarFal = await getCredentialForVendor(testTenantId, "avatar", "fal");
+    record(
+      avatarFal !== null,
+      true,
+      "credencial de avatar (fal) para o tenant de teste",
+      avatarFal ? `origem: ${avatarFal.source}` : "sem chave de plataforma nem do tenant para fal",
+    );
+    const voice = await getCredential(testTenantId, "voice");
+    record(
+      voice !== null,
+      true,
+      "credencial de voice para o tenant de teste",
+      voice ? `origem: ${voice.source}` : "sem chave de plataforma nem do tenant para voice",
     );
   }
 
