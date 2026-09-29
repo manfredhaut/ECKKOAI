@@ -424,6 +424,15 @@ const ENV_READ_ROOTS = ["backend/src", "frontend/vite.config.ts"];
  */
 const ENV_FORA_DO_COMPOSE: { nome: string; motivo: string }[] = [
   {
+    nome: "TEST_TENANT_ID",
+    motivo:
+      "lida só por preflightLive.ts (29/09/2026), para checar a credencial REAL (plataforma ou do " +
+      "tenant) do tenant que vai gerar em live. Passada por `docker exec -e TEST_TENANT_ID=... ` na " +
+      "hora de rodar `npm run preflight:live`, uma invocação manual do operador antes de armar live — " +
+      "nunca no processo do backend em execução normal. Declará-la em `environment:` a deixaria fixa " +
+      "para sempre, quando o tenant de teste muda a cada rodada.",
+  },
+  {
     nome: "REPO_ROOT",
     motivo:
       "só o gate a lê, e com default `/repo`, que é onde o repositório está montado. MEDIDO: o " +
