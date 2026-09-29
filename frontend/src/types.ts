@@ -5,6 +5,11 @@
  * `awaiting_approval_video` para depois de `animar` (vídeo MUDO, pago,
  * antes de narrar+sincronizar — as duas etapas mais caras). Nenhum dos
  * dois sai sozinho: os dois esperam um clique humano.
+ *
+ * `cancelled` — P2-3, 22/09/2026: o cliente cancelou uma das duas
+ * aprovações acima. TERMINAL, e NUNCA estorna crédito (P5: a plataforma
+ * não paga pelo aprendizado do cliente — a etapa paga já rodou nos dois
+ * status de onde se cancela). Migration 084.
  */
 export type VideoStatus =
   | "queued"
@@ -12,7 +17,8 @@ export type VideoStatus =
   | "awaiting_approval"
   | "awaiting_approval_video"
   | "ready"
-  | "error";
+  | "error"
+  | "cancelled";
 
 export interface Avatar {
   id: string;
@@ -75,6 +81,12 @@ export interface Video {
   scenario_prompt: string | null;
   outfit_prompt: string | null;
   /**
+   * P2-5, 22/09/2026 — presente só na resposta de `/redo-video`, quando a
+   * fala divergiu do alvo escolhido em mais de 8%. Nunca persistido: é
+   * calculado na hora, a cada "Refazer", e não sobrevive a um reload da tela.
+   */
+  duration_target_warning?: string | null;
+  /**
    * Duração ESTIMADA, em segundos inteiros, gravada quando o vídeo nasceu.
    *
    * Até o bloco DURAÇÃO-1 isto guardava o chip de 15/30/60 s do passo 3 — um
@@ -95,6 +107,23 @@ export interface Video {
   delivered_source?: string | null;
   /** Estimativa fracionária derivada do roteiro, para exibir antes da medição. */
   estimated_seconds?: number;
+  /**
+   * P2-7, 22/09/2026 — os 5 campos abaixo JÁ eram devolvidos por
+   * `GET /videos`/`GET /videos/:id` (`SELECT v.*`); faltava só declará-los
+   * aqui. Nenhuma mudança de backend — achado ao construir a janela de
+   * Detalhes da Biblioteca.
+   */
+  tier_video?: "simples" | "normal" | "premium";
+  /** "720p"/"1080p" — `null` em vídeos anteriores à coluna existir. */
+  resolution?: string | null;
+  /** A duração-alvo escolhida no passo Roteiro, ou `null` para "mais". */
+  target_duration_seconds?: number | null;
+  /**
+   * SÓ o texto em português do usuário. `motion_prompt_en` é velado
+   * (`CAMPOS_VELADOS`, tenantView.ts) — nunca chega ao frontend, P1.
+   */
+  motion_prompt?: string | null;
+  expressiveness?: "low" | "medium" | "high" | null;
   status: VideoStatus;
   /** A imagem-base a aprovar, quando `status === "awaiting_approval"`. */
   fal_composed_image_url?: string | null;
@@ -142,6 +171,25 @@ export interface Video {
    * servidor continua sendo o freio real (409 `refacoes_esgotadas`).
    */
   refacoes?: { feitas: number; limite: number };
+  /**
+   * P2-8, "Ajustar este vídeo" — campos que faltava declarar para popular
+   * o wizard a partir de um vídeo existente (nenhuma mudança de backend:
+   * `SELECT v.*` já os devolvia).
+   */
+  background_type?: "color" | "image" | null;
+  background_value?: string | null;
+  avatar_look_id?: string | null;
+  publish_platform?: string | null;
+  /**
+   * A família de versões (migration 085). `root_video_id` aponta sempre
+   * para a PRIMEIRA versão — "Ver versões" filtra por ele, sem CTE
+   * recursiva nenhuma do lado do cliente.
+   */
+  parent_video_id?: string | null;
+  root_video_id?: string | null;
+  version_number?: number;
+  /** Enquadramento persistido por vídeo — `null` = padrão do servidor. */
+  avatar_fit?: "cover" | "contain" | null;
 }
 
 /** Resposta de `GET /dashboard-summary` — saldo de crédito e custo do mês. */

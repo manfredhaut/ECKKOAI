@@ -49,3 +49,7 @@ twinai.dump
 # do banco — nunca pertence ao git, mesmo raciocínio de uploads/ e
 # twinai.dump acima.
 backups/
+_debug/
+.env.*
+!.env.example
+twinai_local_dump.sql

@@ -367,17 +367,42 @@ export const HEYGEN_TETO_USD_ENV = "HEYGEN_TETO_USD";
  * de dólar — ele existe para o dia em que AMBAS as réguas de roteiro forem
  * contornadas (defeito, não uso normal), não para apertar geração comum.
  */
-export const DEFAULT_HEYGEN_TETO_USD = round(
-  estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS) * USD_PER_BILLED_SECOND,
-  2,
-);
+/*
+ * 27/09/2026 — PREGUICOSO, e essa e a unica mudanca: a FORMULA e identica.
+ *
+ * Era `const` avaliada no TOPO do modulo, e o cabecalho deste arquivo ja
+ * previa a consequencia: quando um anel de importacao alcanca este modulo
+ * antes de `scriptDuration` terminar de carregar, a linha executa com a
+ * constante importada ainda nao inicializada e o processo MORRE.
+ *
+ * Em 24/08 isso foi tratado extraindo `voiceCost.ts` (modulo folha), o que
+ * removeu a aresta `avatarProvider -> providerCost`. Funcionou: `madge`
+ * confirma em 27/09 que `providerCost` nao esta em ciclo nenhum. Mas o anel
+ * `fixtureProvider <-> avatarProvider` continua de pe, e por ele um script
+ * que entre por `scriptDuration` ainda alcanca esta linha cedo demais —
+ * MEDIDO em 27/09: `Cannot access 'HEYGEN_MAX_SCRIPT_CHARS' before
+ * initialization`, a irma do `VOICE_SPEED` de 24/08.
+ *
+ * Calcular sob demanda tira a unica avaliacao-no-topo que transforma um anel
+ * benigno em processo morto. Nao CONSERTA o anel (ver a pendencia de quebrar
+ * `fixtureProvider <-> avatarProvider`) — tira o detonador dele.
+ *
+ * O memo existe para o valor ser calculado UMA vez, como a `const` era.
+ */
+let tetoHeygenMemo: number | null = null;
+export function defaultHeygenTetoUsd(): number {
+  if (tetoHeygenMemo == null) {
+    tetoHeygenMemo = round(estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS) * USD_PER_BILLED_SECOND, 2);
+  }
+  return tetoHeygenMemo;
+}
 
 /** O teto em vigor. Mesma regra de sempre: ausente ou inválido cai no default. */
 export function heygenSpendCapUsd(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env[HEYGEN_TETO_USD_ENV];
-  if (!raw) return DEFAULT_HEYGEN_TETO_USD;
+  if (!raw) return defaultHeygenTetoUsd();
   const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_HEYGEN_TETO_USD;
+  return Number.isFinite(n) && n > 0 ? n : defaultHeygenTetoUsd();
 }
 
 export class HeygenSpendCapExceededError extends Error {

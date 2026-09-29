@@ -270,7 +270,22 @@ export async function complete(vendor: ScriptVendor, input: CompleteInput): Prom
   // verdade mesmo em fixture.
   if (isFixtureMode()) {
     const promptChars = input.messages.reduce((n, m) => n + m.content.length, 0);
-    return completeFixture(vendor, promptChars);
+    // BUG MEDIDO 26/09 — completeFixture SEMPRE respondia em portugues, mesmo
+    // quando o chamador (translateDirection) pedia uma TRADUCAO para ingles.
+    // O texto simulado entao contaminava motion_prompt_en com portugues de
+    // verdade, e o linter do Wan (que existe para barrar exatamente isso)
+    // recusava toda geracao do tier Normal que tivesse Interpretacao
+    // preenchida. O `system` prompt e o unico sinal disponivel aqui sobre
+    // QUAL tarefa esta sendo pedida — repassado para a fixture decidir o
+    // idioma da resposta simulada.
+    // 26/09/2026 — MESMA manobra do `system` logo acima, pelo mesmo motivo:
+    // a fixture so recebia a CONTAGEM de caracteres, entao o assunto pedido
+    // pelo usuario (campo "Gerar com IA") sumia antes de chegar nela, e o
+    // roteiro simulado saia sempre igual. Isso tornava impossivel distinguir
+    // "o assunto se perdeu no caminho" de "a fixture ignora o assunto".
+    // O TEXTO continua simulado — so o eco do pedido e real.
+    const pedidoDoUsuario = input.messages.filter((m) => m.role === "user").map((m) => m.content).join("\n");
+    return completeFixture(vendor, promptChars, input.system, pedidoDoUsuario);
   }
   const entry = REGISTRY[vendor];
   return entry.complete(resolveModel(vendor), resolveBaseUrl(vendor), input);

@@ -339,24 +339,24 @@ export function SceneStep({
     else if (podeEscolherSimples) onTierVideoChange("simples");
   }, [credentials, podeEscolherSimples, podeEscolherFal, tierVideo, onTierVideoChange]);
 
-  /**
-   * O 4:5 (`instagram_feed`) não existe no enum de `aspect_ratio` do Wan
-   * (`wan/v2.6/reference-to-video/flash`, MEDIDO por leitura do schema no
-   * V24) — V25, 31/08/2026. Se alguém escolheu 4:5 num tier onde ele era
-   * válido (Simples/Premium) e depois troca para Normal, a seleção velha não
-   * pode sobreviver: sem isto, o PublishStep bloqueia o CLIQUE no chip, mas
-   * o valor já escolhido continuaria no `wizard` e chegaria a `POST /videos`
-   * do mesmo jeito — o mesmo defeito de "campo escolhido, não gateado no
-   * envio" que este projeto já pagou (Fundo/Look, antes de ganharem gate).
-   * Troca para "9:16" (o único formato com medição real neste tier, ver
-   * `VENDOR_FORMAT_SUPPORT.fal` em videoFormat.ts) — nunca silencioso: o chip
-   * destacado na tela muda junto.
+  /*
+   * REMOVIDO em 26/09/2026 — aqui havia um useEffect que, no tier Normal,
+   * trocava `instagram_feed` por `reels_tiktok` assim que o usuario o
+   * escolhia. Era o PAR do bloqueio de clique do PublishStep (V25, 31/08):
+   * um impedia o clique, este impedia o valor de sobreviver por outro
+   * caminho. O achado 13 removeu o bloqueio de la porque a premissa caiu —
+   * V34 (01/09) fez o video nascer em 9:16 e o 4:5 ser derivado por CORTE
+   * depois (ver ENQUADRAMENTO_PARA_CORTE_4_5 em falPipeline.ts) —, mas este
+   * ficou. Sem par, ele deixou de proteger qualquer coisa e passou a apenas
+   * desfazer a escolha do usuario: clicar no Feed do Instagram nao surtia
+   * efeito nenhum, e o chip do 9:16 continuava marcado.
+   *
+   * O backend nao recusa `instagram_feed` em nenhum tier (grep conferido):
+   * a unica mencao fora do catalogo e a tabela de CONFIANCA, que informa e
+   * nunca bloqueia. 4:5 no Normal segue "unverified" ate uma corrida real
+   * medir — isso e um aviso na tela, nao uma trava.
    */
-  useEffect(() => {
-    if (tierVideo === "normal" && publishPlatform === "instagram_feed") {
-      onPublishPlatformChange("reels_tiktok");
-    }
-  }, [tierVideo, publishPlatform, onPublishPlatformChange]);
+
 
   /**
    * A CONFIANÇA do formato escolhido nesta mesma tela, NO TIER escolhido
@@ -603,7 +603,9 @@ export function SceneStep({
         </p>
       )}
 
-      {/* -------------------------------------------------------- CENÁRIO */}
+      {tierVideo !== "simples" ? (
+        <>
+          {/* -------------------------------------------------------- CENÁRIO */}
       {/* REAL desde esta rodada — deixou de ser decorativo e saiu do Passo 1
           (onde era "Cenário padrão" do avatar, editável só lá). Upload OU
           texto (Gerar via IA), os dois convivem — vão como `scenario`
@@ -711,6 +713,13 @@ export function SceneStep({
           />
         </div>
       </Field>
+
+        </>
+      ) : (
+        <p className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+          {t("createVideo.scene.sceneOutfitTierNotice")}
+        </p>
+      )}
 
       {/* -------------------------------------------------- INTERPRETAÇÃO */}
       <Field

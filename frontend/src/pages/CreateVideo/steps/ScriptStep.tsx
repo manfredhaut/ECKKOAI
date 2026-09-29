@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
@@ -30,6 +30,54 @@ export function ScriptStep({
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * O AVISO DE FRASE LONGA, AQUI — 28/09/2026.
+   *
+   * O tier Normal tem DOIS tetos independentes: o de duracao-alvo (que o
+   * `ScriptCounter` ja mostra logo abaixo) e o do FRACIONAMENTO, por FRASE
+   * (limite real do Wan por chamada). O segundo so aparecia no passo Gerar,
+   * duas telas adiante: escrevia-se o roteiro inteiro, avancava-se, e so
+   * entao vinha "uma frase de N caracteres excede o teto". MEDIDO em 28/09:
+   * tres roteiros seguidos esbarraram nele, um atras do outro.
+   *
+   * Reusa `/videos/readiness` — a MESMA rota e a MESMA mensagem do passo
+   * Gerar, nunca uma segunda regua no cliente. So o bloqueio de
+   * fracionamento e exibido aqui; avatar, credito e afins pertencem ao
+   * passo onde se gera.
+   */
+  const [avisoDeFrase, setAvisoDeFrase] = useState<string | null>(null);
+  useEffect(() => {
+    if (tierVideo !== "normal" || !script.trim()) {
+      setAvisoDeFrase(null);
+      return;
+    }
+    let cancelado = false;
+    // 500ms depois da ULTIMA tecla: sem isto, cada caractere digitado vira
+    // uma requisicao.
+    const timer = setTimeout(() => {
+      api
+        .post<{ blockers?: { code: string; message: string }[] }>("/videos/readiness", {
+          script,
+          tier_video: tierVideo,
+          target_duration_seconds: targetDurationSeconds,
+        })
+        .then((r) => {
+          if (cancelado) return;
+          const fracionamento = r.blockers?.find((b) => b.code === "script_too_long_for_normal_tier");
+          setAvisoDeFrase(fracionamento?.message ?? null);
+        })
+        .catch(() => {
+          // Falha de consulta nao vira aviso falso: quem RECUSA continua
+          // sendo o servidor, no passo Gerar.
+          if (!cancelado) setAvisoDeFrase(null);
+        });
+    }, 500);
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+    };
+  }, [script, tierVideo, targetDurationSeconds]);
 
   // "MAIS" TEM VALOR — antes não tinha: escolher "mais" só desligava o alvo
   // (caía no teto global, `null`), sem dar à pessoa como pedir UMA duração
@@ -71,7 +119,14 @@ export function ScriptStep({
     setGenerating(true);
     setError(null);
     try {
-      const result = await api.post<{ script: string }>("/scripts/generate", { prompt });
+      const result = await api.post<{ script: string }>("/scripts/generate", {
+        prompt,
+        // ACHADO 5 — sem isto, todo roteiro por IA saia com a duracao
+        // padrao do servidor, ignorando o alvo escolhido nos chips ou em
+        // "mais" logo acima. targetDurationSeconds ja esta disponivel
+        // aqui como prop; so faltava atravessar a chamada.
+        targetSeconds: targetDurationSeconds ?? undefined,
+      });
       onChange(result.script);
     } catch (err) {
       // Sem este catch, a falha virava uma promise rejeitada sem dono: o
@@ -155,6 +210,13 @@ export function ScriptStep({
             no fim, quem escreve descobre que o roteiro é caro depois de já ter
             escrito. Aqui o número muda enquanto se digita. */}
         <ScriptCounter script={script} targetDurationSeconds={targetDurationSeconds} tier={tierVideo} />
+        {/* O teto por FRASE, ao lado do teto por DURACAO que o contador
+            acima ja mostra. Ver o comentario de `avisoDeFrase`. */}
+        {avisoDeFrase && (
+          <p className="alert-error" style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>
+            {avisoDeFrase}
+          </p>
+        )}
         <DurationCostReference tier={tierVideo} />
       </Field>
 

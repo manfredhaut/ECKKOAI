@@ -59,13 +59,19 @@ export function PublishStep({
   const [support, setSupport] = useState<FormatSupport | null>(null);
   useEffect(() => {
     api
-      .get<FormatSupport>("/video-format-support")
+      .get<FormatSupport>(`/video-format-support?tier=${tierVideo}`)
       .then(setSupport)
       .catch(() => setSupport(null));
-  }, []);
+  }, [tierVideo]);
   const naoHonra = support !== null && !support.supported;
   // Só o 4:5 (`instagram_feed`), só no tier Normal — ver o comentário acima.
-  const feed45BloqueadoNoNormal = tierVideo === "normal";
+  // ACHADO 13 — o bloqueio existia porque o Wan de fato nao aceita
+  // "4:5" como valor de request (V25, 31/08). Mas o dia seguinte (V34,
+  // 01/09, ver falPipeline.ts e o corte pos-producao em /approve-video)
+  // resolveu exatamente isso: o video sempre nasce em 9:16 e o 4:5 e
+  // derivado por corte DEPOIS, ja conectado ao caminho da fal — a
+  // trava aqui ficou obsoleta e nunca foi removida.
+  const feed45BloqueadoNoNormal = false;
 
   return (
     <div className="card">

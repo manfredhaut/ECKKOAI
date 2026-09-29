@@ -55,8 +55,14 @@ export const MUTANTS: Mutant[] = [
       "    !isFixtureMode() &&\n" +
       "    fala.durationSeconds != null &&\n" +
       "    input.apararSobraFinal !== false\n" +
-      "      ? await apararVideoFinal(input.apiKeyFal, String(videoFinalUrl), fala.durationSeconds)\n" +
-      "      : String(videoFinalUrl);",
+      // 27/09/2026 — `String(videoFinalUrl)` virou `videoFinalServivel` nos
+      // dois ramos: em fixture a saida do sincronizar e um host que nao
+      // existe, e agora ela e materializada ANTES daqui (ver
+      // `materializeFalFixtureVideo` em sincronizarComAudio). Fora de
+      // fixture o valor e identico ao de antes; a condicao conferida por
+      // este mutante nao mudou.
+      "      ? await apararVideoFinal(input.apiKeyFal, videoFinalServivel, fala.durationSeconds)\n" +
+      "      : videoFinalServivel;",
     replace: "  const videoUrlFinal = String(videoFinalUrl);",
     expect: "a condição completa (tier, fixture, duração conhecida, apararSobraFinal) não aparece exatamente 1 vez",
   },

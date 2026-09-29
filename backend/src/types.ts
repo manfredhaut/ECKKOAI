@@ -8,6 +8,12 @@
  * - `awaiting_approval_video`: `animar` também já foi pago, o VÍDEO MUDO
  *   existe, e as duas etapas mais caras (narrar + sincronizar) esperam um
  *   segundo clique. FASE 2 (Modo B), 21/08, migration 059.
+ *
+ * `cancelled` — P2-3, 22/09/2026: o cliente cancelou uma das duas
+ * aprovações acima. TERMINAL, nunca reprocessado (fora de
+ * `STATUS_VARRIDOS`, recovery.ts), NUNCA estorna crédito (P5: a
+ * plataforma não paga pelo aprendizado do cliente — a etapa paga já
+ * rodou nos dois status de onde se cancela). Migration 084.
  */
 export type VideoStatus =
   | "queued"
@@ -15,7 +21,8 @@ export type VideoStatus =
   | "awaiting_approval"
   | "awaiting_approval_video"
   | "ready"
-  | "error";
+  | "error"
+  | "cancelled";
 
 export interface Avatar {
   id: string;
@@ -94,6 +101,7 @@ export interface Video {
    * fornecedor; esta é o que a PESSOA pediu, antes de qualquer geração.
    */
   target_duration_seconds: number | null;
+  accept_duration_mismatch: boolean;
   /**
    * Recusas CONSECUTIVAS da guarda de folga de sincronização (o vídeo
    * animado saiu mais curto que a fala real) — migration 075. Escalona a
@@ -182,6 +190,21 @@ export interface Video {
    */
   motion_prompt_en: string | null;
   /**
+   * O Cenário/Traje (texto) traduzidos para inglês — mesma lógica de
+   * `motion_prompt_en`, atrás de `TRANSLATE_SCENE_TEXT` (routes/videos.ts,
+   * hoje `false`). NULL enquanto a flag estiver desligada, ou em vídeos sem
+   * texto de cenário/traje. **VELADOS** — ver `CAMPOS_VELADOS`.
+   */
+  scenario_prompt_en: string | null;
+  outfit_prompt_en: string | null;
+  /**
+   * P2-1, 22/09/2026 — a identidade REAL desta geração (fotos, voz, ajustes),
+   * versionada. `null` em vídeo anterior à migration 082 — cai no avatar ao
+   * vivo (`resolverIdentidade`, frozenIdentity.ts). Nunca lido cru: sempre
+   * por `lerIdentidade`/`resolverIdentidade`.
+   */
+  identity_snapshot: unknown;
+  /**
    * A versão COM legenda queimada devolvida pelo fornecedor, quando houve.
    * Guardada AO LADO de `output_url`, nunca no lugar dela.
    */
@@ -197,6 +220,21 @@ export interface Video {
    */
   tier_video: "simples" | "normal" | "premium";
   created_at: string;
+  /**
+   * P2-8, "Ajustar este vídeo", migration 085 — a família de versões.
+   * `root_video_id` é denormalizado (aponta sempre para a PRIMEIRA versão,
+   * nunca recalculado depois de gravado) para listar "todas as versões"
+   * sem CTE recursiva: `WHERE id = raiz OR root_video_id = raiz`.
+   */
+  parent_video_id: string | null;
+  root_video_id: string | null;
+  version_number: number;
+  /**
+   * P2-8, item 1 — enquadramento (cover/contain, só tier Simples/HeyGen)
+   * persistido por vídeo, para "Ajustar" reabrir com o mesmo valor. `null`
+   * = padrão do servidor (HEYGEN_FIT) — todo vídeo anterior a esta coluna.
+   */
+  avatar_fit: string | null;
 }
 
 export type CredentialProvider = "avatar" | "voice" | "script";

@@ -144,7 +144,15 @@ export const MUTANTS: Mutant[] = [
       '    // ao fornecedor (9:16 quando o pedido foi 4:5), nunca no formato final\n' +
       '    // que a pessoa escolheu. `!` seguro: `input.aspectRatio` truthy aqui\n' +
       '    // implica saída truthy de `aspectRatioParaFornecedor`.\n' +
-      '    await assertAspectRatio(bloco.videoUrl, aspectRatioParaFornecedor(input.aspectRatio)!);\n' +
+      // 27/09/2026 — a chamada direta virou tres linhas quando o Defeito 2
+    // acrescentou a materializacao da fixture de video (a URL do fornecedor
+    // em fixture aponta para host inexistente e o ffprobe nao a alcanca).
+    // Ancora atualizada; a condicao conferida por este mutante e a mesma.
+    '    const proporcaoParaFornecedor = aspectRatioParaFornecedor(input.aspectRatio)!;\n' +
+    '    if (isFixtureMode()) {\n' +
+    '      bloco.videoUrl = await materializeFalFixtureVideo(bloco.videoUrl, proporcaoParaFornecedor);\n' +
+    '    }\n' +
+    '    await assertAspectRatio(bloco.videoUrl, proporcaoParaFornecedor);\n' +
       '  }\n' +
       '\n' +
       '  if (input.pararApos === "animar") {',
@@ -154,7 +162,15 @@ export const MUTANTS: Mutant[] = [
       '    // ao fornecedor (9:16 quando o pedido foi 4:5), nunca no formato final\n' +
       '    // que a pessoa escolheu. `!` seguro: `input.aspectRatio` truthy aqui\n' +
       '    // implica saída truthy de `aspectRatioParaFornecedor`.\n' +
-      '    await assertAspectRatio(bloco.videoUrl, aspectRatioParaFornecedor(input.aspectRatio)!);\n' +
+      // 27/09/2026 — a chamada direta virou tres linhas quando o Defeito 2
+    // acrescentou a materializacao da fixture de video (a URL do fornecedor
+    // em fixture aponta para host inexistente e o ffprobe nao a alcanca).
+    // Ancora atualizada; a condicao conferida por este mutante e a mesma.
+    '    const proporcaoParaFornecedor = aspectRatioParaFornecedor(input.aspectRatio)!;\n' +
+    '    if (isFixtureMode()) {\n' +
+    '      bloco.videoUrl = await materializeFalFixtureVideo(bloco.videoUrl, proporcaoParaFornecedor);\n' +
+    '    }\n' +
+    '    await assertAspectRatio(bloco.videoUrl, proporcaoParaFornecedor);\n' +
       '  }\n' +
       '\n' +
       '  if (String(input.pararApos) === "impossivel-pararApos-nenhuma-corrida-tem") {',
@@ -200,7 +216,8 @@ export const MUTANTS: Mutant[] = [
     // `ready`, sem nunca oferecer a segunda aprovação. Nada na assinatura da
     // função muda: `pararApos` é opcional no tipo.
     // ÂNCORA ESTENDIDA — V34, item 1/3: `targetDurationSeconds:` entrou
-    // ENTRE `pararApos: "animar",` e o fechamento do objeto.
+    // ENTRE `pararApos: "animar",` e o fechamento do objeto. P2-1, VERSÃO
+    // FINAL, 22/09/2026: `narracao:` entrou depois de `targetDurationSeconds:`.
     file: ROTA_DE_VIDEOS,
     find:
       "                tier: videoTierParaPipeline(video.tier_video),\n" +
@@ -215,11 +232,23 @@ export const MUTANTS: Mutant[] = [
       "                // alvo×fala ANTES de qualquer `animar()` — ver\n" +
       "                // `compararAlvoComFala`, falPipeline.ts.\n" +
       "                targetDurationSeconds: video.target_duration_seconds,\n" +
+      // 27/09/2026 — OPCAO B (fase 2) inseriu `avisarDesvioDeAlvoSemRecusar`
+      // ENTRE `targetDurationSeconds:` e `narracao:`, e a ancora parou de
+      // casar (0x). Mesmo motivo das duas extensoes anteriores anotadas
+      // acima: cada campo novo neste objeto precisa entrar aqui tambem.
+      "                // OPCAO B — relida da LINHA, mesma razao de targetDurationSeconds\n" +
+      "                // acima: a escolha de \"gerar mesmo assim\" foi feita na criacao,\n" +
+      "                // nao nesta requisicao. Sem isto, compararAlvoComFala recusa de\n" +
+      "                // novo aqui mesmo quando o usuario ja aceitou o desvio.\n" +
+      "                avisarDesvioDeAlvoSemRecusar: video.accept_duration_mismatch,\n" +
+      "                // P2-1 — reaproveitar ou sintetizar, decidido acima.\n" +
+      "                narracao: decisaoDeVoz.narracao,\n" +
       "              },\n" +
       "              imagemAprovada,",
     replace:
       "                tier: videoTierParaPipeline(video.tier_video),\n" +
       "                targetDurationSeconds: video.target_duration_seconds,\n" +
+      "                narracao: decisaoDeVoz.narracao,\n" +
       "              },\n" +
       "              imagemAprovada,",
     expect: "aprovação de vídeo: /approve não passa pararApos: \"animar\" — a corrida completaria sozinha até ready",

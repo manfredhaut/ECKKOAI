@@ -422,7 +422,7 @@ function normalizeFalStatus(bruto: unknown): FalQueueStatus {
  * `pollVideoJobFixture`.
  */
 export const FIXTURE_IMAGEM_URL = `${FIXTURE_BASE}/fixture-composicao.png`;
-const FIXTURE_VIDEO_URL = `${FIXTURE_BASE}/fixture-video.mp4`;
+export const FIXTURE_VIDEO_URL = `${FIXTURE_BASE}/fixture-video.mp4`;
 
 /**
  * A FORMA da resposta simulada, por etapa — BACKLOG 8.

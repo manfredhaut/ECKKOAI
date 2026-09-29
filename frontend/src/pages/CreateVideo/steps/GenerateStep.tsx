@@ -23,7 +23,7 @@ import { GenerationSummary } from "../GenerationSummary";
  * sabemos como o fornecedor lê a diferença. O servidor normaliza de novo, mas
  * mandar limpo daqui é o que mantém o corpo legível no log de prova.
  */
-export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string) {
+export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string, adjustFromVideoId?: string, acceptDurationMismatch?: boolean) {
   return {
     avatar_id: wizard.avatarId,
     script: wizard.script,
@@ -81,6 +81,12 @@ export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string) {
     // no corpo, e é o servidor (`evaluateGenerationReadiness`) quem recusa de
     // verdade acima dela, não esta tela.
     target_duration_seconds: wizard.targetDurationSeconds,
+    // P2-8, "Ajustar este vídeo" — presente só quando esta geração NASCE de
+    // outra (o botão "Ajustar"). `null` = criação normal, versão 1 — o
+    // comportamento de sempre. Validado por TENANT no servidor, ANTES de
+    // qualquer cobrança (`resolverVersaoDeAjuste`, videoVersions.ts).
+    adjust_from_video_id: adjustFromVideoId ?? null,
+    accept_duration_mismatch: acceptDurationMismatch ?? null,
   };
 }
 
@@ -97,15 +103,41 @@ const PROGRESS_BY_STATUS: Record<Video["status"], number> = {
   awaiting_approval_video: 75,
   ready: 100,
   error: 100,
+  // P2-3 — terminal, igual a ready/error.
+  cancelled: 100,
 };
 
 export function GenerateStep({
   wizard,
   onCaptionsChange,
+  resumeVideoId,
+  adjustFromVideoId,
 }: {
   wizard: WizardState;
   /** Mesma forma dos outros passos: o estado mora na página, o passo avisa. */
   onCaptionsChange: (captions: boolean) => void;
+  /**
+   * P2-3 — "Retomar aprovação" (Biblioteca). Quando presente, esta tela
+   * NÃO cria um vídeo novo: busca o vídeo existente por `GET /videos/:id`
+   * e reaproveita toda a renderização condicional por `video.status` que
+   * já existe abaixo — nenhuma lógica nova de aprovação, só um jeito
+   * diferente de POPULAR `video` pela primeira vez.
+   *
+   * Não reinicia o polling (`pollRef`, só ligado dentro de
+   * `handleGenerate`): correto para `awaiting_approval`/
+   * `awaiting_approval_video` (terminais para o polling, esperam clique
+   * humano — é exatamente o caso de uso deste prop). Um vídeo retomado
+   * que estivesse em `queued`/`processing` ficaria sem poll até a pessoa
+   * recarregar — fora do escopo pedido (retomar serve só para aprovação
+   * pendente).
+   */
+  resumeVideoId?: string;
+  /**
+   * P2-8 — "Ajustar este vídeo". Presente, entra no corpo do `POST /videos`
+   * como `adjust_from_video_id` — o servidor valida por tenant e calcula a
+   * família de versões; esta tela não decide nada sobre isso, só repassa.
+   */
+  adjustFromVideoId?: string;
 }) {
   // `i18n.language` é o gatilho da tradução da Interpretação no servidor. Sai
   // daqui, e não de uma detecção de língua sobre o texto: o idioma da interface
@@ -113,7 +145,23 @@ export function GenerateStep({
   const { t, i18n } = useTranslation();
   const [video, setVideo] = useState<Video | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // OPCAO B — usuario clicou "Gerar mesmo assim" no bloqueio de duracao.
+  // DECLARADO AQUI, antes de qualquer useEffect, porque o useEffect de
+  // readiness (logo abaixo) le esta variavel — declara-la depois causava
+  // ReferenceError (temporal dead zone) na primeira renderizacao.
+  const [acceptDurationMismatch, setAcceptDurationMismatch] = useState(false);
   const pollRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!resumeVideoId || video) return;
+    let cancelled = false;
+    api.get<Video>(`/videos/${resumeVideoId}`).then((v) => {
+      if (!cancelled) setVideo(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [resumeVideoId, video]);
 
   // Sem este estado (e o catch abaixo), um 403 de crédito, um 409 de avatar em
   // treino ou um 429 de teto viravam promise rejeitada sem dono: o botão
@@ -154,6 +202,7 @@ export function GenerateStep({
         // bem mais apertado que o teto global acima. Sem isto, o botão
         // ficaria habilitado para um roteiro que o tier Normal recusa.
         tier_video: wizard.tierVideo,
+        accept_duration_mismatch: acceptDurationMismatch,
       })
       .then((r) => {
         if (!cancelled) setReadiness(r);
@@ -167,7 +216,7 @@ export function GenerateStep({
     return () => {
       cancelled = true;
     };
-  }, [wizard.avatarId, wizard.script, wizard.motionPrompt, wizard.targetDurationSeconds, reloadKey]);
+  }, [wizard.avatarId, wizard.script, wizard.motionPrompt, wizard.targetDurationSeconds, reloadKey, acceptDurationMismatch]);
 
   const blockers = readiness?.blockers ?? [];
 
@@ -270,7 +319,28 @@ export function GenerateStep({
   // e um botão cinza sem dizer qual delas está rodando é pior que nenhum.
   const [approvingVideo, setApprovingVideo] = useState(false);
   const [redoingVideo, setRedoingVideo] = useState(false);
-  const busy = approving || recomposing || approvingVideo || redoingVideo;
+  // P2-3 — cancelar uma das duas aprovações pendentes. Estado PRÓPRIO, mesma
+  // razão dos quatro acima.
+  const [cancelling, setCancelling] = useState(false);
+  const busy = approving || recomposing || approvingVideo || redoingVideo || cancelling;
+
+  /**
+   * O MESMO erro, perto de QUEM o provocou — 27/09/2026.
+   *
+   * `error` ja era renderizado, mas so la em cima, no bloco "Gerar e
+   * revisar". Nas telas de aprovacao (imagem e video mudo) os botoes ficam
+   * centenas de pixels abaixo: uma recusa de `/approve` aparecia fora da
+   * area visivel, e a tela parecia nao ter feito nada. MEDIDO em 27/09: um
+   * 422 de desvio de duracao passou despercebido, o usuario clicou de novo
+   * e os cliques seguintes viraram 409 (o video ja tinha mudado de estado).
+   *
+   * Uma constante, nao tres copias: se o estilo do alerta mudar, muda aqui.
+   */
+  const blocoDeErro = error ? (
+    <p className="alert-error" style={{ fontSize: 13, marginTop: 12, marginBottom: 0 }}>
+      {error}
+    </p>
+  ) : null;
 
   /**
    * O LIMITE DE REFAÇÕES, na tela — W3.1b, 24/08.
@@ -363,11 +433,34 @@ export function GenerateStep({
     }
   }
 
+  /**
+   * P2-3 — cancelar a aprovação pendente. `confirmKey` distingue a 1ª
+   * aprovação (imagem) da 2ª (vídeo mudo): P5 exige que o texto diga QUAL
+   * etapa paga já rodou, não uma frase genérica. Sem estorno — a rota
+   * nunca devolve crédito (ver videoCancel.ts).
+   */
+  async function handleCancel(confirmKey: "cancelConfirmImage" | "cancelConfirmVideo") {
+    if (!video) return;
+    if (!window.confirm(t(`createVideo.generate.${confirmKey}`))) return;
+    setCancelling(true);
+    setError(null);
+    try {
+      setVideo(await api.post<Video>(`/videos/${video.id}/cancel`, {}));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   async function handleGenerate() {
     setSubmitting(true);
     setError(null);
     try {
-      const created = await api.post<Video>("/videos", corpoDaGeracao(wizard, i18n.language));
+      const created = await api.post<Video>(
+        "/videos",
+        corpoDaGeracao(wizard, i18n.language, adjustFromVideoId, acceptDurationMismatch),
+      );
       setVideo(created);
       pollRef.current = window.setInterval(async () => {
         const latest = await api.get<Video>(`/videos/${created.id}`);
@@ -501,7 +594,50 @@ export function GenerateStep({
           {blockers.length > 0 && (
             <ul className="blocked-reasons">
               {blockers.map((b) => (
-                <li key={b.code}>{b.message}</li>
+                <li key={b.code}>
+                  {b.message}
+                  {b.code === "script_too_long" && (
+                    <>
+                      {/* O CUSTO REAL ao lado do botao, nao so o aviso de que
+                          excedeu: quem vai clicar em "Gerar mesmo assim"
+                          precisa saber o que esta aceitando em segundos E em
+                          dolares. `estimate` ja traz os dois calculados sobre
+                          o roteiro ATUAL (rota /video-cost-estimate), entao e
+                          a duracao real, com o excesso dentro. */}
+                      {estimate && wizard.targetDurationSeconds != null && (
+                        <>
+                          {" "}
+                          <strong>
+                            {t("createVideo.generate.acceptDurationMismatchCost", {
+                              seconds: estimate.estimatedSeconds.toFixed(0),
+                              cost:
+                                estimate.estimate.costUsd != null
+                                  ? `US$ ${estimate.estimate.costUsd.toFixed(2).replace(".", ",")}`
+                                  : t("createVideo.cost.notMeasured"),
+                              target: wizard.targetDurationSeconds,
+                            })}
+                          </strong>
+                        </>
+                      )}
+                      {" "}
+                      {/* PRIMARIO, nao outline — 27/09/2026. Com o "Gerar
+                          video" esmaecido pela regua, ESTE e o unico caminho
+                          disponivel na tela: pintado como secundario ele
+                          desaparecia ao lado do botao desabilitado, e a
+                          pessoa encurtava o roteiro na mao sem ver que havia
+                          uma saida. O esmaecido segue comunicando "bloqueado";
+                          este comunica "e por aqui". */}
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ marginLeft: 8 }}
+                        onClick={() => setAcceptDurationMismatch(true)}
+                      >
+                        {t("createVideo.generate.acceptDurationMismatch")}
+                      </button>
+                    </>
+                  )}
+                </li>
               ))}
             </ul>
           )}
@@ -532,11 +668,7 @@ export function GenerateStep({
               </span>
             </label>
           )}
-          {error && (
-            <p className="alert-error" style={{ fontSize: 13, marginTop: 12, marginBottom: 0 }}>
-              {error}
-            </p>
-          )}
+          {blocoDeErro}
           {/* Custo ANTES de gastar. A estimativa aparece ao lado do botão que
               a torna real — mostrá-la só depois seria informar o preço depois
               da compra. */}
@@ -717,6 +849,7 @@ export function GenerateStep({
                   rows={2}
                 />
               </div>
+              {blocoDeErro}
               <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                 <button
                   className="btn btn-primary"
@@ -732,6 +865,16 @@ export function GenerateStep({
                   title={motivoRefacoes}
                 >
                   {recomposing ? t("createVideo.generate.recomposing") : t("createVideo.generate.recompose")}
+                </button>
+                {/* P2-3 — P5: a imagem JÁ foi gerada (etapa paga), então
+                    cancelar aqui nunca devolve crédito. A confirmação diz
+                    isso antes do clique valer. */}
+                <button
+                  className="btn btn-outline"
+                  onClick={() => void handleCancel("cancelConfirmImage")}
+                  disabled={busy}
+                >
+                  {cancelling ? t("createVideo.generate.cancelling") : t("createVideo.generate.cancel")}
                 </button>
               </div>
               {refacoesEsgotadas && (
@@ -765,6 +908,11 @@ export function GenerateStep({
                   style={{ maxWidth: "100%", borderRadius: 8, display: "block" }}
                 />
               )}
+              {video.duration_target_warning && (
+                <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+                  {video.duration_target_warning}
+                </p>
+              )}
               <div className="field" style={{ marginTop: 12 }}>
                 <label>{t("createVideo.generate.feedbackLabel")}</label>
                 <textarea
@@ -774,6 +922,7 @@ export function GenerateStep({
                   rows={2}
                 />
               </div>
+              {blocoDeErro}
               <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                 <button
                   className="btn btn-primary"
@@ -790,6 +939,17 @@ export function GenerateStep({
                 >
                   {redoingVideo ? t("createVideo.generate.redoingVideo") : t("createVideo.generate.redoVideo")}
                 </button>
+                {/* P2-3 — P5: aqui a imagem E a animação já rodaram (as
+                    duas etapas mais caras da corrida), então cancelar
+                    nunca devolve crédito — mesmo texto do bloco de cima,
+                    trocando "imagem" por "vídeo já foi animado". */}
+                <button
+                  className="btn btn-outline"
+                  onClick={() => void handleCancel("cancelConfirmVideo")}
+                  disabled={busy}
+                >
+                  {cancelling ? t("createVideo.generate.cancelling") : t("createVideo.generate.cancel")}
+                </button>
               </div>
               {refacoesEsgotadas && (
                 <p className="text-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
@@ -800,6 +960,13 @@ export function GenerateStep({
                 {t("createVideo.generate.approveVideoCost")}
               </p>
             </>
+          )}
+
+          {/* P2-3 — terminal, sem player nem botão de refazer. */}
+          {video.status === "cancelled" && (
+            <p className="text-muted" style={{ fontSize: 14 }}>
+              {t("createVideo.generate.cancelledNotice")}
+            </p>
           )}
 
           {video.status === "ready" && video.output_url && (

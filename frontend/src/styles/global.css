@@ -371,6 +371,29 @@ button.nav-link {
   padding: 20px;
 }
 
+/* P2-7 — mínimo para a janela de Detalhes (ContentPage). O corpo do modal
+   reaproveita `.card` (mesmo fundo/borda do tema, claro ou escuro) — só o
+   overlay e o teto de largura/altura são novos. Genérico de propósito: não
+   é específico da tela admin, que já tem o próprio `.admin-modal-scrim`
+   com cores fixas. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(13, 13, 13, 0.62);
+}
+
+.modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
 .card-title {
   font-size: 13px;
   font-weight: 600;
@@ -592,6 +615,13 @@ button.nav-link {
   color: var(--color-tertiary-text);
   background: var(--color-tertiary);
   border-color: var(--color-tertiary);
+}
+
+/* P2-3 — terminal, mas NEUTRO: cancelar não é erro nem falha do produto,
+   é decisão do cliente. Sem preenchimento, para não parecer o mesmo alerta
+   de `status-error`. */
+.status-pill.status-cancelled {
+  color: var(--color-text-muted);
 }
 
 .status-pill.status-connected {
@@ -1523,6 +1553,21 @@ th {
   align-items: center;
 }
 
+.voice-sample__meter {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-border, #e2e2e2);
+  overflow: hidden;
+}
+
+.voice-sample__meter-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--color-primary);
+  transition: width 60ms linear;
+}
+
 .voice-sample__timer {
   margin: 10px 0 0;
   font-size: 13px;
@@ -1659,4 +1704,44 @@ th {
 
 .status-pill.status-platform_key_ausente {
   color: var(--color-text-muted);
+}
+
+/* ---------- Estúdio de Edição: controles legíveis ----------
+   .btn-ghost usa --color-text-muted (#5C6B57), que dá 2,87:1 sobre o painel
+   escuro do Estúdio (#1E211C) — abaixo dos 4,5:1. E, sem borda nem fundo, o
+   "Escolher arquivo" não parecia clicável, embora o <input type="file">
+   sempre tenha estado lá, dentro do <label>. Medido em 28/09/2026.
+   Classes novas em vez de alterar .btn-ghost, que o app inteiro usa. */
+
+.btn-studio {
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  cursor: pointer;
+}
+.btn-studio:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border-color: var(--color-primary);
+}
+
+.btn-file {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  border: 1px solid color-mix(in srgb, var(--color-primary-text) 35%, var(--color-primary));
+  cursor: pointer;
+}
+.btn-file:hover { filter: brightness(1.08); }
+.btn-file:has(input:disabled) { opacity: .55; cursor: progress; }
+
+/* O card do Estúdio força fundo escuro por style inline (#1C1F1A), mas os
+   tokens de cor continuam os do tema da página. No tema claro isso põe
+   --color-text (#0B0F0A) sobre #1C1F1A: 1,09:1, invisível. Aqui os tokens
+   são redefinidos para o escopo do card, então tudo que estiver dentro
+   passa a ler valores coerentes com o fundo escuro, não só os botões.
+   Medido em 28/09/2026. */
+.estudio-escuro {
+  --color-text: #EAF2E2;
+  --color-text-muted: #9FB098;
+  --color-border: #3A4034;
+  --color-surface: #1C1F1A;
 }

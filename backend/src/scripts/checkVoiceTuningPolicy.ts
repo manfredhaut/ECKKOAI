@@ -158,30 +158,40 @@ export async function checkVoiceTuningPolicy(): Promise<VoiceTuningCheckResult> 
   }
 
   // ---------------------------------------------------------------------------
-  // G-3 — os call sites de produto, por FORMA.
+  // G-3 — os call sites de produto, por FORMA. Reescrita P2-1, 22/09/2026.
   //
-  // SEIS: um do caminho HeyGen e cinco do fal (criação, refazer imagem,
-  // refazer vídeo, aprovação do vídeo mudo e retomada de blocos — V30, item
-  // 3). Todos passam por `narrarSincronizar`/`generateVideoHeygen`, que
-  // ressintetizam.
+  // Só a CRIAÇÃO chama voiceTuningDoAvatar(avatar) direto (1 ocorrência) — é
+  // o único ponto que lê o avatar AO VIVO para capturar a ficha. As 5 rotas
+  // de refazer (aprovação, recompose, aprovação do vídeo mudo, redo-video,
+  // retomada de blocos) chamam `resolverIdentidade(video, avatar).voiceTuning`
+  // — cujo PRÓPRIO fallback (sem ficha) chama voiceTuningDoAvatar(avatar) de
+  // novo, então a função nunca deixa de ser a única fonte da verdade.
   // ---------------------------------------------------------------------------
   const videos = lerDaRaiz(ROTA_VIDEOS);
-  const chamadas = (videos.match(/voiceTuning: voiceTuningDoAvatar\(avatar\)/g) ?? []).length;
-  if (chamadas !== 6) {
+  const chamadasDiretas = (videos.match(/voiceTuning: voiceTuningDoAvatar\(avatar\)/g) ?? []).length;
+  if (chamadasDiretas !== 1) {
     failures.push(
-      `voz: os ajustes do avatar não chegam aos seis call sites de geração (achei ${chamadas} de 6 em ` +
-        "routes/videos.ts). Um call site sem `voiceTuning` sintetiza com o default do fornecedor, e o " +
-        "vídeo sai com outra voz que a prévia — sem erro, sem log e sem diferença de duração.",
+      `voz: a criação não chama voiceTuningDoAvatar(avatar) diretamente (achei ${chamadasDiretas}, esperado ` +
+        "1) — ou ela sumiu (a ficha nasceria sem ajustes de voz), ou uma rota de refazer voltou a chamá-la " +
+        "direto, contornando a ficha congelada.",
     );
   }
-  // E nenhum deles monta o objeto à mão. Um literal aqui passaria pela contagem
-  // acima se ela fosse `>= 1`, e é o jeito mais natural de "consertar" um
-  // call site esquecido.
+  const chamadasCongeladas = (videos.match(/identidade\.voiceTuning/g) ?? []).length;
+  if (chamadasCongeladas !== 5) {
+    failures.push(
+      `voz: as rotas de refazer não usam identidade.voiceTuning (achei ${chamadasCongeladas} de 5 em ` +
+        "routes/videos.ts) — uma delas voltaria a usar o avatar AO VIVO mesmo com a voz congelada, " +
+        "quebrando P2-1 (um avatar que trocar de voz mudaria silenciosamente o que 'Refazer' produz).",
+    );
+  }
+  // E nenhum deles monta o objeto à mão. Um literal aqui passaria pelas
+  // contagens acima se elas fossem `>= 1`, e é o jeito mais natural de
+  // "consertar" um call site esquecido.
   if (/voiceTuning:\s*\{/.test(videos)) {
     failures.push(
       "voz: um call site monta `voiceTuning` à mão, com objeto literal. Os quatro campos têm de sair de " +
-        "`voiceTuningDoAvatar(avatar)` — é ela que aplica o `Number()` nos três `numeric`, e um literal " +
-        "escrito ao lado dela não aplica.",
+        "`voiceTuningDoAvatar(avatar)` (na criação) ou de `identidade.voiceTuning` (nas rotas de refazer) — " +
+        "nunca de um literal escrito ao lado.",
     );
   }
 
@@ -218,9 +228,9 @@ export async function checkVoiceTuningPolicy(): Promise<VoiceTuningCheckResult> 
   }
 
   notes.push(
-    `voz: os quatro ajustes saem de \`avatars.voice_*\` com Number() nos três numeric, chegam aos ` +
-      `${chamadas} call sites de geração e à prévia da clonagem, e a migration 067 declara os defaults ` +
-      "medidos em 25/08",
+    `voz: os quatro ajustes saem de \`avatars.voice_*\` com Number() nos três numeric, chegam à criação ` +
+      "(1 chamada direta) e às 5 rotas de refazer (via identidade.voiceTuning) e à prévia da clonagem, e " +
+      "a migration 067 declara os defaults medidos em 25/08",
   );
 
   return { failures, notes };

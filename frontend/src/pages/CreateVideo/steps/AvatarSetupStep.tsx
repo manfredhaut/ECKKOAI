@@ -38,11 +38,38 @@ const LOOK_POLL_INTERVAL_MS = 3_000;
 const LOOK_POLL_WINDOW_MS = 240_000;
 const LOOK_POLL_ATTEMPTS = LOOK_POLL_WINDOW_MS / LOOK_POLL_INTERVAL_MS;
 
+/**
+ * Teclas que MUDAM o valor de um `<input type="range">`. O salvamento por teclado
+ * é no `onKeyUp` — como o mouse salva ao soltar, e nunca a cada `onChange` — e só
+ * para elas: `onKeyUp` também dispara ao soltar Tab (ao chegar no slider) e Shift,
+ * e salvar aí mandaria um PUT sem mudança nenhuma.
+ */
+const SLIDER_VALUE_KEYS = [
+  "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown",
+];
+function isSliderValueKey(key: string): boolean {
+  return SLIDER_VALUE_KEYS.includes(key);
+}
+
+/**
+ * Card de ajustes de voz da HeyGen (velocidade, tom, volume, idioma) OCULTO.
+ *
+ * Nenhum código do backend lê `avatars.heygen_voice_*`: só `PUT /avatars/:id` as
+ * grava. A geração usa sempre o áudio da ElevenLabs (`audio_asset_id`), então esses
+ * controles não mudam nada — e, quando o avatar tinha `heygen_voice_id`, eles
+ * apareciam NO LUGAR dos ajustes da ElevenLabs, que são os que valem. O código do
+ * card e as colunas ficam; só volte a `true` quando o backend passar a enviar
+ * `voice_settings` à HeyGen, e revise antes o texto `heygenVoiceTuning.help`, que
+ * hoje afirma um efeito que não existe.
+ */
+const SHOW_HEYGEN_VOICE_TUNING: boolean = false;
+
 export function AvatarSetupStep({
   selectedAvatarId,
   onSelectAvatar,
   onOutfitPreparingChange,
   onSceneDefaultsSeed,
+  adjustFromVideoId,
   nextButton,
 }: {
   selectedAvatarId: string | null;
@@ -71,6 +98,12 @@ export function AvatarSetupStep({
     outfit: string | null,
     outfitPrompt: string | null,
   ) => void;
+  /**
+   * P2-8 — "Ajustar este vídeo". Presente, dispara a busca de
+   * `GET /videos/:id/adjust-info` (custo zero) para o AVISO de identidade
+   * abaixo — nunca a ficha em si (P1: só um booleano cruza a rede).
+   */
+  adjustFromVideoId?: string;
   // Rendered by the parent (CreateVideoPage owns goNext/canProceed) — this
   // step is the one place the wizard's "next" button moves inline instead
   // of sitting in the shared footer, so the element is built once by the
@@ -84,6 +117,23 @@ export function AvatarSetupStep({
     t("createVideo.avatarSetup.slotLeft"),
   ];
   const [avatars, setAvatars] = useState<Avatar[]>([]);
+  // P2-8 — o AVISO, nunca a ficha. `resolverIdentidade` (P2-1) já decide se
+  // a voz congelada no vídeo original diverge da voz ATUAL do avatar; a
+  // rota devolve só este booleano, e é ele que decide o texto abaixo.
+  const [voiceChangedWarning, setVoiceChangedWarning] = useState(false);
+  useEffect(() => {
+    if (!adjustFromVideoId) return;
+    let cancelado = false;
+    api
+      .get<{ voiceChanged: boolean }>(`/videos/${adjustFromVideoId}/adjust-info`)
+      .then((info) => {
+        if (!cancelado) setVoiceChangedWarning(info.voiceChanged);
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, [adjustFromVideoId]);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [draftAvatar, setDraftAvatar] = useState<Avatar | null>(null);
@@ -824,7 +874,8 @@ export function AvatarSetupStep({
    *
    * Mesmo caminho de `commitTargetLufs`: `PUT /avatars/:id` com um campo só, e
    * o avatar devolvido substitui o rascunho. O commit é no `onMouseUp`/
-   * `onTouchEnd`, nunca no `onChange` — arrastar um slider dispara dezenas de
+   * `onTouchEnd` (mouse e toque) e no `onKeyUp` (teclado: setas, Home/End,
+   * PageUp/PageDown), nunca no `onChange` — arrastar um slider dispara dezenas de
    * eventos, e um PUT por evento é o que já se evitou uma vez no LUFS.
    */
   async function commitVoiceTuning(patch: Partial<Avatar>) {
@@ -1021,8 +1072,8 @@ export function AvatarSetupStep({
             na HeyGen. Sem ele (o caminho de todo avatar hoje, e de todo
             tenant sem credencial HeyGen), os quatro ajustes ElevenLabs
             continuam sendo os que valem — comportamento idêntico ao de
-            antes desta rodada. */}
-        {selectedAvatar && selectedAvatar.heygen_voice_id ? (
+            antes desta rodada. Card HeyGen OCULTO — ver SHOW_HEYGEN_VOICE_TUNING. */}
+        {SHOW_HEYGEN_VOICE_TUNING && selectedAvatar && selectedAvatar.heygen_voice_id ? (
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title">{t("createVideo.avatarSetup.heygenVoiceTuning.title")}</div>
             <p className="text-muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
@@ -1127,6 +1178,10 @@ export function AvatarSetupStep({
                 onTouchEnd={() =>
                   commitExistingVoiceTuning({ voice_stability: String(existingVoiceStabilityDraft) })
                 }
+                onKeyUp={(e) =>
+                  isSliderValueKey(e.key) &&
+                  commitExistingVoiceTuning({ voice_stability: String(existingVoiceStabilityDraft) })
+                }
               />
             </Field>
 
@@ -1151,6 +1206,12 @@ export function AvatarSetupStep({
                     voice_similarity_boost: String(existingVoiceSimilarityDraft),
                   })
                 }
+                onKeyUp={(e) =>
+                  isSliderValueKey(e.key) &&
+                  commitExistingVoiceTuning({
+                    voice_similarity_boost: String(existingVoiceSimilarityDraft),
+                  })
+                }
               />
             </Field>
 
@@ -1169,6 +1230,10 @@ export function AvatarSetupStep({
                   commitExistingVoiceTuning({ voice_style: String(existingVoiceStyleDraft) })
                 }
                 onTouchEnd={() =>
+                  commitExistingVoiceTuning({ voice_style: String(existingVoiceStyleDraft) })
+                }
+                onKeyUp={(e) =>
+                  isSliderValueKey(e.key) &&
                   commitExistingVoiceTuning({ voice_style: String(existingVoiceStyleDraft) })
                 }
               />
@@ -1214,21 +1279,17 @@ export function AvatarSetupStep({
               <div style={{ display: "flex", gap: 8 }}>
                 <button
                   type="button"
-                  className="btn btn-outline"
+                  className={selectedAvatar.audio_treatment_enabled ? "btn btn-primary" : "btn btn-outline"}
+                  aria-pressed={Boolean(selectedAvatar.audio_treatment_enabled)}
                   onClick={() => handleExistingAudioTreatmentToggle(true)}
-                  style={{
-                    borderColor: selectedAvatar.audio_treatment_enabled ? "var(--color-primary)" : undefined,
-                  }}
                 >
                   {t("createVideo.avatarSetup.audioTreatment.enabled")}
                 </button>
                 <button
                   type="button"
-                  className="btn btn-outline"
+                  className={!selectedAvatar.audio_treatment_enabled ? "btn btn-primary" : "btn btn-outline"}
+                  aria-pressed={Boolean(!selectedAvatar.audio_treatment_enabled)}
                   onClick={() => handleExistingAudioTreatmentToggle(false)}
-                  style={{
-                    borderColor: !selectedAvatar.audio_treatment_enabled ? "var(--color-primary)" : undefined,
-                  }}
                 >
                   {t("createVideo.avatarSetup.audioTreatment.disabled")}
                 </button>
@@ -1248,6 +1309,7 @@ export function AvatarSetupStep({
                   onChange={(e) => setExistingTargetLufsDraft(Number(e.target.value))}
                   onMouseUp={() => commitExistingTargetLufs(existingTargetLufsDraft)}
                   onTouchEnd={() => commitExistingTargetLufs(existingTargetLufsDraft)}
+                  onKeyUp={(e) => isSliderValueKey(e.key) && commitExistingTargetLufs(existingTargetLufsDraft)}
                 />
               </Field>
             )}
@@ -1261,6 +1323,9 @@ export function AvatarSetupStep({
         {selectedAvatar && selectedAvatar.provider_avatar_id && (
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title">{t("createVideo.avatarSetup.viewAvatarTitle")}</div>
+            <p className="text-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+              {t("createVideo.avatarSetup.viewAvatarSubtitle")}
+            </p>
             <div className="grid grid-cols-3" style={{ gap: 12, marginTop: 8 }}>
               <div>
                 <div className="text-muted" style={{ fontSize: 12, marginBottom: 4 }}>
@@ -1414,6 +1479,36 @@ export function AvatarSetupStep({
                   })}
                 </p>
               )}
+              {/* ACHADO 11 — trajes PRONTOS, com miniatura. Ate aqui `lookInfo.looks`
+                  so alimentava o dropdown do passo Cena; quem criava um traje
+                  nao tinha como VER o resultado sem sair desta tela. */}
+              {lookInfo && lookInfo.looks.length > 0 && (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                  {lookInfo.looks.map((look) => (
+                    <div key={look.id} style={{ textAlign: "center", width: 72 }}>
+                      {look.previewImageUrl ? (
+                        <img
+                          src={look.previewImageUrl}
+                          alt={look.name}
+                          style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover" }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: 8,
+                            background: "var(--color-surface-muted, #eee)",
+                          }}
+                        />
+                      )}
+                      <div className="text-muted" style={{ fontSize: 11, marginTop: 4, wordBreak: "break-word" }}>
+                        {look.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {lookPendentes.length > 0 && (
                 <ul className="text-muted" style={{ fontSize: 12, marginBottom: 12, paddingLeft: 18 }}>
                   {lookPendentes.map((p) => (
@@ -1452,6 +1547,17 @@ export function AvatarSetupStep({
             avançar. Quem lê de cima para baixo vê o bloco de voz por
             construção, sem precisar rolar procurando. */}
         {selectedAvatar && <AvatarReadinessNotice avatarId={selectedAvatar.id} />}
+
+        {/* P2-8 — só o AVISO, nunca a ficha (P1). Aparece assim que
+            `adjust-info` responde, e some se a pessoa trocar de avatar
+            (a comparação é sempre contra o avatar ATUALMENTE selecionado
+            no vídeo original, e trocar de avatar aqui já é outra decisão,
+            fora do escopo deste aviso). */}
+        {selectedAvatar && voiceChangedWarning && (
+          <p className="text-muted" style={{ fontSize: 13, marginTop: 8 }}>
+            {t("createVideo.avatarSetup.voiceChangedWarning")}
+          </p>
+        )}
 
         {nextButton && <div style={{ marginTop: 20 }}>{nextButton}</div>}
       </div>
@@ -1544,11 +1650,9 @@ export function AvatarSetupStep({
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
                     type="button"
-                    className="btn btn-outline"
+                    className={backgroundId === DEFAULT_BACKGROUND_ID ? "btn btn-primary" : "btn btn-outline"}
+                    aria-pressed={Boolean(backgroundId === DEFAULT_BACKGROUND_ID)}
                     onClick={() => setBackgroundId(DEFAULT_BACKGROUND_ID)}
-                    style={{
-                      borderColor: backgroundId === DEFAULT_BACKGROUND_ID ? "var(--color-primary)" : undefined,
-                    }}
                   >
                     {t("createVideo.avatarSetup.background.toggleOff")}
                   </button>
@@ -2003,21 +2107,17 @@ export function AvatarSetupStep({
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
                     type="button"
-                    className="btn btn-outline"
+                    className={avatarForTraining.audio_treatment_enabled ? "btn btn-primary" : "btn btn-outline"}
+                    aria-pressed={Boolean(avatarForTraining.audio_treatment_enabled)}
                     onClick={() => handleAudioTreatmentToggle(true)}
-                    style={{
-                      borderColor: avatarForTraining.audio_treatment_enabled ? "var(--color-primary)" : undefined,
-                    }}
                   >
                     {t("createVideo.avatarSetup.audioTreatment.enabled")}
                   </button>
                   <button
                     type="button"
-                    className="btn btn-outline"
+                    className={!avatarForTraining.audio_treatment_enabled ? "btn btn-primary" : "btn btn-outline"}
+                    aria-pressed={Boolean(!avatarForTraining.audio_treatment_enabled)}
                     onClick={() => handleAudioTreatmentToggle(false)}
-                    style={{
-                      borderColor: !avatarForTraining.audio_treatment_enabled ? "var(--color-primary)" : undefined,
-                    }}
                   >
                     {t("createVideo.avatarSetup.audioTreatment.disabled")}
                   </button>
@@ -2037,6 +2137,7 @@ export function AvatarSetupStep({
                     onChange={(e) => setTargetLufsDraft(Number(e.target.value))}
                     onMouseUp={() => commitTargetLufs(targetLufsDraft)}
                     onTouchEnd={() => commitTargetLufs(targetLufsDraft)}
+                    onKeyUp={(e) => isSliderValueKey(e.key) && commitTargetLufs(targetLufsDraft)}
                   />
                 </Field>
               )}
@@ -2066,6 +2167,9 @@ export function AvatarSetupStep({
                   onChange={(e) => setVoiceStabilityDraft(Number(e.target.value))}
                   onMouseUp={() => commitVoiceTuning({ voice_stability: String(voiceStabilityDraft) })}
                   onTouchEnd={() => commitVoiceTuning({ voice_stability: String(voiceStabilityDraft) })}
+                  onKeyUp={(e) =>
+                    isSliderValueKey(e.key) && commitVoiceTuning({ voice_stability: String(voiceStabilityDraft) })
+                  }
                 />
               </Field>
 
@@ -2086,6 +2190,10 @@ export function AvatarSetupStep({
                   onTouchEnd={() =>
                     commitVoiceTuning({ voice_similarity_boost: String(voiceSimilarityDraft) })
                   }
+                  onKeyUp={(e) =>
+                    isSliderValueKey(e.key) &&
+                    commitVoiceTuning({ voice_similarity_boost: String(voiceSimilarityDraft) })
+                  }
                 />
               </Field>
 
@@ -2102,6 +2210,9 @@ export function AvatarSetupStep({
                   onChange={(e) => setVoiceStyleDraft(Number(e.target.value))}
                   onMouseUp={() => commitVoiceTuning({ voice_style: String(voiceStyleDraft) })}
                   onTouchEnd={() => commitVoiceTuning({ voice_style: String(voiceStyleDraft) })}
+                  onKeyUp={(e) =>
+                    isSliderValueKey(e.key) && commitVoiceTuning({ voice_style: String(voiceStyleDraft) })
+                  }
                 />
               </Field>
 

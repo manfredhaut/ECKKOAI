@@ -16,6 +16,9 @@
  * nenhum tratamento especial no meio.
  */
 import { randomUUID } from "node:crypto";
+// BUG MEDIDO 26/09 — modulo FOLHA (sem imports), seguro de trazer aqui
+// sem criar ciclo com falPipeline.ts (que ja importa deste arquivo).
+import { PIPELINE_CHARS_PER_SECOND } from "../video/pipelineDuration.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,7 +44,10 @@ import type {
 import { HEYGEN_ASPECT_RATIOS, type AspectRatio } from "./videoFormat.js";
 import { selectEngine } from "./videoEngine.js";
 import { logEvent } from "../log/safeLog.js";
-import { FIXTURE_IMAGEM_URL as FAL_FIXTURE_COMPOSED_IMAGE_URL } from "./falClient.js";
+import {
+  FIXTURE_IMAGEM_URL as FAL_FIXTURE_COMPOSED_IMAGE_URL,
+  FIXTURE_VIDEO_URL as FAL_FIXTURE_VIDEO_URL,
+} from "./falClient.js";
 
 /**
  * TRÊS looks simulados — e três, não um, de propósito.
@@ -164,6 +170,35 @@ export async function materializeFalFixtureImage(tenantId: string, url: string):
 }
 
 /**
+ * Mesmo tratamento que a imagem composta recebe acima: em fixture,
+ * `saida.video.url` aponta para um host de mentira (`FIXTURE_VIDEO_URL`,
+ * falClient.ts) — sem isto, `assertAspectRatio` (falPipeline.ts) roda
+ * `ffprobe` sobre uma URL que nao resolve, e a corrida nunca alcanca
+ * `sincronizar`.
+ *
+ * O Wan nao recebe `aspect_ratio` no corpo de `animar()` — herda a
+ * proporcao da imagem composta —, e por isso `fixtureResultFor`
+ * (falClient.ts) nao consegue variar o arquivo pela query, ao contrario
+ * da composicao. A proporcao certa entra por PARAMETRO: o MESMO valor
+ * que `assertAspectRatio` vai exigir logo depois
+ * (`aspectRatioParaFornecedor(input.aspectRatio)` — 4:5 pede 9:16 do
+ * fornecedor, nunca 4:5 de verdade).
+ */
+export async function materializeFalFixtureVideo(
+  url: string,
+  aspectRatioDoFornecedor: AspectRatio,
+): Promise<string> {
+  if (url !== FAL_FIXTURE_VIDEO_URL) return url;
+  // Diferente da imagem composta (RENDERIZADA num <img> real na tela de
+  // aprovação, por isso precisa de saveUpload/URL HTTP): este é um
+  // artefato de TRABALHO, descartado depois de sincronizar, que só
+  // precisa ser LEGÍVEL pelo ffmpeg/ffprobe do próprio processo. Aponta
+  // direto para o arquivo já versionado — mesma técnica PROVADA em
+  // `checkSyncFolgaPolicy.ts` com ffprobe de verdade.
+  return "file://" + path.join(FIXTURES_DIR, FIXTURE_VIDEO_FILES[aspectRatioDoFornecedor]);
+}
+
+/**
  * Uma fixture de vídeo POR PROPORÇÃO.
  *
  * O motivo é a regra deste arquivo levada a sério: uma simulação que devolve
@@ -241,6 +276,8 @@ interface SimulatedJob {
    * formato acabou de tirar do fornecedor.
    */
   aspectRatio: AspectRatio;
+  /** ACHADO 8 — se a legenda foi pedida no payload. */
+  captions: boolean;
 }
 const jobs = new Map<string, SimulatedJob>();
 
@@ -360,6 +397,7 @@ export async function generateVideoFixture(input: GenerateVideoInput): Promise<G
     tenantId: input.tenantId,
     startedAt: Date.now(),
     aspectRatio: input.format.aspectRatio,
+    captions: Boolean(input.captions),
   });
   const selection = selectEngine(input.supportedEngines);
 
@@ -452,11 +490,14 @@ export async function pollVideoJobFixture(jobId: string): Promise<PollResult> {
   // de formato que nunca funcionou.
   const buffer = await readFixture(fixtureFileFor(job.aspectRatio));
   const outputUrl = await saveUpload(job.tenantId, buffer, "simulado.mp4");
+  const captionedOutputUrl = job.captions
+    ? await saveUpload(job.tenantId, buffer, "simulado-legendado.mp4")
+    : null;
   jobs.delete(jobId);
   // A duração vai junto, como a HeyGen faz: é a do arquivo realmente entregue,
   // não a que foi pedida na tela. É o que torna o caminho da duração real
   // exercitável sem gastar cota.
-  return { status: "ready", outputUrl, durationSeconds: FIXTURE_VIDEO_DURATION_SECONDS };
+  return { status: "ready", outputUrl, durationSeconds: FIXTURE_VIDEO_DURATION_SECONDS, captionedOutputUrl };
 }
 
 export function checkAvatarConnectionFixture(): void {
@@ -533,13 +574,23 @@ export function readVoiceSubscriptionFixture(): VoiceSubscription {
   return { voiceLimit: 10, voiceSlotsUsed: 1, tier: "starter", canUseProfessionalVoiceCloning: false };
 }
 
-export async function synthesizeSpeechFixture(): Promise<SynthesizedSpeech> {
+export async function synthesizeSpeechFixture(text?: string): Promise<SynthesizedSpeech> {
   const audio = await readFixture(FIXTURE_AUDIO_FILE);
-  // `source: null` e duração conhecida da fixture (3s, ver ffmpeg em
-  // CLAUDE.md): a duração é um fato do arquivo, mas não veio de medição do
-  // vendor — e scriptDuration.ts não deve calibrar words-per-minute com
-  // número inventado, então a origem fica explicitamente nula.
-  return { audio, durationSeconds: 3, source: null };
+  // BUG MEDIDO 26/09 — antes, esta funcao SEMPRE devolvia 3s (a duracao do
+  // arquivo fisico da fixture), ignorando o texto: um roteiro de 143
+  // caracteres (~13s pela regua real) e um de 20 caracteres devolviam a
+  // MESMA duracao. Isso fazia compararAlvoComFala recusar quase toda
+  // aprovacao em fixture, mesmo com o alvo escolhido corretamente.
+  //
+  // Agora a duracao ESTIMADA escala com o texto, pela MESMA regua
+  // (PIPELINE_CHARS_PER_SECOND) que o resto do pipeline ja usa para prever
+  // segundos a partir de caracteres — nunca uma segunda conta inventada.
+  // Sem texto (chamadas antigas / sondas que nao passam nada), cai no
+  // valor fixo de sempre: nada muda para quem ja funcionava.
+  const durationSeconds = text ? text.length / PIPELINE_CHARS_PER_SECOND : 3;
+  // `source: null`: a duracao e uma ESTIMATIVA nossa sobre o texto, nunca
+  // medicao do vendor — scriptDuration.ts nao deve calibrar como se fosse.
+  return { audio, durationSeconds, source: null };
 }
 
 export function checkVoiceConnectionFixture(): void {
@@ -566,13 +617,81 @@ export function checkVoiceConnectionFixture(): void {
 export function completeFixture(
   vendor: string,
   promptChars: number,
+  // BUG MEDIDO 26/09 — `system` opcional: chamadores antigos (roteiro,
+  // copiloto) nao mandam, e o texto simulado continua em portugues, byte a
+  // byte como sempre foi. So quem PRECISA de ingles (translateDirection)
+  // manda o system prompt, e e essa presenca do marcador "into English"
+  // (ver buildSystemPrompt em directionTranslation.ts) que decide o idioma
+  // da resposta simulada abaixo — nunca o vendor, que e o mesmo (gemini)
+  // nos dois casos.
+  system?: string,
+  // 26/09/2026 — o TEXTO do pedido, nao so o tamanho. Ecoado na resposta
+  // simulada para que a tela prove que o assunto atravessou tela -> rota ->
+  // provider. Sem isto o roteiro simulado saia identico para qualquer
+  // pedido, e um assunto perdido no caminho era indistinguivel de uma
+  // fixture que simplesmente o ignora. Opcional: chamadores que nao mandam
+  // seguem com o texto de antes, byte a byte.
+  pedido?: string,
 ): { text: string; usage: null; truncated: false } {
+  const pedeIngles = system?.includes("into English") ?? false;
+  // 28/09/2026 — SEGMENTACAO por janela, mesma manobra do `into English`.
+  //
+  // `buildSystemPrompt` (directionTranslation.ts) instrui o modelo a devolver
+  // UMA LINHA POR JANELA, cada uma abrindo com o marcador `[MM:SS-MM:SS]`
+  // copiado literalmente — e as janelas ja vem escritas no proprio system.
+  // A rota de criacao CONTA esses marcadores antes de gastar qualquer coisa
+  // (guarda de custo zero, videos.ts) e recusa quando a contagem nao bate.
+  //
+  // Sem isto o texto simulado saia sem marcador nenhum, a contagem dava 0
+  // contra N esperados, e TODO roteiro fracionado com Interpretacao
+  // preenchida era recusado em fixture — o caminho ficava intestavel sem
+  // gastar. MEDIDO em 28/09: 0 encontrados, 5 esperados.
+  //
+  // O texto continua SIMULADO. So a FORMA passa a ser valida: as janelas sao
+  // as do proprio system, nao inventadas aqui.
+  // So da FRASE QUE LISTA as janelas ("with these exact time windows: ..."),
+  // nunca do system inteiro: `buildSystemPrompt` tambem traz um marcador de
+  // EXEMPLO mais adiante (`e.g. "[00:00-00:05] ..."`), e varrer tudo o
+  // contava junto — MEDIDO em 28/09: 6 encontrados contra 5 esperados.
+  const listaDeJanelas = /with these exact time windows: ([^.]*)\./.exec(system ?? "")?.[1] ?? "";
+  const janelasDoSystem = [...listaDeJanelas.matchAll(/\[\d{1,2}:\d{2}-\d{1,2}:\d{2}\]/g)].map((m) => m[0]);
+  // So a PRIMEIRA linha: `generateScript` reenvia `prompt + correcao` na
+  // segunda tentativa (separados por linha em branco), e ecoar a correcao
+  // interna junto confundiria quem le a tela — ele pediu so a primeira parte.
+  const pedidoLimpo = (pedido?.split("\n")[0] ?? "").trim().replace(/\s+/g, " ").slice(0, 300);
+  // O eco vai no COMECO, nao no fim: `generateScript` corta o texto em fim
+  // de frase (`truncateAtSentence`) quando ele passa da banda de palavras
+  // da duracao-alvo, e o que estiver no fim e a primeira coisa a sair.
+  const ecoPt = pedidoLimpo ? `Pedido recebido: \u00ab${pedidoLimpo}\u00bb. ` : "";
+  const ecoEn = pedidoLimpo ? `Request received: \u00ab${pedidoLimpo}\u00bb. ` : "";
+  // Uma linha por janela, na ORDEM do system, cada uma abrindo com o
+  // marcador literal — e o contrato que `direcaoPorJanela` espera para
+  // fatiar sem cair no fallback de "texto inteiro em todo bloco".
+  if (janelasDoSystem.length > 1) {
+    return {
+      text: janelasDoSystem
+        .map(
+          (janela, i) =>
+            `${janela} [SIMULATED] segment ${i + 1} of ${janelasDoSystem.length}: no language model produced ` +
+            `this line. PROVIDER_MODE=fixture, so "${vendor}" was not called and no quota was consumed. ` +
+            `The person stays as shown in the reference image. To generate real direction, use PROVIDER_MODE=live.`,
+        )
+        .join("\n"),
+      usage: null,
+      truncated: false,
+    };
+  }
+
   return {
-    text:
-      `[SIMULADO] Este texto não veio de um modelo de linguagem. O ambiente está em ` +
-      `PROVIDER_MODE=fixture, então a chamada a "${vendor}" não foi feita e nenhuma cota ` +
-      `foi consumida. O pedido tinha ${promptChars} caracteres. ` +
-      `Para gerar texto de verdade, use PROVIDER_MODE=live.`,
+    text: pedeIngles
+      ? `${ecoEn}[SIMULATED] This text did not come from a language model. The environment is in ` +
+        `PROVIDER_MODE=fixture, so the call to "${vendor}" was not made and no quota was ` +
+        `consumed. The request had ${promptChars} characters. ` +
+        `To generate real text, use PROVIDER_MODE=live.`
+      : `${ecoPt}[SIMULADO] Este texto não veio de um modelo de linguagem. O ambiente está em ` +
+        `PROVIDER_MODE=fixture, então a chamada a "${vendor}" não foi feita e nenhuma cota ` +
+        `foi consumida. O pedido tinha ${promptChars} caracteres. ` +
+        `Para gerar texto de verdade, use PROVIDER_MODE=live.`,
     // `usage: null` de propósito: inventar contagem de tokens alimentaria as
     // telas de custo com número que ninguém mediu, e a regra deste projeto é
     // que ausência de medição nunca vire zero — muito menos um valor plausível.

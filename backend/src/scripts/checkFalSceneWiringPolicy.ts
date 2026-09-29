@@ -224,9 +224,12 @@ export const MUTANTS: Mutant[] = [
       "function promptDaComposicao(input: GenerateVideoInput): string {\n" +
       "  return promptDeComposicaoPosicional({\n" +
       "    temCenario: Boolean(input.scenario),\n" +
-      "    cenarioTexto: input.scenarioPrompt,\n" +
+      "    // `?? input.scenarioPrompt`: sem tradução (flag desligada, ou vídeo\n" +
+      "    // antigo à migration 081), cai no texto em português — byte a byte o\n" +
+      "    // comportamento de antes desta rodada.\n" +
+      "    cenarioTexto: input.scenarioPromptEn ?? input.scenarioPrompt,\n" +
       "    temTraje: Boolean(input.outfit),\n" +
-      "    trajeTexto: input.outfitPrompt,\n" +
+      "    trajeTexto: input.outfitPromptEn ?? input.outfitPrompt,\n" +
       "    temLateral: Boolean(input.photoUrls?.[1] || input.photoUrls?.[2]),\n" +
       "    direcaoTexto: direcaoDoPrimeiroBloco(input.script, promptDaDirecao(input)),\n" +
       "  });\n" +

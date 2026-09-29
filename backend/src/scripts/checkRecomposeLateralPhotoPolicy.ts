@@ -44,8 +44,8 @@ export const MUTANTS: Mutant[] = [
     // identidade que a criação original tinha.
     file: ROTA_DE_VIDEOS,
     find:
-      '    const ladoDireitoUrl = avatar.photo_urls?.[1];\n' +
-      '    const ladoEsquerdoUrl = avatar.photo_urls?.[2];\n' +
+      '    const ladoDireitoUrl = photoUrls[1];\n' +
+      '    const ladoEsquerdoUrl = photoUrls[2];\n' +
       '    if (ladoDireitoUrl) {\n' +
       '      extras.push({ rotulo: "lado_direito", bytes: await readUpload(ladoDireitoUrl), mimeType: mimeDoUpload(ladoDireitoUrl) });\n' +
       '    } else if (ladoEsquerdoUrl) {\n' +
@@ -55,16 +55,15 @@ export const MUTANTS: Mutant[] = [
     expect: "entradasDaComposicao não inclui a foto lateral",
   },
   {
-    guard: "/recompose passa o avatar para entradasDaComposicao",
-    name: "o call site deixa de passar avatar",
+    guard: "/recompose passa o photoUrls resolvido (ficha ou avatar ao vivo) para entradasDaComposicao",
+    name: "o call site deixa de passar identidade.photoUrls",
     kind: "obvio",
-    // ÓBVIO: sem o segundo argumento, `avatar.photo_urls` dentro da função
-    // seria `undefined.photo_urls` — mas o defeito que importa aqui não é
-    // o crash, é a rota nunca ter chegado a alimentar a função certa.
+    // ÓBVIO: sem o segundo argumento certo, a função pode estar perfeita e
+    // nunca ser alimentada com as fotos de verdade.
     file: ROTA_DE_VIDEOS,
-    find: "          entradasExtras: await entradasDaComposicao(video, avatar),",
-    replace: "          entradasExtras: await entradasDaComposicao(video, avatar as never),",
-    expect: "/recompose não passa avatar a entradasDaComposicao",
+    find: "          entradasExtras: await entradasDaComposicao(video, identidade.photoUrls),",
+    replace: "          entradasExtras: await entradasDaComposicao(video, [] as never),",
+    expect: "/recompose não passa identidade.photoUrls a entradasDaComposicao",
   },
 ];
 
@@ -79,14 +78,14 @@ export function checkRecomposeLateralPhotoPolicy(repoRoot: string): RecomposeLat
 
   const src = readFileSync(path.join(repoRoot, ROTA_DE_VIDEOS), "utf8");
 
-  if (!src.includes("async function entradasDaComposicao(video: VideoRow, avatar: Avatar)")) {
+  if (!src.includes("async function entradasDaComposicao(video: VideoRow, photoUrls: string[])")) {
     failures.push(
-      `${ROTA_DE_VIDEOS}: entradasDaComposicao não tem a assinatura (video: VideoRow, avatar: Avatar) — ` +
-        "sem o avatar, a função não tem de onde ler a foto lateral.",
+      `${ROTA_DE_VIDEOS}: entradasDaComposicao não tem a assinatura (video: VideoRow, photoUrls: string[]) — ` +
+        "sem as fotos resolvidas (ficha ou avatar ao vivo), a função não tem de onde ler a foto lateral.",
     );
   }
   if (
-    !src.includes('avatar.photo_urls?.[1]') ||
+    !src.includes('photoUrls[1]') ||
     !src.includes('rotulo: "lado_direito"') ||
     !src.includes('rotulo: "lado_esquerdo"')
   ) {
@@ -95,10 +94,10 @@ export function checkRecomposeLateralPhotoPolicy(repoRoot: string): RecomposeLat
         "perderia a referência de identidade que a criação original tinha.",
     );
   }
-  if (!src.includes("await entradasDaComposicao(video, avatar),")) {
+  if (!src.includes("await entradasDaComposicao(video, identidade.photoUrls),")) {
     failures.push(
-      `${ROTA_DE_VIDEOS}: o call site de /recompose não passa avatar a entradasDaComposicao — a função ` +
-        "pode estar certa e nunca receber o avatar de verdade.",
+      `${ROTA_DE_VIDEOS}: o call site de /recompose não passa identidade.photoUrls a entradasDaComposicao ` +
+        "— a função pode estar certa e nunca receber as fotos de verdade (ficha ou avatar ao vivo).",
     );
   }
 

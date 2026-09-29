@@ -1,7 +1,7 @@
 /**
  * RETOMADA de vídeo fracionado sem regerar bloco pago — V30, item 7.
  *
- * Quatro invariantes, cada uma com mutante próprio:
+ * Cinco invariantes, cada uma com mutante próprio:
  *
  *  G-1  o SEED desta corrida é lido do diário (persistido na abertura,
  *       `abrirCorrida`) e reutilizado em toda submissão — nunca sorteado de
@@ -27,9 +27,18 @@
  *       reenviado numa retomada. Testado por EXECUÇÃO, em FIXTURE — com o
  *       bloco 0 marcado como concluído, `runFalPipelineRetomandoBlocos` só
  *       pode abrir etapas `animar` novas para os índices 1 e 2.
+ *  G-5  o TIER da retomada é o da PRÓPRIA linha do vídeo (`video.tier_video`,
+ *       convertido por `videoTierParaPipeline`) — nunca um default fixo.
+ *       Testado por LEITURA: a rota é recortada a partir da âncora
+ *       `"/videos/:id/resume-blocks"` e o texto tem de conter a releitura,
+ *       nunca um literal `"normal"`/`"premium"` solto. P2-2, 21/09/2026:
+ *       antes desta correção, um vídeo Premium retomado por aqui saía
+ *       animado por Wan (motor do tier Normal) sem nenhum 4xx nem log
+ *       reclamando.
  *
  * Custo: ZERO. G-1 usa `fetch` substituído (nenhum byte sai para a
- * internet, mesmo em "live"); G-2/G-4 rodam em fixture puro.
+ * internet, mesmo em "live"); G-2/G-4 rodam em fixture puro. G-5 é LEITURA
+ * — custo zero também.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -135,6 +144,35 @@ export const MUTANTS: Mutant[] = [
     find: "  for (let i = blocosJaConcluidos.length; i < blocos.length; i++) {",
     replace: "  for (let i = 0; i < blocos.length; i++) {",
     expect: "retomada: um bloco já concluído foi reenviado",
+  },
+  {
+    guard: "a retomada usa o TIER da própria linha do vídeo, nunca um default fixo",
+    name: "a retomada volta a forçar tier normal, ignorando o tier do vídeo",
+    kind: "esperto",
+    // ESPERTO: a retomada continua funcionando perfeitamente para vídeos
+    // Normal (o caso mais comum, e o único exercitado por G-1/G-2/G-4 acima)
+    // — só um vídeo Premium retomado por esta rota sairia animado pelo motor
+    // errado (Wan em vez de Seedance), sem nenhum 4xx nem log reclamando. Uma
+    // guarda que só olhasse "a retomada funciona" não pegaria isto.
+    //
+    // ÂNCORA: a linha do tier sozinha
+    // (`tier: videoTierParaPipeline(video.tier_video),`) deixa de ser única
+    // no arquivo depois desta correção — o mesmo texto passa a existir em 4
+    // pontos (/approve, /approve-video, /redo-video e agora
+    // /resume-blocks). O `find` usa o comentário que só existe aqui ("Mesmo
+    // freio do primeiro clique...") para permanecer único.
+    file: ROTA_DE_VIDEOS,
+    find:
+      "            tier: videoTierParaPipeline(video.tier_video),\n" +
+      "            // Mesmo freio do primeiro clique (`/approve`): a retomada\n" +
+      "            // termina a ANIMAÇÃO e para no vídeo mudo, aguardando o\n" +
+      "            // segundo clique humano de sempre (`/approve-video`) — nunca\n" +
+      "            // encadeia até narrar/sincronizar sozinha.\n" +
+      "            pararApos: \"animar\",",
+    replace:
+      "            tier: \"normal\",\n" +
+      "            pararApos: \"animar\",",
+    expect: "tier: a retomada de blocos",
   },
 ];
 
@@ -446,6 +484,32 @@ export async function checkBlockResumePolicy(): Promise<BlockResumeCheckResult> 
       );
     } else {
       notes.push("    reacompanharFal: nunca referencia a retomada de blocos — retomar continua sendo só clique humano");
+    }
+  }
+
+  // --- LEITURA: a retomada relê o TIER da própria linha, nunca um default fixo (G-5, P2-2)
+  const inicioResumeBlocks = rota.indexOf('"/videos/:id/resume-blocks"');
+  if (inicioResumeBlocks < 0) {
+    failures.push(
+      `tier: não encontrei a âncora \`"/videos/:id/resume-blocks"\` em ${ROTA_DE_VIDEOS}. A guarda não ` +
+        "pode opinar sobre um trecho que não encontrou, e passar verde aqui seria o pior desfecho.",
+    );
+  } else {
+    // Sem âncora de FIM: `/videos/:id/resume-blocks` é a ÚLTIMA rota
+    // registrada no arquivo — fatiar até o fim é seguro hoje, e uma rota
+    // nova adicionada depois dela só encolheria a checagem para um começo
+    // de arquivo mais cedo, nunca faria um falso positivo aparecer.
+    const trechoResumeBlocks = rota.slice(inicioResumeBlocks);
+    if (!trechoResumeBlocks.includes("tier: videoTierParaPipeline(video.tier_video)")) {
+      failures.push(
+        "tier: a retomada de blocos (/videos/:id/resume-blocks) não relê `video.tier_video` — ela força " +
+          "um motor fixo, e um vídeo Premium retomado por esta rota sairia animado pelo motor errado " +
+          "(Wan em vez de Seedance), sem nada reclamar.",
+      );
+    } else {
+      notes.push(
+        "    tier: a retomada de blocos relê o tier da própria linha do vídeo, nunca um default fixo",
+      );
     }
   }
 

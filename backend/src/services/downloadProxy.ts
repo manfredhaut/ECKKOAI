@@ -9,6 +9,9 @@ import { Readable } from "node:stream";
 import { config } from "../config.js";
 import { InvalidArtifactError, validateVideoArtifact } from "./videoArtifact.js";
 import { vendorDownloadSignal } from "./providers/vendorTimeout.js";
+import { isFixtureMode } from "./providers/providerMode.js";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 const EXTENSION_CONTENT_TYPES: Record<string, string> = {
   ".mp4": "video/mp4",
@@ -124,6 +127,25 @@ export async function persistRemoteArtifact(
   url: string,
   filename: string,
 ): Promise<{ localUrl: string; bytes: number } | null> {
+  // 26/09/2026 - FIXTURE: `materializeFalFixtureVideo` devolve `file://` de
+  // proposito (o video mudo e artefato de TRABALHO, so precisa ser legivel
+  // pelo ffprobe do proprio processo - ver o comentario la). A tela de
+  // aprovacao, porem, nao carrega `file://` num <video>: sem isto o player
+  // fica preto e "Confira o movimento antes de seguir" nao cumpre o que
+  // promete. Le do disco e segue pelo MESMO caminho de validacao e gravacao
+  // do artefato remoto abaixo - nada de um segundo jeito de salvar.
+  // So em fixture: em `live` nenhum fornecedor devolve `file://`, e manter a
+  // porta fechada ali evita que uma URL de terceiro vire leitura de disco.
+  if (url.startsWith("file://")) {
+    if (!isFixtureMode()) return null;
+    const body = await readFile(fileURLToPath(url));
+    const check = validateVideoArtifact(body, body.length);
+    if (!check.ok) throw new InvalidArtifactError(check.reason ?? "artefato invalido");
+    const { saveUpload } = await import("./storage.js");
+    const localUrl = await saveUpload(tenantId, body, filename);
+    return { localUrl, bytes: body.length };
+  }
+
   if (!/^https?:\/\//i.test(url)) return null;
 
   const res = await fetch(url, { signal: vendorDownloadSignal() });

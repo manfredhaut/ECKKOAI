@@ -384,6 +384,31 @@ export function estimateSecondsFromChars(chars: number): number {
   return chars / CHARS_PER_SECOND / VOICE_SPEED;
 }
 
+/**
+ * O PISO da duracao sugerida — 27/09/2026.
+ *
+ * ESCOLHA NOSSA, nao medicao: nenhum fornecedor deste projeto publica duracao
+ * minima, e nenhuma chamada real mediu uma. 4 s e o menor valor que ainda
+ * produz um video que alguem assiste; abaixo disso a sugestao viraria
+ * absurda ("seu roteiro da 1 s"), e o certo passa a ser pedir mais texto.
+ * Se um dia o fornecedor publicar ou uma corrida medir, este numero troca de
+ * natureza e o comentario vai junto.
+ */
+export const DURACAO_SUGERIDA_MINIMA_SEGUNDOS = 4;
+
+/**
+ * A duracao que CORRESPONDE a este roteiro, para a tela oferecer quando o
+ * alvo escolhido esta muito longe dele.
+ *
+ * Arredonda para CIMA: um roteiro de 5,88 s cabe em 6 s, nao em 5 — cortar
+ * no meio de uma frase e exatamente o que a regua de duracao existe para
+ * evitar. Teto em MAX_SCRIPT_SECONDS pela mesma razao que todo o resto.
+ */
+export function duracaoSugeridaParaRoteiro(script: string | null | undefined): number {
+  const estimado = Math.ceil(estimateSecondsFromScript(script));
+  return Math.min(Math.max(estimado, DURACAO_SUGERIDA_MINIMA_SEGUNDOS), MAX_SCRIPT_SECONDS);
+}
+
 /** O mesmo, a partir do roteiro. O servidor tem o texto; a tela, só a contagem. */
 export function estimateSecondsFromScript(script: string | null | undefined): number {
   return estimateSecondsFromChars(script?.length ?? 0);

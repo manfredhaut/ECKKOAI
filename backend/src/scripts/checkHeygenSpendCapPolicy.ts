@@ -19,7 +19,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assertHeygenSpendBudget,
-  DEFAULT_HEYGEN_TETO_USD,
+  defaultHeygenTetoUsd,
   HeygenSpendCapExceededError,
   USD_PER_BILLED_SECOND,
 } from "../services/billing/providerCost.js";
@@ -74,18 +74,19 @@ export const MUTANTS: Mutant[] = [
     // ~US$ 7 de folga sobre um número que não corresponde mais ao pior caso
     // real.
     file: "backend/src/services/billing/providerCost.ts",
+    // 27/09/2026 — o alvo virou o corpo da FUNCAO preguicosa (a `const` saiu
+    // do topo do modulo para nao morrer dentro de anel de importacao; ver o
+    // comentario dela em providerCost.ts). A FORMULA conferida e a mesma.
     find:
-      "export const DEFAULT_HEYGEN_TETO_USD = round(\n" +
-      "  estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS) * USD_PER_BILLED_SECOND,\n" +
-      "  2,\n" +
-      ");",
+      "    tetoHeygenMemo = round(estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS) * " +
+      "USD_PER_BILLED_SECOND, 2);",
     // 600 é o valor que MAX_SCRIPT_SECONDS (não mais importado aqui desde
     // F1) tinha — hardcoded, e não reimportado, porque reintroduzir o
     // identificador exigiria mexer também na linha de import, longe daqui,
     // e um `find`/`replace` de mutante é uma substituição só. O efeito
     // observável é idêntico ao de reverter a fonte de verdade: o valor
     // volta a ser 30.00 em vez de 22.95.
-    replace: "export const DEFAULT_HEYGEN_TETO_USD = round(600 * USD_PER_BILLED_SECOND, 2);",
+    replace: "    tetoHeygenMemo = round(600 * USD_PER_BILLED_SECOND, 2);",
     expect: "DEFAULT_HEYGEN_TETO_USD não deriva mais do teto de caracteres",
   },
   {
@@ -186,9 +187,9 @@ export async function checkHeygenSpendCapPolicy(repoRoot: string): Promise<Heyge
   // que a fórmula certa é a que está lá.
   // ---------------------------------------------------------------------
   const esperadoHeygenTetoUsd = Math.round(estimateSecondsFromChars(HEYGEN_MAX_SCRIPT_CHARS) * USD_PER_BILLED_SECOND * 100) / 100;
-  if (DEFAULT_HEYGEN_TETO_USD !== esperadoHeygenTetoUsd) {
+  if (defaultHeygenTetoUsd() !== esperadoHeygenTetoUsd) {
     failures.push(
-      `teto em dólares (HeyGen): DEFAULT_HEYGEN_TETO_USD é ${DEFAULT_HEYGEN_TETO_USD}, esperado ` +
+      `teto em dólares (HeyGen): DEFAULT_HEYGEN_TETO_USD é ${defaultHeygenTetoUsd()}, esperado ` +
         `${esperadoHeygenTetoUsd} (estimateSecondsFromChars(${HEYGEN_MAX_SCRIPT_CHARS}) × ` +
         `${USD_PER_BILLED_SECOND}, arredondado). O default deixou de refletir o pior caso REAL de um ` +
         "roteiro aceito.",

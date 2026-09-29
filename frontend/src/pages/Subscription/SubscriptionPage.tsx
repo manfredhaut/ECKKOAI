@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api } from "../../api/client";
+import { api, ApiError } from "../../api/client";
 import type { Subscription } from "../../types";
 import { BASE_DOMAIN } from "../../publicConfig";
 import { useAuth } from "../../auth/AuthContext";
@@ -18,6 +18,7 @@ export function SubscriptionPage() {
   const [state, setState] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [changingPlan, setChangingPlan] = useState<string | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
   const [cardNumber, setCardNumber] = useState("");
   const [savingCard, setSavingCard] = useState(false);
   const [editingCard, setEditingCard] = useState(false);
@@ -60,16 +61,25 @@ export function SubscriptionPage() {
   }
 
   async function handleChangePlan(planId: string) {
+    if (changingPlan) return;
+    setPlanError(null);
     setChangingPlan(planId);
+    // Com redirecionamento para o checkout, changingPlan fica preenchido até a
+    // navegação acontecer: reabrir o botão aqui deixaria um segundo clique
+    // abrir outra sessão do Stripe antes de a página sair.
+    let redirecting = false;
     try {
       const result = await api.post<{ checkoutUrl: string | null }>("/subscription/checkout", { planId });
       if (result.checkoutUrl) {
+        redirecting = true;
         window.location.href = result.checkoutUrl;
         return;
       }
       refresh();
+    } catch (err) {
+      setPlanError(err instanceof ApiError ? err.message : t("errors.generic"));
     } finally {
-      setChangingPlan(null);
+      if (!redirecting) setChangingPlan(null);
     }
   }
 
@@ -225,6 +235,11 @@ export function SubscriptionPage() {
       <div className="section-heading">
         <h2>{t("subscription.plansTitle")}</h2>
       </div>
+      {planError && (
+        <div className="alert alert-error" style={{ marginBottom: 12 }}>
+          {planError}
+        </div>
+      )}
       <div className="grid grid-cols-3" style={{ marginBottom: 16 }}>
         {subscription.availablePlans.map((plan) => {
           const isCurrent = plan.id === subscription.plan.id;
@@ -245,7 +260,7 @@ export function SubscriptionPage() {
               </ul>
               <button
                 className={`btn ${isCurrent ? "btn-outline" : "btn-primary"}`}
-                disabled={isCurrent || changingPlan === plan.id}
+                disabled={isCurrent || changingPlan !== null}
                 onClick={() => handleChangePlan(plan.id)}
               >
                 {isCurrent

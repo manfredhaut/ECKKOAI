@@ -175,6 +175,11 @@ export function VoiceSampleRecorder({
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const tickRef = useRef<number | null>(null);
+  // ACHADO 2 — indicador de volume ao vivo durante a gravacao.
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const meterRafRef = useRef<number | null>(null);
+  const meterBarRef = useRef<HTMLDivElement | null>(null);
   // Input nativo escondido — o texto "Escolher arquivo/Nenhum arquivo
   // selecionado" vem do NAVEGADOR (varia por idioma do SO, já visto como
   // "ficheiro" em pt-PT), não da aplicação. O botão abaixo troca esse
@@ -193,9 +198,51 @@ export function VoiceSampleRecorder({
       if (tickRef.current !== null) window.clearInterval(tickRef.current);
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (blobUrl) URL.revokeObjectURL(blobUrl);
+      stopMeter();
     },
     [blobUrl],
   );
+
+  // ACHADO 2 — le o nivel de audio via Web Audio API e atualiza a barra
+  // direto no DOM (sem setState) para nao causar um re-render por frame.
+  // Sem suporte no navegador, falha silenciosa: a gravacao continua normal,
+  // so sem o indicador.
+  function startMeter(stream: MediaStream) {
+    try {
+      const AudioCtxCtor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AudioCtxCtor();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      audioContextRef.current = ctx;
+      analyserRef.current = analyser;
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((sum, v) => sum + v, 0) / data.length;
+        const pct = Math.min(100, Math.round((avg / 255) * 200));
+        if (meterBarRef.current) meterBarRef.current.style.width = `${pct}%`;
+        meterRafRef.current = requestAnimationFrame(tick);
+      };
+      meterRafRef.current = requestAnimationFrame(tick);
+    } catch {
+      // Web Audio API indisponivel — degrada sem indicador, nunca sem gravacao.
+    }
+  }
+
+  function stopMeter() {
+    if (meterRafRef.current !== null) {
+      cancelAnimationFrame(meterRafRef.current);
+      meterRafRef.current = null;
+    }
+    analyserRef.current = null;
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    if (meterBarRef.current) meterBarRef.current.style.width = "0%";
+  }
 
   async function startRecording() {
     setError(null);
@@ -222,6 +269,7 @@ export function VoiceSampleRecorder({
 
     streamRef.current = stream;
     chunksRef.current = [];
+    startMeter(stream);
     const recorder = new MediaRecorder(stream);
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -251,6 +299,7 @@ export function VoiceSampleRecorder({
     recorderRef.current?.stop();
     recorderRef.current = null;
     setRecording(false);
+    stopMeter();
   }
 
   async function handleFile(e: ChangeEvent<HTMLInputElement>) {
@@ -520,6 +569,14 @@ export function VoiceSampleRecorder({
           disabled={recording || sending}
         />
       </div>
+
+      {/* ACHADO 2 — barra de nivel, visivel so durante a gravacao pelo
+          microfone (nao se aplica a upload de arquivo). */}
+      {recording && (
+        <div className="voice-sample__meter" aria-hidden="true">
+          <div className="voice-sample__meter-bar" ref={meterBarRef} />
+        </div>
+      )}
 
       {/* O TETO DE BYTES, derivado da política — nunca um "10 MB" literal, pelo
           mesmo motivo que não há número de duração escrito neste arquivo. Ele

@@ -77,10 +77,27 @@ export interface HeygenPayloadPersistenceCheckResult {
 
 const TENANT_SLUG = "dev-c77a5b";
 
-async function tenantIdReal(): Promise<string> {
+/**
+ * 27/09/2026 — CRIA o tenant de prova quando ele nao existe, em vez de abortar.
+ *
+ * Antes isto lancava, e o `throw` subia ate `checkPolicy` e MATAVA o gate
+ * inteiro: as dezenas de guardas chamadas depois desta nunca rodavam. Numa
+ * VPS limpa (esta, em 27/09) o slug simplesmente nao existia — era dado de
+ * uma maquina de desenvolvimento que nunca foi criado aqui, e o gate ficou
+ * cronicamente vermelho por isso.
+ *
+ * Criar e apagar e o MESMO padrao que a guarda ja usa para os videos de
+ * prova (`criarVideoDescartavel` + DELETE no `finally`). O segundo retorno
+ * diz se fomos nos que criamos: um tenant que ja existia NAO e apagado.
+ */
+async function tenantIdReal(): Promise<{ id: string; criadoAqui: boolean }> {
   const { rows } = await pool.query<{ id: string }>("SELECT id FROM tenants WHERE slug = $1", [TENANT_SLUG]);
-  if (!rows[0]) throw new Error(`tenant ${TENANT_SLUG} não encontrado — prova de persistência exige um tenant real`);
-  return rows[0].id;
+  if (rows[0]) return { id: rows[0].id, criadoAqui: false };
+  const { rows: novo } = await pool.query<{ id: string }>(
+    "INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+    ["Prova de persistencia (descartavel)", TENANT_SLUG],
+  );
+  return { id: novo[0].id, criadoAqui: true };
 }
 
 async function criarVideoDescartavel(tenantId: string, script: string): Promise<string> {
@@ -176,7 +193,7 @@ export async function checkHeygenPayloadPersistencePolicy(): Promise<HeygenPaylo
   const modoOriginal = process.env.PROVIDER_MODE;
   const tetoOriginal = process.env.PROVIDER_LIVE_MAX_GENERATIONS;
 
-  const tenantId = await tenantIdReal();
+  const { id: tenantId, criadoAqui: tenantCriadoAqui } = await tenantIdReal();
   const videoSucesso = await criarVideoDescartavel(tenantId, "prova CC1 — caminho de sucesso");
   const videoFalha = await criarVideoDescartavel(tenantId, "prova CC1 — vendor recusa");
   const videoRedo = await criarVideoDescartavel(tenantId, "prova CC1 — redo");
@@ -274,6 +291,13 @@ export async function checkHeygenPayloadPersistencePolicy(): Promise<HeygenPaylo
     // DELETE em `videos` cascateia para `heygen_video_payloads` (FK ON DELETE
     // CASCADE, migration 079) — não há limpeza separada a fazer nessa tabela.
     await pool.query("DELETE FROM videos WHERE id = ANY($1)", [[videoSucesso, videoFalha, videoRedo]]);
+    // DEPOIS dos videos, nunca antes: `videos.tenant_id` NAO tem ON DELETE
+    // CASCADE (ver \d tenants), entao apagar o tenant com video vivo falha
+    // pela FK. E so quando fomos nos que o criamos — um tenant preexistente
+    // e de alguem.
+    if (tenantCriadoAqui) {
+      await pool.query("DELETE FROM tenants WHERE id = $1", [tenantId]);
+    }
   }
 
   if (failures.length === 0) {

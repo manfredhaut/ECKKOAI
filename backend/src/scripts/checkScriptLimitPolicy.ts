@@ -81,9 +81,20 @@ export const MUTANTS: Mutant[] = [
     // reclama, o vídeo sai, e ele para no meio de uma frase — cobrado por
     // inteiro.
     file: "backend/src/services/generationReadiness.ts",
-    find: "    const estimado = estimateSecondsFromScript(input.script);",
+    // 27/09/2026 — CONTEXTO estendido ate `code: "script_too_long"`. A linha
+    // sozinha virou ambigua (2x) quando `script_too_short_for_target` nasceu
+    // com uma identica; um mutante que casa duas vezes aborta a passada e
+    // deixa esta guarda SEM PROVA. Nao se apaga a linha nova do produto — se
+    // da contexto unico ao find.
+    find:
+      "      const estimado = estimateSecondsFromScript(input.script);\n" +
+      "      blockers.push({\n" +
+      '        code: "script_too_long",',
     replace:
-      "    input.script = input.script.slice(0, maxScriptChars());\n    const estimado = estimateSecondsFromScript(input.script);",
+      "      input.script = input.script.slice(0, maxScriptChars());\n" +
+      "      const estimado = estimateSecondsFromScript(input.script);\n" +
+      "      blockers.push({\n" +
+      '        code: "script_too_long",',
     expect: "apareceu corte de texto no portão",
   },
   {
@@ -172,11 +183,15 @@ export const MUTANTS: Mutant[] = [
     name: "o formulário deixa de propagar a duração-alvo",
     kind: "obvio",
     file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
+    // ÂNCORA ATUALIZADA — P2-8 inseriu `adjust_from_video_id` logo depois
+    // desta linha, dentro de `corpoDaGeracao`; a mesma linha também
+    // aparece em `evaluateGenerationReadiness` (fora desta função), então
+    // o `find` precisa do comentário que só existe NESTA ocorrência para
+    // não casar a errada.
     find:
       "    target_duration_seconds: wizard.targetDurationSeconds,\n" +
-      "  };\n" +
-      "}",
-    replace: "  };\n}",
+      '    // P2-8, "Ajustar este vídeo"',
+    replace: '    // P2-8, "Ajustar este vídeo"',
     expect: "a duração-alvo não chega ao payload pelo formulário",
   },
   {

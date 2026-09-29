@@ -62,7 +62,6 @@ import {
   checkVoiceSlots,
   effectiveVoiceSlotLimit,
   voiceIdForLog,
-  voiceSlotLimit,
   type VoiceSlotLimitSource,
 } from "../services/voice/voiceSample.js";
 import {
@@ -77,6 +76,18 @@ import {
   previewVoiceId,
   voiceNameWithTimestamp,
 } from "../services/voice/voicePreview.js";
+
+/**
+ * Clonagem PARALELA da voz na HeyGen (bloco 6c de `POST /avatars/:id/voice-sample`)
+ * DESLIGADA. Decisão D2 (SIMPLES-2/3): a voz da geração vem SEMPRE da ElevenLabs
+ * (`audio_asset_id`; ver `HeygenPayloadExtras` em avatarProvider.ts), e
+ * `avatars.heygen_voice_id` não é lido por ninguém: nem pela geração, nem pela tela
+ * (o card de ajustes HeyGen está oculto por `SHOW_HEYGEN_VOICE_TUNING`). Ligada, ela
+ * gasta upload e clonagem na conta HeyGen do tenant (custo não medido, sem teto de
+ * slots) por uma voz que nada usa. O código do bloco e as colunas continuam.
+ * Religar = `true`, e só junto com quem passar a consumir `heygen_voice_id`.
+ */
+const HEYGEN_PARALLEL_VOICE_CLONE: boolean = false;
 
 export async function voiceRoutes(app: FastifyInstance): Promise<void> {
   /**
@@ -192,7 +203,7 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({
           error: "no_voice_credential",
           message:
-            "Conecte a chave do provedor de voz em Configurações antes de gravar uma amostra.",
+            "A gravação de voz não está disponível no seu plano no momento. Fale com o suporte.",
         });
       }
 
@@ -309,7 +320,11 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         const { failure, message } = toClientVendorError("voice", "voice.listVoices", err);
         return reply.code(vendorErrorStatus(failure)).send({ error: "voice_provider_error", message });
       }
-      const limite = voiceSlotLimit();
+      // O MESMO teto efetivo da listagem (/voice/sample-policy) e da reclonagem: assim o
+      // "X de Y slots" da tela e este bloqueio nunca divergem. Leitura não tarifada que
+      // NUNCA lança — `null` cai no ambiente ou no default (ver effectiveVoiceSlotLimit).
+      const assinatura = await readVoiceSubscription(voiceCredential.apiKey);
+      const limite = effectiveVoiceSlotLimit(assinatura?.voiceLimit).limit;
       // `owned`, NUNCA `total`: a resposta do fornecedor inclui as vozes
       // `premade` da biblioteca dele, que não são da pessoa e não ocupam slot.
       // Usar `total` aqui recusou uma clonagem legítima em 04/08 com "25 de 10
@@ -425,7 +440,7 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       // heygen" separado para resolver — é a credencial de avatar mesmo.
       let heygenVoiceId: string | null = null;
       const heygenCredential = await getCredentialForVendor(req.tenantId, "avatar", "heygen");
-      if (heygenCredential) {
+      if (HEYGEN_PARALLEL_VOICE_CLONE && heygenCredential) {
         try {
           const clonado = await cloneVoiceHeygenFromBufferAndRecordUsage({
             apiKey: heygenCredential.apiKey,

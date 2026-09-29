@@ -35,8 +35,9 @@ import path from "node:path";
 import { falPoll, falResult, falSubmit, falUpload } from "../providers/falClient.js";
 import { synthesizeSpeech, type VoiceTuning } from "../providers/voiceProvider.js";
 import { isFixtureMode } from "../providers/providerMode.js";
+import { materializeFalFixtureVideo } from "../providers/fixtureProvider.js";
 import { logEvent, redactDeep } from "../log/safeLog.js";
-import { readUpload } from "../storage.js";
+import { readUpload, mimeDoUpload } from "../storage.js";
 import { PIPELINE_TETO_USD_PREMIUM, PRECOS_FAL, custoSeedanceUsd, tetoNormalUsd } from "../billing/providerCost.js";
 import { custoDe } from "../billing/providerPrices.js";
 import { concatVideos, assertAspectRatio, apararSobraMuda, probeVideo } from "./ffmpeg.js";
@@ -1090,6 +1091,27 @@ export interface FalPipelineInput {
    */
   targetDurationSeconds?: number | null;
   /**
+   * P2-5, 22/09/2026 — decisão de produto: "Refazer" (`/redo-video`) NUNCA
+   * recusa por desvio de duração-alvo, só avisa. Default `false`/ausente:
+   * comportamento de sempre (recusa via `compararAlvoComFala`), usado por
+   * `/approve` e pela criação. `/redo-video` é o único call site que passa
+   * `true` — `/recompose` nunca chega a narrar (para em "compor") e
+   * `/resume-blocks` reaproveita a narração já aprovada numa corrida
+   * anterior, então nenhuma das duas tem o que comparar de novo.
+   */
+  avisarDesvioDeAlvoSemRecusar?: boolean;
+  /**
+   * P2-1, 22/09/2026 — a narração desta corrida. Ausente/`{tipo:
+   * "sintetizar"}`: comportamento de sempre, `narrar()` roda. `{tipo:
+   * "reaproveitar", audioUrl, durationSeconds}`: `narrar()` NUNCA é
+   * chamada — nenhum byte de áudio é lido, baixado ou medido de novo; só a
+   * URL (já hospedada na fal, de uma corrida anterior) e a duração já
+   * conhecida atravessam. Existe para quando a voz congelada foi apagada
+   * do fornecedor (`decidirVoz`, frozenIdentity.ts) e há áudio para
+   * reaproveitar — narrar de novo tocaria uma voz que não existe.
+   */
+  narracao?: { tipo: "sintetizar" } | { tipo: "reaproveitar"; audioUrl: string; durationSeconds: number | null };
+  /**
    * Somada a `MARGEM_DURACAO_WAN3_SEGUNDOS` só na tomada única — margem
    * ESCALONADA, achado real de 02/09/2026 (folga insuficiente entre o
    * vídeo animado e a fala real). `/redo-video` a calcula a partir de
@@ -1734,6 +1756,19 @@ export async function runFalPipelineDaImagem(
   // (`pararApos: "compor"`, o default do produto).
   const ehPremium = input.tier === "premium";
 
+  // 26/09/2026 - MESMO defeito da RODADA 1 em `videoMudoUrl` (ver
+  // `sincronizarComAudio`), um andar acima: em fixture,
+  // `materializeFalFixtureImage` grava uma COPIA LOCAL da composta em
+  // `videos.fal_composed_image_url` de proposito, para a tela de aprovacao
+  // renderiza-la num `<img>` real. `/approve` e `/refazer` releem essa
+  // coluna e entregam o caminho cru aqui - e dali ele iria direto para
+  // `reference_image_urls`, onde `garantirUrlsPublicas` recusa. Publica de
+  // volta antes de qualquer coisa paga: publicar nao e etapa paga (mesma
+  // razao de `publicarEntradas`). Em live, uma URL de CDN passa intocada.
+  const imagemParaAFal = imagemCompostaUrl.startsWith("/")
+    ? await falUpload(input.apiKeyFal, await readUpload(imagemCompostaUrl), mimeDoUpload(imagemCompostaUrl))
+    : imagemCompostaUrl;
+
   // V33, item 3 (01/09/2026) — TOMADA ÚNICA para tier Normal com roteiro
   // curto: sem blocos, sem `xfade`, sem `corrigirCor` — e narrando ANTES de
   // animar, para que `duration` venha do ÁUDIO REAL (item 2), não de uma
@@ -1747,7 +1782,7 @@ export async function runFalPipelineDaImagem(
   // ESCOLHER — nunca para autorizar gasto, que continua vindo de
   // `tetoNormalUsd` sobre a duração real, dentro da função abaixo.
   if (!ehPremium && input.script.length / PIPELINE_CHARS_PER_SECOND <= LIMITE_TAKE_UNICO_SEGUNDOS) {
-    return animarTomadaUnicaComAudioReal(input, imagemCompostaUrl, composicaoRequestId);
+    return animarTomadaUnicaComAudioReal(input, imagemParaAFal, composicaoRequestId);
   }
 
   const roteiroConferido = ehPremium ? conferirRoteiro(input.script) : conferirRoteiroENormal(input.script);
@@ -1777,11 +1812,20 @@ export async function runFalPipelineDaImagem(
   // `/approve-video`, exatamente como o caminho de tomada única já faz —
   // ver `FalPipelineResult.audioUrl`/`runFalPipelineDoVideoMudo`.
   const audioPreSintetizado =
-    !ehPremium && input.targetDurationSeconds != null ? await narrar(input) : undefined;
-  if (audioPreSintetizado) compararAlvoComFala(input.targetDurationSeconds, audioPreSintetizado.fala);
+    input.narracao?.tipo === "reaproveitar"
+      ? { audioUrl: input.narracao.audioUrl, fala: { durationSeconds: input.narracao.durationSeconds } }
+      : !ehPremium && input.targetDurationSeconds != null
+        ? await narrar(input)
+        : undefined;
+  // P2-5, 22/09/2026 — mesma engolição de exceção do caminho de tomada única.
+  try {
+    if (audioPreSintetizado) compararAlvoComFala(input.targetDurationSeconds, audioPreSintetizado.fala);
+  } catch (err) {
+    if (!deveEngolirDesvioDeAlvo(err, input.avisarDesvioDeAlvoSemRecusar)) throw err;
+  }
 
   return animarNarrarSincronizar(input, {
-    imagemUrl: imagemCompostaUrl,
+    imagemUrl: imagemParaAFal,
     gastoAcumuladoUsd: 0,
     teto: tetoParaTier(input, segundosTotaisDoRoteiro),
     tier: input.tier ?? "normal",
@@ -1946,11 +1990,20 @@ async function animarTomadaUnicaComAudioReal(
       : null;
 
   // --- NARRAR PRIMEIRO — item 2: é daqui que vem a duração REAL. -----------
-  const { audioUrl, fala } = await narrar(input);
+  const { audioUrl, fala } = input.narracao?.tipo === "reaproveitar"
+    ? { audioUrl: input.narracao.audioUrl, fala: { durationSeconds: input.narracao.durationSeconds } }
+    : await narrar(input);
   // V34, item 3 — RECUSA antes de animar quando a fala diverge do alvo
   // escolhido em mais de 8%. Sem alvo (`targetDurationSeconds` ausente),
   // esta chamada não faz nada — comportamento de antes desta rodada.
-  compararAlvoComFala(input.targetDurationSeconds, fala);
+  // P2-5, 22/09/2026 — "Refazer" (avisarDesvioDeAlvoSemRecusar) nunca
+  // recusa por isto: a exceção é ENGOLIDA por `deveEngolirDesvioDeAlvo`,
+  // nunca a comparação em si (que roda sempre, mesmo teto de 8%).
+  try {
+    compararAlvoComFala(input.targetDurationSeconds, fala);
+  } catch (err) {
+    if (!deveEngolirDesvioDeAlvo(err, input.avisarDesvioDeAlvoSemRecusar)) throw err;
+  }
   // `duration` do Wan 3.0 é INTEIRO (ver `corpoAnimarWan`) — por isso o
   // `Math.ceil` envolve a SOMA inteira (áudio + margem fracionária), não
   // mais "ceil(áudio) + margem" em dois passos: com a margem em 0,5s
@@ -1989,7 +2042,11 @@ async function animarTomadaUnicaComAudioReal(
     // ao fornecedor (9:16 quando o pedido foi 4:5), nunca no formato final
     // que a pessoa escolheu. `!` seguro: `input.aspectRatio` truthy aqui
     // implica saída truthy de `aspectRatioParaFornecedor`.
-    await assertAspectRatio(bloco.videoUrl, aspectRatioParaFornecedor(input.aspectRatio)!);
+    const proporcaoParaFornecedor = aspectRatioParaFornecedor(input.aspectRatio)!;
+    if (isFixtureMode()) {
+      bloco.videoUrl = await materializeFalFixtureVideo(bloco.videoUrl, proporcaoParaFornecedor);
+    }
+    await assertAspectRatio(bloco.videoUrl, proporcaoParaFornecedor);
   }
 
   if (input.pararApos === "animar") {
@@ -2064,6 +2121,13 @@ export async function runFalPipelineRetomandoBlocos(
   // o MESMO plano de blocos que a corrida original produziu — pura e
   // determinística a partir do `script`, então recalcular aqui, numa
   // invocação nova do processo, devolve os mesmos N blocos de antes.
+  // MESMO tratamento de `runFalPipelineDaImagem` (26/09/2026): a retomada
+  // tambem rele `videos.fal_composed_image_url`, que em fixture guarda um
+  // caminho LOCAL. Publica antes de montar qualquer corpo para a fal.
+  const imagemParaAFal = imagemCompostaUrl.startsWith("/")
+    ? await falUpload(input.apiKeyFal, await readUpload(imagemCompostaUrl), mimeDoUpload(imagemCompostaUrl))
+    : imagemCompostaUrl;
+
   const roteiroConferido = conferirRoteiroENormal(input.script);
   const { chars, segundosEstimados, duracaoEscolhida, blocos, segundosTotais } = roteiroConferido;
 
@@ -2087,7 +2151,7 @@ export async function runFalPipelineRetomandoBlocos(
   });
 
   return animarNarrarSincronizar(input, {
-    imagemUrl: imagemCompostaUrl,
+    imagemUrl: imagemParaAFal,
     gastoAcumuladoUsd: 0,
     teto: tetoParaTier(input, segundosTotais),
     tier: "normal",
@@ -2154,7 +2218,7 @@ interface ContextoDaAnimacao {
    * Mesmo padrão de `runFalPipelineDoVideoMudo(..., audioPreSintetizado)`,
    * V33: nunca ressintetizar um áudio que já existe.
    */
-  audioPreSintetizado?: { audioUrl: string; fala: FalaNarrada };
+  audioPreSintetizado?: { audioUrl: string; fala: Pick<FalaNarrada, "durationSeconds"> };
 }
 
 /**
@@ -2589,7 +2653,11 @@ async function animarNarrarSincronizar(
     );
     gastoPrevistoUsd = bloco.gastoPrevistoUsd;
     if (input.aspectRatio && input.verificarAspectRatio !== false) {
-      await assertAspectRatio(bloco.videoUrl, aspectRatioParaFornecedor(input.aspectRatio)!);
+      const proporcaoParaFornecedor = aspectRatioParaFornecedor(input.aspectRatio)!;
+      if (isFixtureMode()) {
+        bloco.videoUrl = await materializeFalFixtureVideo(bloco.videoUrl, proporcaoParaFornecedor);
+      }
+      await assertAspectRatio(bloco.videoUrl, proporcaoParaFornecedor);
     }
 
     if (input.pararApos === "animar") {
@@ -2714,7 +2782,7 @@ async function animarNarrarSincronizar(
   // segue como "o vídeo mudo" para o resto do pipeline — narrar+sincronizar
   // (Ponto 2 de aprovação) não sabem, e não precisam saber, que ela veio de
   // vários blocos.
-  const videoMudoUrl = await concatenarBlocosEPublicar(input.apiKeyFal, videoUrls, tier);
+  let videoMudoUrl = await concatenarBlocosEPublicar(input.apiKeyFal, videoUrls, tier);
   logEvent("info", "fal_pipeline_blocos_concatenados", {
     blocos: blocos.length,
     segundosTotais: blocos.reduce((soma, b) => soma + b.duracaoEscolhida, 0),
@@ -2724,7 +2792,11 @@ async function animarNarrarSincronizar(
   // que a pessoa vê, e o `xfade`/`scale` do item 4 já normalizou geometria
   // entre blocos — esta é a checagem sobre o resultado, não sobre insumos.
   if (input.aspectRatio && input.verificarAspectRatio !== false) {
-    await assertAspectRatio(videoMudoUrl, aspectRatioParaFornecedor(input.aspectRatio)!);
+    const proporcaoParaFornecedor = aspectRatioParaFornecedor(input.aspectRatio)!;
+    if (isFixtureMode()) {
+      videoMudoUrl = await materializeFalFixtureVideo(videoMudoUrl, proporcaoParaFornecedor);
+    }
+    await assertAspectRatio(videoMudoUrl, proporcaoParaFornecedor);
   }
 
   if (input.pararApos === "animar") {
@@ -2861,13 +2933,31 @@ export class AlvoDeDuracaoForaDoAlcanceError extends Error {
  * em caracteres; inventar uma segunda régua aqui divergiria da primeira na
  * primeira vez que uma delas mudasse sozinha.
  */
-export function compararAlvoComFala(alvoSegundos: number | null | undefined, fala: FalaNarrada): void {
+export function compararAlvoComFala(
+  alvoSegundos: number | null | undefined,
+  fala: Pick<FalaNarrada, "durationSeconds">,
+): void {
   if (alvoSegundos == null) return;
   const falaSegundos = fala.durationSeconds ?? 0;
   const desvio = Math.abs(falaSegundos - alvoSegundos) / alvoSegundos;
   if (desvio <= DESVIO_ALVO_MAXIMO_FRACAO) return;
   const caracteresParaAjustar = Math.max(1, Math.round(Math.abs(falaSegundos - alvoSegundos) * PIPELINE_CHARS_PER_SECOND));
   throw new AlvoDeDuracaoForaDoAlcanceError(alvoSegundos, falaSegundos, caracteresParaAjustar);
+}
+
+/**
+ * P2-5 — decide se `compararAlvoComFala` deve ter sua exceção ENGOLIDA pelo
+ * chamador, em vez de recusar. Extraída como função PURA e exportada
+ * separadamente para poder ser testada em isolamento, sem narrar/animar de
+ * verdade — mesma razão de `expressividadeParaDirecao` viver fora de linha.
+ *
+ * Só engole a MESMA classe que `compararAlvoComFala` lança, e só quando o
+ * chamador pediu explicitamente (`avisarSemRecusar: true`) — qualquer outro
+ * erro, ou a flag ausente/`false`, propaga exatamente como antes desta
+ * rodada.
+ */
+export function deveEngolirDesvioDeAlvo(err: unknown, avisarSemRecusar: boolean | undefined): boolean {
+  return Boolean(avisarSemRecusar) && err instanceof AlvoDeDuracaoForaDoAlcanceError;
 }
 
 /**
@@ -2980,13 +3070,25 @@ async function sincronizarComAudio(
   // de propósito, e `ffmpeg` tentaria alcançá-lo pela rede real.
   // `apararSobraFinal !== false`: mesmo padrão de `verificarAspectRatio` —
   // só a guarda desliga isto.
+  // 26/09/2026 - MESMO tratamento que os blocos de `animar` ja recebem
+  // (ver `materializeFalFixtureVideo` acima): em fixture a fal devolve
+  // `FIXTURE_VIDEO_URL`, um host que NAO existe de proposito. Sem isto a
+  // URL de mentira chega ao banco e a tela final tenta carrega-la num
+  // <video> (ERR_NAME_NOT_RESOLVED), e `persistRemoteArtifact` gasta um
+  // `fetch` fadado a falhar (artifact_persist_failed). Materializado aqui,
+  // vira `file://`, que `persistRemoteArtifact` sabe ler do disco e gravar
+  // como `/uploads/...` - servivel pelo navegador.
+  const videoFinalServivel = isFixtureMode()
+    ? await materializeFalFixtureVideo(String(videoFinalUrl), aspectRatioParaFornecedor(input.aspectRatio)!)
+    : String(videoFinalUrl);
+
   const videoUrlFinal =
     input.tier !== "premium" &&
     !isFixtureMode() &&
     fala.durationSeconds != null &&
     input.apararSobraFinal !== false
-      ? await apararVideoFinal(input.apiKeyFal, String(videoFinalUrl), fala.durationSeconds)
-      : String(videoFinalUrl);
+      ? await apararVideoFinal(input.apiKeyFal, videoFinalServivel, fala.durationSeconds)
+      : videoFinalServivel;
 
   // --- BIBLIOTECA -----------------------------------------------------------
   const biblioteca = await input.diario.abrirEtapa("biblioteca", 5, "eckko", null);

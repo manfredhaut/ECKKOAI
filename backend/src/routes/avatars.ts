@@ -189,7 +189,7 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
       if (!credential) {
         return reply.code(400).send({
           error: "no_avatar_credential",
-          message: "Nenhum provedor de avatar está conectado. Conecte a chave em Configurações.",
+          message: "A criação de traje não está disponível no seu plano no momento. Fale com o suporte. Nada foi cobrado.",
         });
       }
 
@@ -458,6 +458,18 @@ export async function avatarRoutes(app: FastifyInstance): Promise<void> {
         [req.params.id, req.tenantId, JSON.stringify(restantes)],
       );
       if (!atualizado.rows[0]) return reply.code(404).send({ error: "Avatar not found" });
+
+      // P2-1, 22/09/2026 — um vídeo pode ter CONGELADO esta foto
+      // (`identity_snapshot->'photo_urls'`); apagar o arquivo quebraria o
+      // "Refazer" desse vídeo (leitura de um caminho que já não existe). Só
+      // apaga quando NENHUM vídeo ainda referencia este caminho exato.
+      const { rows: aindaReferenciada } = await pool.query(
+        "SELECT 1 FROM videos WHERE identity_snapshot -> 'photo_urls' @> to_jsonb($1::text) LIMIT 1",
+        [removida],
+      );
+      if (aindaReferenciada.length > 0) {
+        return atualizado.rows[0];
+      }
 
       // Depois do UPDATE, e com o erro engolido: o banco é a verdade sobre
       // quais fotos existem. Um arquivo que resiste ao `unlink` (permissão,

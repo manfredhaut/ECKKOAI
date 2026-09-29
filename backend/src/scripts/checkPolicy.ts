@@ -81,6 +81,11 @@ import { checkWan3TomadaUnicaPolicy } from "./checkWan3TomadaUnicaPolicy.js";
 import { checkScriptLimitPolicy } from "./checkScriptLimitPolicy.js";
 import { checkCaptionPolicy } from "./checkCaptionPolicy.js";
 import { checkTranslationPolicy } from "./checkTranslationPolicy.js";
+import { checkSceneTextTranslationPolicy } from "./checkSceneTextTranslationPolicy.js";
+import { checkFrozenIdentityPolicy } from "./checkFrozenIdentityPolicy.js";
+import { checkVideoCancelPolicy } from "./checkVideoCancelPolicy.js";
+import { checkVideoDetailsPolicy } from "./checkVideoDetailsPolicy.js";
+import { checkVideoAdjustPolicy } from "./checkVideoAdjustPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
@@ -789,6 +794,31 @@ async function main(): Promise<void> {
   const translation = await checkTranslationPolicy(process.env.REPO_ROOT ?? "/repo");
   translation.failures.forEach((f) => failures.push(f));
   translation.notes.forEach((n) => note(n));
+
+  // L1 — irmã de checkTranslationPolicy, para a tradução FIEL de Cenário/Traje.
+  const sceneTextTranslation = await checkSceneTextTranslationPolicy(process.env.REPO_ROOT ?? "/repo");
+  sceneTextTranslation.failures.forEach((f) => failures.push(f));
+  sceneTextTranslation.notes.forEach((n) => note(n));
+
+  // P2-1 — a ficha de identidade, a equivalência com o avatar ao vivo, e a decisão de voz.
+  const frozenIdentity = await checkFrozenIdentityPolicy(process.env.REPO_ROOT ?? "/repo");
+  frozenIdentity.failures.forEach((f) => failures.push(f));
+  frozenIdentity.notes.forEach((n) => note(n));
+
+  // P2-3 — cancelar uma aprovação pendente, sem estorno (P5).
+  const videoCancel = await checkVideoCancelPolicy(process.env.REPO_ROOT ?? "/repo");
+  videoCancel.failures.forEach((f) => failures.push(f));
+  videoCancel.notes.forEach((n) => note(n));
+
+  // P2-7 — a janela "Detalhes" (Biblioteca) nunca exibe *_en/identity_snapshot.
+  const videoDetails = checkVideoDetailsPolicy(process.env.REPO_ROOT ?? "/repo");
+  videoDetails.failures.forEach((f) => failures.push(f));
+  videoDetails.notes.forEach((n) => note(n));
+
+  // P2-8 — "Ajustar este vídeo": família de versões, sem desconto (P5).
+  const videoAdjust = await checkVideoAdjustPolicy(process.env.REPO_ROOT ?? "/repo");
+  videoAdjust.failures.forEach((f) => failures.push(f));
+  videoAdjust.notes.forEach((n) => note(n));
 
   // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");

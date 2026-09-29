@@ -104,6 +104,11 @@ export function StudioMovieEditStep() {
   const [sel, setSel] = useState<string | null>(null);
   const [tempo, setTempo] = useState(0);
   const [tocando, setTocando] = useState(false);
+  // Zoom da timeline: 1 = a duracao inteira cabe na largura; 8 = oito vezes
+  // mais larga, com rolagem. A faixa rolavel envolve regua e as quatro pistas
+  // de uma vez, e a coluna de rotulos fica sticky para nao sumir ao rolar.
+  const [zoom, setZoom] = useState(1);
+  const rolagemRef = useRef<HTMLDivElement | null>(null);
 
   const [projetoId, setProjetoId] = useState<string | null>(null);
   const [projetoSalvo, setProjetoSalvo] = useState(false);
@@ -309,6 +314,28 @@ export function StudioMovieEditStep() {
 
   function removerTrecho(id: string) {
     const alvo = trechos.find((x) => x.id === id);
+    if (alvo && alvo.tipo === "broll" && alvo.assetId) {
+      const ok = window.confirm(t("createVideo.studioEdit.confirmRemoveWithFile"));
+      if (!ok) return;
+    }
+    // A sequencia encolhe, entao tudo na V2 depois do corte recua junto: sem
+    // isso a sobreposicao passa a cobrir outro pedaco do video. A que comecava
+    // DENTRO do trecho removido ancora no ponto do corte em vez de sumir.
+    if (alvo) {
+      const antes = linha.find((x) => x.id === id);
+      if (antes) {
+        const ini = antes.offset;
+        const fim = antes.offset + antes.dur;
+        const delta = antes.dur;
+        setInsercoes((ins) =>
+          ins.map((i) =>
+            i.inicio >= fim ? { ...i, inicio: Math.max(0, i.inicio - delta) }
+            : i.inicio > ini ? { ...i, inicio: ini }
+            : i,
+          ),
+        );
+      }
+    }
     setTrechos((ts) => ts.filter((x) => x.id !== id));
     if (sel === id) setSel(null);
     mexeu();
@@ -472,7 +499,48 @@ export function StudioMovieEditStep() {
     }
   }
 
+  // Arrasto na V2: a borda direita estica (muda so a duracao), o corpo move
+  // (mantem a duracao). Os valores passam por alterarInsercao -> corrigirInsercao,
+  // o mesmo caminho do campo numerico: o arrasto nao pode aceitar o que o campo
+  // recusa. arrastandoRef trava o clique que o navegador dispara no pointerup,
+  // senao terminar um arrasto saltaria o cursor para ali.
+  const arrastandoRef = useRef(false);
+
+  function iniciarArrasto(
+    e: React.PointerEvent<HTMLDivElement>,
+    ins: Insercao,
+    modo: "mover" | "esticar",
+  ) {
+    e.stopPropagation();
+    e.preventDefault();
+    const pista = e.currentTarget.parentElement;
+    if (!pista || dur <= 0) return;
+    const rect = pista.getBoundingClientRect();
+    const xInicial = e.clientX;
+    const iniInicial = ins.inicio;
+    const durInicial = ins.duracao;
+    arrastandoRef.current = true;
+    setSel(ins.id);
+
+    const mover = (ev: PointerEvent) => {
+      const delta = ((ev.clientX - xInicial) / rect.width) * dur;
+      if (modo === "esticar") {
+        alterarInsercao(ins.id, { duracao: durInicial + delta });
+      } else {
+        alterarInsercao(ins.id, { inicio: iniInicial + delta });
+      }
+    };
+    const soltar = () => {
+      window.removeEventListener("pointermove", mover);
+      window.removeEventListener("pointerup", soltar);
+      window.setTimeout(() => { arrastandoRef.current = false; }, 0);
+    };
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+  }
+
   function buscarNaPista(e: React.MouseEvent<HTMLDivElement>) {
+    if (arrastandoRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     irPara(((e.clientX - rect.left) / rect.width) * dur);
   }
@@ -516,8 +584,23 @@ export function StudioMovieEditStep() {
           : t("createVideo.studioEdit.routeRecodifica", { contagem: rota.contagemSobreposicoes });
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, alignItems: "start" }}>
-      <div style={{ display: "grid", gap: 14 }}>
+    // 28/09/2026 — `minmax(0, …)` nas DUAS colunas e `minWidth: 0` nos itens.
+    //
+    // Em CSS Grid a largura MINIMA de um item e a do conteudo dele, nao zero:
+    // sem isto, a coluna da direita (cards com roteiro longo) se recusava a
+    // encolher e vazava para fora da tela — MEDIDO em 28/09, a pagina nao
+    // acompanhava o zoom e era preciso duas capturas para ver tudo.
+    // `320px` vira `minmax(240px, 320px)`: a coluna cede ate 240 antes de
+    // empurrar o resto.
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) minmax(240px, 320px)",
+        gap: 16,
+        alignItems: "start",
+      }}
+    >
+      <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
         {/* --------------------------------------------------------- monitor */}
         <div className="card">
           <div className="card-title">{t("createVideo.studioEdit.monitorTitle")}</div>
@@ -671,27 +754,47 @@ export function StudioMovieEditStep() {
         </div>
 
         {/* -------------------------------------------------------- timeline */}
-        <div className="card" style={{ background: "#1C1F1A", borderColor: "#3A4034" }}>
+        <div className="card estudio-escuro" style={{ background: "#1C1F1A", borderColor: "#3A4034" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#939D8B" }}>
               {t("createVideo.studioEdit.title")}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btn-outline" onClick={dividirAqui} disabled={!base.id}>
+              <button className="btn btn-studio" onClick={dividirAqui} disabled={!base.id}>
                 {t("createVideo.studioEdit.splitHere")}
               </button>
-              <button className="btn btn-outline" onClick={adicionarBroll} disabled={!base.id}>
+              <button className="btn btn-studio" onClick={adicionarBroll} disabled={!base.id} style={{ background: "#A84D17", borderColor: "#A84D17", color: "#fff" }}>
                 {t("createVideo.studioEdit.addBroll")}
               </button>
-              <button className="btn btn-outline" onClick={() => adicionarInsercao("imagem")} disabled={!base.id}>
+              <button className="btn btn-studio" onClick={() => adicionarInsercao("imagem")} disabled={!base.id} style={{ background: "#7C3AED", borderColor: "#7C3AED", color: "#fff" }}>
                 {t("createVideo.studioEdit.addImage")}
               </button>
-              <button className="btn btn-outline" onClick={() => adicionarInsercao("video")} disabled={!base.id}>
+              <button className="btn btn-studio" onClick={() => adicionarInsercao("video")} disabled={!base.id} style={{ background: "#1F7A3A", borderColor: "#1F7A3A", color: "#fff" }}>
                 {t("createVideo.studioEdit.addOverlay")}
               </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 12, fontSize: 12 }}>
+                <button className="btn btn-studio" style={{ padding: "4px 10px" }} onClick={() => setZoom((z) => Math.max(1, z - 1))}>
+                  &minus;
+                </button>
+                <input type="range" min={1} max={12} step={0.5} value={zoom}
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  aria-label={t("createVideo.studioEdit.zoom", { zoom: zoom.toFixed(1) })}
+                  style={{ width: 110 }} />
+                <button className="btn btn-studio" style={{ padding: "4px 10px" }} onClick={() => setZoom((z) => Math.min(12, z + 1))}>
+                  +
+                </button>
+                <span style={{ fontFamily: "ui-monospace, monospace", color: "#9FB098", minWidth: 42 }}>
+                  {zoom.toFixed(1)}x
+                </span>
+                <button className="btn btn-studio" style={{ padding: "4px 10px" }} onClick={() => setZoom(1)}>
+                  {t("createVideo.studioEdit.zoomFit")}
+                </button>
+              </div>
             </div>
           </div>
 
+          <div ref={rolagemRef} style={{ overflowX: "auto", overflowY: "hidden" }}>
+          <div style={{ width: `${zoom * 100}%`, minWidth: "100%" }}>
           {/* Régua adaptativa: 1s até ~20s de duração final, 5s até ~60s, 10s acima disso. */}
           <div style={{ display: "grid", gridTemplateColumns: "112px 1fr", gap: 8, marginBottom: 4 }}>
             <div />
@@ -701,15 +804,19 @@ export function StudioMovieEditStep() {
           {/* V2 */}
           <TrackRow label={t("createVideo.studioEdit.trackOverlays")} sub={t("createVideo.studioEdit.trackOverlaysSub")}>
             <div style={{ position: "relative", height: 42, background: "#282C25", border: "1px solid #3A4034", borderRadius: 8 }} onClick={buscarNaPista}>
+              {dur > 0 && (
+                <div aria-hidden style={{ position: "absolute", top: 0, bottom: 0,
+                  left: `${pct(tempo, dur)}%`, width: 2, marginLeft: -1,
+                  background: "var(--color-primary)", pointerEvents: "none",
+                  boxShadow: "0 0 4px var(--color-primary)", zIndex: 5 }} />
+              )}
               {insercoes.map((i) => {
                 const colide = insercaoColideComBroll(i, linha);
                 return (
                 <div
                   key={i.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSel(i.id);
-                  }}
+                  onClick={() => setSel(i.id)}
+                  onPointerDown={(e) => iniciarArrasto(e, i, "mover")}
                   style={{
                     position: "absolute",
                     top: 4,
@@ -728,7 +835,7 @@ export function StudioMovieEditStep() {
                     justifyContent: "space-between",
                     padding: "0 7px",
                     overflow: "hidden",
-                    cursor: "grab",
+                    cursor: "pointer",
                   }}
                   title={i.nome || t("createVideo.studioEdit.noFile")}
                 >
@@ -738,6 +845,13 @@ export function StudioMovieEditStep() {
                   <span style={{ fontFamily: "ui-monospace, monospace", opacity: 0.85, flex: "none", marginLeft: 6 }}>
                     {seg(i.duracao)}
                   </span>
+                  <div
+                    onPointerDown={(e) => iniciarArrasto(e, i, "esticar")}
+                    title={t("createVideo.studioEdit.dragResize")}
+                    style={{ position: "absolute", top: 0, bottom: 0, right: 0,
+                      width: 10, cursor: "ew-resize", background: "#FFFFFF59",
+                      borderTopRightRadius: 6, borderBottomRightRadius: 6 }}
+                  />
                 </div>
                 );
               })}
@@ -747,13 +861,16 @@ export function StudioMovieEditStep() {
           {/* V1 */}
           <TrackRow label={t("createVideo.studioEdit.trackSequence")} sub={t("createVideo.studioEdit.trackSequenceSub")}>
             <div style={{ position: "relative", height: 42, background: "#282C25", border: "1px solid #3A4034", borderRadius: 8 }} onClick={buscarNaPista}>
+              {dur > 0 && (
+                <div aria-hidden style={{ position: "absolute", top: 0, bottom: 0,
+                  left: `${pct(tempo, dur)}%`, width: 2, marginLeft: -1,
+                  background: "var(--color-primary)", pointerEvents: "none",
+                  boxShadow: "0 0 4px var(--color-primary)", zIndex: 5 }} />
+              )}
               {linha.map((x) => (
                 <div
                   key={x.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSel(x.id);
-                  }}
+                  onClick={() => setSel(x.id)}
                   style={{
                     position: "absolute",
                     top: 4,
@@ -803,7 +920,13 @@ export function StudioMovieEditStep() {
               />
             }
           >
-            <div style={{ position: "relative", height: 42, background: "#282C25", border: "1px solid #3A4034", borderRadius: 8 }}>
+            <div style={{ position: "relative", height: 42, background: "#282C25", border: "1px solid #3A4034", borderRadius: 8 }} onClick={buscarNaPista}>
+              {dur > 0 && (
+                <div aria-hidden style={{ position: "absolute", top: 0, bottom: 0,
+                  left: `${pct(tempo, dur)}%`, width: 2, marginLeft: -1,
+                  background: "var(--color-primary)", pointerEvents: "none",
+                  boxShadow: "0 0 4px var(--color-primary)", zIndex: 5 }} />
+              )}
               {linha.map((x) =>
                 x.tipo === "base" ? (
                   <div
@@ -893,7 +1016,7 @@ export function StudioMovieEditStep() {
                   }}
                 >
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fundo.nome}</span>
-                  <label className="btn btn-ghost" style={{ marginLeft: "auto", fontSize: 11, padding: "3px 8px" }}>
+                  <label className="btn btn-file" style={{ marginLeft: "auto", fontSize: 11, padding: "3px 8px" }}>
                     {enviandoIds.fundo ? t("createVideo.studioEdit.uploading") : t("createVideo.studioEdit.replaceFile")}
                     <input
                       type="file"
@@ -933,7 +1056,7 @@ export function StudioMovieEditStep() {
                     padding: "0 8px",
                   }}
                 >
-                  <label className="btn btn-ghost" style={{ fontSize: 11.5, padding: "6px 12px" }}>
+                  <label className="btn btn-file" style={{ fontSize: 11.5, padding: "6px 12px" }}>
                     {enviandoIds.fundo ? t("createVideo.studioEdit.uploading") : t("createVideo.studioEdit.addMusic")}
                     <input
                       type="file"
@@ -954,6 +1077,8 @@ export function StudioMovieEditStep() {
               )}
             </div>
           </TrackRow>
+          </div>
+          </div>
           {errosUpload.fundo && (
             <p className="alert-error" style={{ fontSize: 12, marginTop: 8 }}>
               {t("createVideo.studioEdit.uploadError", { motivo: errosUpload.fundo })}
@@ -1020,7 +1145,7 @@ export function StudioMovieEditStep() {
                   {t("createVideo.studioEdit.inspectorBrollTitle")}
                 </div>
                 <strong style={{ fontSize: 14 }}>{trechoSel.nome || t("createVideo.studioEdit.noFile")}</strong>
-                <label className="btn btn-ghost" style={{ fontSize: 12.5, padding: "6px 12px" }}>
+                <label className="btn btn-file" style={{ fontSize: 12.5, padding: "6px 12px" }}>
                   {enviandoIds[trechoSel.id]
                     ? t("createVideo.studioEdit.uploading")
                     : trechoSel.assetId
@@ -1082,7 +1207,7 @@ export function StudioMovieEditStep() {
                   {t("createVideo.studioEdit.inspectorOverlayTitle")}
                 </div>
                 <strong style={{ fontSize: 14 }}>{insercaoSel.nome || t("createVideo.studioEdit.noFile")}</strong>
-                <label className="btn btn-ghost" style={{ fontSize: 12.5, padding: "6px 12px" }}>
+                <label className="btn btn-file" style={{ fontSize: 12.5, padding: "6px 12px" }}>
                   {enviandoIds[insercaoSel.id]
                     ? t("createVideo.studioEdit.uploading")
                     : insercaoSel.assetId
@@ -1160,7 +1285,11 @@ export function StudioMovieEditStep() {
       </div>
 
       {/* ============================================================= lateral */}
-      <div style={{ display: "grid", gap: 14 }}>
+      {/* `minWidth: 0` aqui tambem: o `textOverflow: ellipsis` dos cards de
+          video (abaixo) ja existia e NUNCA entrava em acao — sem esta linha
+          o item de grid nunca e forcado a encolher, entao o texto empurra a
+          largura em vez de ser truncado. */}
+      <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
         <div className="card">
           <div className="card-title">{t("createVideo.studioEdit.chooseVideoTitle")}</div>
           {carregandoVideos && <p className="text-muted">{t("createVideo.studioEdit.loadingVideos")}</p>}
@@ -1303,7 +1432,7 @@ function TrackRow({
 }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "112px 1fr", gap: 8, alignItems: "center", marginBottom: 8 }}>
-      <div style={{ textAlign: "right", paddingRight: 4 }}>
+      <div style={{ textAlign: "right", paddingRight: 4, position: "sticky", left: 0, zIndex: 6, background: "#1C1F1A" }}>
         <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#DDE6D2" }}>{label}</div>
         <div style={{ fontSize: 9.5, color: "#767F6C" }}>{sub}</div>
         {extra && <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 3 }}>{extra}</div>}

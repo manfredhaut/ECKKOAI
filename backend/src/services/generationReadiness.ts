@@ -44,6 +44,7 @@ import { isFixtureMode } from "./providers/providerMode.js";
 // para não deixar nascer.
 import {
   MAX_SCRIPT_SECONDS,
+  duracaoSugeridaParaRoteiro,
   estimateSecondsFromScript,
   exceedsActiveScriptLimit,
   maxScriptChars,
@@ -83,6 +84,23 @@ export type GenerationBlockerCode =
   | "no_avatar_credential"
   | "empty_script"
   | "script_too_long"
+  /**
+   * 27/09/2026 — o ESPELHO de `script_too_long`: o roteiro e curto DEMAIS
+   * para o alvo escolhido.
+   *
+   * Existia um buraco aqui. O desvio para CIMA era pego antes de gastar
+   * (`script_too_long`, com "Gerar mesmo assim"); o desvio para BAIXO
+   * passava o portao e so era recusado la na aprovacao, por
+   * `compararAlvoComFala` — depois de o ElevenLabs ja ter sido pago.
+   * MEDIDO em 27/09: roteiro de 64 caracteres com alvo de 30 s sintetizou
+   * 5,88 s de fala, custou, e so entao levou 422.
+   *
+   * Tolerancia de 20% (nao os 8% do pipeline): a estimativa daqui e por
+   * CARACTERES, grossa por construcao — a medicao real so existe depois da
+   * sintese. Avisar a 8% aqui viraria ruido em cima de um numero que nem e
+   * o que decide.
+   */
+  | "script_too_short_for_target"
   /**
    * BLOCO FRACOES-1, 28/08 — tier Normal, fracionamento. Diferente de
    * `script_too_long` (teto GLOBAL, régua da HeyGen): este é o teto REAL do
@@ -152,6 +170,13 @@ export interface GenerationReadinessInput {
    * muda nada do que já existia. Ver `docs-internal/plano-fracoes-2026-08-28.md`.
    */
   tierVideo?: "simples" | "normal" | "premium" | null;
+  /**
+   * OPCAO B — quando `true`, o desvio entre a duracao-alvo e o roteiro
+   * NAO bloqueia aqui. `MAX_SCRIPT_SECONDS` continua valendo sempre
+   * (rede de seguranca final); so o teto DERIVADO do alvo escolhido e
+   * que passa a ser aviso, nao recusa.
+   */
+  acceptDurationMismatch?: boolean;
 }
 
 export async function evaluateGenerationReadiness(
@@ -224,7 +249,11 @@ export async function evaluateGenerationReadiness(
     // exceedsActiveScriptLimit decide QUAL régua vale — a duração-alvo do
     // passo Roteiro, quando escolhida, ou o teto global na ausência dela.
     const alvo = input.targetDurationSeconds ?? null;
-    if (exceedsActiveScriptLimit(input.script, alvo)) {
+    // OPCAO B — com o alvo aceito, o teto que vale volta a ser SO o global
+    // (MAX_SCRIPT_SECONDS): um roteiro absurdo continua recusado, mas o
+    // desvio do alvo escolhido deixa de bloquear.
+    const alvoParaChecagem = input.acceptDurationMismatch ? null : alvo;
+    if (exceedsActiveScriptLimit(input.script, alvoParaChecagem)) {
       // RECUSA, e nunca corte. Um roteiro truncado geraria um vídeo que para no
       // meio de uma frase — cobrado por inteiro, sem ninguém ter escolhido isso.
       // Recusar custa zero e se resolve editando o texto.
@@ -232,8 +261,8 @@ export async function evaluateGenerationReadiness(
       // Os números da mensagem saem da MESMA régua que estima o custo: o
       // limite em caracteres é derivado do teto em vigor (o alvo escolhido, ou
       // MAX_SCRIPT_SECONDS na ausência dele), nunca digitado.
-      const tetoSegundos = alvo ?? MAX_SCRIPT_SECONDS;
-      const tetoCaracteres = alvo != null ? maxScriptCharsFor(alvo) : maxScriptChars();
+      const tetoSegundos = alvoParaChecagem ?? MAX_SCRIPT_SECONDS;
+      const tetoCaracteres = alvoParaChecagem != null ? maxScriptCharsFor(alvoParaChecagem) : maxScriptChars();
       const estimado = estimateSecondsFromScript(input.script);
       blockers.push({
         code: "script_too_long",
@@ -244,6 +273,28 @@ export async function evaluateGenerationReadiness(
           (alvo != null ? ", a duração escolhida no passo Roteiro" : "") +
           ". Nada foi cobrado. Encurte o roteiro ou divida em mais de um vídeo — " +
           "o texto não é cortado automaticamente para não entregar um vídeo que para no meio de uma frase.",
+      });
+    } else if (
+      alvoParaChecagem != null &&
+      estimateSecondsFromScript(input.script) < alvoParaChecagem * 0.8
+    ) {
+      // 27/09/2026 — o ESPELHO do bloqueio acima. Ver `script_too_short_for_target`.
+      //
+      // `alvoParaChecagem`, nao `alvo`: com "Gerar mesmo assim" ligado ele e
+      // `null` e esta checagem nao roda — exatamente como o irmao de cima.
+      // `else if` pela mesma razao de sempre: um roteiro nao e longo demais E
+      // curto demais, e a pessoa so precisa de UM motivo para agir.
+      const estimado = estimateSecondsFromScript(input.script);
+      const sugerida = duracaoSugeridaParaRoteiro(input.script);
+      const faltam = Math.max(0, maxScriptCharsFor(alvoParaChecagem) - input.script.length);
+      blockers.push({
+        code: "script_too_short_for_target",
+        status: 400,
+        message:
+          `O roteiro tem ${input.script.length} caracteres, cerca de ${estimado.toFixed(0)} s de vídeo, ` +
+          `mas a duração escolhida no passo Roteiro é ${alvoParaChecagem} s. Nada foi cobrado. ` +
+          `Para caber no alvo, acrescente cerca de ${faltam} caracteres — ou ajuste a duração para ` +
+          `${sugerida} s, que é o que este roteiro dura.`,
       });
     } else if (input.tierVideo === "normal") {
       // BLOCO FRACOES-1 — o teto REAL do tier Normal (fracionamento) é bem
@@ -294,8 +345,7 @@ export async function evaluateGenerationReadiness(
       code: "no_avatar_credential",
       status: 400,
       message:
-        "Nenhum provedor de avatar está conectado. Vá em Configurações e conecte a chave de API do " +
-        "provedor de vídeo (HeyGen ou D-ID) antes de gerar.",
+        "A geração de vídeo não está disponível no seu plano no momento. Fale com o suporte.",
     });
   }
   // A credencial de VOZ não entra: ela é opcional por desenho — sem ela,
