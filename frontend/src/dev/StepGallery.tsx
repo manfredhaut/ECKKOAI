@@ -233,6 +233,9 @@ function StepUnderGlass({
     () => ({
       avatarId: state === "vazio" ? null : "gallery-avatar-1",
       script: state === "vazio" ? "" : SAMPLE_SCRIPT,
+      // TITULO-1 — a galeria retrata o estado que o produto produz; "vazio"
+      // sem título (como um vídeo nunca gerado), "preenchido" com um exemplo.
+      title: state === "vazio" ? "" : "Vídeo de exemplo",
       // Cenário e Traje são campos do WIZARD (por vídeo, Cena) desde 27/08 e
       // 28/08 respectivamente — nenhum dos dois vem mais de `AssetDefaults`
       // (Passo 1), tipo extinto.
@@ -276,6 +279,8 @@ function StepUnderGlass({
         <ScriptStep
           script={state === "vazio" ? "" : SAMPLE_SCRIPT}
           onChange={noop}
+          title={wizard.title}
+          onTitleChange={noop}
           targetDurationSeconds={wizard.targetDurationSeconds}
           onTargetDurationChange={noop}
           tierVideo={wizard.tierVideo}

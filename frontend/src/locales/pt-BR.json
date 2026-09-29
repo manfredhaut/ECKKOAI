@@ -668,6 +668,10 @@
       }
     },
     "script": {
+      "titleLabel": "Título do vídeo",
+      "titleHelp": "Aparece na Biblioteca e no nome do arquivo baixado. Não é enviado ao fornecedor.",
+      "titlePlaceholder": "Ex.: Lançamento da linha outono",
+
       "title": "Roteiro",
       "scriptLabel": "Roteiro do vídeo",
       "scriptHelp": "O que o avatar vai ler em voz alta, palavra por palavra.",
@@ -755,6 +759,7 @@
       "summaryImageOnly": "Imagem enviada",
       "summaryAvatarFallback": "Avatar selecionado",
       "summary": {
+        "title": "Título",
         "avatar": "Avatar",
         "scenario": "Cenário",
         "outfit": "Traje",

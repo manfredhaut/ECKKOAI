@@ -9,12 +9,17 @@ import { TARGET_DURATION_OPTIONS, targetDurationMaxSecondsForTier } from "../tar
 export function ScriptStep({
   script,
   onChange,
+  title,
+  onTitleChange,
   targetDurationSeconds,
   onTargetDurationChange,
   tierVideo,
 }: {
   script: string;
   onChange: (script: string) => void;
+  /** TITULO-1 — obrigatório para avançar. Nunca vai ao fornecedor. */
+  title: string;
+  onTitleChange: (title: string) => void;
   /** `null` = sem escolha ainda — nem chip, nem "mais" preenchido. Ver `types.ts`. */
   targetDurationSeconds: number | null;
   onTargetDurationChange: (value: number | null) => void;
@@ -141,6 +146,19 @@ export function ScriptStep({
   return (
     <div className="card">
       <div className="card-title">{t("createVideo.script.title")}</div>
+
+      {/* TITULO-1 — obrigatório, no topo, antes de qualquer outro campo do
+          passo. Nomeia o arquivo baixado e aparece na Biblioteca; nunca é
+          enviado ao fornecedor. */}
+      <Field label={t("createVideo.script.titleLabel")} help={t("createVideo.script.titleHelp")}>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          maxLength={80}
+          placeholder={t("createVideo.script.titlePlaceholder")}
+        />
+      </Field>
 
       {/* ANTES do roteiro, de propósito: a duração-alvo muda o teto que o
           contador mostra assim que a pessoa começa a digitar — pedir a

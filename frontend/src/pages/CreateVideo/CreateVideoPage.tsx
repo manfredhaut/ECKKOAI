@@ -58,6 +58,7 @@ export function CreateVideoPage() {
   const [wizard, setWizard] = useState<WizardState>({
     avatarId: null,
     script: "",
+    title: "",
     estimatedSeconds: null,
     confirmAboveSeconds: null,
     // "mais" — sem alvo escolhido. Ver o comentário do campo em `types.ts`.
@@ -173,6 +174,10 @@ export function CreateVideoPage() {
         ...w,
         avatarId: v.avatar_id,
         script: v.script,
+        // TITULO-1 — "Ajustar este vídeo" herda o título do original; vídeo
+        // anterior a esta migration (title null) nasce sem título, e o
+        // Avançar do passo Roteiro exige que a pessoa preencha um.
+        title: v.title ?? "",
         targetDurationSeconds: v.target_duration_seconds ?? null,
         background:
           v.background_type === "color" || v.background_type === "image"
@@ -211,7 +216,7 @@ export function CreateVideoPage() {
     // ele — dois prejuízos no mesmo clique, o traje que não chegou e a geração
     // que vai ter de ser refeita.
     (step === 0 && wizard.avatarId !== null && !outfitPreparing) ||
-    (step === 1 && wizard.script.trim().length > 0) ||
+    (step === 1 && wizard.title.trim().length > 0 && wizard.script.trim().length > 0) ||
     // Cena nunca trava: todos os controles dela são opcionais, e nenhum campo
     // vazio vai para o payload.
     step === 2 ||
@@ -275,6 +280,8 @@ export function CreateVideoPage() {
         <ScriptStep
           script={wizard.script}
           onChange={(script) => setWizard((w) => ({ ...w, script }))}
+          title={wizard.title}
+          onTitleChange={(title) => setWizard((w) => ({ ...w, title }))}
           targetDurationSeconds={wizard.targetDurationSeconds}
           onTargetDurationChange={(targetDurationSeconds) =>
             setWizard((w) => ({ ...w, targetDurationSeconds }))

@@ -118,6 +118,7 @@ export interface Video {
   resolution?: string | null;
   /** A duração-alvo escolhida no passo Roteiro, ou `null` para "mais". */
   target_duration_seconds?: number | null;
+  title?: string | null;
   /**
    * SÓ o texto em português do usuário. `motion_prompt_en` é velado
    * (`CAMPOS_VELADOS`, tenantView.ts) — nunca chega ao frontend, P1.

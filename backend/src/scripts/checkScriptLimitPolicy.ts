@@ -183,15 +183,23 @@ export const MUTANTS: Mutant[] = [
     name: "o formulário deixa de propagar a duração-alvo",
     kind: "obvio",
     file: "frontend/src/pages/CreateVideo/steps/GenerateStep.tsx",
-    // ÂNCORA ATUALIZADA — P2-8 inseriu `adjust_from_video_id` logo depois
-    // desta linha, dentro de `corpoDaGeracao`; a mesma linha também
-    // aparece em `evaluateGenerationReadiness` (fora desta função), então
-    // o `find` precisa do comentário que só existe NESTA ocorrência para
-    // não casar a errada.
+    // ÂNCORA ATUALIZADA — TITULO-1 inseriu `title: wizard.title.trim(),`
+    // logo depois desta linha, dentro de `corpoDaGeracao`; a mesma linha
+    // também aparece em `evaluateGenerationReadiness` (fora desta função),
+    // então o `find` precisa do texto que só existe NESTA ocorrência para
+    // não casar a errada. Mesma classe de reancoragem que P2-8 já exigiu
+    // antes — nunca apagar a linha nova do produto, só estender o find.
     find:
       "    target_duration_seconds: wizard.targetDurationSeconds,\n" +
+      "    // TITULO-1 — obrigatório; o servidor recusa com 400 se vier vazio. Na\n" +
+      "    // Ajustar, o wizard já herdou o título do vídeo original (CreateVideoPage.tsx).\n" +
+      "    title: wizard.title.trim(),\n" +
       '    // P2-8, "Ajustar este vídeo"',
-    replace: '    // P2-8, "Ajustar este vídeo"',
+    replace:
+      "    // TITULO-1 — obrigatório; o servidor recusa com 400 se vier vazio. Na\n" +
+      "    // Ajustar, o wizard já herdou o título do vídeo original (CreateVideoPage.tsx).\n" +
+      "    title: wizard.title.trim(),\n" +
+      '    // P2-8, "Ajustar este vídeo"',
     expect: "a duração-alvo não chega ao payload pelo formulário",
   },
   {

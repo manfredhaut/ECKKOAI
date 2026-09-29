@@ -1326,12 +1326,21 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       // Malformed output_url — fall back to the .mp4 default above.
     }
 
+    // TITULO-1 — nome do arquivo baixado a partir do título, quando existe.
+    // Sanitizado: só letras, números, espaço, hífen e sublinhado; sem barras
+    // nem caracteres de controle. Vídeo sem título (anterior a esta
+    // migration) cai no nome antigo, video-<id>.
+    const tituloSanitizado = video.title
+      ? video.title.trim().replace(/[^\p{L}\p{N} _-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 80)
+      : "";
+    const nomeArquivo = tituloSanitizado ? `${tituloSanitizado}${ext}` : `video-${video.id}${ext}`;
+
     try {
       // Valida antes de entregar, mesmo que o polling já tenha validado ao
       // marcar `ready`: o arquivo pode ter expirado, sido substituído ou
       // truncado no meio do caminho desde então, e entregar um arquivo
       // quebrado é pior que recusar o download.
-      await proxyRemoteAttachment(reply, urlServida, `video-${video.id}${ext}`, { validate: true });
+      await proxyRemoteAttachment(reply, urlServida, nomeArquivo, { validate: true });
       return reply;
     } catch (err) {
       if (err instanceof InvalidArtifactError) {
@@ -1422,6 +1431,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
        * tenant-scoped deste projeto. Ausente = criação normal, versão 1,
        * comportamento idêntico ao de sempre.
        */
+      title?: string | null;
       adjust_from_video_id?: string | null;
       accept_duration_mismatch?: boolean | null;
     };
@@ -1441,10 +1451,23 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       avatar_look_id: avatarLookId,
       tier_video: tierVideoBruto,
       target_duration_seconds: targetDurationBruta,
+      title: titleBruto,
       adjust_from_video_id: adjustFromVideoId,
       accept_duration_mismatch: acceptDurationMismatchBruto,
     } = req.body;
     const acceptDurationMismatch = acceptDurationMismatchBruto === true;
+    // TITULO-1 — obrigatório em toda criação, inclusive "Ajustar" (o wizard
+    // herda o título do vídeo original; ver CreateVideoPage.tsx). Validado
+    // ANTES de qualquer leitura de avatar/crédito: um título inválido não
+    // deve gastar nada nem tocar o banco.
+    const tituloTrim = typeof titleBruto === "string" ? titleBruto.trim() : "";
+    if (!tituloTrim || tituloTrim.length > 80 || /[\x00-\x1F\x7F]/.test(tituloTrim)) {
+      return reply.code(400).send({
+        error: "invalid_title",
+        message: "Informe um título para o vídeo, de 1 a 80 caracteres, sem caracteres de controle.",
+      });
+    }
+    const title = tituloTrim;
     const tierVideo: VideoTier = isVideoTier(tierVideoBruto) ? tierVideoBruto : DEFAULT_VIDEO_TIER;
     const targetDurationSeconds = isTargetDurationSeconds(targetDurationBruta) ? targetDurationBruta : null;
 
@@ -1914,8 +1937,8 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
                            background_type, background_value, motion_prompt, expressiveness, engine_choice, avatar_look_id,
                            captions, motion_prompt_en, tier_video, target_duration_seconds,
                            scenario_prompt_en, outfit_prompt_en, identity_snapshot,
-                           parent_video_id, root_video_id, version_number, avatar_fit, accept_duration_mismatch)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
+                           parent_video_id, root_video_id, version_number, avatar_fit, accept_duration_mismatch, title)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32) RETURNING *`,
       [
         req.tenantId,
         avatar_id,
@@ -1989,6 +2012,7 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
         // linha (nao do formulario) que decide se compararAlvoComFala
         // recusa ou so avisa. Ver o call site de aprovacao.
         acceptDurationMismatch,
+        title,
       ],
       ));
     } catch (err) {

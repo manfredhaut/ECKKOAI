@@ -199,6 +199,15 @@ export function GenerationSummary({ wizard }: { wizard: WizardState }) {
       <div className="card-title" style={{ fontSize: 14 }}>
         {t("createVideo.generate.summaryTitle")}
       </div>
+      {/* TITULO-1 — linha própria, FORA de resumoDaGeracao() de propósito:
+          a guarda dos "sete campos" varre exatamente aquele array, e o
+          título não é um deles. */}
+      {wizard.title && (
+        <div style={{ display: "flex", gap: 8, padding: "3px 0 10px", alignItems: "center" }}>
+          <dt className="text-muted" style={{ minWidth: 140 }}>{t("createVideo.generate.summary.title")}</dt>
+          <dd style={{ margin: 0, fontWeight: 600 }}>{wizard.title}</dd>
+        </div>
+      )}
       <dl style={{ margin: 0, fontSize: 13 }}>
         {linhas.map((l) => (
           <div key={l.campo} style={{ display: "flex", gap: 8, padding: "3px 0", alignItems: "center" }}>

@@ -10,6 +10,8 @@ export type SceneBackground = { type: "color"; value: string } | { type: "image"
 export interface WizardState {
   avatarId: string | null;
   script: string;
+  /** TITULO-1 — obrigatório para avançar do passo Roteiro. Nunca vai ao fornecedor. */
+  title: string;
   /**
    * O QUE O SERVIDOR ESTIMOU a partir do roteiro, e não uma escolha da tela.
    *

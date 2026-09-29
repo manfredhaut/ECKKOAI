@@ -661,6 +661,10 @@
       }
     },
     "script": {
+      "titleLabel": "Video title",
+      "titleHelp": "Shown in the Library and in the downloaded file name. Not sent to the vendor.",
+      "titlePlaceholder": "e.g. Autumn line launch",
+
       "title": "Script",
       "scriptLabel": "Video script",
       "scriptHelp": "What the avatar will read aloud, word for word.",
@@ -748,6 +752,7 @@
       "summaryImageOnly": "Image uploaded",
       "summaryAvatarFallback": "Avatar selected",
       "summary": {
+        "title": "Title",
         "avatar": "Avatar",
         "scenario": "Scenario",
         "outfit": "Outfit",

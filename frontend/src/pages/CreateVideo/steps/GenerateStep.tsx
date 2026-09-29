@@ -81,6 +81,9 @@ export function corpoDaGeracao(wizard: WizardState, interfaceLocale: string, adj
     // no corpo, e é o servidor (`evaluateGenerationReadiness`) quem recusa de
     // verdade acima dela, não esta tela.
     target_duration_seconds: wizard.targetDurationSeconds,
+    // TITULO-1 — obrigatório; o servidor recusa com 400 se vier vazio. Na
+    // Ajustar, o wizard já herdou o título do vídeo original (CreateVideoPage.tsx).
+    title: wizard.title.trim(),
     // P2-8, "Ajustar este vídeo" — presente só quando esta geração NASCE de
     // outra (o botão "Ajustar"). `null` = criação normal, versão 1 — o
     // comportamento de sempre. Validado por TENANT no servidor, ANTES de

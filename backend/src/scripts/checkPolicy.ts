@@ -86,6 +86,7 @@ import { checkFrozenIdentityPolicy } from "./checkFrozenIdentityPolicy.js";
 import { checkVideoCancelPolicy } from "./checkVideoCancelPolicy.js";
 import { checkVideoDetailsPolicy } from "./checkVideoDetailsPolicy.js";
 import { checkVideoAdjustPolicy } from "./checkVideoAdjustPolicy.js";
+import { checkVideoTitlePolicy } from "./checkVideoTitlePolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
@@ -819,6 +820,11 @@ async function main(): Promise<void> {
   const videoAdjust = await checkVideoAdjustPolicy(process.env.REPO_ROOT ?? "/repo");
   videoAdjust.failures.forEach((f) => failures.push(f));
   videoAdjust.notes.forEach((n) => note(n));
+
+  // TITULO-1 — o título do vídeo chega ao corpo de POST /videos.
+  const videoTitle = checkVideoTitlePolicy(process.env.REPO_ROOT ?? "/repo");
+  videoTitle.failures.forEach((f) => failures.push(f));
+  videoTitle.notes.forEach((n) => note(n));
 
   // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");

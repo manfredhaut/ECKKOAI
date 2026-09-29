@@ -88,6 +88,12 @@ export interface Video {
   tenant_id: string;
   avatar_id: string | null;
   script: string;
+  /**
+   * TITULO-1, 29/09/2026 — título do vídeo, obrigatório em toda criação
+   * nova. `null` só em vídeo anterior a esta migration. Nunca enviado ao
+   * fornecedor: nomeia o arquivo baixado e identifica o vídeo na Biblioteca.
+   */
+  title: string | null;
   scenario: string | null;
   outfit: string | null;
   scenario_prompt: string | null;
