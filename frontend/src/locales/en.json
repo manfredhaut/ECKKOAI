@@ -694,6 +694,23 @@
       "galleryTitle": "Gallery",
       "galleryHint": "Examples of how ready material looks — none of these is a real job.",
       "jobReady": "Ready (example)",
+      "generating": "Generating…",
+      "loadingJobs": "Loading…",
+      "noJobs": "Nothing generated yet this session.",
+      "modeNotReadyYet": "This mode has no generation engine yet — only \"Image\" is available this round.",
+      "simulated": "SIMULATED",
+      "state": {
+        "estimado": "Estimated",
+        "aguardando_vaga": "Awaiting slot",
+        "enviando": "Sending",
+        "incerto": "Uncertain",
+        "na_fila": "Queued",
+        "gerando": "Generating",
+        "pronto": "Ready",
+        "falhou": "Failed",
+        "recusado": "Rejected",
+        "cancelado": "Cancelled"
+      },
       "exampleBrollTitle": "Product on the counter, slow push-in",
       "exampleImageTitle": "Marble counter"
     },

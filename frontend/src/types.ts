@@ -439,3 +439,37 @@ export interface AvatarPreviewResponse {
   heygen_preview_url: string | null;
   voice_sample_url: string | null;
 }
+
+/**
+ * ABAS-7, 29/09/2026 — um job da aba "5. Gerar Vídeos & Imagens".
+ * Espelha a linha real de creative_jobs (migration 088); `entrada` chega
+ * como o objeto que o backend gravou (prompt, aspect_ratio), nunca cru do
+ * fornecedor.
+ */
+export interface CreativeJob {
+  id: string;
+  tenant_id: string;
+  video_id: string | null;
+  modo: "imagem" | "propaganda" | "broll" | "sobreposicao";
+  modelo: string;
+  titulo: string;
+  entrada: { prompt: string; aspect_ratio: string | null };
+  estimativa_usd: string | null;
+  estado:
+    | "estimado"
+    | "aguardando_vaga"
+    | "enviando"
+    | "incerto"
+    | "na_fila"
+    | "gerando"
+    | "pronto"
+    | "falhou"
+    | "recusado"
+    | "cancelado";
+  erro_fornecedor: string | null;
+  arquivo_url: string | null;
+  simulated: boolean;
+  created_at: string;
+  enviado_em: string | null;
+  terminado_em: string | null;
+}

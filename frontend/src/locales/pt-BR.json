@@ -701,6 +701,23 @@
       "galleryTitle": "Galeria",
       "galleryHint": "Exemplos de como o material aparece quando pronto — nenhum destes é um job real.",
       "jobReady": "Pronto (exemplo)",
+      "generating": "Gerando…",
+      "loadingJobs": "Carregando…",
+      "noJobs": "Nada gerado ainda nesta sessão.",
+      "modeNotReadyYet": "Este modo ainda não tem motor de geração — só \"Imagem\" está disponível nesta rodada.",
+      "simulated": "SIMULADO",
+      "state": {
+        "estimado": "Estimado",
+        "aguardando_vaga": "Aguardando vaga",
+        "enviando": "Enviando",
+        "incerto": "Incerto",
+        "na_fila": "Na fila",
+        "gerando": "Gerando",
+        "pronto": "Pronto",
+        "falhou": "Falhou",
+        "recusado": "Recusado",
+        "cancelado": "Cancelado"
+      },
       "exampleBrollTitle": "Produto na bancada, aproximação lenta",
       "exampleImageTitle": "Bancada de mármore"
     },
