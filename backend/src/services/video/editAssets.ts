@@ -23,7 +23,7 @@ export type EditAssetKind = (typeof EDIT_ASSET_KINDS)[number];
 /** UUID exato de `randomUUID()` — nunca um valor recebido sem checar isto primeiro. */
 export const ASSET_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const KIND_ACCEPT: Record<EditAssetKind, string[]> = {
+export const KIND_ACCEPT: Record<EditAssetKind, string[]> = {
   broll: ["video"],
   sobreposicao: ["image", "video"],
   fundo: ["audio"],

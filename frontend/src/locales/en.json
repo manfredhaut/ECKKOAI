@@ -907,6 +907,23 @@
     },
     "studioEdit": {
       "title": "Studio Movie Edit",
+      "creativesGalleryTitle": "Generated videos and images",
+      "creativesGalleryHint": "Material ready in the \"5. Generate Videos & Images\" tab shows up here — download it or insert it straight into the timeline.",
+      "creativesGalleryEmpty": "Nothing ready yet from tab 5.",
+      "creativesGalleryDownload": "Download",
+      "creativesGalleryNeedsBase": "Choose a base video before inserting.",
+      "creativesColumn": {
+        "broll": "B-roll",
+        "imagem": "Image",
+        "imagem": "Image",
+        "sobreposicao": "Overlay",
+        "fundo": "Background music"
+      },
+      "creativesGalleryInsertAs": {
+        "broll": "Insert as b-roll",
+        "sobreposicao": "Insert as overlay",
+        "fundo": "Insert as background music"
+      },
       "creativesComingSoonTitle": "Generated videos and images",
       "creativesComingSoonBody": "Material ready in the \"5. Generate Videos & Images\" tab will appear here to insert into the timeline. Not available yet in this round.",
       "chooseVideoTitle": "Video to edit",

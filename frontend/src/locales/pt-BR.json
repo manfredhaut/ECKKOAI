@@ -914,6 +914,23 @@
     },
     "studioEdit": {
       "title": "Estúdio de Edição",
+      "creativesGalleryTitle": "Vídeos e imagens gerados",
+      "creativesGalleryHint": "Materiais prontos na aba \"5. Gerar Vídeos & Imagens\" aparecem aqui — baixe ou insira direto na linha do tempo.",
+      "creativesGalleryEmpty": "Nada pronto ainda na aba 5.",
+      "creativesGalleryDownload": "Baixar",
+      "creativesGalleryNeedsBase": "Escolha um vídeo base antes de inserir.",
+      "creativesColumn": {
+        "broll": "B-roll",
+        "imagem": "Imagem",
+        "imagem": "Imagem",
+        "sobreposicao": "Sobreposição",
+        "fundo": "Fundo musical"
+      },
+      "creativesGalleryInsertAs": {
+        "broll": "Inserir como b-roll",
+        "sobreposicao": "Inserir como sobreposição",
+        "fundo": "Inserir como fundo musical"
+      },
       "creativesComingSoonTitle": "Vídeos e imagens gerados",
       "creativesComingSoonBody": "Materiais prontos na aba \"5. Gerar Vídeos & Imagens\" vão aparecer aqui para inserir na linha do tempo. Ainda não disponível nesta rodada.",
       "chooseVideoTitle": "Vídeo a editar",

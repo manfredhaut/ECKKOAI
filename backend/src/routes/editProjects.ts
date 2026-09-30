@@ -10,15 +10,17 @@
  */
 import type { FastifyInstance } from "fastify";
 import { createReadStream, createWriteStream } from "node:fs";
-import { unlink } from "node:fs/promises";
+import { unlink, copyFile } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { pool } from "../db/pool.js";
+import { config } from "../config.js";
 import { contentTypeForExtension } from "../services/downloadProxy.js";
 import { formatBytes } from "../services/uploadLimits.js";
 import {
   EDIT_ASSET_KINDS,
   type EditAssetKind,
   ASSET_ID_RE,
+  KIND_ACCEPT,
   editAssetMaxBytes,
   encontrarArquivoDoAsset,
   novoAlvoDeEditAsset,
@@ -27,6 +29,18 @@ import {
 } from "../services/video/editAssets.js";
 import { duracaoFinal, type Trecho } from "../services/video/editProject.js";
 import path from "node:path";
+
+// ABAS-16, 30/09/2026 — "Inserir da Galeria": o modo já entrega o TIPO real
+// do arquivo (vídeo, imagem ou áudio); a única exceção é "propaganda", que
+// pode ser qualquer um dos dois — por isso a categoria é sempre conferida
+// pela EXTENSÃO real do arquivo em disco, nunca só confiada pelo `kind` que
+// o cliente pediu. Mesma disciplina de nunca confiar em dado do cliente sem
+// verificar contra o arquivo de verdade, já usada em validarKindMime.
+const EXT_CATEGORIA: Record<string, string> = {
+  ".mp4": "video", ".webm": "video", ".mov": "video", ".avi": "video", ".m4v": "video",
+  ".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image", ".gif": "image",
+  ".mp3": "audio", ".wav": "audio", ".m4a": "audio", ".ogg": "audio",
+};
 
 function duracaoDoPayload(payload: unknown): number {
   const trechos = (payload as { trechos?: Trecho[] } | null)?.trechos;
@@ -146,4 +160,54 @@ export async function editProjectRoutes(app: FastifyInstance): Promise<void> {
     );
     return rows[0] ?? null;
   });
+
+  // ABAS-16 — "Inserir da Galeria": copia um arquivo JÁ PRONTO da aba 5
+  // (creative_jobs) para dentro do mecanismo de asset do Estúdio, sem
+  // passar pelo navegador de novo. Reaproveita novoAlvoDeEditAsset com o
+  // NOME original (que já tem a extensão certa) — a mesma derivação de
+  // extensão que o upload normal já usa, sem duplicar essa lógica aqui.
+  app.post<{ Body: { creative_job_id?: string; kind?: string } }>(
+    "/tenant/edit-assets/from-creative-job",
+    async (req, reply) => {
+      const { creative_job_id: creativeJobId, kind } = req.body ?? {};
+      if (typeof creativeJobId !== "string" || !creativeJobId) {
+        return reply.code(400).send({ error: "invalid_creative_job_id" });
+      }
+      if (typeof kind !== "string" || !(EDIT_ASSET_KINDS as readonly string[]).includes(kind)) {
+        return reply.code(400).send({
+          error: "invalid_kind",
+          message: `Campo "kind" precisa ser um de: ${EDIT_ASSET_KINDS.join(", ")}.`,
+        });
+      }
+      const kindTipado = kind as EditAssetKind;
+
+      const { rows } = await pool.query<{ arquivo_url: string | null; estado: string }>(
+        "SELECT arquivo_url, estado FROM creative_jobs WHERE id = $1 AND tenant_id = $2",
+        [creativeJobId, req.tenantId],
+      );
+      const job = rows[0];
+      if (!job || !job.arquivo_url || job.estado !== "pronto") {
+        return reply.code(404).send({ error: "not_found" });
+      }
+
+      const ext = path.extname(job.arquivo_url).toLowerCase();
+      const categoria = EXT_CATEGORIA[ext];
+      if (!categoria || !KIND_ACCEPT[kindTipado].includes(categoria)) {
+        return reply.code(400).send({
+          error: "invalid_type",
+          message: `Este material (${ext || "sem extensão"}) não é aceito para ${kindTipado} — esperado ${KIND_ACCEPT[
+            kindTipado
+          ]
+            .map((t) => `${t}/*`)
+            .join(" ou ")}.`,
+        });
+      }
+
+      const alvo = await novoAlvoDeEditAsset(req.tenantId, "", path.basename(job.arquivo_url));
+      const origem = path.join(config.uploadsDir, job.arquivo_url.replace("/uploads/", ""));
+      await copyFile(origem, alvo.absolutePath);
+
+      return reply.code(201).send({ asset_id: alvo.assetId, url: alvo.url });
+    },
+  );
 }

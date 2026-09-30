@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
-import type { Video } from "../../../types";
+import type { Video, CreativeJob } from "../../../types";
 import {
   duracaoFinal,
   linhaDoTempo,
@@ -42,6 +42,64 @@ type EditAssetKind = "broll" | "sobreposicao" | "fundo";
 
 async function enviarEditAsset(kind: EditAssetKind, file: File): Promise<{ asset_id: string; url: string }> {
   return api.upload<{ asset_id: string; url: string }>("/tenant/edit-assets", file, file.name, { kind });
+}
+
+// ABAS-16, 30/09/2026 — "Inserir da Galeria": copia um arquivo JÁ PRONTO da
+// aba 5 (creative_jobs), sem passar pelo navegador de novo. Mesmo formato
+// de resposta de enviarEditAsset, para os handlers de trecho/inserção/fundo
+// não precisarem de dois caminhos diferentes depois da cópia.
+async function enviarEditAssetFromCreativeJob(
+  kind: EditAssetKind,
+  creativeJobId: string,
+): Promise<{ asset_id: string; url: string }> {
+  return api.post<{ asset_id: string; url: string }>("/tenant/edit-assets/from-creative-job", {
+    creative_job_id: creativeJobId,
+    kind,
+  });
+}
+
+// Mesma heurística de extensão já usada em CreativesStep.tsx (ehArquivoDeVideo)
+// — duplicada aqui de propósito: os dois arquivos não compartilham um módulo
+// de utilitários hoje, e criar um só para uma função de 3 linhas trocaria um
+// risco pequeno (duplicação) por outro maior (acoplar dois componentes que
+// vivem em telas diferentes da aba 5/6).
+const EXT_VIDEO_GALERIA = [".mp4", ".webm", ".mov", ".m4v"];
+function ehArquivoDeVideoUrl(url: string): boolean {
+  const semQuery = url.split("?")[0].toLowerCase();
+  return EXT_VIDEO_GALERIA.some((ext) => semQuery.endsWith(ext));
+}
+
+// Mapa modo→destino na timeline, fechado com o operador em 30/09/2026:
+// broll→broll; sobreposição e imagem→sobreposição; música→fundo;
+// propaganda→decidido pelo arquivo REAL (vídeo vira broll, imagem vira
+// sobreposição); narração→null (sem trilha própria no Estúdio ainda, só
+// baixar).
+function kindParaGaleria(job: CreativeJob): EditAssetKind | null {
+  if (job.modo === "broll") return "broll";
+  if (job.modo === "sobreposicao" || job.modo === "imagem") return "sobreposicao";
+  if (job.modo === "musica") return "fundo";
+  if (job.modo === "propaganda") {
+    return job.arquivo_url && ehArquivoDeVideoUrl(job.arquivo_url) ? "broll" : "sobreposicao";
+  }
+  return null;
+}
+
+// ABAS-18, 30/09/2026 — agrupamento na TELA, separado de kindParaGaleria
+// (que decide o destino técnico de inserção). Propaganda-imagem aparece nas
+// DUAS colunas (Imagem e Sobreposição) de propósito — decisão do operador:
+// "depende da necessidade e escolha", a pessoa decide clicando numa ou
+// noutra. Os dois caminhos inserem pelo MESMO kind (sobreposicao) por trás.
+type ColunaGaleria = "broll" | "imagem" | "sobreposicao" | "fundo";
+
+function colunasDaGaleria(job: CreativeJob): ColunaGaleria[] {
+  if (job.modo === "broll") return ["broll"];
+  if (job.modo === "imagem") return ["imagem"];
+  if (job.modo === "sobreposicao") return ["sobreposicao"];
+  if (job.modo === "musica") return ["fundo"];
+  if (job.modo === "propaganda") {
+    return job.arquivo_url && ehArquivoDeVideoUrl(job.arquivo_url) ? ["broll"] : ["imagem", "sobreposicao"];
+  }
+  return [];
 }
 
 function excluirEditAsset(assetId: string): void {
@@ -116,6 +174,26 @@ export function StudioMovieEditStep() {
 
   const [enviandoIds, setEnviandoIds] = useState<Record<string, boolean>>({});
   const [errosUpload, setErrosUpload] = useState<Record<string, string>>({});
+
+  // ABAS-16 — a Galeria da aba 5, visível aqui: TODO job com estado "pronto"
+  // aparece sozinho, sem a pessoa precisar marcar nada (decisão do operador).
+  const [galeria, setGaleria] = useState<CreativeJob[]>([]);
+  const [carregandoGaleria, setCarregandoGaleria] = useState(true);
+  useEffect(() => {
+    let cancelado = false;
+    api
+      .get<CreativeJob[]>("/creative-jobs")
+      .then((rows) => {
+        if (!cancelado) setGaleria(rows.filter((r) => r.estado === "pronto"));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelado) setCarregandoGaleria(false);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   const videoBaseRef = useRef<HTMLVideoElement>(null);
   const videoBrollRef = useRef<HTMLVideoElement>(null);
@@ -387,6 +465,110 @@ export function StudioMovieEditStep() {
     if (sel === id) setSel(null);
     mexeu();
     if (alvo?.assetId) excluirEditAsset(alvo.assetId);
+  }
+
+  // ABAS-16 — Caminho B: um clique cria o espaço (trecho/inserção) E já
+  // anexa o arquivo, sem passo intermediário de selecionar espaço primeiro.
+  async function inserirDaGaleria(job: CreativeJob) {
+    const kind = kindParaGaleria(job);
+    if (!kind || !base.id) return;
+    const chave = `galeria-${job.id}`;
+    setEnviandoIds((s) => ({ ...s, [chave]: true }));
+    setErrosUpload((e) => {
+      const n = { ...e };
+      delete n[chave];
+      return n;
+    });
+    try {
+      const resp = await enviarEditAssetFromCreativeJob(kind, job.id);
+      if (kind === "broll") {
+        const r = dividirEm(trechos, tempo, () => gerarId("t"));
+        const novo: TrechoBroll = {
+          id: gerarId("t"),
+          tipo: "broll",
+          nome: job.titulo,
+          duracao: 3,
+          volume: 100,
+          assetId: resp.asset_id,
+          url: resp.url,
+        };
+        const novos = r.trechos.slice();
+        novos.splice(r.indice, 0, novo);
+        setTrechos(novos);
+        setSel(novo.id);
+      } else if (kind === "sobreposicao") {
+        const tipoInsercao = job.arquivo_url && ehArquivoDeVideoUrl(job.arquivo_url) ? "video" : "imagem";
+        const nova = corrigirInsercao(
+          {
+            id: gerarId("i"),
+            nome: job.titulo,
+            tipo: tipoInsercao,
+            inicio: tempo,
+            duracao: 2,
+            escala: tipoInsercao === "imagem" ? 0.5 : 1,
+            posicao: tipoInsercao === "imagem" ? "sup-dir" : "cheia",
+            assetId: resp.asset_id,
+            url: resp.url,
+          },
+          dur,
+        );
+        setInsercoes((ins) => [...ins, nova]);
+        setSel(nova.id);
+      } else {
+        const assetIdAntigo = fundo.assetId;
+        setFundo((f) => ({ ...f, nome: job.titulo, assetId: resp.asset_id, url: resp.url }));
+        if (assetIdAntigo) excluirEditAsset(assetIdAntigo);
+      }
+      mexeu();
+    } catch (err) {
+      setErrosUpload((e) => ({ ...e, [chave]: err instanceof ApiError ? err.message : String(err) }));
+    } finally {
+      setEnviandoIds((s) => {
+        const n = { ...s };
+        delete n[chave];
+        return n;
+      });
+    }
+  }
+
+  // ABAS-17, 30/09/2026 — upload local que já cria o espaço, mesma ideia de
+  // inserirDaGaleria acima, mas a fonte é um arquivo do computador. Reaproveita
+  // handleUploadBroll/handleUploadInsercao por trás — cria o item com asset
+  // NULO, seleciona, e deixa o upload de sempre preencher o resto.
+  async function criarBrollComArquivo(file: File) {
+    if (!base.id) return;
+    const r = dividirEm(trechos, tempo, () => gerarId("t"));
+    const novoId = gerarId("t");
+    const novo: TrechoBroll = { id: novoId, tipo: "broll", nome: "", duracao: 3, volume: 100, assetId: null, url: null };
+    const novos = r.trechos.slice();
+    novos.splice(r.indice, 0, novo);
+    setTrechos(novos);
+    setSel(novoId);
+    mexeu();
+    await handleUploadBroll(novoId, file);
+  }
+
+  async function criarSobreposicaoComArquivo(file: File) {
+    if (!base.id) return;
+    const tipoInsercao = file.type.startsWith("video") ? "video" : "imagem";
+    const nova = corrigirInsercao(
+      {
+        id: gerarId("i"),
+        nome: "",
+        tipo: tipoInsercao,
+        inicio: tempo,
+        duracao: 2,
+        escala: tipoInsercao === "imagem" ? 0.5 : 1,
+        posicao: tipoInsercao === "imagem" ? "sup-dir" : "cheia",
+        assetId: null,
+        url: null,
+      },
+      dur,
+    );
+    setInsercoes((ins) => [...ins, nova]);
+    setSel(nova.id);
+    mexeu();
+    await handleUploadInsercao(nova.id, file);
   }
 
   async function handleUploadBroll(trechoId: string, file: File) {
@@ -1089,7 +1271,95 @@ export function StudioMovieEditStep() {
         {/* -------------------------------------------------------- inspetor */}
         <div className="card">
           {!trechoSel && !insercaoSel && (
-            <p className="text-muted" style={{ margin: 0 }}>{t("createVideo.studioEdit.inspectorEmpty")}</p>
+            <div style={{ display: "grid", gap: 16 }}>
+              <p className="text-muted" style={{ margin: 0 }}>{t("createVideo.studioEdit.inspectorEmpty")}</p>
+
+              {/* ABAS-17 — por tipo: upload local e itens da Galeria da aba 5
+                  juntos, no mesmo cartão. Narração não tem destino aqui (ver
+                  kindParaGaleria) — fica numa lista à parte, só com Baixar. */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+                {([
+                  { coluna: "broll" as ColunaGaleria, accept: "video/*", onFile: criarBrollComArquivo },
+                  { coluna: "imagem" as ColunaGaleria, accept: "image/*", onFile: criarSobreposicaoComArquivo },
+                  { coluna: "sobreposicao" as ColunaGaleria, accept: "image/*,video/*", onFile: criarSobreposicaoComArquivo },
+                  { coluna: "fundo" as ColunaGaleria, accept: "audio/*", onFile: handleUploadFundo },
+                ]).map(({ coluna, accept, onFile }) => (
+                  <div key={coluna} style={{ border: "1px solid #3A4034", borderRadius: 8, padding: 10, display: "grid", gap: 8 }}>
+                    <strong style={{ fontSize: 13 }}>{t(`createVideo.studioEdit.creativesColumn.${coluna}`)}</strong>
+                    <label className="btn btn-file" style={{ fontSize: 11.5, padding: "6px 12px", opacity: base.id ? 1 : 0.6 }}>
+                      {t("createVideo.studioEdit.chooseFile")}
+                      <input
+                        type="file"
+                        accept={accept}
+                        hidden
+                        disabled={!base.id}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (f) onFile(f);
+                        }}
+                      />
+                    </label>
+                    {!base.id && (
+                      <p className="text-muted" style={{ fontSize: 11, margin: 0 }}>
+                        {t("createVideo.studioEdit.creativesGalleryNeedsBase")}
+                      </p>
+                    )}
+                    {carregandoGaleria && <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>{t("createVideo.studioEdit.loadingVideos")}</p>}
+                    {!carregandoGaleria &&
+                      galeria
+                        .filter((job) => colunasDaGaleria(job).includes(coluna))
+                        .map((job) => {
+                          const chave = `galeria-${job.id}`;
+                          return (
+                            <div key={job.id} style={{ borderTop: "1px solid #3A4034", paddingTop: 8, display: "grid", gap: 4 }}>
+                              <span style={{ fontSize: 12.5 }}>{job.titulo}</span>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                {job.arquivo_url && (
+                                  <a className="btn btn-outline" style={{ fontSize: 11, padding: "4px 8px" }} href={job.arquivo_url} download>
+                                    {t("createVideo.studioEdit.creativesGalleryDownload")}
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  className="btn btn-file"
+                                  style={{ fontSize: 11, padding: "4px 8px" }}
+                                  disabled={!base.id || !!enviandoIds[chave]}
+                                  onClick={() => inserirDaGaleria(job)}
+                                >
+                                  {enviandoIds[chave] ? t("createVideo.studioEdit.uploading") : t("createVideo.studioEdit.chooseFile")}
+                                </button>
+                              </div>
+                              {errosUpload[chave] && (
+                                <p className="alert-error" style={{ fontSize: 11, margin: 0 }}>
+                                  {t("createVideo.studioEdit.uploadError", { motivo: errosUpload[chave] })}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                  </div>
+                ))}
+              </div>
+
+              {galeria.some((job) => job.modo === "narracao") && (
+                <div style={{ border: "1px solid #3A4034", borderRadius: 8, padding: 10, display: "grid", gap: 8 }}>
+                  <strong style={{ fontSize: 13 }}>{t("createVideo.creatives.mode.narracao")}</strong>
+                  {galeria
+                    .filter((job) => job.modo === "narracao")
+                    .map((job) => (
+                      <div key={job.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 12.5 }}>{job.titulo}</span>
+                        {job.arquivo_url && (
+                          <a className="btn btn-outline" style={{ fontSize: 11, padding: "4px 8px" }} href={job.arquivo_url} download>
+                            {t("createVideo.studioEdit.creativesGalleryDownload")}
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
           )}
 
           {trechoSel && trechoSel.tipo === "base" && (
@@ -1320,18 +1590,7 @@ export function StudioMovieEditStep() {
           </div>
         </div>
 
-        {/* ABAS-2, 29/09/2026 — aviso estático: a aba 5 (Gerar Vídeos &
-            Imagens) ainda não grava creative_jobs (migration 088, bloco
-            seguinte do plano), então não há dado real para listar aqui. O
-            cartão existe para o lugar já nascer certo quando a biblioteca
-            funcional chegar, em vez de fingir uma integração que ainda não
-            existe. */}
-        <div className="card">
-          <div className="card-title">{t("createVideo.studioEdit.creativesComingSoonTitle")}</div>
-          <p className="text-muted" style={{ marginTop: 6, fontSize: 13 }}>
-            {t("createVideo.studioEdit.creativesComingSoonBody")}
-          </p>
-        </div>
+
 
         <div className="card">
           <div className="card-title">{t("createVideo.studioEdit.summaryTitle")}</div>
