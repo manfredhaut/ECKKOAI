@@ -17,6 +17,7 @@ import { emailVerificationRoutes } from "./routes/emailVerification.js";
 import { adminPanelRoutes } from "./routes/adminPanel.js";
 import { adminCopilotRoutes } from "./routes/adminCopilot.js";
 import { adminPlatformCredentialRoutes } from "./routes/adminPlatformCredentials.js";
+import { creativeJobRoutes } from "./routes/creativeJobs.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { avatarRoutes } from "./routes/avatars.js";
 import { voiceRoutes } from "./routes/voice.js";
@@ -95,6 +96,7 @@ export async function buildApp() {
     await protectedApp.register(documentRoutes);
     await protectedApp.register(editProjectRoutes);
     await protectedApp.register(referenceImageRoutes);
+    await protectedApp.register(creativeJobRoutes);
     await protectedApp.register(notificationRoutes);
     await protectedApp.register(jobRoutes);
     await protectedApp.register(copilotRoutes);
