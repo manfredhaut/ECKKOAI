@@ -2,17 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
-import type { CreativeJob } from "../../../types";
+import type { CreativeJob, CreativeRef } from "../../../types";
 
 /**
- * Aba "5. Gerar Vídeos & Imagens" — ABAS-2 (esqueleto) → ABAS-7 (ligada à
- * rota real, 29/09/2026). Só o modo "imagem", só em fixture: a rota
- * (creativeJobs.ts) recusa qualquer outro modo e qualquer PROVIDER_MODE
- * diferente de fixture com 400/501 — ver os comentários lá.
+ * Aba "5. Gerar Vídeos & Imagens" — ABAS-2 (esqueleto) → ABAS-7 (Criar/
+ * Galeria reais) → ABAS-8, 30/09/2026 (Referências reais: upload manual).
  *
- * Referências (Produto/Cenário/Personagem/Marca) continuam ESQUELETO puro
- * nesta rodada: sem creative_refs ligado ainda. Só "Criar" e "Galeria" são
- * reais.
+ * "Gerar referência" (origem = "gerada") ainda não existe — fica desabilitado
+ * de propósito, com a mesma disciplina de aviso honesto usada nos modos
+ * Propaganda/B-roll/Sobreposição.
  */
 
 type Modo = "imagem" | "propaganda" | "broll" | "sobreposicao";
@@ -35,6 +33,17 @@ export function CreativesStep() {
   const [loadingJobs, setLoadingJobs] = useState(true);
   const pollRef = useRef<number | null>(null);
 
+  const [refs, setRefs] = useState<CreativeRef[]>([]);
+  const [loadingRefs, setLoadingRefs] = useState(true);
+
+  function reloadRefs() {
+    api
+      .get<CreativeRef[]>("/creative-refs")
+      .then(setRefs)
+      .catch(() => {})
+      .finally(() => setLoadingRefs(false));
+  }
+
   useEffect(() => {
     let cancelado = false;
     api
@@ -45,6 +54,15 @@ export function CreativesStep() {
       .catch(() => {})
       .finally(() => {
         if (!cancelado) setLoadingJobs(false);
+      });
+    api
+      .get<CreativeRef[]>("/creative-refs")
+      .then((rows) => {
+        if (!cancelado) setRefs(rows);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelado) setLoadingRefs(false);
       });
     return () => {
       cancelado = true;
@@ -112,6 +130,7 @@ export function CreativesStep() {
         <p className="text-muted" style={{ marginTop: 4, fontSize: 13 }}>
           {t("createVideo.creatives.referencesHint")}
         </p>
+        {loadingRefs && <p className="text-muted">{t("createVideo.creatives.loadingJobs")}</p>}
         <div
           style={{
             display: "grid",
@@ -121,7 +140,12 @@ export function CreativesStep() {
           }}
         >
           {REFERENCIAS.map((tipo) => (
-            <ReferenceCard key={tipo} tipo={tipo} />
+            <ReferenceCard
+              key={tipo}
+              tipo={tipo}
+              refs={refs.filter((r) => r.tipo === tipo)}
+              onChanged={reloadRefs}
+            />
           ))}
         </div>
       </div>
@@ -262,8 +286,44 @@ export function CreativesStep() {
   );
 }
 
-function ReferenceCard({ tipo }: { tipo: TipoReferencia }) {
+function ReferenceCard({
+  tipo,
+  refs,
+  onChanged,
+}: {
+  tipo: TipoReferencia;
+  refs: CreativeRef[];
+  onChanged: () => void;
+}) {
   const { t } = useTranslation();
+  const [rotulo, setRotulo] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const cheio = refs.length >= 8;
+
+  async function handleFile(file: File) {
+    setUploading(true);
+    setError(null);
+    try {
+      await api.upload<CreativeRef>("/creative-refs", file, file.name, {
+        tipo,
+        ...(rotulo.trim() ? { rotulo: rotulo.trim() } : {}),
+      });
+      setRotulo("");
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    await api.delete(`/creative-refs/${id}`).catch(() => {});
+    onChanged();
+  }
+
   return (
     <div
       style={{
@@ -278,17 +338,75 @@ function ReferenceCard({ tipo }: { tipo: TipoReferencia }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <strong style={{ fontSize: 14 }}>{t(`createVideo.creatives.card.${tipo}`)}</strong>
         <span className="text-muted" style={{ fontSize: 12 }}>
-          0/8
+          {refs.length}/8
         </span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} style={{ aspectRatio: "1/1", borderRadius: 8, border: "1px dashed var(--color-border)" }} />
+        {refs.map((r) => (
+          <div key={r.id} style={{ position: "relative", aspectRatio: "1/1" }}>
+            <img
+              src={r.arquivo_url}
+              alt={r.rotulo ?? ""}
+              style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }}
+            />
+            <button
+              type="button"
+              onClick={() => handleDelete(r.id)}
+              aria-label={t("createVideo.creatives.removeReference")}
+              style={{
+                position: "absolute",
+                top: 2,
+                right: 2,
+                width: 20,
+                height: 20,
+                lineHeight: "18px",
+                padding: 0,
+                borderRadius: 10,
+                border: "none",
+                background: "rgba(0,0,0,0.6)",
+                color: "#fff",
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {Array.from({ length: Math.max(0, 8 - refs.length) }).map((_, i) => (
+          <div
+            key={`empty-${i}`}
+            style={{ aspectRatio: "1/1", borderRadius: 8, border: "1px dashed var(--color-border)" }}
+          />
         ))}
       </div>
-      <button type="button" className="btn btn-secondary" disabled>
-        {t("createVideo.creatives.chooseFiles")}
-      </button>
+      <input
+        type="text"
+        value={rotulo}
+        onChange={(e) => setRotulo(e.target.value)}
+        maxLength={80}
+        disabled={cheio || uploading}
+        placeholder={t("createVideo.creatives.referenceLabelPlaceholder")}
+      />
+      <label className="btn btn-file" style={{ opacity: cheio ? 0.6 : 1 }}>
+        {uploading ? t("createVideo.creatives.uploading") : t("createVideo.creatives.chooseFiles")}
+        <input
+          type="file"
+          accept="image/*"
+          hidden
+          disabled={cheio || uploading}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) handleFile(f);
+          }}
+        />
+      </label>
+      {error && (
+        <p className="alert-error" style={{ fontSize: 12, margin: 0 }}>
+          {error}
+        </p>
+      )}
     </div>
   );
 }

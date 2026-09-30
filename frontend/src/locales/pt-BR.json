@@ -677,6 +677,9 @@
         "personagem": "Personagem",
         "marca": "Marca"
       },
+      "uploading": "Enviando…",
+      "removeReference": "Remover",
+      "referenceLabelPlaceholder": "Título da referência (opcional)",
       "chooseFiles": "Escolher arquivos",
       "createTitle": "Criar",
       "mode": {

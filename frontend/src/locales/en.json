@@ -670,6 +670,9 @@
         "personagem": "Character",
         "marca": "Brand"
       },
+      "uploading": "Uploading…",
+      "removeReference": "Remove",
+      "referenceLabelPlaceholder": "Reference title (optional)",
       "chooseFiles": "Choose files",
       "createTitle": "Create",
       "mode": {

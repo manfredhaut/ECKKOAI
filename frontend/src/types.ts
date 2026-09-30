@@ -244,6 +244,18 @@ export interface ReferenceImage {
   created_at: string;
 }
 
+/** ABAS-8 — espelha a linha real de creative_refs (migration 088). */
+export interface CreativeRef {
+  id: string;
+  tipo: "produto" | "cenario" | "personagem" | "marca";
+  rotulo: string | null;
+  arquivo_url: string;
+  origem: "upload" | "gerada";
+  job_id: string | null;
+  mestre: boolean;
+  created_at: string;
+}
+
 export interface Notification {
   id: string;
   type: string;
