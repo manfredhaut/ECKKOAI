@@ -14,7 +14,7 @@
  * jobs, só imagem"). B-roll, propaganda e sobreposição entram depois.
  */
 
-export type CreativeModo = "imagem" | "propaganda" | "broll" | "sobreposicao";
+export type CreativeModo = "imagem" | "propaganda" | "broll" | "sobreposicao" | "narracao" | "musica";
 
 export interface CreativeModelDef {
   id: string;
@@ -26,6 +26,12 @@ export interface CreativeModelDef {
 export const CREATIVE_MODELS: readonly CreativeModelDef[] = [
   { id: "soul-2", label: "Soul 2", modos: ["imagem"] },
   { id: "marketing-studio-image", label: "Marketing Studio Image", modos: ["imagem"] },
+  // ABAS-10, 30/09/2026 — narração e música, ambas pelo fornecedor já
+  // integrado ao projeto (voiceProvider.ts). O rótulo NUNCA cita o
+  // fornecedor — mesma regra da Higgsfield: nome do agregador só na tela de
+  // credencial do admin, nunca em texto de tenant.
+  { id: "voz-narracao", label: "Narração", modos: ["narracao"] },
+  { id: "musica-jingle", label: "Música / jingle", modos: ["musica"] },
 ];
 
 export function creativeModelById(id: string): CreativeModelDef | null {

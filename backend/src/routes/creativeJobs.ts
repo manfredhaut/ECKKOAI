@@ -101,10 +101,21 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       prompt?: string;
       aspect_ratio?: string | null;
       chave_cliente?: string;
+      // ABAS-10/11 — opcional, só usado quando modo="narracao". `null`/
+      // ausente = voz padrão (a fixture ignora; o caminho real ainda não
+      // lê este campo, ver pendência registrada no bloco de UI).
+      voice_id?: string | null;
     };
   }>("/creative-jobs", async (req, reply) => {
-    const { modo, modelo_id: modeloId, titulo, prompt, aspect_ratio: aspectRatio, chave_cliente: chaveCliente } =
-      req.body ?? {};
+    const {
+      modo,
+      modelo_id: modeloId,
+      titulo,
+      prompt,
+      aspect_ratio: aspectRatio,
+      chave_cliente: chaveCliente,
+      voice_id: voiceId,
+    } = req.body ?? {};
 
     if (!isFixtureMode()) {
       return reply.code(501).send({
@@ -112,10 +123,11 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
         message: "Geração real de criativos ainda não está disponível — só em modo simulação.",
       });
     }
-    if (modo !== "imagem") {
+    const MODOS_SUPORTADOS = new Set(["imagem", "narracao", "musica"]);
+    if (typeof modo !== "string" || !MODOS_SUPORTADOS.has(modo)) {
       return reply.code(400).send({
         error: "modo_nao_suportado",
-        message: 'Só o modo "imagem" está disponível nesta rodada.',
+        message: "Só os modos imagem, narração e música estão disponíveis nesta rodada.",
       });
     }
     if (!tituloValido(titulo)) {
@@ -137,7 +149,11 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
 
     const tituloTrim = titulo!.trim();
     const chaveTrim = chaveCliente!.trim();
-    const entrada = { prompt: prompt.trim(), aspect_ratio: aspectRatio ?? null };
+    const entrada = {
+      prompt: prompt.trim(),
+      aspect_ratio: aspectRatio ?? null,
+      voice_id: typeof voiceId === "string" && voiceId.trim() ? voiceId.trim() : null,
+    };
 
     let rows: CreativeJobRow[];
     try {
