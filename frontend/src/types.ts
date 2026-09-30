@@ -465,7 +465,15 @@ export interface CreativeJob {
   modo: "imagem" | "propaganda" | "broll" | "sobreposicao" | "narracao" | "musica";
   modelo: string;
   titulo: string;
-  entrada: { prompt: string; aspect_ratio: string | null };
+  entrada: {
+    prompt: string | null;
+    aspect_ratio: string | null;
+    voice_id: string | null;
+    duracao_segundos: number | null;
+    // ABAS-13 — só presente em upload direto de vídeo fora de 4-30s: nunca
+    // bloqueia, só avisa. Ausente/false nos demais casos.
+    duracao_fora_do_esperado?: boolean;
+  };
   estimativa_usd: string | null;
   estado:
     | "estimado"

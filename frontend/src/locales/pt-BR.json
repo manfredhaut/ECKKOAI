@@ -685,6 +685,10 @@
       "voiceLabel": "Voz",
       "voiceHelp": "Opcional — sem escolha, usa a voz padrão.",
       "voiceDefault": "Voz padrão",
+      "orUploadFile": "ou envie um arquivo",
+      "uploadNeedsTitle": "Preencha o título do material acima antes de enviar um arquivo.",
+      "durationOutOfRange": "Duração fora da faixa esperada (4 a 30 segundos) — enviado mesmo assim.",
+      "removeJob": "Remover",
       "chooseFiles": "Escolher arquivos",
       "createTitle": "Criar",
       "mode": {

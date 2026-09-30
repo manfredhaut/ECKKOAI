@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../../api/client";
+import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
 import type { CreativeJob, CreativeRef } from "../../../types";
 
@@ -10,39 +10,49 @@ interface VoiceOption {
 }
 
 /**
- * Aba "5. Gerar Vídeos & Imagens" — ABAS-2 (esqueleto) → ABAS-7 (Criar/
- * Galeria reais) → ABAS-8 (Referências reais) → ABAS-11, 30/09/2026
- * (Narração/Música por IA: prompt próprio, voz opcional, duração 3-600s).
+ * Aba "5. Gerar Vídeos & Imagens" — ABAS-2 → ABAS-7 → ABAS-8 → ABAS-11
+ * (Narração/Música por IA) → ABAS-12 (upload de áudio) → ABAS-13,
+ * 30/09/2026 (upload de Imagem/Propaganda/B-roll/Sobreposição).
  *
- * "Gerar referência" (origem = "gerada") ainda não existe — fica desabilitado
- * de propósito, com a mesma disciplina de aviso honesto usada nos modos
- * Propaganda/B-roll/Sobreposição.
+ * TODO modo, agora, tem upload direto como alternativa a "Gerar" — decisão
+ * do operador: "tudo que é produzido ou gerado na aba 5" pode entrar por
+ * upload. Tipo aceito por modo: imagem/sobreposição só imagem; b-roll só
+ * vídeo; propaganda os dois; narração/música só áudio.
  *
- * Upload direto de narração/música (ABAS-12, ainda não escrito) é uma rota
- * separada, com teto de tamanho proporcional à duração pedida — não existe
- * ainda; o campo "ou envie um arquivo" some até lá.
- *
- * DURAÇÃO: dois domínios distintos, nunca compartilham faixa. O controle de
- * 4-30s abaixo é do vídeo (b-roll/imagem/propaganda/sobreposição) — nada a
- * ver com áudio. Narração/música têm o PRÓPRIO controle, 3-600s (o piso é o
- * mínimo real da API de música do fornecedor; o teto é o mesmo valor "de
- * dinheiro" que MAX_SCRIPT_SECONDS já usa no pipeline principal —
- * services/video/scriptDuration.ts —, reproduzido aqui como constante
- * própria de propósito: os dois domínios não devem ficar acoplados por um
- * import cruzado entre o roteiro do avatar e o áudio independente da aba 5).
+ * DURAÇÃO: dois domínios distintos. O controle 4-30s (vídeo) é só um
+ * VALOR-ALVO para geração por IA (ainda não existe para
+ * b-roll/propaganda). No upload de vídeo, essa mesma faixa vira um AVISO,
+ * nunca uma recusa (`entrada.duracao_fora_do_esperado`) — o arquivo já
+ * existe pronto. Narração/música têm seu próprio controle, 3-600s.
  */
 
 type Modo = "imagem" | "propaganda" | "broll" | "sobreposicao" | "narracao" | "musica";
 const MODOS_DE_AUDIO = new Set<Modo>(["narracao", "musica"]);
+const MODOS_COM_MOTOR = new Set<Modo>(["imagem", "narracao", "musica"]);
 const AUDIO_DURATION_MIN = 3;
 const AUDIO_DURATION_MAX = 600;
 const AUDIO_DURATION_DEFAULT = 30;
+
+const ACCEPT_POR_MODO: Record<Modo, string> = {
+  imagem: "image/*",
+  sobreposicao: "image/*",
+  broll: "video/*",
+  propaganda: "image/*,video/*",
+  narracao: "audio/*",
+  musica: "audio/*",
+};
 
 const REFERENCIAS = ["produto", "cenario", "personagem", "marca"] as const;
 type TipoReferencia = (typeof REFERENCIAS)[number];
 
 const POLL_INTERVAL_MS = 2000;
 const ESTADOS_TERMINAIS = new Set(["pronto", "falhou", "recusado", "cancelado"]);
+
+const EXT_DE_VIDEO = [".mp4", ".webm", ".mov", ".m4v"];
+function ehArquivoDeVideo(url: string): boolean {
+  const semQuery = url.split("?")[0].toLowerCase();
+  return EXT_DE_VIDEO.some((ext) => semQuery.endsWith(ext));
+}
 
 export function CreativesStep() {
   const { t } = useTranslation();
@@ -52,6 +62,8 @@ export function CreativesStep() {
   const [audioDuration, setAudioDuration] = useState(AUDIO_DURATION_DEFAULT);
   const [voiceId, setVoiceId] = useState<string>("");
   const [voices, setVoices] = useState<VoiceOption[] | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +80,16 @@ export function CreativesStep() {
       .then(setRefs)
       .catch(() => {})
       .finally(() => setLoadingRefs(false));
+  }
+
+  // ABAS-14 — recarrega a Galeria depois de excluir um job. Recarga
+  // completa, não filtro local: o mesmo padrão de reloadRefs acima.
+  function reloadJobs() {
+    api
+      .get<CreativeJob[]>("/creative-jobs")
+      .then(setJobs)
+      .catch(() => {})
+      .finally(() => setLoadingJobs(false));
   }
 
   useEffect(() => {
@@ -101,12 +123,6 @@ export function CreativesStep() {
     };
   }, []);
 
-  // Vozes são OPCIONAIS: quem não escolher usa a voz padrão do modelo. A
-  // lista só é buscada quando a pessoa entra no modo Narração pela primeira
-  // vez — nenhuma chamada extra para quem nunca abre esse modo. Falha aqui
-  // NUNCA vira erro de tela: sem credencial de voz configurada, o seletor
-  // simplesmente não aparece — a aba 5 nunca cita o nome do fornecedor,
-  // nem mesmo no motivo de uma falha (mesma regra do card de credencial).
   useEffect(() => {
     if (modo !== "narracao" || voices !== null) return;
     api
@@ -125,11 +141,7 @@ export function CreativesStep() {
     });
   }
 
-  const MODOS_COM_MOTOR = new Set<Modo>(["imagem", "narracao", "musica"]);
-
   async function handleGenerate() {
-    // ESQUELETO — Propaganda/B-roll/Sobreposição ainda não têm motor de
-    // jobs. Imagem (ABAS-5/6) e Narração/Música (ABAS-10/11) têm.
     if (!MODOS_COM_MOTOR.has(modo)) return;
     if (!titulo.trim() || !prompt.trim()) return;
 
@@ -170,7 +182,31 @@ export function CreativesStep() {
     }
   }
 
+  // ABAS-12/13 — alternativa ao "Gerar" em TODO modo: subir um arquivo
+  // pronto. Áudio vai para uma rota (duração real decide 3-600s, recusa se
+  // fora); os quatro visuais vão para outra (duração de vídeo é só aviso).
+  async function handleUpload(file: File) {
+    if (!titulo.trim()) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const endpoint = MODOS_DE_AUDIO.has(modo) ? "/creative-jobs/upload" : "/creative-jobs/upload-visual";
+      const created = await api.upload<CreativeJob>(endpoint, file, file.name, {
+        modo,
+        titulo: titulo.trim(),
+        chave_cliente: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      });
+      upsertJob(created);
+      setTitulo("");
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   const podeGerar = MODOS_COM_MOTOR.has(modo) && titulo.trim().length > 0 && prompt.trim().length > 0 && !submitting;
+  const podeUpload = titulo.trim().length > 0 && !uploading;
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -262,37 +298,20 @@ export function CreativesStep() {
 
           <div style={{ display: "grid", gap: 12, alignContent: "start", minWidth: 0 }}>
             {MODOS_DE_AUDIO.has(modo) ? (
-              <>
-                <Field
-                  label={t("createVideo.creatives.audioDurationLabel")}
-                  help={t("createVideo.creatives.audioDurationHelp")}
-                >
-                  <input
-                    type="number"
-                    min={AUDIO_DURATION_MIN}
-                    max={AUDIO_DURATION_MAX}
-                    value={audioDuration}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      if (Number.isFinite(v)) {
-                        setAudioDuration(Math.min(AUDIO_DURATION_MAX, Math.max(AUDIO_DURATION_MIN, v)));
-                      }
-                    }}
-                  />
-                </Field>
-                {modo === "narracao" && voices && voices.length > 0 && (
-                  <Field label={t("createVideo.creatives.voiceLabel")} help={t("createVideo.creatives.voiceHelp")}>
-                    <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)}>
-                      <option value="">{t("createVideo.creatives.voiceDefault")}</option>
-                      {voices.map((v) => (
-                        <option key={v.voice_id} value={v.voice_id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                )}
-              </>
+              <Field label={t("createVideo.creatives.audioDurationLabel")} help={t("createVideo.creatives.audioDurationHelp")}>
+                <input
+                  type="number"
+                  min={AUDIO_DURATION_MIN}
+                  max={AUDIO_DURATION_MAX}
+                  value={audioDuration}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v)) {
+                      setAudioDuration(Math.min(AUDIO_DURATION_MAX, Math.max(AUDIO_DURATION_MIN, v)));
+                    }
+                  }}
+                />
+              </Field>
             ) : (
               <>
                 <Field label={t("createVideo.creatives.modelLabel")}>
@@ -310,6 +329,44 @@ export function CreativesStep() {
                   <span className="chip">1:1</span>
                 </div>
               </>
+            )}
+            {modo === "narracao" && voices && voices.length > 0 && (
+              <Field label={t("createVideo.creatives.voiceLabel")} help={t("createVideo.creatives.voiceHelp")}>
+                <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)}>
+                  <option value="">{t("createVideo.creatives.voiceDefault")}</option>
+                  {voices.map((v) => (
+                    <option key={v.voice_id} value={v.voice_id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            {/* ABAS-12/13 — disponível em TODO modo. Nasce em estado="pronto"
+                direto no backend, sem passar por fixture nenhuma. */}
+            <label className="btn btn-file" style={{ opacity: podeUpload ? 1 : 0.6 }}>
+              {uploading ? t("createVideo.creatives.uploading") : t("createVideo.creatives.orUploadFile")}
+              <input
+                type="file"
+                accept={ACCEPT_POR_MODO[modo]}
+                hidden
+                disabled={!podeUpload}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) handleUpload(f);
+                }}
+              />
+            </label>
+            {!podeUpload && !uploading && (
+              <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
+                {t("createVideo.creatives.uploadNeedsTitle")}
+              </p>
+            )}
+            {uploadError && (
+              <p className="alert-error" style={{ fontSize: 12, margin: 0 }}>
+                {uploadError}
+              </p>
             )}
           </div>
         </div>
@@ -363,7 +420,7 @@ export function CreativesStep() {
           }}
         >
           {jobs.map((job) => (
-            <JobCard key={job.id} job={job} />
+            <JobCard key={job.id} job={job} onDeleted={reloadJobs} />
           ))}
         </div>
       </div>
@@ -496,9 +553,16 @@ function ReferenceCard({
   );
 }
 
-function JobCard({ job }: { job: CreativeJob }) {
+function JobCard({ job, onDeleted }: { job: CreativeJob; onDeleted: () => void }) {
   const { t } = useTranslation();
   const ehAudio = job.modo === "narracao" || job.modo === "musica";
+  const ehVideo = !ehAudio && job.arquivo_url && ehArquivoDeVideo(job.arquivo_url);
+
+  async function handleDelete() {
+    await api.delete(`/creative-jobs/${job.id}`).catch(() => {});
+    onDeleted();
+  }
+
   return (
     <div
       style={{
@@ -511,12 +575,12 @@ function JobCard({ job }: { job: CreativeJob }) {
       {ehAudio ? (
         job.arquivo_url && job.estado === "pronto" && (
           <div style={{ padding: 12 }}>
-            {/* Player nativo do navegador já traz o controle de volume — o
-                mesmo componente usado em VoiceSampleRecorder.tsx e
-                AvatarSetupStep.tsx neste projeto. "Exportar" reusa o mesmo
-                arquivo_url que o download da Galeria já serve. */}
             <audio controls src={job.arquivo_url} style={{ width: "100%" }} />
           </div>
+        )
+      ) : ehVideo ? (
+        job.arquivo_url && (
+          <video controls src={job.arquivo_url} style={{ width: "100%", height: 140, objectFit: "cover" }} />
         )
       ) : (
         <div
@@ -539,11 +603,25 @@ function JobCard({ job }: { job: CreativeJob }) {
             </span>
           )}
         </div>
+        {/* ABAS-13 — aviso, nunca bloqueio: vídeo enviado fora de 4-30s. */}
+        {job.entrada?.duracao_fora_do_esperado && (
+          <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
+            {t("createVideo.creatives.durationOutOfRange")}
+          </p>
+        )}
         {job.estado === "falhou" && job.erro_fornecedor && (
           <p className="alert-error" style={{ fontSize: 12, margin: 0 }}>
             {job.erro_fornecedor}
           </p>
         )}
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={handleDelete}
+          style={{ fontSize: 12, justifySelf: "start" }}
+        >
+          {t("createVideo.creatives.removeJob")}
+        </button>
       </div>
     </div>
   );

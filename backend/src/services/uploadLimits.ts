@@ -62,6 +62,26 @@ export function imageUploadMaxBytes(env: NodeJS.ProcessEnv = process.env): numbe
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_IMAGE_MAX_BYTES;
 }
 
+const DEFAULT_CREATIVE_AUDIO_CEILING_BYTES = 30 * 1024 * 1024;
+
+/**
+ * Teto do upload direto de narração/música (ABAS-12) — NÃO é calculado a
+ * partir de uma duração declarada: o Fastify exige o limite de bytes no
+ * momento de `req.file()`, antes de qualquer campo do formulário (incluindo
+ * uma "duração pedida") estar disponível. Este é um teto de SEGURANÇA
+ * generoso — cobre folgadamente até 600s (o máximo aceito) mesmo em taxas
+ * de bits altas (~320kbps). Quem decide de fato se o arquivo é uma
+ * narração/música válida é a duração REAL, medida por ffprobe DEPOIS do
+ * upload (creativeJobs.ts) — o mesmo padrão de checkReferenceVideoDuration
+ * acima, aplicado à faixa 3-600s da aba 5.
+ */
+export function creativeAudioUploadCeilingBytes(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.CREATIVE_AUDIO_UPLOAD_CEILING_BYTES;
+  if (!raw) return DEFAULT_CREATIVE_AUDIO_CEILING_BYTES;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_CREATIVE_AUDIO_CEILING_BYTES;
+}
+
 /** "38,4 MB" — para ler numa tela, não para calcular. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -82,7 +102,7 @@ export function formatBytes(bytes: number): string {
  * A diferença é irrelevante para a decisão de quem lê, e inventar precisão
  * que não temos seria pior.
  */
-export type UploadKind = "video" | "image";
+export type UploadKind = "video" | "image" | "audio";
 
 export function tooLargeMessage(
   sentBytes: number | null,
@@ -117,6 +137,11 @@ const HOW_TO_FIT: Record<UploadKind, string> = {
   image:
     "Reduza a resolução da imagem antes de enviar, ou use uma cópia comprimida " +
     "em vez do arquivo original da câmera.",
+  // ABAS-12 — narração/música: este teto é de SEGURANÇA, não o motivo real de
+  // recusa (esse é a duração, medida DEPOIS do upload — ver creativeJobs.ts).
+  // Um arquivo que estoura este teto quase sempre está numa taxa de bits mais
+  // alta do que precisa.
+  audio: "Exporte numa taxa de bits menor (128kbps já é suficiente para fala), ou envie um trecho mais curto.",
 };
 
 /**

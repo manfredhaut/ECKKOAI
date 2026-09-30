@@ -678,6 +678,10 @@
       "voiceLabel": "Voice",
       "voiceHelp": "Optional — leave unset to use the default voice.",
       "voiceDefault": "Default voice",
+      "orUploadFile": "or upload a file",
+      "uploadNeedsTitle": "Fill in the material title above before uploading a file.",
+      "durationOutOfRange": "Duration outside the expected range (4 to 30 seconds) — uploaded anyway.",
+      "removeJob": "Remove",
       "chooseFiles": "Choose files",
       "createTitle": "Create",
       "mode": {
