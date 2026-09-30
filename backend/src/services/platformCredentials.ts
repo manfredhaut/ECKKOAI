@@ -172,7 +172,7 @@ export const PLATFORM_CREDENTIALS: Record<PlatformCredentialId, PlatformCredenti
   higgsfield: {
     id: "higgsfield",
     envVar: "PLATFORM_HIGGSFIELD_API_KEY",
-    label: "Higgsfield — criativos (imagem e vídeo)",
+    label: "Higgsfield - Vídeos & Imagens",
     // ABAS-4, 29/09/2026 — ARMAZENAMENTO SÓ. A Higgsfield entrega a
     // credencial já como UM par "KeyID:Secret" (confirmado pelo operador,
     // não a forma de dois-campos que o levantamento original supôs), então
