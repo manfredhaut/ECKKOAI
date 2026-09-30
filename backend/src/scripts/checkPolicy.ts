@@ -87,6 +87,7 @@ import { checkVideoCancelPolicy } from "./checkVideoCancelPolicy.js";
 import { checkVideoDetailsPolicy } from "./checkVideoDetailsPolicy.js";
 import { checkVideoAdjustPolicy } from "./checkVideoAdjustPolicy.js";
 import { checkVideoTitlePolicy } from "./checkVideoTitlePolicy.js";
+import { checkCreativeJobsPolicy } from "./checkCreativeJobsPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
@@ -825,6 +826,11 @@ async function main(): Promise<void> {
   const videoTitle = checkVideoTitlePolicy(process.env.REPO_ROOT ?? "/repo");
   videoTitle.failures.forEach((f) => failures.push(f));
   videoTitle.notes.forEach((n) => note(n));
+
+  // ABAS-15 — as 7 invariantes de backend/src/routes/creativeJobs.ts.
+  const creativeJobs = checkCreativeJobsPolicy(process.env.REPO_ROOT ?? "/repo");
+  creativeJobs.failures.forEach((f) => failures.push(f));
+  creativeJobs.notes.forEach((n) => note(n));
 
   // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");
