@@ -462,7 +462,7 @@ export interface CreativeJob {
   id: string;
   tenant_id: string;
   video_id: string | null;
-  modo: "imagem" | "propaganda" | "broll" | "sobreposicao";
+  modo: "imagem" | "propaganda" | "broll" | "sobreposicao" | "narracao" | "musica";
   modelo: string;
   titulo: string;
   entrada: { prompt: string; aspect_ratio: string | null };

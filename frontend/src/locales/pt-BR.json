@@ -680,13 +680,20 @@
       "uploading": "Enviando…",
       "removeReference": "Remover",
       "referenceLabelPlaceholder": "Título da referência (opcional)",
+      "audioDurationLabel": "Duração (segundos)",
+      "audioDurationHelp": "De 3 a 600 segundos.",
+      "voiceLabel": "Voz",
+      "voiceHelp": "Opcional — sem escolha, usa a voz padrão.",
+      "voiceDefault": "Voz padrão",
       "chooseFiles": "Escolher arquivos",
       "createTitle": "Criar",
       "mode": {
         "imagem": "Imagem",
         "propaganda": "Propaganda",
         "broll": "B-roll",
-        "sobreposicao": "Sobreposição"
+        "sobreposicao": "Sobreposição",
+        "narracao": "Narração",
+        "musica": "Música"
       },
       "materialTitleLabel": "Título do material",
       "materialTitleHelp": "Nomeia o arquivo exportado e aparece na Galeria e no Estúdio de Edição. Não é enviado ao fornecedor.",

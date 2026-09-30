@@ -1,19 +1,42 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api } from "../../../api/client";
+import { api, ApiError } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
 import type { CreativeJob, CreativeRef } from "../../../types";
 
+interface VoiceOption {
+  voice_id: string;
+  name: string;
+}
+
 /**
  * Aba "5. Gerar Vídeos & Imagens" — ABAS-2 (esqueleto) → ABAS-7 (Criar/
- * Galeria reais) → ABAS-8, 30/09/2026 (Referências reais: upload manual).
+ * Galeria reais) → ABAS-8 (Referências reais) → ABAS-11, 30/09/2026
+ * (Narração/Música por IA: prompt próprio, voz opcional, duração 3-600s).
  *
  * "Gerar referência" (origem = "gerada") ainda não existe — fica desabilitado
  * de propósito, com a mesma disciplina de aviso honesto usada nos modos
  * Propaganda/B-roll/Sobreposição.
+ *
+ * Upload direto de narração/música (ABAS-12, ainda não escrito) é uma rota
+ * separada, com teto de tamanho proporcional à duração pedida — não existe
+ * ainda; o campo "ou envie um arquivo" some até lá.
+ *
+ * DURAÇÃO: dois domínios distintos, nunca compartilham faixa. O controle de
+ * 4-30s abaixo é do vídeo (b-roll/imagem/propaganda/sobreposição) — nada a
+ * ver com áudio. Narração/música têm o PRÓPRIO controle, 3-600s (o piso é o
+ * mínimo real da API de música do fornecedor; o teto é o mesmo valor "de
+ * dinheiro" que MAX_SCRIPT_SECONDS já usa no pipeline principal —
+ * services/video/scriptDuration.ts —, reproduzido aqui como constante
+ * própria de propósito: os dois domínios não devem ficar acoplados por um
+ * import cruzado entre o roteiro do avatar e o áudio independente da aba 5).
  */
 
-type Modo = "imagem" | "propaganda" | "broll" | "sobreposicao";
+type Modo = "imagem" | "propaganda" | "broll" | "sobreposicao" | "narracao" | "musica";
+const MODOS_DE_AUDIO = new Set<Modo>(["narracao", "musica"]);
+const AUDIO_DURATION_MIN = 3;
+const AUDIO_DURATION_MAX = 600;
+const AUDIO_DURATION_DEFAULT = 30;
 
 const REFERENCIAS = ["produto", "cenario", "personagem", "marca"] as const;
 type TipoReferencia = (typeof REFERENCIAS)[number];
@@ -26,6 +49,9 @@ export function CreativesStep() {
   const [modo, setModo] = useState<Modo>("broll");
   const [titulo, setTitulo] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [audioDuration, setAudioDuration] = useState(AUDIO_DURATION_DEFAULT);
+  const [voiceId, setVoiceId] = useState<string>("");
+  const [voices, setVoices] = useState<VoiceOption[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +101,20 @@ export function CreativesStep() {
     };
   }, []);
 
+  // Vozes são OPCIONAIS: quem não escolher usa a voz padrão do modelo. A
+  // lista só é buscada quando a pessoa entra no modo Narração pela primeira
+  // vez — nenhuma chamada extra para quem nunca abre esse modo. Falha aqui
+  // NUNCA vira erro de tela: sem credencial de voz configurada, o seletor
+  // simplesmente não aparece — a aba 5 nunca cita o nome do fornecedor,
+  // nem mesmo no motivo de uma falha (mesma regra do card de credencial).
+  useEffect(() => {
+    if (modo !== "narracao" || voices !== null) return;
+    api
+      .get<{ voices: VoiceOption[] }>("/voice/voices")
+      .then((r) => setVoices(r.voices))
+      .catch(() => setVoices([]));
+  }, [modo, voices]);
+
   function upsertJob(job: CreativeJob) {
     setJobs((prev) => {
       const idx = prev.findIndex((j) => j.id === job.id);
@@ -85,21 +125,30 @@ export function CreativesStep() {
     });
   }
 
+  const MODOS_COM_MOTOR = new Set<Modo>(["imagem", "narracao", "musica"]);
+
   async function handleGenerate() {
-    // ESQUELETO — só o modo "imagem" tem motor de jobs nesta rodada
-    // (ABAS-5/6). Os outros três continuam sem POST real.
-    if (modo !== "imagem") return;
+    // ESQUELETO — Propaganda/B-roll/Sobreposição ainda não têm motor de
+    // jobs. Imagem (ABAS-5/6) e Narração/Música (ABAS-10/11) têm.
+    if (!MODOS_COM_MOTOR.has(modo)) return;
     if (!titulo.trim() || !prompt.trim()) return;
 
     setSubmitting(true);
     setError(null);
     try {
+      const modeloPorModo: Record<string, string> = {
+        imagem: "soul-2",
+        narracao: "voz-narracao",
+        musica: "musica-jingle",
+      };
       const created = await api.post<CreativeJob>("/creative-jobs", {
-        modo: "imagem",
-        modelo_id: "soul-2",
+        modo,
+        modelo_id: modeloPorModo[modo],
         titulo: titulo.trim(),
         prompt: prompt.trim(),
         chave_cliente: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        ...(MODOS_DE_AUDIO.has(modo) ? { duracao_segundos: audioDuration } : {}),
+        ...(modo === "narracao" && voiceId ? { voice_id: voiceId } : {}),
       });
       upsertJob(created);
 
@@ -121,7 +170,7 @@ export function CreativesStep() {
     }
   }
 
-  const podeGerar = modo === "imagem" && titulo.trim().length > 0 && prompt.trim().length > 0 && !submitting;
+  const podeGerar = MODOS_COM_MOTOR.has(modo) && titulo.trim().length > 0 && prompt.trim().length > 0 && !submitting;
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -156,7 +205,7 @@ export function CreativesStep() {
             {t("createVideo.creatives.createTitle")}
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {(["imagem", "propaganda", "broll", "sobreposicao"] as const).map((m) => (
+            {(["imagem", "propaganda", "broll", "sobreposicao", "narracao", "musica"] as const).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -204,7 +253,7 @@ export function CreativesStep() {
             <p className="text-muted" style={{ fontSize: 12 }}>
               {t("createVideo.creatives.promptHint")}
             </p>
-            {modo !== "imagem" && (
+            {!MODOS_COM_MOTOR.has(modo) && (
               <p className="text-muted" style={{ fontSize: 12 }}>
                 {t("createVideo.creatives.modeNotReadyYet")}
               </p>
@@ -212,20 +261,56 @@ export function CreativesStep() {
           </div>
 
           <div style={{ display: "grid", gap: 12, alignContent: "start", minWidth: 0 }}>
-            <Field label={t("createVideo.creatives.modelLabel")}>
-              <select disabled>
-                <option>Soul 2</option>
-              </select>
-            </Field>
-            <Field label={t("createVideo.creatives.durationLabel")}>
-              <input type="range" min={4} max={30} defaultValue={5} disabled />
-            </Field>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <span className="chip selected">16:9</span>
-              <span className="chip">9:16</span>
-              <span className="chip">4:5</span>
-              <span className="chip">1:1</span>
-            </div>
+            {MODOS_DE_AUDIO.has(modo) ? (
+              <>
+                <Field
+                  label={t("createVideo.creatives.audioDurationLabel")}
+                  help={t("createVideo.creatives.audioDurationHelp")}
+                >
+                  <input
+                    type="number"
+                    min={AUDIO_DURATION_MIN}
+                    max={AUDIO_DURATION_MAX}
+                    value={audioDuration}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (Number.isFinite(v)) {
+                        setAudioDuration(Math.min(AUDIO_DURATION_MAX, Math.max(AUDIO_DURATION_MIN, v)));
+                      }
+                    }}
+                  />
+                </Field>
+                {modo === "narracao" && voices && voices.length > 0 && (
+                  <Field label={t("createVideo.creatives.voiceLabel")} help={t("createVideo.creatives.voiceHelp")}>
+                    <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)}>
+                      <option value="">{t("createVideo.creatives.voiceDefault")}</option>
+                      {voices.map((v) => (
+                        <option key={v.voice_id} value={v.voice_id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
+              </>
+            ) : (
+              <>
+                <Field label={t("createVideo.creatives.modelLabel")}>
+                  <select disabled>
+                    <option>Soul 2</option>
+                  </select>
+                </Field>
+                <Field label={t("createVideo.creatives.durationLabel")}>
+                  <input type="range" min={4} max={30} defaultValue={5} disabled />
+                </Field>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <span className="chip selected">16:9</span>
+                  <span className="chip">9:16</span>
+                  <span className="chip">4:5</span>
+                  <span className="chip">1:1</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -413,6 +498,7 @@ function ReferenceCard({
 
 function JobCard({ job }: { job: CreativeJob }) {
   const { t } = useTranslation();
+  const ehAudio = job.modo === "narracao" || job.modo === "musica";
   return (
     <div
       style={{
@@ -422,12 +508,24 @@ function JobCard({ job }: { job: CreativeJob }) {
         background: "var(--color-surface)",
       }}
     >
-      <div
-        style={{
-          height: 140,
-          background: job.arquivo_url ? `center / cover no-repeat url(${job.arquivo_url})` : "var(--color-surface-raised)",
-        }}
-      />
+      {ehAudio ? (
+        job.arquivo_url && job.estado === "pronto" && (
+          <div style={{ padding: 12 }}>
+            {/* Player nativo do navegador já traz o controle de volume — o
+                mesmo componente usado em VoiceSampleRecorder.tsx e
+                AvatarSetupStep.tsx neste projeto. "Exportar" reusa o mesmo
+                arquivo_url que o download da Galeria já serve. */}
+            <audio controls src={job.arquivo_url} style={{ width: "100%" }} />
+          </div>
+        )
+      ) : (
+        <div
+          style={{
+            height: 140,
+            background: job.arquivo_url ? `center / cover no-repeat url(${job.arquivo_url})` : "var(--color-surface-raised)",
+          }}
+        />
+      )}
       <div style={{ padding: 12, display: "grid", gap: 6 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>{job.titulo}</div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>

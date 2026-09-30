@@ -673,13 +673,20 @@
       "uploading": "Uploading…",
       "removeReference": "Remove",
       "referenceLabelPlaceholder": "Reference title (optional)",
+      "audioDurationLabel": "Duration (seconds)",
+      "audioDurationHelp": "From 3 to 600 seconds.",
+      "voiceLabel": "Voice",
+      "voiceHelp": "Optional — leave unset to use the default voice.",
+      "voiceDefault": "Default voice",
       "chooseFiles": "Choose files",
       "createTitle": "Create",
       "mode": {
         "imagem": "Image",
         "propaganda": "Ad",
         "broll": "B-roll",
-        "sobreposicao": "Overlay"
+        "sobreposicao": "Overlay",
+        "narracao": "Narration",
+        "musica": "Music"
       },
       "materialTitleLabel": "Material title",
       "materialTitleHelp": "Names the exported file and shows up in the Gallery and the Studio. Not sent to the vendor.",

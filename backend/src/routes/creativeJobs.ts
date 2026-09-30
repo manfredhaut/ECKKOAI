@@ -105,6 +105,9 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       // ausente = voz padrão (a fixture ignora; o caminho real ainda não
       // lê este campo, ver pendência registrada no bloco de UI).
       voice_id?: string | null;
+      // ABAS-11 — obrigatório para modo narracao/musica: 3 a 600 segundos.
+      // Ignorado (não gravado) para os demais modos.
+      duracao_segundos?: number | null;
     };
   }>("/creative-jobs", async (req, reply) => {
     const {
@@ -115,6 +118,7 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       aspect_ratio: aspectRatio,
       chave_cliente: chaveCliente,
       voice_id: voiceId,
+      duracao_segundos: duracaoSegundos,
     } = req.body ?? {};
 
     if (!isFixtureMode()) {
@@ -139,6 +143,20 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
     if (typeof prompt !== "string" || !prompt.trim()) {
       return reply.code(400).send({ error: "invalid_prompt", message: "Informe um prompt." });
     }
+    const MODOS_DE_AUDIO = new Set(["narracao", "musica"]);
+    if (MODOS_DE_AUDIO.has(modo)) {
+      if (
+        typeof duracaoSegundos !== "number" ||
+        !Number.isFinite(duracaoSegundos) ||
+        duracaoSegundos < 3 ||
+        duracaoSegundos > 600
+      ) {
+        return reply.code(400).send({
+          error: "invalid_duracao",
+          message: "Informe uma duração de 3 a 600 segundos.",
+        });
+      }
+    }
     if (!chaveClienteValida(chaveCliente)) {
       return reply.code(400).send({ error: "invalid_chave_cliente", message: "chave_cliente é obrigatória." });
     }
@@ -153,6 +171,7 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       prompt: prompt.trim(),
       aspect_ratio: aspectRatio ?? null,
       voice_id: typeof voiceId === "string" && voiceId.trim() ? voiceId.trim() : null,
+      duracao_segundos: MODOS_DE_AUDIO.has(modo) ? duracaoSegundos : null,
     };
 
     let rows: CreativeJobRow[];
