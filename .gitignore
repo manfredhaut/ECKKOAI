@@ -49,3 +49,7 @@ twinai.dump
 # do banco — nunca pertence ao git, mesmo raciocínio de uploads/ e
 # twinai.dump acima.
 backups/
+
+# Higgsfield: credenciais locais (tools/higgsfield) — nunca versionar
+.env.local
+.env.*.local
