@@ -13,7 +13,10 @@
 import type { FastifyInstance } from "fastify";
 import { isPlatformCredentialId } from "../services/platformCredentials.js";
 import { listPlatformCredentials, setPlatformKey } from "../services/platformCredentialStore.js";
-import { validatePlatformCredential } from "../services/platformCredentialValidation.js";
+import {
+  validatePlatformCredential,
+  testElevenLabsNarrationCredential,
+} from "../services/platformCredentialValidation.js";
 import { recordAuditLog } from "../services/auditLog.js";
 
 export async function adminPlatformCredentialRoutes(app: FastifyInstance): Promise<void> {
@@ -65,4 +68,33 @@ export async function adminPlatformCredentialRoutes(app: FastifyInstance): Promi
 
     return outcome;
   });
+
+  // ABAS-26 — rota SEPARADA de /validate: esta GERA de propósito (1
+  // caractere, frações de centavo), só existe para "elevenlabs", e só
+  // roda a partir do clique em "Testar narração" no painel (nunca
+  // automático). Ver platformKeyNarrationTest.ts.
+  app.post<{ Params: { id: string } }>(
+    "/admin/platform-credentials/:id/test-narration",
+    async (req, reply) => {
+      const { id } = req.params;
+      if (id !== "elevenlabs") {
+        return reply.code(400).send({ error: "not_supported" });
+      }
+
+      const outcome = await testElevenLabsNarrationCredential();
+      if ("notConfigured" in outcome) {
+        return reply.code(400).send({ error: "not_configured" });
+      }
+
+      await recordAuditLog({
+        tenantId: null,
+        actorAdminUserId: req.adminUserId,
+        action: "platform_credential.elevenlabs.test_narration",
+        before: null,
+        after: { ok: outcome.ok },
+      });
+
+      return outcome;
+    },
+  );
 }

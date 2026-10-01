@@ -84,6 +84,29 @@ export const LEGACY_V2_ENDPOINTS: LegacyEndpoint[] = [
       "migrado no produto em 06/08. Fica na sonda pelo mesmo motivo do anterior, e na guarda de chave de " +
       "plataforma como caminho que o probe de credencial NÃO pode alcançar.",
   },
+  {
+    // ABAS-29, 30/09/2026 -- FALSO POSITIVO HONESTO: isto NÃO é um
+    // endpoint v2 da HeyGen. É o id de modelo REAL da Higgsfield
+    // ("higgsfield-ai/soul/v2/standard", confirmado contra a API em
+    // 30/09/2026) -- o "v2" é a versão do modelo SOUL de OUTRO
+    // fornecedor, coincidência textual que a regex desta guarda
+    // (que não entende contexto de fornecedor) casa de qualquer jeito.
+    // `replacement: null` não é "sem substituto conhecido" aqui --
+    // é "não existe migração nenhuma a fazer", porque não há dívida
+    // nenhuma: o id é permanente e correto como está.
+    path: "/v2/standard",
+    replacement: null,
+    files: [
+      "backend/src/services/providers/creativeCatalog.ts",
+      "backend/src/services/providers/higgsfieldProvider.ts",
+      "backend/src/services/providers/endpointCatalog.ts",
+      "frontend/src/pages/CreateVideo/steps/CreativesStep.tsx",
+    ],
+    reason:
+      "NÃO é HeyGen -- é o model_id da Higgsfield (Soul 2), confirmado contra a API real em " +
+      "30/09/2026. Entra aqui porque a guarda casa por texto, não por fornecedor, e um id de " +
+      "modelo de terceiro que contenha \"/v2/\" bate na mesma regex.",
+  },
 ];
 
 /** Os caminhos declarados, para a guarda comparar com o que achou no código. */

@@ -147,7 +147,7 @@ function seg(n: number): string {
 
 const POSICOES = ["cheia", "centro", "sup-dir", "inf-esq"] as const;
 
-export function StudioMovieEditStep() {
+export function StudioMovieEditStep({ initialVideoId }: { initialVideoId?: string }) {
   const { t } = useTranslation();
 
   const [videos, setVideos] = useState<VideoParaEditar[]>([]);
@@ -170,7 +170,18 @@ export function StudioMovieEditStep() {
 
   const [projetoId, setProjetoId] = useState<string | null>(null);
   const [projetoSalvo, setProjetoSalvo] = useState(false);
+  // Guarda contra corrida: resposta de um GET de selecao ja abandonada
+  // nao pode sobrescrever o estado do video que esta na tela agora (ABAS-19).
+  const selecaoAtualRef = useRef<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // BLOCO STUDIO-EXPORT-1 -- MVP: so a rota "nada"/"corte" (sem b-roll,
+  // sem sobreposicao, sem fundo) tem exportacao real no backend ainda.
+  const [exportando, setExportando] = useState(false);
+  const [exportResultado, setExportResultado] = useState<{
+    status: string;
+    arquivo_url: string | null;
+    erro: string | null;
+  } | null>(null);
 
   const [enviandoIds, setEnviandoIds] = useState<Record<string, boolean>>({});
   const [errosUpload, setErrosUpload] = useState<Record<string, string>>({});
@@ -224,6 +235,10 @@ export function StudioMovieEditStep() {
     [base, trechos, insercoes, volVoz, fundo],
   );
   const rota = useMemo(() => decidirRota(base, trechos, insercoes), [base, trechos, insercoes]);
+  // BLOCO STUDIO-EXPORT-1 -- as mesmas duas rotas que o backend aceita
+  // (editExport.ts, assertExportSuportada); emenda/recodifica ainda
+  // recusam na API, entao nem tentam aqui.
+  const exportSuportada = rota.chave === "nada" || rota.chave === "corte";
   const bloqueios = useMemo(() => listarBloqueios(base, trechos, insercoes), [base, trechos, insercoes]);
 
   const trechoAtivo = useMemo(() => {
@@ -318,8 +333,29 @@ export function StudioMovieEditStep() {
     setTempo(Math.min(Math.max(0, novoTempo), dur));
   }
 
+  // ABAS-28, 30/09/2026 -- "Reabrir projeto" a partir da Biblioteca
+  // (ContentPage.tsx): o link chega como `create?edit=<videoId>` e o
+  // CreateVideoPage.tsx ja poe o wizard direto no passo 5 (este
+  // componente). So falta selecionar o video sozinho, sem o clique
+  // manual -- reaproveita a MESMA selecionarVideo() de baixo (mesmo
+  // caminho que o clique manual usa, nunca um atalho paralelo).
+  // Dispara UMA vez so, quando a lista termina de carregar -- o ref
+  // trava contra reselecionar sozinho depois (ex.: depois de Guardar
+  // o projeto, `videos` pode mudar de identidade e o efeito rodaria
+  // de novo sem o ref).
+  const jaAutoSelecionouRef = useRef(false);
+  useEffect(() => {
+    if (jaAutoSelecionouRef.current) return;
+    if (carregandoVideos) return;
+    if (!initialVideoId) return;
+    jaAutoSelecionouRef.current = true;
+    const encontrado = videos.find((v) => v.id === initialVideoId);
+    if (encontrado) void selecionarVideo(encontrado);
+  }, [carregandoVideos, videos, initialVideoId]);
+
   async function selecionarVideo(v: VideoParaEditar) {
     if (!v.pronto || !v.url) return;
+    selecaoAtualRef.current = v.id;
     setBase({ id: v.id, nome: v.nome, url: v.url, duracaoOriginal: v.duracao });
     setSel(null);
     setTempo(0);
@@ -333,6 +369,7 @@ export function StudioMovieEditStep() {
     } catch {
       existente = null;
     }
+    if (selecaoAtualRef.current !== v.id) return;
     if (existente) {
       const p = existente.payload;
       setTrechos(
@@ -678,6 +715,36 @@ export function StudioMovieEditStep() {
       setProjetoSalvo(true);
     } finally {
       setSalvando(false);
+    }
+  }
+
+  // BLOCO STUDIO-EXPORT-1 -- so chama depois de guardado (o backend le o
+  // payload da linha salva em edit_projects, nunca do estado ao vivo da
+  // tela). Sonda a cada 2s ate completed/failed -- a mesma exportacao
+  // clicada duas vezes reaproveita a linha ja existente (params_hash),
+  // entao sondar de novo aqui nunca duplica trabalho no servidor.
+  async function exportarProjeto() {
+    if (!projetoId) return;
+    setExportando(true);
+    setExportResultado(null);
+    try {
+      let resultado = await api.post<{ status: string; arquivo_url: string | null; erro: string | null }>(
+        `/tenant/edit-projects/${projetoId}/export`,
+        {},
+      );
+      while (resultado.status === "queued" || resultado.status === "running") {
+        await new Promise((r) => setTimeout(r, 2000));
+        resultado = await api.get(`/tenant/edit-projects/${projetoId}/export`);
+      }
+      setExportResultado(resultado);
+    } catch (err) {
+      setExportResultado({
+        status: "failed",
+        arquivo_url: null,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setExportando(false);
     }
   }
 
@@ -1552,48 +1619,9 @@ export function StudioMovieEditStep() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* ============================================================= lateral */}
-      {/* `minWidth: 0` aqui tambem: o `textOverflow: ellipsis` dos cards de
-          video (abaixo) ja existia e NUNCA entrava em acao — sem esta linha
-          o item de grid nunca e forcado a encolher, entao o texto empurra a
-          largura em vez de ser truncado. */}
-      <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
-        <div className="card">
-          <div className="card-title">{t("createVideo.studioEdit.chooseVideoTitle")}</div>
-          {carregandoVideos && <p className="text-muted">{t("createVideo.studioEdit.loadingVideos")}</p>}
-          {!carregandoVideos && videos.length === 0 && <p className="text-muted">{t("createVideo.studioEdit.noVideos")}</p>}
-          <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
-            {videos.map((v) => (
-              <button
-                key={v.id}
-                disabled={!v.pronto}
-                onClick={() => selecionarVideo(v)}
-                style={{
-                  textAlign: "left",
-                  background: v.id === base.id ? "var(--color-surface-raised)" : "var(--color-surface)",
-                  border: `1px solid ${v.id === base.id ? "var(--color-primary)" : "var(--color-border)"}`,
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                  cursor: v.pronto ? "pointer" : "not-allowed",
-                  opacity: v.pronto ? 1 : 0.55,
-                  width: "100%",
-                }}
-              >
-                <div style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.nome}</div>
-                <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 10.5, color: "var(--color-text-muted)", marginTop: 4 }}>
-                  {v.duracao > 0 ? seg(v.duracao) : "—"}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-
 
         <div className="card">
-          <div className="card-title">{t("createVideo.studioEdit.summaryTitle")}</div>
+          <div className="card-title">{t("createVideo.studioEdit.saveTitle")}</div>
           <div style={{ marginTop: 12, display: "grid", gap: 4, fontSize: 13.5 }}>
             <SummaryRow label={t("createVideo.studioEdit.summaryBase")} value={base.nome || "—"} />
             <SummaryRow
@@ -1650,10 +1678,6 @@ export function StudioMovieEditStep() {
               {JSON.stringify(corpo, null, 2)}
             </pre>
           </details>
-        </div>
-
-        <div className="card">
-          <div className="card-title">{t("createVideo.studioEdit.saveTitle")}</div>
           {bloqueios.length > 0 && (
             <ul style={{ margin: "12px 0 0", paddingLeft: 16, fontSize: 12.5, color: "var(--color-tertiary)" }}>
               {bloqueios.map((b, i) => {
@@ -1671,8 +1695,20 @@ export function StudioMovieEditStep() {
             <button className="btn btn-outline" disabled={bloqueios.length > 0 || salvando} onClick={guardarProjeto} style={{ width: "100%" }}>
               {salvando ? t("createVideo.studioEdit.saving") : t("createVideo.studioEdit.save")}
             </button>
-            <button className="btn btn-primary" disabled title={t("createVideo.studioEdit.exportOutOfScope")} style={{ width: "100%" }}>
-              {t("createVideo.studioEdit.export")}
+            <button
+              className="btn btn-primary"
+              disabled={!projetoId || !exportSuportada || exportando}
+              onClick={exportarProjeto}
+              title={
+                !projetoId
+                  ? t("createVideo.studioEdit.exportNeedsSave")
+                  : !exportSuportada
+                    ? t("createVideo.studioEdit.exportOutOfScope")
+                    : undefined
+              }
+              style={{ width: "100%" }}
+            >
+              {exportando ? t("createVideo.studioEdit.exporting") : t("createVideo.studioEdit.export")}
             </button>
           </div>
           {projetoSalvo && (
@@ -1680,9 +1716,62 @@ export function StudioMovieEditStep() {
               {t("createVideo.studioEdit.saved")}
             </p>
           )}
-          <p className="text-muted" style={{ fontSize: 11.5, marginTop: 10 }}>
-            {t("createVideo.studioEdit.exportOutOfScope")}
-          </p>
+          {!exportSuportada && (
+            <p className="text-muted" style={{ fontSize: 11.5, marginTop: 10 }}>
+              {t("createVideo.studioEdit.exportOutOfScope")}
+            </p>
+          )}
+          {exportResultado?.status === "completed" && exportResultado.arquivo_url && (
+            <p style={{ fontSize: 12, marginTop: 10 }}>
+              {t("createVideo.studioEdit.exportDone")}{" "}
+              <a href={exportResultado.arquivo_url} target="_blank" rel="noreferrer">
+                {t("createVideo.studioEdit.exportDownload")}
+              </a>
+            </p>
+          )}
+          {exportResultado?.status === "failed" && (
+            <p className="alert-error" style={{ fontSize: 12, marginTop: 10 }}>
+              {t("createVideo.studioEdit.exportFailed")}
+              {exportResultado.erro && ` — ${exportResultado.erro}`}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ============================================================= lateral */}
+      {/* `minWidth: 0` aqui tambem: o `textOverflow: ellipsis` dos cards de
+          video (abaixo) ja existia e NUNCA entrava em acao — sem esta linha
+          o item de grid nunca e forcado a encolher, entao o texto empurra a
+          largura em vez de ser truncado. */}
+      <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+        <div className="card">
+          <div className="card-title">{t("createVideo.studioEdit.chooseVideoTitle")}</div>
+          {carregandoVideos && <p className="text-muted">{t("createVideo.studioEdit.loadingVideos")}</p>}
+          {!carregandoVideos && videos.length === 0 && <p className="text-muted">{t("createVideo.studioEdit.noVideos")}</p>}
+          <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
+            {videos.map((v) => (
+              <button
+                key={v.id}
+                disabled={!v.pronto}
+                onClick={() => selecionarVideo(v)}
+                style={{
+                  textAlign: "left",
+                  background: v.id === base.id ? "var(--color-surface-raised)" : "var(--color-surface)",
+                  border: `1px solid ${v.id === base.id ? "var(--color-primary)" : "var(--color-border)"}`,
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  cursor: v.pronto ? "pointer" : "not-allowed",
+                  opacity: v.pronto ? 1 : 0.55,
+                  width: "100%",
+                }}
+              >
+                <div style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.nome}</div>
+                <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 10.5, color: "var(--color-text-muted)", marginTop: 4 }}>
+                  {v.duracao > 0 ? seg(v.duracao) : "—"}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

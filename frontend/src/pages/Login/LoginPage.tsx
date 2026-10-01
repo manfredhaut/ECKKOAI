@@ -49,7 +49,14 @@ export function LoginPage() {
       // pessoa precisa saber que a conta existe e está esperando o painel
       // admin, não tentar de novo achando que errou a senha.
       const body = err instanceof ApiError ? (err.body as { error?: string } | undefined) : undefined;
-      setError(body?.error === "tenant_pending" ? t("login.pendingApproval") : t("login.error"));
+      // ABAS-21: 429 (rate-limit de tentativas, rateLimit.ts) nao pode
+      // cair no mesmo texto de "senha invalida" — sao causas diferentes
+      // e a pessoa precisa saber que e bloqueio temporario, nao erro dela.
+      if (err instanceof ApiError && err.status === 429) {
+        setError(t("login.rateLimited"));
+      } else {
+        setError(body?.error === "tenant_pending" ? t("login.pendingApproval") : t("login.error"));
+      }
     } finally {
       setSubmitting(false);
     }

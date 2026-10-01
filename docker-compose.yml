@@ -72,6 +72,12 @@ services:
       # o sintoma era "subi o limite e o sistema continua recusando em 5 de 5".
       # Ver services/billing/dailyGenerationLimit.ts.
       DAILY_PAID_GENERATION_LIMIT: ${DAILY_PAID_GENERATION_LIMIT:-5}
+      # ABAS-24, 30/09/2026 — mesma classe de bug que o comentario
+      # acima ja documenta: sem declarar aqui, preencher no .env nao
+      # tem efeito nenhum (achado pelo gate, checkEnvironmentPolicy.ts).
+      # Ver services/providers/higgsfieldLimits.ts.
+      HIGGSFIELD_CONCURRENCY_LIMIT: ${HIGGSFIELD_CONCURRENCY_LIMIT:-4}
+      HIGGSFIELD_TENANT_DAILY_LIMIT: ${HIGGSFIELD_TENANT_DAILY_LIMIT:-20}
       # Limiar de ALERTA (nunca freio) do livro-caixa interno de gasto
       # estimado em fal.ai, por tenant/mês calendário — PRIORIDADE 3,
       # 28/08/2026. Vazio = US$ 20,00 (arbitrário, sem medição atrás — ver

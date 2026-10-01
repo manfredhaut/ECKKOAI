@@ -11,6 +11,7 @@
 import { PLATFORM_CREDENTIALS, type PlatformCredentialId } from "./platformCredentials.js";
 import { recordValidationResult, resolvePlatformKey } from "./platformCredentialStore.js";
 import { probePlatformKey, type ProbeResult } from "./providers/platformKeyProbe.js";
+import { testElevenLabsNarration, type NarrationTestResult } from "./providers/platformKeyNarrationTest.js";
 
 export interface ValidationOutcome extends ProbeResult {
   validatedAt: string;
@@ -38,4 +39,16 @@ export async function validatePlatformCredential(
   }
 
   return { ...result, validatedAt: new Date().toISOString() };
+}
+
+// ABAS-26 — ação SEPARADA de validatePlatformCredential acima: aquela
+// nunca gera (invariante do probe); esta gera de propósito (ver
+// platformKeyNarrationTest.ts). Só faz sentido para "elevenlabs", por
+// isso não é genérica por id como a validação é.
+export async function testElevenLabsNarrationCredential(): Promise<
+  NarrationTestResult | { notConfigured: true }
+> {
+  const resolved = await resolvePlatformKey("elevenlabs");
+  if (!resolved) return { notConfigured: true };
+  return testElevenLabsNarration(resolved.value);
 }

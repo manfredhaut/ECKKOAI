@@ -6,6 +6,7 @@ import { runMonthlyGrantSweep } from "./services/billing/monthlyGrant.js";
 import { recordAuditLog } from "./services/auditLog.js";
 import { logEvent } from "./services/log/safeLog.js";
 import { recoverInFlightVideos } from "./services/video/recovery.js";
+import { reconciliarExportsPresas } from "./services/video/exportRunner.js";
 import { rearmVideoPolling, reacompanharFal } from "./routes/videos.js";
 
 const GRANT_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -67,6 +68,19 @@ async function main() {
       action: "system.videos.boot_recovery",
       before: null,
       after: recuperacao,
+    }).catch((err) => logEvent("error", "boot_recovery_audit_failed", { detail: err }));
+  }
+
+  // BLOCO STUDIO-EXPORT-1 -- mesma rede de segurança mínima da varredura
+  // de vídeos acima, para exportações presas em "running".
+  const exportsReconciliadas = await reconciliarExportsPresas();
+  if (exportsReconciliadas.encontradas > 0) {
+    await recordAuditLog({
+      tenantId: null,
+      actorAdminUserId: null,
+      action: "system.exports.boot_reconciliation",
+      before: null,
+      after: exportsReconciliadas,
     }).catch((err) => logEvent("error", "boot_recovery_audit_failed", { detail: err }));
   }
 

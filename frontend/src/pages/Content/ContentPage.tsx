@@ -273,6 +273,19 @@ export function ContentPage() {
                           acima). `ready`/`error`/`cancelled` são os três
                           estados TERMINAIS onde faz sentido pedir uma
                           versão nova a partir deste. */}
+                      {/* ABAS-28 -- "Reabrir projeto": só quando PRONTO (é o
+                          único estado com output_url utilizável pelo
+                          Estúdio de Edição -- error/cancelled não têm vídeo
+                          nenhum para editar). */}
+                      {v.status === "ready" && (
+                        <Link
+                          className="btn btn-outline"
+                          to={`../create?edit=${v.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {t("content.editInStudio")}
+                        </Link>
+                      )}
                       {(v.status === "ready" || v.status === "error" || v.status === "cancelled") && (
                         <Link
                           className="btn btn-outline"

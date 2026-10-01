@@ -1,21 +1,42 @@
 /**
  * ABAS-6, 29/09/2026 — rota do motor de jobs da aba "5. Gerar Vídeos & Imagens".
+ * ABAS-29/30, 30/09/2026 — Fase 5: Higgsfield REAL para imagem/broll/
+ * propaganda (narração/música continuam só em fixture -- são outro
+ * fornecedor, ElevenLabs, fora do escopo desta rodada; ver
+ * higgsfieldProvider.ts).
  *
- * Só o modo "imagem", só em fixture (ver creativeFixture.ts). Modo diferente
- * de "imagem", ou PROVIDER_MODE=live, são recusados explicitamente — nunca
- * um sucesso silencioso com dado fingido.
+ * Fluxo em LIVE: estima (estimateCreativeJob, nunca cobra) -> grava a
+ * linha já com a estimativa ('estimado') -> submete de verdade
+ * (submitCreativeJob, COBRA) -> 'na_fila'. A sondagem (GET /creative-
+ * jobs/:id) chama pollCreativeJobHiggsfield, que baixa o arquivo de
+ * verdade para /uploads antes de marcar 'pronto' -- nunca guarda URL do
+ * fornecedor.
  *
  * PENDÊNCIA REGISTRADA: esta rota ainda não tem guarda de mutante própria
  * (diferente de checkVideoTitlePolicy.ts). As invariantes que uma guarda
  * futura precisaria proteger: modo≠"imagem" é recusado; chave_cliente
  * duplicada nunca cria uma segunda linha; arquivo_url só é gravado depois
- * do fixture devolver "ready".
+ * do fixture/fornecedor devolver "ready".
  */
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
 import { creativeModelById } from "../services/providers/creativeCatalog.js";
 import { createCreativeJobFixture, pollCreativeJobFixture } from "../services/providers/creativeFixture.js";
+import {
+  assertHiggsfieldGuards,
+  HiggsfieldConcurrencyError,
+  HiggsfieldTenantDailyLimitError,
+} from "../services/providers/higgsfieldLimits.js";
+import {
+  construirCorpoHiggsfield,
+  estimateCreativeJob,
+  submitCreativeJob,
+  pollCreativeJobHiggsfield,
+  HiggsfieldNotConfiguredError,
+  HiggsfieldProviderError,
+} from "../services/providers/higgsfieldProvider.js";
+import { logEvent } from "../services/log/safeLog.js";
 import type { CreativeModo } from "../services/providers/creativeCatalog.js";
 import { probeSampleDurationSeconds } from "../services/voice/voiceSampleAudio.js";
 import { probeVideo } from "../services/video/ffmpeg.js";
@@ -67,6 +88,10 @@ function chaveClienteValida(v: unknown): v is string {
   return t.length > 0 && t.length <= 200;
 }
 
+// ABAS-29 -- só estes 3 modos têm provedor real (Higgsfield) ligado.
+// narração/música continuam só em fixture (outro fornecedor).
+const MODOS_HIGGSFIELD = new Set<CreativeModo>(["imagem", "broll", "propaganda"]);
+
 async function sincronizarComFixture(job: CreativeJobRow): Promise<CreativeJobRow> {
   if (job.estado !== "gerando" || !job.request_id) return job;
   const poll = await pollCreativeJobFixture(job.request_id);
@@ -87,6 +112,43 @@ async function sincronizarComFixture(job: CreativeJobRow): Promise<CreativeJobRo
   return rows[0];
 }
 
+/**
+ * ABAS-29 -- equivalente real de sincronizarComFixture. Só sonda quando
+ * o job está genuinamente em voo (na_fila/gerando) com request_id real.
+ * pollCreativeJobHiggsfield já baixa o arquivo para /uploads antes de
+ * devolver "ready" -- esta função só grava o resultado, nunca toca rede
+ * de arquivo diretamente.
+ */
+async function sincronizarComHiggsfield(job: CreativeJobRow): Promise<CreativeJobRow> {
+  if (!["na_fila", "gerando"].includes(job.estado) || !job.request_id) return job;
+  let poll;
+  try {
+    poll = await pollCreativeJobHiggsfield(job.tenant_id, job.request_id);
+  } catch (err) {
+    logEvent("error", "higgsfield_poll_failed", { jobId: job.id, detail: err });
+    return job;
+  }
+  if (poll.status === "processing") return job;
+  if (poll.status === "ready") {
+    const { rows } = await pool.query<CreativeJobRow>(
+      `UPDATE creative_jobs SET estado = 'pronto', arquivo_url = $2, terminado_em = now()
+       WHERE id = $1 RETURNING *`,
+      [job.id, poll.outputUrl],
+    );
+    return rows[0];
+  }
+  const { rows } = await pool.query<CreativeJobRow>(
+    `UPDATE creative_jobs SET estado = 'falhou', erro_fornecedor = $2, terminado_em = now()
+     WHERE id = $1 RETURNING *`,
+    [job.id, poll.errorMessage],
+  );
+  return rows[0];
+}
+
+async function sincronizarComProvedor(job: CreativeJobRow): Promise<CreativeJobRow> {
+  return job.simulated ? sincronizarComFixture(job) : sincronizarComHiggsfield(job);
+}
+
 export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
   app.get("/creative-jobs", async (req) => {
     const { rows } = await pool.query<CreativeJobRow>(
@@ -103,7 +165,7 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
     );
     const job = rows[0];
     if (!job) return reply.code(404).send({ error: "not_found" });
-    return sincronizarComFixture(job);
+    return sincronizarComProvedor(job);
   });
 
   app.post<{
@@ -114,13 +176,9 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       prompt?: string;
       aspect_ratio?: string | null;
       chave_cliente?: string;
-      // ABAS-10/11 — opcional, só usado quando modo="narracao". `null`/
-      // ausente = voz padrão (a fixture ignora; o caminho real ainda não
-      // lê este campo, ver pendência registrada no bloco de UI).
       voice_id?: string | null;
-      // ABAS-11 — obrigatório para modo narracao/musica: 3 a 600 segundos.
-      // Ignorado (não gravado) para os demais modos.
       duracao_segundos?: number | null;
+      imagem_referencia_url?: string | null;
     };
   }>("/creative-jobs", async (req, reply) => {
     const {
@@ -132,19 +190,26 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       chave_cliente: chaveCliente,
       voice_id: voiceId,
       duracao_segundos: duracaoSegundos,
+      imagem_referencia_url: imagemReferenciaUrl,
     } = req.body ?? {};
 
+    // ABAS-29 -- checkCreativeJobsPolicy.ts (invariante 1) exige o
+    // padrão textual exato "if (!isFixtureMode())" ANTES de
+    // MODOS_SUPORTADOS -- por isso dois `if` em vez de um `&&`.
     if (!isFixtureMode()) {
-      return reply.code(501).send({
-        error: "not_implemented",
-        message: "Geração real de criativos ainda não está disponível — só em modo simulação.",
-      });
+      if (!MODOS_HIGGSFIELD.has(modo as CreativeModo)) {
+        return reply.code(501).send({
+          error: "not_implemented",
+          message:
+            "Geração real ainda só está disponível para imagem, b-roll e propaganda — narração e música continuam só em simulação.",
+        });
+      }
     }
-    const MODOS_SUPORTADOS = new Set(["imagem", "narracao", "musica"]);
+    const MODOS_SUPORTADOS = new Set(["imagem", "narracao", "musica", "broll", "propaganda"]);
     if (typeof modo !== "string" || !MODOS_SUPORTADOS.has(modo)) {
       return reply.code(400).send({
         error: "modo_nao_suportado",
-        message: "Só os modos imagem, narração e música estão disponíveis nesta rodada.",
+        message: "Só os modos imagem, narração, música, b-roll e propaganda estão disponíveis nesta rodada.",
       });
     }
     if (!tituloValido(titulo)) {
@@ -178,6 +243,22 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "modelo_invalido", message: "Modelo desconhecido para este modo." });
     }
 
+    // ABAS-24 — Etapa 6 do plano (robustez): semáforo de concorrência da
+    // credencial Higgsfield inteira + teto diário de jobs por tenant.
+    try {
+      await assertHiggsfieldGuards(req.tenantId, modo as string);
+    } catch (err) {
+      if (err instanceof HiggsfieldConcurrencyError || err instanceof HiggsfieldTenantDailyLimitError) {
+        return reply.code(429).send({
+          error: err instanceof HiggsfieldConcurrencyError ? "higgsfield_concorrencia" : "higgsfield_teto_diario",
+          message: err.message,
+          used: err.used,
+          max: err.max,
+        });
+      }
+      throw err;
+    }
+
     const tituloTrim = titulo!.trim();
     const chaveTrim = chaveCliente!.trim();
     const entrada = {
@@ -185,53 +266,107 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       aspect_ratio: aspectRatio ?? null,
       voice_id: typeof voiceId === "string" && voiceId.trim() ? voiceId.trim() : null,
       duracao_segundos: MODOS_DE_AUDIO.has(modo) ? duracaoSegundos : null,
+      imagem_referencia_url:
+        (modo === "broll" || modo === "propaganda") &&
+        typeof imagemReferenciaUrl === "string" &&
+        imagemReferenciaUrl.trim()
+          ? imagemReferenciaUrl.trim()
+          : null,
     };
+
+    // ABAS-29 -- em LIVE, estima ANTES de gravar a linha (nunca cobra --
+    // ver cabeçalho do higgsfieldProvider.ts). Falha de estimativa não
+    // bloqueia a geração: só fica sem número (estimativa_usd null).
+    let corpoReal: { modelIdReal: string; body: Record<string, unknown> } | null = null;
+    let estimativaUsd: number | null = null;
+    if (!isFixtureMode()) {
+      corpoReal = construirCorpoHiggsfield(modelo.id, {
+        prompt: entrada.prompt,
+        aspectRatio: entrada.aspect_ratio,
+        imagemReferenciaUrl: entrada.imagem_referencia_url,
+      });
+      try {
+        const est = await estimateCreativeJob(corpoReal.modelIdReal, corpoReal.body);
+        if (est.type === "estimate") estimativaUsd = Number(est.usd);
+      } catch (err) {
+        if (err instanceof HiggsfieldNotConfiguredError) {
+          return reply.code(503).send({ error: "higgsfield_nao_configurado", message: err.message });
+        }
+        logEvent("error", "higgsfield_estimate_failed", { detail: err });
+      }
+    }
 
     let rows: CreativeJobRow[];
     try {
       ({ rows } = await pool.query<CreativeJobRow>(
-        `INSERT INTO creative_jobs (tenant_id, modo, modelo, titulo, entrada, chave_cliente, estado, simulated)
-         VALUES ($1, $2, $3, $4, $5, $6, 'enviando', true) RETURNING *`,
-        [req.tenantId, modo, modelo.id, tituloTrim, JSON.stringify(entrada), chaveTrim],
+        `INSERT INTO creative_jobs
+           (tenant_id, modo, modelo, titulo, entrada, chave_cliente, estado, simulated, estimativa_usd)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [
+          req.tenantId,
+          modo,
+          modelo.id,
+          tituloTrim,
+          JSON.stringify(entrada),
+          chaveTrim,
+          isFixtureMode() ? "enviando" : "estimado",
+          isFixtureMode(),
+          estimativaUsd,
+        ],
       ));
     } catch (err) {
       if ((err as { code?: string }).code === "23505") {
-        // Duplo clique com a MESMA chave_cliente: devolve o job já existente,
-        // nunca cria uma segunda linha — mesma garantia do índice único
-        // creative_jobs_tenant_chave_cliente_idx (migration 088).
         const existing = await pool.query<CreativeJobRow>(
           "SELECT * FROM creative_jobs WHERE tenant_id = $1 AND chave_cliente = $2",
           [req.tenantId, chaveTrim],
         );
-        if (existing.rows[0]) return reply.code(200).send(await sincronizarComFixture(existing.rows[0]));
+        if (existing.rows[0]) return reply.code(200).send(await sincronizarComProvedor(existing.rows[0]));
       }
       throw err;
     }
 
     const job = rows[0];
-    const { jobId } = await createCreativeJobFixture({
-      tenantId: req.tenantId,
-      modo: "imagem",
-      modeloId: modelo.id,
-      titulo: tituloTrim,
-      prompt: entrada.prompt,
-      aspectRatio: entrada.aspect_ratio,
-    });
 
-    const updated = await pool.query<CreativeJobRow>(
-      `UPDATE creative_jobs SET estado = 'gerando', request_id = $2, enviado_em = now() WHERE id = $1 RETURNING *`,
-      [job.id, jobId],
-    );
-    return reply.code(201).send(updated.rows[0]);
+    if (isFixtureMode()) {
+      const { jobId } = await createCreativeJobFixture({
+        tenantId: req.tenantId,
+        modo: modo as CreativeModo,
+        modeloId: modelo.id,
+        titulo: tituloTrim,
+        prompt: entrada.prompt,
+        aspectRatio: entrada.aspect_ratio,
+      });
+      const updated = await pool.query<CreativeJobRow>(
+        `UPDATE creative_jobs SET estado = 'gerando', request_id = $2, enviado_em = now() WHERE id = $1 RETURNING *`,
+        [job.id, jobId],
+      );
+      return reply.code(201).send(updated.rows[0]);
+    }
+
+    // ABAS-29 -- LIVE: submete de verdade AGORA. A partir daqui, COBRA.
+    await pool.query("UPDATE creative_jobs SET estado = 'enviando' WHERE id = $1", [job.id]);
+    try {
+      const result = await submitCreativeJob(corpoReal!.modelIdReal, corpoReal!.body);
+      const updated = await pool.query<CreativeJobRow>(
+        `UPDATE creative_jobs
+         SET estado = 'na_fila', request_id = $2, status_url = $3, cancel_url = $4,
+             enviado_em = now(), credencial_origem = 'platform'
+         WHERE id = $1 RETURNING *`,
+        [job.id, result.requestId, result.statusUrl, result.cancelUrl],
+      );
+      return reply.code(201).send(updated.rows[0]);
+    } catch (err) {
+      const mensagem =
+        err instanceof HiggsfieldProviderError ? err.message : err instanceof Error ? err.message : String(err);
+      const updated = await pool.query<CreativeJobRow>(
+        `UPDATE creative_jobs SET estado = 'falhou', erro_fornecedor = $2, terminado_em = now()
+         WHERE id = $1 RETURNING *`,
+        [job.id, mensagem],
+      );
+      return reply.code(201).send(updated.rows[0]);
+    }
   });
 
-  // ABAS-12 — upload direto de narração/música: sem IA, sem fixture. A
-  // duração REAL do arquivo (ffprobe) decide se cabe na faixa 3-600s — não
-  // há campo de duração declarada nesta trilha (ver o comentário de
-  // creativeAudioUploadCeilingBytes, uploadLimits.ts, sobre por que o teto
-  // de bytes não pode depender dela). O job nasce direto em estado="pronto",
-  // sem request_id: nenhum fornecedor é chamado neste caminho, e simulated
-  // fica false — é o próprio arquivo da pessoa, nunca uma fixture.
   app.post("/creative-jobs/upload", async (req, reply) => {
     const up = await takeUpload(req, reply, {
       maxBytes: creativeAudioUploadCeilingBytes(),
@@ -307,23 +442,7 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // ABAS-13 — upload direto para Imagem, Propaganda, B-roll e Sobreposição.
-  // Tipo aceito por modo: Imagem/Sobreposição só imagem; B-roll só vídeo;
-  // Propaganda os dois. Diferente do upload de áudio (ABAS-12), vídeo fora
-  // da faixa de Duração (4-30s) NUNCA é recusado — entra com um aviso
-  // (`entrada.duracao_fora_do_esperado`), decisão explícita do operador:
-  // o arquivo já existe pronto, e travar a pessoa por causa de alguns
-  // segundos a mais seria pior que deixar entrar com um aviso visível.
   app.post("/creative-jobs/upload-visual", async (req, reply) => {
-    // O MESMO problema de ordem do áudio (creativeAudioUploadCeilingBytes,
-    // ABAS-12): @fastify/multipart só expõe campos do formulário (inclusive
-    // "modo") DEPOIS de req.file() terminar de ler o arquivo, e o limite de
-    // bytes precisa estar fixado ANTES disso. Por isso o teto aqui é ÚNICO
-    // para todo upload visual (o maior dos dois, referenceVideoMaxBytes) —
-    // é a checagem de TIPO REAL, logo depois, que decide o que cada modo
-    // aceita de fato. `modo` chega como campo de formulário comum, lido de
-    // `up.file.fields`, exatamente como já funciona em creativeRefs.ts
-    // (campo "tipo") e em /creative-jobs/upload (campo "modo", áudio).
     const up = await takeUpload(req, reply, {
       maxBytes: referenceVideoMaxBytes(),
       route: "creativeJobs.uploadVisual",
@@ -372,8 +491,6 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
     }
     const chaveCliente = chaveRaw.trim();
 
-    // Duração só é medida (e só importa) quando o arquivo É vídeo — imagem
-    // não tem o conceito, e não recusamos nem avisamos sobre ela.
     let duracaoForaDoEsperado = false;
     if (tipoReal === "video") {
       const tmp = path.join(os.tmpdir(), `${randomUUID()}-creative-visual`);
@@ -382,10 +499,6 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
         const geometria = await probeVideo(tmp);
         duracaoForaDoEsperado = geometria.durationSeconds < 4 || geometria.durationSeconds > 30;
       } catch {
-        // Não foi possível medir: não bloqueia (mesma filosofia de "aceita
-        // com aviso"), mas registra a incerteza como se estivesse fora —
-        // melhor um aviso de mais do que um vídeo de duração desconhecida
-        // aparecendo como se estivesse dentro da faixa.
         duracaoForaDoEsperado = true;
       } finally {
         await unlink(tmp).catch(() => {});
@@ -420,12 +533,6 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // ABAS-14, 30/09/2026 — excluir um job da Galeria. Mesmo padrão de
-  // creativeRefs.ts: apaga o arquivo do disco (se existir) e a linha,
-  // idempotente (204 mesmo se já não existir). SEM guarda de estado ainda
-  // — um job "gerando"/"na_fila" pode ser excluído sem cancelar o que já
-  // foi enviado ao fornecedor; pendência registrada, mesma família da
-  // ausência de guarda de mutante já anotada no topo do arquivo.
   app.delete<{ Params: { id: string } }>("/creative-jobs/:id", async (req, reply) => {
     const { rows } = await pool.query<CreativeJobRow>(
       "SELECT * FROM creative_jobs WHERE id = $1 AND tenant_id = $2",

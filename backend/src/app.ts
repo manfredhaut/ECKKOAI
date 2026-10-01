@@ -40,7 +40,12 @@ import { stripeWebhookRoutes } from "./routes/stripeWebhook.js";
 import { heygenWebhookRoutes } from "./routes/heygenWebhook.js";
 
 export async function buildApp() {
-  const app = Fastify({ logger: true });
+  // ABAS-20: sem trustProxy, req.ip era sempre o IP do Traefik
+  // (172.18.0.2), nunca o do usuario real — o rate-limit de login
+  // (rateLimit.ts) contava tentativas de todo mundo como se fosse
+  // uma pessoa so. "1" confia em exatamente um hop de proxy (o
+  // Traefik), nao em qualquer X-Forwarded-For que o cliente mande.
+  const app = Fastify({ logger: true, trustProxy: 1 });
 
   await app.register(cors, { origin: true, credentials: true });
   await app.register(multipart);

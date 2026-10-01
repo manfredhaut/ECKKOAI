@@ -33,7 +33,16 @@ export interface VendorEndpoint {
    * da Anthropic e o `generateContent` do Gemini eram, para toda trava deste
    * projeto, endpoints que não existiam.
    */
-  vendor: "heygen" | "did" | "elevenlabs" | "anthropic" | "gemini" | "openai" | "fal" | "resend";
+  vendor:
+    | "heygen"
+    | "did"
+    | "elevenlabs"
+    | "anthropic"
+    | "gemini"
+    | "openai"
+    | "fal"
+    | "resend"
+    | "higgsfield";
   /** Caminho, com a versão. É o que o freio compara. */
   path: string;
   method: "GET" | "POST";
@@ -296,6 +305,54 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
     method: "POST",
     billable: false,
     note: "envio do e-mail de verificação de cadastro. Sem custo variável declarado; roda independente de PROVIDER_MODE.",
+  },
+  // ----------------------------------------------------------- Higgsfield
+  // Alcançados por `providers/higgsfieldProvider.ts`. MEDIDO em
+  // 30/09/2026 contra a API real: 3 estimativas reais (nunca cobram,
+  // contrato do próprio fornecedor) e 1 submissão real que gerou e
+  // cobrou US$0,006 (Soul 2, imagem 1080p) -- ver creative_jobs,
+  // id 0828b5d7-05d1-407e-9404-1010927595fc.
+  {
+    vendor: "higgsfield",
+    path: "/estimate/",
+    method: "POST",
+    billable: false,
+    note: "estimativa de custo -- NUNCA gera, NUNCA cobra (contrato do próprio fornecedor). MEDIDO 30/09.",
+  },
+  {
+    vendor: "higgsfield",
+    path: "/higgsfield-ai/soul/v2/standard",
+    method: "POST",
+    billable: true,
+    note: "Soul 2 (imagem). MEDIDO 30/09: US$0,006 por imagem 1080p, geração real confirmada.",
+  },
+  {
+    vendor: "higgsfield",
+    path: "/marketing-studio/image",
+    method: "POST",
+    billable: true,
+    note: "Marketing Studio Image. MEDIDO 30/09 via /estimate: US$0,222-0,439 (1k/2k). Geração real NÃO exercitada ainda.",
+  },
+  {
+    vendor: "higgsfield",
+    path: "/bytedance/seedance-2.5/image-to-video",
+    method: "POST",
+    billable: true,
+    note: "broll/propaganda COM imagem de referência. Preço por fórmula (duração×resolução). Geração real NÃO exercitada ainda.",
+  },
+  {
+    vendor: "higgsfield",
+    path: "/bytedance/seedance-2.5/text-to-video",
+    method: "POST",
+    billable: true,
+    note: "broll/propaganda SEM imagem de referência (fallback). Preço por fórmula. Geração real NÃO exercitada ainda.",
+  },
+  {
+    vendor: "higgsfield",
+    path: "/requests/",
+    method: "GET",
+    billable: false,
+    note: "sondagem de status e cancelamento (/requests/{id}/status, /requests/{id}/cancel) -- leitura/controle, nunca gera nem cobra.",
   },
 ];
 

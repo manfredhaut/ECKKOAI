@@ -27,7 +27,13 @@ import {
   removerEditAsset,
   validarKindMime,
 } from "../services/video/editAssets.js";
-import { duracaoFinal, type Trecho } from "../services/video/editProject.js";
+import { duracaoFinal, type Trecho, type ProjectPayload } from "../services/video/editProject.js";
+import {
+  assertExportSuportada,
+  hashPayload,
+  ExportNaoSuportadaError,
+} from "../services/video/editExport.js";
+import { enfileirarExport } from "../services/video/exportRunner.js";
 import path from "node:path";
 
 // ABAS-16, 30/09/2026 — "Inserir da Galeria": o modo já entrega o TIPO real
@@ -149,6 +155,61 @@ export async function editProjectRoutes(app: FastifyInstance): Promise<void> {
     ]);
     if (!rows[0]) return reply.code(404).send({ error: "not_found" });
     return rows[0];
+  });
+
+  // ----------------------------------------------------------- export ---
+
+  // BLOCO STUDIO-EXPORT-1 -- idempotente por params_hash: clicar duas
+  // vezes com a MESMA timeline devolve a exportação já existente (202),
+  // em vez de enfileirar duas vezes. O status inicial vem do DEFAULT
+  // da coluna (migration 090) -- nunca escrito aqui.
+  app.post<{ Params: { id: string } }>("/tenant/edit-projects/:id/export", async (req, reply) => {
+    const { rows: projectRows } = await pool.query(
+      "SELECT * FROM edit_projects WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.tenantId],
+    );
+    const project = projectRows[0];
+    if (!project) return reply.code(404).send({ error: "not_found" });
+
+    const payload = project.payload as ProjectPayload;
+    try {
+      assertExportSuportada(payload);
+    } catch (err) {
+      if (err instanceof ExportNaoSuportadaError) {
+        return reply.code(400).send({ error: "not_supported", message: err.message });
+      }
+      throw err;
+    }
+
+    const hash = hashPayload(payload, project.source_video_id);
+
+    const { rows: existentes } = await pool.query(
+      "SELECT * FROM edit_project_exports WHERE edit_project_id = $1 AND params_hash = $2",
+      [project.id, hash],
+    );
+    if (existentes[0]) {
+      return reply.code(202).send(existentes[0]);
+    }
+
+    const { rows: novaRows } = await pool.query(
+      "INSERT INTO edit_project_exports (tenant_id, edit_project_id, params_hash) VALUES ($1, $2, $3) RETURNING *",
+      [req.tenantId, project.id, hash],
+    );
+    const novaExportacao = novaRows[0];
+    enfileirarExport(novaExportacao.id);
+    return reply.code(202).send(novaExportacao);
+  });
+
+  /** A exportação mais recente deste projeto, ou `null` — para a tela sondar. */
+  app.get<{ Params: { id: string } }>("/tenant/edit-projects/:id/export", async (req, reply) => {
+    const { rows } = await pool.query(
+      `SELECT e.* FROM edit_project_exports e
+       JOIN edit_projects p ON p.id = e.edit_project_id
+       WHERE e.edit_project_id = $1 AND p.tenant_id = $2
+       ORDER BY e.created_at DESC LIMIT 1`,
+      [req.params.id, req.tenantId],
+    );
+    return rows[0] ?? null;
   });
 
   /** O projeto mais recente daquele vídeo, ou `null` — para a tela recarregar sozinha. */

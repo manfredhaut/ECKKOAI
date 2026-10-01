@@ -52,11 +52,16 @@ export function CreateVideoPage() {
   // arrancar a pessoa do passo em que ela está.
   const [searchParams] = useSearchParams();
   const resumeVideoId = searchParams.get("resume") ?? undefined;
+  // ABAS-28 -- "Reabrir projeto" (Biblioteca, ContentPage.tsx): o
+  // link chega como `create?edit=<id>`, direto no passo "6. Studio
+  // Movie Edit" (indice 5) -- nenhum dos passos 1-5 faz sentido para
+  // reabrir um vídeo já pronto que so precisa ser editado.
+  const editVideoId = searchParams.get("edit") ?? undefined;
   // P2-8 — "Ajustar este vídeo": o link chega como `create?adjustFrom=<id>`.
   // Diferente de `resume`, nasce no Passo 1 (não pula pro fim) — a pessoa
   // pode querer rever/mudar QUALQUER campo, não só aprovar o que já existe.
   const adjustFromVideoId = searchParams.get("adjustFrom") ?? undefined;
-  const [step, setStep] = useState(() => (resumeVideoId ? 3 : 0));
+  const [step, setStep] = useState(() => (editVideoId ? 5 : resumeVideoId ? 3 : 0));
   const [wizard, setWizard] = useState<WizardState>({
     avatarId: null,
     script: "",
@@ -331,7 +336,7 @@ export function CreateVideoPage() {
         />
       )}
       {step === 4 && <CreativesStep />}
-      {step === 5 && <StudioMovieEditStep />}
+      {step === 5 && <StudioMovieEditStep initialVideoId={editVideoId} />}
 
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
         {step > 0 && (

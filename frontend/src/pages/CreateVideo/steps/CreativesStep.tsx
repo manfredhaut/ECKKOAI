@@ -28,7 +28,9 @@ interface VoiceOption {
 
 type Modo = "imagem" | "propaganda" | "broll" | "sobreposicao" | "narracao" | "musica";
 const MODOS_DE_AUDIO = new Set<Modo>(["narracao", "musica"]);
-const MODOS_COM_MOTOR = new Set<Modo>(["imagem", "narracao", "musica"]);
+// ABAS-23, 30/09/2026 — broll e propaganda ganharam motor real no
+// backend (fixture, Seedance 2.5 image-to-video); liberando aqui.
+const MODOS_COM_MOTOR = new Set<Modo>(["imagem", "narracao", "musica", "broll", "propaganda"]);
 const AUDIO_DURATION_MIN = 3;
 const AUDIO_DURATION_MAX = 600;
 const AUDIO_DURATION_DEFAULT = 30;
@@ -144,14 +146,24 @@ export function CreativesStep() {
   async function handleGenerate() {
     if (!MODOS_COM_MOTOR.has(modo)) return;
     if (!titulo.trim() || !prompt.trim()) return;
+    // ABAS-30 -- resolve a URL da referência escolhida (se houver) a
+    // partir da lista já carregada (refs) -- nenhuma chamada extra.
+    const refEscolhida = refs.find((r) => r.id === refImagemId);
 
     setSubmitting(true);
     setError(null);
     try {
       const modeloPorModo: Record<string, string> = {
-        imagem: "soul-2",
+        // ABAS-29, 30/09/2026 -- corrigido contra a API real da
+        // Higgsfield (o antigo "soul-2" nunca bateu com o endpoint_id
+        // verdadeiro, confirmado 400 de verdade antes da correção).
+        imagem: "higgsfield-ai/soul/v2/standard",
         narracao: "voz-narracao",
         musica: "musica-jingle",
+        // ABAS-23 — mesmo id do catálogo (creativeCatalog.ts): o endpoint
+        // image-to-video do Seedance 2.5 serve os dois modos.
+        broll: "bytedance/seedance-2.5/image-to-video",
+        propaganda: "bytedance/seedance-2.5/image-to-video",
       };
       const created = await api.post<CreativeJob>("/creative-jobs", {
         modo,
@@ -161,6 +173,9 @@ export function CreativesStep() {
         chave_cliente: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
         ...(MODOS_DE_AUDIO.has(modo) ? { duracao_segundos: audioDuration } : {}),
         ...(modo === "narracao" && voiceId ? { voice_id: voiceId } : {}),
+        ...((modo === "broll" || modo === "propaganda") && refEscolhida
+          ? { imagem_referencia_url: refEscolhida.arquivo_url }
+          : {}),
       });
       upsertJob(created);
 
@@ -175,6 +190,7 @@ export function CreativesStep() {
       }
       setTitulo("");
       setPrompt("");
+      setRefImagemId("");
     } catch (err) {
       setError(err instanceof Error ? err.message : t("errors.generic"));
     } finally {
@@ -204,6 +220,10 @@ export function CreativesStep() {
       setUploading(false);
     }
   }
+
+  // ABAS-30 -- estado do seletor de imagem de referência (só
+  // broll/propaganda; "" = nenhuma, gera por texto puro).
+  const [refImagemId, setRefImagemId] = useState<string>("");
 
   const podeGerar = MODOS_COM_MOTOR.has(modo) && titulo.trim().length > 0 && prompt.trim().length > 0 && !submitting;
   const podeUpload = titulo.trim().length > 0 && !uploading;
@@ -278,6 +298,22 @@ export function CreativesStep() {
                 </button>
               ))}
             </div>
+            {(modo === "broll" || modo === "propaganda") && (
+              <Field
+                label={t("createVideo.creatives.referenceImageLabel")}
+                help={t("createVideo.creatives.referenceImageHelp")}
+              >
+                <select value={refImagemId} onChange={(e) => setRefImagemId(e.target.value)}>
+                  <option value="">{t("createVideo.creatives.referenceImageNone")}</option>
+                  {refs.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {t(`createVideo.creatives.card.${r.tipo}`)}
+                      {r.rotulo ? ` — ${r.rotulo}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <Field label={t("createVideo.creatives.promptLabel")}>
               <textarea
                 rows={5}

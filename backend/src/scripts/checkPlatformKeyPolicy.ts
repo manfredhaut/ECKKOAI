@@ -114,6 +114,13 @@ const PLAINTEXT_ALLOWED = [
   // exatamente o que se espera dela: o conjunto de quem lê chave de
   // plataforma em claro não cresce sem alguém escrever o motivo.
   "backend/src/services/credentialLookup.ts",
+  // ABAS-29, 30/09/2026 -- o QUINTO leitor legítimo: resolve a chave
+  // da Higgsfield para chamar /estimate, /{model_id}, /requests/{id}
+  // de verdade (estimateCreativeJob, submitCreativeJob,
+  // pollCreativeJobHiggsfield, cancelCreativeJob). Mesma categoria de
+  // platformKeys.ts acima -- precisa do valor em claro para entregar
+  // ao fornecedor.
+  "backend/src/services/providers/higgsfieldProvider.ts",
 ];
 
 /**

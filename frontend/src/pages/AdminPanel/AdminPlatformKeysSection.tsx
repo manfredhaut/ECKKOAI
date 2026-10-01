@@ -28,6 +28,10 @@ function PlatformKeyRow({
   const [validating, setValidating] = useState(false);
   const [result, setResult] = useState<PlatformCredentialValidation | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // ABAS-26 — estado SEPARADO do de "Validar": esta ação gera de
+  // verdade (custo de frações de centavo), nunca reaproveita `result`.
+  const [narrationTesting, setNarrationTesting] = useState(false);
+  const [narrationResult, setNarrationResult] = useState<{ ok: boolean; detail: string } | null>(null);
 
   const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString(i18n.language) : null);
 
@@ -70,6 +74,27 @@ function PlatformKeyRow({
       setError(err instanceof Error ? err.message : t("adminPanel.platformKeys.validateFailed"));
     } finally {
       setValidating(false);
+    }
+  }
+
+  // Confirmação ANTES do clique custar algo — mesmo contrato do custo de
+  // retreino visível (rótulo + confirm()) já usado em outra tela deste
+  // projeto. Gera de verdade (1 caractere), nunca automático.
+  async function handleTestNarration() {
+    if (!window.confirm(t("adminPanel.platformKeys.testNarrationConfirm"))) return;
+    setNarrationTesting(true);
+    setError(null);
+    setNarrationResult(null);
+    try {
+      const outcome = await api.post<{ ok: boolean; detail: string }>(
+        `/admin/platform-credentials/${credential.id}/test-narration`,
+        {},
+      );
+      setNarrationResult(outcome);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("adminPanel.platformKeys.testNarrationFailed"));
+    } finally {
+      setNarrationTesting(false);
     }
   }
 
@@ -142,6 +167,20 @@ function PlatformKeyRow({
         >
           {validating ? t("adminPanel.platformKeys.validating") : t("adminPanel.platformKeys.validate")}
         </button>
+        {/* ABAS-26 — só para elevenlabs: "Validar" acima nunca gera, e
+            esta é a única forma confirmada de checar o escopo de TTS. */}
+        {credential.id === "elevenlabs" && (
+          <button
+            className="btn btn-outline"
+            onClick={handleTestNarration}
+            disabled={narrationTesting || !credential.configured}
+            title={t("adminPanel.platformKeys.testNarrationHint")}
+          >
+            {narrationTesting
+              ? t("adminPanel.platformKeys.testingNarration")
+              : t("adminPanel.platformKeys.testNarration")}
+          </button>
+        )}
       </div>
 
       {/* O MOTIVO visível, e não só no `title` — mesmo contrato do
@@ -177,6 +216,19 @@ function PlatformKeyRow({
             { date: fmt(credential.lastValidatedAt) },
           )}
           {credential.lastValidationDetail && ` — ${credential.lastValidationDetail}`}
+        </p>
+      )}
+
+      {narrationResult && (
+        <p
+          style={{
+            fontSize: 12,
+            marginTop: 12,
+            marginBottom: 0,
+            color: narrationResult.ok ? "inherit" : "var(--color-tertiary)",
+          }}
+        >
+          {narrationResult.detail}
         </p>
       )}
 

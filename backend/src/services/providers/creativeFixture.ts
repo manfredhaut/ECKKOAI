@@ -1,18 +1,21 @@
 /**
- * ABAS-5 — fixture do motor de jobs da aba 5, modo IMAGEM só.
+ * ABAS-5/ABAS-22 — fixture do motor de jobs da aba 5: imagem, narração,
+ * música, e agora (30/09/2026) broll/propaganda (vídeo).
  *
  * Mesmo padrão de fixtureProvider.ts (generateVideoFixture/pollVideoJobFixture):
  * nenhum job "pronto" na primeira chamada — fica em processing por um tempo
  * real, e só então materializa o artefato. Reaproveita fixture-composicao.png
- * (o único PNG de amostra do repositório) em vez de criar um arquivo novo.
- * Importa só a constante exportada FIXTURES_DIR de fixtureProvider.ts —
- * nenhuma edição naquele arquivo.
+ * (imagem), simulated-speech.mp3 (áudio) e FIXTURE_VIDEO_FILES por proporção
+ * (vídeo, mesmas fixtures do pipeline de avatar) em vez de criar arquivo novo.
+ * Importa só constantes já exportadas de fixtureProvider.ts — nenhuma edição
+ * naquele arquivo.
  */
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { saveUpload } from "../storage.js";
-import { FIXTURES_DIR } from "./fixtureProvider.js";
+import { FIXTURES_DIR, FIXTURE_VIDEO_FILES } from "./fixtureProvider.js";
+import type { AspectRatio } from "./videoFormat.js";
 import type { CreativeJobInput, CreativeJobCreateResult, CreativeJobPollResult } from "./creativeTypes.js";
 
 const SIMULATED_JOB_DURATION_MS = 3_000;
@@ -26,20 +29,35 @@ interface JobState {
   tenantId: string;
   startedAt: number;
   modo: CreativeJobInput["modo"];
+  aspectRatio: AspectRatio;
 }
 
 const jobs = new Map<string, JobState>();
 
-const MODOS_COM_FIXTURE = new Set(["imagem", "narracao", "musica"]);
+// ABAS-22, 30/09/2026 — broll e propaganda entram na fixture: geram vídeo
+// simulado, reaproveitando FIXTURE_VIDEO_FILES (mesma fixture por
+// proporção que o pipeline de avatar já usa) em vez de criar arquivo novo.
+const MODOS_COM_FIXTURE = new Set(["imagem", "narracao", "musica", "broll", "propaganda"]);
+const MODOS_DE_VIDEO = new Set(["broll", "propaganda"]);
+const ASPECT_RATIO_PADRAO: AspectRatio = "16:9";
+
+function aspectRatioValida(valor: string | null | undefined): AspectRatio {
+  return valor && valor in FIXTURE_VIDEO_FILES ? (valor as AspectRatio) : ASPECT_RATIO_PADRAO;
+}
 
 export async function createCreativeJobFixture(input: CreativeJobInput): Promise<CreativeJobCreateResult> {
   if (!MODOS_COM_FIXTURE.has(input.modo)) {
     throw new Error(
-      `creativeFixture: modo "${input.modo}" ainda não tem fixture — só imagem/narração/música nesta rodada.`,
+      `creativeFixture: modo "${input.modo}" ainda não tem fixture — só imagem/narração/música/b-roll/propaganda nesta rodada.`,
     );
   }
   const jobId = `fixture-creative-${randomUUID()}`;
-  jobs.set(jobId, { tenantId: input.tenantId, startedAt: Date.now(), modo: input.modo });
+  jobs.set(jobId, {
+    tenantId: input.tenantId,
+    startedAt: Date.now(),
+    modo: input.modo,
+    aspectRatio: aspectRatioValida(input.aspectRatio),
+  });
   return { jobId };
 }
 
@@ -55,8 +73,13 @@ export async function pollCreativeJobFixture(jobId: string): Promise<CreativeJob
     return { status: "processing" };
   }
   const ehAudio = job.modo === "narracao" || job.modo === "musica";
-  const arquivo = ehAudio ? FIXTURE_AUDIO_FILE : FIXTURE_IMAGE_FILE;
-  const nomeDestino = ehAudio ? "criativo-simulado.mp3" : "criativo-simulado.png";
+  const ehVideo = MODOS_DE_VIDEO.has(job.modo);
+  const arquivo = ehAudio
+    ? FIXTURE_AUDIO_FILE
+    : ehVideo
+      ? FIXTURE_VIDEO_FILES[job.aspectRatio]
+      : FIXTURE_IMAGE_FILE;
+  const nomeDestino = ehAudio ? "criativo-simulado.mp3" : ehVideo ? "criativo-simulado.mp4" : "criativo-simulado.png";
   const buffer = await readFile(path.join(FIXTURES_DIR, arquivo));
   const outputUrl = await saveUpload(job.tenantId, buffer, nomeDestino);
   jobs.delete(jobId);

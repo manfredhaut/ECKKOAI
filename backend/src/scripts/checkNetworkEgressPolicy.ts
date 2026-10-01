@@ -146,6 +146,24 @@ const EXCECOES: { file: string; motivo: string }[] = [
       "para o produto funcionar mesmo em fixture (sem ele, nenhum tenant sairia de 'pending' pelo " +
       "caminho principal em ambiente de desenvolvimento). Roda em qualquer PROVIDER_MODE, sempre.",
   },
+  {
+    file: "services/providers/higgsfieldProvider.ts",
+    motivo:
+      "ABAS-29, 30/09/2026: arquitetura DIFERENTE de voiceProvider.ts -- aqui é o CHAMADOR " +
+      "(routes/creativeJobs.ts) quem decide fixture vs. live, nunca este arquivo sozinho. Em " +
+      "fixture, creativeJobs.ts nunca invoca nenhuma função deste arquivo (usa " +
+      "createCreativeJobFixture no lugar) -- um desvio interno aqui não teria para onde desviar " +
+      "(não existe fixture equivalente dentro deste arquivo). O único caminho real de chamada " +
+      "já está gated no chamador.",
+  },
+  {
+    file: "services/providers/platformKeyNarrationTest.ts",
+    motivo:
+      "DELIBERADO (ABAS-26, 30/09/2026): mesmo motivo de platformKeyProbe.ts acima -- o botão " +
+      "\"Testar narração\" do painel admin precisa confirmar o escopo de Text-to-Speech de " +
+      "verdade, e um resultado simulado levaria à mesma decisão errada que uma validação de " +
+      "chave fingida levaria. Só roda a partir do clique explícito do operador, nunca sozinho.",
+  },
 ];
 
 /** Guardas e utilitários de linha de comando não servem tráfego de produto. */
@@ -251,6 +269,7 @@ export async function checkNetworkEgressPolicy(repoRoot: string): Promise<Egress
     "https://rest.fal.ai": "fal",
     "https://queue.fal.run": "fal",
     "https://api.resend.com": "resend",
+    "https://platform.higgsfield.ai": "higgsfield",
   };
   const vendorsNoCatalogo = new Set(VENDOR_ENDPOINTS.map((e) => e.vendor));
   for (const host of [...hostsAlcancados].sort()) {
