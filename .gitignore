@@ -53,3 +53,7 @@ _debug/
 .env.*
 !.env.example
 twinai_local_dump.sql
+
+# Higgsfield: credenciais locais (tools/higgsfield) — nunca versionar
+.env.local
+.env.*.local
