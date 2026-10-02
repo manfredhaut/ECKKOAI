@@ -92,7 +92,7 @@ function chaveClienteValida(v: unknown): v is string {
 
 // ABAS-29 -- só estes 3 modos têm provedor real (Higgsfield) ligado.
 // narração/música continuam só em fixture (outro fornecedor).
-const MODOS_HIGGSFIELD = new Set<CreativeModo>(["imagem", "broll", "propaganda"]);
+const MODOS_HIGGSFIELD = new Set<CreativeModo>(["imagem", "broll", "propaganda", "trocarproduto"]);
 
 async function sincronizarComFixture(job: CreativeJobRow): Promise<CreativeJobRow> {
   if (job.estado !== "gerando" || !job.request_id) return job;
@@ -194,6 +194,8 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       imagem_referencia_url?: string | null;
       video_duracao_segundos?: number | null;
       video_resolution?: string | null;
+      video_url_fonte?: string | null;
+      imagens_referencia_urls?: string[] | null;
     };
   }>("/creative-jobs", async (req, reply) => {
     const {
@@ -208,6 +210,8 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       imagem_referencia_url: imagemReferenciaUrl,
       video_duracao_segundos: videoDuracaoSegundos,
       video_resolution: videoResolution,
+      video_url_fonte: videoUrlFonte,
+      imagens_referencia_urls: imagensReferenciaUrls,
     } = req.body ?? {};
 
     // ABAS-29 -- checkCreativeJobsPolicy.ts (invariante 1) exige o
@@ -227,7 +231,7 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
         });
       }
     }
-    const MODOS_SUPORTADOS = new Set(["imagem", "narracao", "musica", "broll", "propaganda"]);
+    const MODOS_SUPORTADOS = new Set(["imagem", "narracao", "musica", "broll", "propaganda", "trocarproduto"]);
     if (typeof modo !== "string" || !MODOS_SUPORTADOS.has(modo)) {
       return reply.code(400).send({
         error: "modo_nao_suportado",
@@ -263,6 +267,27 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
     const modelo = modeloId ? creativeModelById(modeloId) : null;
     if (!modelo || !modelo.modos.includes(modo as CreativeModo)) {
       return reply.code(400).send({ error: "modelo_invalido", message: "Modelo desconhecido para este modo." });
+    }
+
+    // PAINEL-GENJUTSU-1, 02/10/2026 -- Genjutsu Object Swap exige um
+    // vídeo de origem já enviado (POST /creative-jobs/genjutsu-source,
+    // abaixo) e ao menos 1 imagem do novo produto.
+    if (modo === "trocarproduto") {
+      if (typeof videoUrlFonte !== "string" || !videoUrlFonte.trim()) {
+        return reply.code(400).send({
+          error: "invalid_video_fonte",
+          message: "Envie o vídeo de origem antes de gerar.",
+        });
+      }
+      if (
+        !Array.isArray(imagensReferenciaUrls) ||
+        imagensReferenciaUrls.filter((u) => typeof u === "string" && u.trim()).length === 0
+      ) {
+        return reply.code(400).send({
+          error: "invalid_imagens_referencia",
+          message: "Escolha ao menos 1 imagem do novo produto (cartão Produto, nas Referências).",
+        });
+      }
     }
 
     // ABAS-24 — Etapa 6 do plano (robustez): semáforo de concorrência da
@@ -301,9 +326,17 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
           ? videoDuracaoSegundos
           : null,
       video_resolution:
-        (modo === "broll" || modo === "propaganda") &&
+        (modo === "broll" || modo === "propaganda" || modo === "trocarproduto") &&
         (videoResolution === "480p" || videoResolution === "720p" || videoResolution === "1080p")
           ? videoResolution
+          : null,
+      video_url_fonte:
+        modo === "trocarproduto" && typeof videoUrlFonte === "string" && videoUrlFonte.trim()
+          ? videoUrlFonte.trim()
+          : null,
+      imagens_referencia_urls:
+        modo === "trocarproduto" && Array.isArray(imagensReferenciaUrls)
+          ? imagensReferenciaUrls.filter((u): u is string => typeof u === "string" && u.trim().length > 0).slice(0, 8)
           : null,
     };
 
@@ -319,6 +352,8 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
         imagemReferenciaUrl: entrada.imagem_referencia_url,
         videoDuracaoSegundos: entrada.video_duracao_segundos,
         videoResolution: entrada.video_resolution as "480p" | "720p" | "1080p" | null,
+        videoUrlFonte: entrada.video_url_fonte,
+        imagensReferenciaUrls: entrada.imagens_referencia_urls,
       });
       try {
         const est = await estimateCreativeJob(corpoReal.modelIdReal, corpoReal.body);
@@ -452,6 +487,63 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       );
       return reply.code(201).send(updated.rows[0]);
     }
+  });
+
+  // PAINEL-GENJUTSU-1, 02/10/2026 -- upload do vídeo de ORIGEM do
+  // Genjutsu Object Swap (entrada da geração, não um resultado pronto --
+  // diferente de /upload e /upload-visual abaixo, que são bypass de
+  // geração). Valida duração (4-30s) e resolução mínima (409.600 px por
+  // quadro, medido contra a documentação oficial) antes de salvar.
+  app.post("/creative-jobs/genjutsu-source", async (req, reply) => {
+    const up = await takeUpload(req, reply, {
+      maxBytes: referenceVideoMaxBytes(),
+      route: "creativeJobs.genjutsuSource",
+      kind: "video",
+    });
+    if (!up) return reply;
+
+    if (up.file.mimetype.split("/")[0] !== "video") {
+      return reply.code(400).send({
+        error: "invalid_type",
+        message: `Arquivo do tipo "${up.file.mimetype}" não é aceito — esperado video/*.`,
+      });
+    }
+
+    const tmp = path.join(os.tmpdir(), `${randomUUID()}-genjutsu-source`);
+    let geometria;
+    try {
+      await writeFile(tmp, up.buffer);
+      geometria = await probeVideo(tmp);
+    } catch {
+      await unlink(tmp).catch(() => {});
+      return reply.code(422).send({
+        error: "video_not_readable",
+        message: "Não foi possível ler o vídeo — ele pode estar corrompido ou incompleto.",
+      });
+    }
+    await unlink(tmp).catch(() => {});
+
+    if (geometria.durationSeconds < 4 || geometria.durationSeconds > 30) {
+      return reply.code(422).send({
+        error: "video_duration_out_of_range",
+        message: `O vídeo tem ${Math.round(geometria.durationSeconds)}s — o Genjutsu Object Swap aceita de 4 a 30 segundos.`,
+      });
+    }
+    const pixels = geometria.width * geometria.height;
+    if (pixels < 409_600) {
+      return reply.code(422).send({
+        error: "video_resolution_too_low",
+        message: `O vídeo tem ${geometria.width}x${geometria.height} (${pixels} pixels por quadro) — o Genjutsu Object Swap exige ao menos 409.600 pixels por quadro (ex.: 1280x720).`,
+      });
+    }
+
+    const url = await saveUpload(req.tenantId, up.buffer, up.file.filename);
+    return reply.code(201).send({
+      url,
+      width: geometria.width,
+      height: geometria.height,
+      durationSeconds: geometria.durationSeconds,
+    });
   });
 
   app.post("/creative-jobs/upload", async (req, reply) => {

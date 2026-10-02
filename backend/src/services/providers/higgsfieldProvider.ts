@@ -282,6 +282,11 @@ export function construirCorpoHiggsfield(
     // continuam com resolution própria, fixa, mais abaixo.
     videoDuracaoSegundos?: number | null;
     videoResolution?: "480p" | "720p" | "1080p" | null;
+    // PAINEL-GENJUTSU-1, 02/10/2026 -- só para o Genjutsu Object Swap
+    // (Etapa 7): vídeo de origem (upload prévio, 4-30s) + 1-8 imagens do
+    // novo produto. Nenhum outro modelo usa estes dois campos.
+    videoUrlFonte?: string | null;
+    imagensReferenciaUrls?: string[] | null;
   },
 ): CorpoHiggsfield {
   if (modeloId === "higgsfield-ai/soul/v2/standard") {
@@ -325,6 +330,22 @@ export function construirCorpoHiggsfield(
     return {
       modelIdReal: "bytedance/seedance-2.5/text-to-video",
       body: { prompt: entrada.prompt, aspect_ratio: entrada.aspectRatio ?? "16:9", duration, resolution },
+    };
+  }
+  if (modeloId === "higgsfield/genjutsu/object-swap/v1.0") {
+    if (!entrada.videoUrlFonte || !entrada.imagensReferenciaUrls || entrada.imagensReferenciaUrls.length === 0) {
+      throw new HiggsfieldProviderError(
+        "Genjutsu Object Swap exige um vídeo de origem e ao menos 1 imagem de referência.",
+      );
+    }
+    return {
+      modelIdReal: modeloId,
+      body: {
+        video_url: entrada.videoUrlFonte,
+        image_urls: entrada.imagensReferenciaUrls,
+        prompt: entrada.prompt,
+        resolution: entrada.videoResolution ?? "720p",
+      },
     };
   }
   throw new HiggsfieldProviderError(

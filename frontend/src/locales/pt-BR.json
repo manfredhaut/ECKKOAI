@@ -718,7 +718,8 @@
         "broll": "B-roll",
         "sobreposicao": "Sobreposição",
         "narracao": "Narração",
-        "musica": "Música"
+        "musica": "Música",
+        "trocarproduto": "Trocar Produto"
       },
       "materialTitleLabel": "Título do material",
       "materialTitleHelp": "Nomeia o arquivo exportado e aparece na Galeria e no Estúdio de Edição. Não é enviado ao fornecedor.",
@@ -755,13 +756,20 @@
         "cancelado": "Cancelado"
       },
       "exampleBrollTitle": "Produto na bancada, aproximação lenta",
-      "exampleImageTitle": "Bancada de mármore"
+      "exampleImageTitle": "Bancada de mármore",
+      "genjutsuVideoLabel": "Vídeo de origem",
+      "genjutsuVideoHelp": "Envie um vídeo novo (4 a 30s, mínimo 1280×720) — não é possível escolher um vídeo já existente na Galeria.",
+      "genjutsuVideoUploading": "Enviando vídeo...",
+      "genjutsuVideoReady": "Vídeo enviado ✓ (trocar)",
+      "genjutsuImagesLabel": "Imagens do novo produto",
+      "genjutsuImagesHelp": "Escolha 1 ou mais imagens do cartão \"Produto\", em Referências, acima.",
+      "genjutsuImagesEmpty": "Nenhuma imagem de produto em Referências ainda — envie ao menos 1 no cartão \"Produto\" acima.",
+      "genjutsuResolutionHelp": "Resolução de saída do vídeo com o produto trocado."
     },
     "script": {
       "titleLabel": "Título do vídeo",
       "titleHelp": "Aparece na Biblioteca e no nome do arquivo baixado. Não é enviado ao fornecedor.",
       "titlePlaceholder": "Ex.: Lançamento da linha outono",
-
       "title": "Roteiro",
       "scriptLabel": "Roteiro do vídeo",
       "scriptHelp": "O que o avatar vai ler em voz alta, palavra por palavra.",

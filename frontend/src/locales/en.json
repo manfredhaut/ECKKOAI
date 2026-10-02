@@ -711,7 +711,8 @@
         "broll": "B-roll",
         "sobreposicao": "Overlay",
         "narracao": "Narration",
-        "musica": "Music"
+        "musica": "Music",
+        "trocarproduto": "Swap Product"
       },
       "materialTitleLabel": "Material title",
       "materialTitleHelp": "Names the exported file and shows up in the Gallery and the Studio. Not sent to the vendor.",
@@ -748,13 +749,20 @@
         "cancelado": "Cancelled"
       },
       "exampleBrollTitle": "Product on the counter, slow push-in",
-      "exampleImageTitle": "Marble counter"
+      "exampleImageTitle": "Marble counter",
+      "genjutsuVideoLabel": "Source video",
+      "genjutsuVideoHelp": "Upload a new video (4 to 30s, minimum 1280×720) — you can't pick an existing video from the Gallery.",
+      "genjutsuVideoUploading": "Uploading video...",
+      "genjutsuVideoReady": "Video uploaded ✓ (replace)",
+      "genjutsuImagesLabel": "New product images",
+      "genjutsuImagesHelp": "Choose 1 or more images from the \"Product\" card, in References, above.",
+      "genjutsuImagesEmpty": "No product images in References yet — upload at least 1 to the \"Product\" card above.",
+      "genjutsuResolutionHelp": "Output resolution of the video with the product swapped."
     },
     "script": {
       "titleLabel": "Video title",
       "titleHelp": "Shown in the Library and in the downloaded file name. Not sent to the vendor.",
       "titlePlaceholder": "e.g. Autumn line launch",
-
       "title": "Script",
       "scriptLabel": "Video script",
       "scriptHelp": "What the avatar will read aloud, word for word.",
@@ -939,7 +947,6 @@
       "creativesGalleryNeedsBase": "Choose a base video before inserting.",
       "creativesColumn": {
         "broll": "B-roll",
-        "imagem": "Image",
         "imagem": "Image",
         "sobreposicao": "Overlay",
         "fundo": "Background music"

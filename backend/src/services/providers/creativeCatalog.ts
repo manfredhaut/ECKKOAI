@@ -16,7 +16,7 @@
  * modelo próprio (hoje só upload manual).
  */
 
-export type CreativeModo = "imagem" | "propaganda" | "broll" | "sobreposicao" | "narracao" | "musica";
+export type CreativeModo = "imagem" | "propaganda" | "broll" | "trocarproduto" | "sobreposicao" | "narracao" | "musica";
 
 export interface CreativeModelDef {
   id: string;
@@ -53,6 +53,17 @@ export const CREATIVE_MODELS: readonly CreativeModelDef[] = [
     id: "bytedance/seedance-2.5/image-to-video",
     label: "Seedance 2.5",
     modos: ["broll", "propaganda"],
+    default: true,
+  },
+  // PAINEL-GENJUTSU-1, 02/10/2026 -- Etapa 7 do plano. Slug CONFIRMADO
+  // contra /estimate real (HTTP 200, 02/10/2026): higgsfield/genjutsu/
+  // object-swap/v1.0 -- o levantamento de 29/09 tinha o slug errado (sem
+  // o sufixo /v1.0); os 4 primeiros candidatos testados devolveram
+  // model_not_found. Ver endpointCatalog.ts para o preco medido.
+  {
+    id: "higgsfield/genjutsu/object-swap/v1.0",
+    label: "Genjutsu Object Swap",
+    modos: ["trocarproduto"],
     default: true,
   },
   // ABAS-10, 30/09/2026 — narração e música, ambas pelo fornecedor já

@@ -26,11 +26,11 @@ interface VoiceOption {
  * existe pronto. Narração/música têm seu próprio controle, 3-600s.
  */
 
-type Modo = "imagem" | "propaganda" | "broll" | "sobreposicao" | "narracao" | "musica";
+type Modo = "imagem" | "propaganda" | "broll" | "trocarproduto" | "sobreposicao" | "narracao" | "musica";
 const MODOS_DE_AUDIO = new Set<Modo>(["narracao", "musica"]);
 // ABAS-23, 30/09/2026 — broll e propaganda ganharam motor real no
 // backend (fixture, Seedance 2.5 image-to-video); liberando aqui.
-const MODOS_COM_MOTOR = new Set<Modo>(["imagem", "narracao", "musica", "broll", "propaganda"]);
+const MODOS_COM_MOTOR = new Set<Modo>(["imagem", "narracao", "musica", "broll", "propaganda", "trocarproduto"]);
 const AUDIO_DURATION_MIN = 3;
 const AUDIO_DURATION_MAX = 600;
 const AUDIO_DURATION_DEFAULT = 30;
@@ -40,6 +40,7 @@ const ACCEPT_POR_MODO: Record<Modo, string> = {
   sobreposicao: "image/*",
   broll: "video/*",
   propaganda: "image/*,video/*",
+  trocarproduto: "video/*",
   narracao: "audio/*",
   musica: "audio/*",
 };
@@ -89,6 +90,14 @@ export function CreativesStep() {
   // Só usados em broll/propaganda (Seedance 2.5); imagem não tem vídeo.
   const [videoDuration, setVideoDuration] = useState(5);
   const [videoResolution, setVideoResolution] = useState<"480p" | "720p" | "1080p">("720p");
+
+  // GENJUTSU-1, 02/10/2026 -- video de origem (upload direto, nunca da
+  // Galeria -- decisao do operador) e imagens de referencia do produto
+  // novo (reaproveita os cartoes "produto" ja existentes em Referencias).
+  const [genjutsuVideoUrl, setGenjutsuVideoUrl] = useState<string | null>(null);
+  const [genjutsuVideoUploading, setGenjutsuVideoUploading] = useState(false);
+  const [genjutsuVideoError, setGenjutsuVideoError] = useState<string | null>(null);
+  const [genjutsuImagens, setGenjutsuImagens] = useState<string[]>([]);
 
   function reloadRefs() {
     api
@@ -187,6 +196,7 @@ export function CreativesStep() {
   async function handleGenerate() {
     if (!MODOS_COM_MOTOR.has(modo)) return;
     if (!titulo.trim() || !prompt.trim()) return;
+    if (modo === "trocarproduto" && (!genjutsuVideoUrl || genjutsuImagens.length === 0)) return;
     // ABAS-30 -- resolve a URL da referência escolhida (se houver) a
     // partir da lista já carregada (refs) -- nenhuma chamada extra.
     const refEscolhida = refs.find((r) => r.id === refImagemId);
@@ -208,6 +218,10 @@ export function CreativesStep() {
         ...((modo === "broll" || modo === "propaganda")
           ? { video_duracao_segundos: videoDuration, video_resolution: videoResolution }
           : {}),
+        ...(modo === "trocarproduto" ? { video_resolution: videoResolution } : {}),
+        ...(modo === "trocarproduto"
+          ? { video_url_fonte: genjutsuVideoUrl, imagens_referencia_urls: genjutsuImagens }
+          : {}),
         ...((modo === "narracao" || modo === "musica") && voiceId ? { voice_id: voiceId } : {}),
         ...((modo === "broll" || modo === "propaganda" || modo === "imagem") && refEscolhida
           ? { imagem_referencia_url: refEscolhida.arquivo_url }
@@ -227,6 +241,8 @@ export function CreativesStep() {
       setTitulo("");
       setPrompt("");
       setRefImagemId("");
+      setGenjutsuVideoUrl(null);
+      setGenjutsuImagens([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("errors.generic"));
     } finally {
@@ -259,9 +275,37 @@ export function CreativesStep() {
 
   // ABAS-30 -- estado do seletor de imagem de referência (só
   // broll/propaganda; "" = nenhuma, gera por texto puro).
+  // GENJUTSU-1, 02/10/2026 -- upload do video de origem (sempre novo,
+  // nunca escolhido da Galeria -- decisao do operador) e selecao das
+  // imagens de referencia do produto novo, entre os cartoes "produto" ja
+  // enviados em Referencias (reaproveita refs, nenhum upload duplicado).
+  async function handleGenjutsuVideo(file: File) {
+    setGenjutsuVideoUploading(true);
+    setGenjutsuVideoError(null);
+    try {
+      const up = await api.upload<{ url: string }>("/creative-jobs/genjutsu-source", file, file.name, {});
+      setGenjutsuVideoUrl(up.url);
+    } catch (err) {
+      setGenjutsuVideoError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setGenjutsuVideoUploading(false);
+    }
+  }
+
+  function toggleGenjutsuImagem(url: string) {
+    setGenjutsuImagens((prev) =>
+      prev.includes(url) ? prev.filter((u) => u !== url) : prev.length >= 8 ? prev : [...prev, url],
+    );
+  }
+
   const [refImagemId, setRefImagemId] = useState<string>("");
 
-  const podeGerar = MODOS_COM_MOTOR.has(modo) && titulo.trim().length > 0 && prompt.trim().length > 0 && !submitting;
+  const podeGerar =
+    MODOS_COM_MOTOR.has(modo) &&
+    titulo.trim().length > 0 &&
+    prompt.trim().length > 0 &&
+    !submitting &&
+    (modo !== "trocarproduto" || (genjutsuVideoUrl !== null && genjutsuImagens.length > 0));
   const podeUpload = titulo.trim().length > 0 && !uploading;
 
   return (
@@ -297,7 +341,7 @@ export function CreativesStep() {
             {t("createVideo.creatives.createTitle")}
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {(["imagem", "propaganda", "broll", "sobreposicao", "narracao", "musica"] as const).map((m) => (
+            {(["imagem", "propaganda", "broll", "trocarproduto", "sobreposicao", "narracao", "musica"] as const).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -334,6 +378,63 @@ export function CreativesStep() {
                 </button>
               ))}
             </div>
+            {modo === "trocarproduto" && (
+              <>
+                <Field
+                  label={t("createVideo.creatives.genjutsuVideoLabel")}
+                  help={t("createVideo.creatives.genjutsuVideoHelp")}
+                >
+                  <label className="btn btn-file" style={{ opacity: genjutsuVideoUploading ? 0.6 : 1 }}>
+                    {genjutsuVideoUploading
+                      ? t("createVideo.creatives.genjutsuVideoUploading")
+                      : genjutsuVideoUrl
+                        ? t("createVideo.creatives.genjutsuVideoReady")
+                        : t("createVideo.creatives.orUploadFile")}
+                    <input
+                      type="file"
+                      accept="video/*"
+                      hidden
+                      disabled={genjutsuVideoUploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (f) handleGenjutsuVideo(f);
+                      }}
+                    />
+                  </label>
+                  {genjutsuVideoError && (
+                    <p className="alert-error" style={{ fontSize: 12, margin: "6px 0 0" }}>
+                      {genjutsuVideoError}
+                    </p>
+                  )}
+                </Field>
+                <Field
+                  label={t("createVideo.creatives.genjutsuImagesLabel")}
+                  help={t("createVideo.creatives.genjutsuImagesHelp")}
+                >
+                  {refs.filter((r) => r.tipo === "produto").length === 0 ? (
+                    <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
+                      {t("createVideo.creatives.genjutsuImagesEmpty")}
+                    </p>
+                  ) : (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {refs
+                        .filter((r) => r.tipo === "produto")
+                        .map((r) => (
+                          <span
+                            key={r.id}
+                            className={`chip${genjutsuImagens.includes(r.arquivo_url) ? " selected" : ""}`}
+                            style={{ cursor: "pointer" }}
+                            onClick={() => toggleGenjutsuImagem(r.arquivo_url)}
+                          >
+                            {r.rotulo ?? r.arquivo_url.slice(-10)}
+                          </span>
+                        ))}
+                    </div>
+                  )}
+                </Field>
+              </>
+            )}
             {(modo === "broll" || modo === "propaganda" || modo === "imagem") && (
               <Field
                 label={t("createVideo.creatives.referenceImageLabel")}
@@ -416,6 +517,25 @@ export function CreativesStep() {
                     ))}
                   </select>
                 </Field>
+                {modo === "trocarproduto" && (
+                  <Field
+                    label={t("createVideo.creatives.resolutionLabel")}
+                    help={t("createVideo.creatives.genjutsuResolutionHelp")}
+                  >
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {(["480p", "720p", "1080p"] as const).map((r) => (
+                        <span
+                          key={r}
+                          className={`chip${videoResolution === r ? " selected" : ""}`}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => setVideoResolution(r)}
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </Field>
+                )}
                 {(modo === "broll" || modo === "propaganda") ? (
                   <>
                     <Field label={`${t("createVideo.creatives.durationLabel")} (${videoDuration}s)`}>
@@ -442,7 +562,7 @@ export function CreativesStep() {
                       </div>
                     </Field>
                   </>
-                ) : (
+                ) : modo === "trocarproduto" ? null : (
                   <Field label={t("createVideo.creatives.durationLabel")}>
                     <input type="range" min={4} max={30} defaultValue={5} disabled />
                   </Field>

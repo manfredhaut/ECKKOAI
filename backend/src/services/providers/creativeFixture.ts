@@ -37,8 +37,8 @@ const jobs = new Map<string, JobState>();
 // ABAS-22, 30/09/2026 — broll e propaganda entram na fixture: geram vídeo
 // simulado, reaproveitando FIXTURE_VIDEO_FILES (mesma fixture por
 // proporção que o pipeline de avatar já usa) em vez de criar arquivo novo.
-const MODOS_COM_FIXTURE = new Set(["imagem", "narracao", "musica", "broll", "propaganda"]);
-const MODOS_DE_VIDEO = new Set(["broll", "propaganda"]);
+const MODOS_COM_FIXTURE = new Set(["imagem", "narracao", "musica", "broll", "propaganda", "trocarproduto"]);
+const MODOS_DE_VIDEO = new Set(["broll", "propaganda", "trocarproduto"]);
 const ASPECT_RATIO_PADRAO: AspectRatio = "16:9";
 
 function aspectRatioValida(valor: string | null | undefined): AspectRatio {

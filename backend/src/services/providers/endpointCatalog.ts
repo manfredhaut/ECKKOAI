@@ -354,6 +354,17 @@ export const VENDOR_ENDPOINTS: VendorEndpoint[] = [
     billable: false,
     note: "sondagem de status e cancelamento (/requests/{id}/status, /requests/{id}/cancel) -- leitura/controle, nunca gera nem cobra.",
   },
+  {
+    vendor: "higgsfield",
+    path: "/higgsfield/genjutsu/object-swap/v1.0",
+    method: "POST",
+    billable: true,
+    note:
+      "Genjutsu Object Swap -- troca objeto num video ja existente (Etapa 7 do plano). CONFIRMADO " +
+      "02/10/2026 contra /estimate real (HTTP 200): preco por segundo de video de ENTRADA, " +
+      "US$0,318 a 480p / US$0,681 a 720p / US$1,632 a 1080p (formula, type=description). Geracao " +
+      "real NAO exercitada ainda.",
+  },
 ];
 
 /** Caminhos que NENHUM probe de validação pode alcançar. Derivado, não escrito. */
