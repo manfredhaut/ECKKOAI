@@ -34,6 +34,12 @@ export const PROBE_ENDPOINTS = {
   // (fal.ai/docs/platform-apis/v1/account/billing). Exige escopo
   // "adminApiKey" (ver probeFal abaixo).
   fal: "https://api.fal.ai/v1/account/billing",
+  // PAINEL-FAL-SALDO-2, 02/10/2026 -- leitura real de validade da chave:
+  // GET /v1/models e "API Scope" (a MESMA categoria de chave usada para
+  // gerar), gratuita e documentada como leitura; confirmado contra
+  // fal.ai/docs/api-reference/platform-apis/authentication. probeFal usa
+  // este endpoint para decidir ok/nao-ok, nunca o billing acima.
+  falModels: "https://api.fal.ai/v1/models",
   // PAINEL-HIGGSFIELD-VALIDAR-1, 02/10/2026 — precisa bater com
   // HIGGSFIELD_BASE_URL em higgsfieldProvider.ts.
   higgsfield: "https://platform.higgsfield.ai/estimate",
@@ -166,43 +172,49 @@ async function probeElevenLabs(apiKey: string): Promise<ProbeResult> {
 }
 
 async function probeFal(apiKey: string): Promise<ProbeResult> {
-  // PAINEL-FAL-SALDO-1, 01/10/2026 — GET /v1/account/billing?expand=credits.
-  // O schema oficial (OpenAPI) marca este endpoint com security:
-  // adminApiKey — uma categoria de chave diferente da usada para gerar
-  // vídeo. Uma chave de geração comum pode não ter esse escopo: um 401/403
-  // aqui não prova que a chave de geração está errada, só que ELA talvez
-  // não tenha permissão de billing. A mensagem distingue os dois casos,
-  // mesma cautela do comentário de probeElevenLabs acima.
-  let res: Response;
+  // PAINEL-FAL-SALDO-2, 02/10/2026 -- a validade da chave agora e decidida
+  // por GET /v1/models (?limit=10), que e "API Scope" -- a MESMA categoria
+  // de chave usada para gerar, gratuita e documentada como leitura (ver
+  // fal.ai/docs/api-reference/platform-apis/authentication). O billing
+  // (abaixo) exige "Admin Scope", uma chave de categoria diferente: por
+  // isso ele nunca decide ok/nao-ok sozinho, e sua falha por 401/403 nao
+  // reprova mais a chave -- so significa que ESTA chave nao tem o escopo
+  // extra de leitura de saldo, o que e esperado para a maioria das chaves.
+  let resModels: Response;
   try {
-    res = await fetch(`${PROBE_ENDPOINTS.fal}?expand=credits`, {
+    resModels = await fetch(`${PROBE_ENDPOINTS.falModels}?limit=10`, {
       headers: { Authorization: `Key ${apiKey}` },
       signal: vendorSignal(),
     });
   } catch (err) {
     return unreachable("fal", err);
   }
-  if (res.status === 401 || res.status === 403) {
-    logEvent("error", "platform_key_rejected", { vendor: "fal", status: res.status, body: (await res.text()).slice(0, 500) });
-    return {
-      ok: false,
-      detail:
-        "A chave foi recusada ao ler o saldo (401/403). Isto pode significar chave inválida, OU que esta " +
-        "chave não tem o escopo de billing que o fornecedor exige para este endpoint — as duas causas " +
-        "dão o mesmo erro, e não é possível aqui distinguir qual é.",
-      balance: null,
-    };
-  }
-  if (!res.ok) return failure("fal", res.status, await res.text());
+  if (!resModels.ok) return failure("fal", resModels.status, await resModels.text());
 
-  const data = (await res.json()) as { username?: string; credits?: { current_balance?: number; currency?: string } };
-  const saldo = data.credits?.current_balance;
-  const moeda = data.credits?.currency;
-  if (typeof saldo !== "number" || !moeda) {
-    return { ok: true, detail: "Chave aceita, mas o saldo não veio no formato esperado.", balance: null };
+  // Leitura de saldo e best-effort e NUNCA derruba a validacao acima: uma
+  // chave API Scope comum, sem escopo admin, e aceita mesmo que isto falhe.
+  let saldoDetail =
+    "chave aceita, mas o saldo nao pode ser lido com esta chave (exige uma chave com escopo admin em fal.ai/dashboard/keys).";
+  let balance: string | null = null;
+  try {
+    const resBilling = await fetch(`${PROBE_ENDPOINTS.fal}?expand=credits`, {
+      headers: { Authorization: `Key ${apiKey}` },
+      signal: vendorSignal(),
+    });
+    if (resBilling.ok) {
+      const data = (await resBilling.json()) as { credits?: { current_balance?: number; currency?: string } };
+      const saldo = data.credits?.current_balance;
+      const moeda = data.credits?.currency;
+      if (typeof saldo === "number" && moeda) {
+        balance = `${saldo} ${moeda}`;
+        saldoDetail = `saldo: ${balance}`;
+      }
+    }
+  } catch (err) {
+    logProviderNetworkError("platformKeyProbe.fal.billing", err);
   }
-  const balance = `${saldo} ${moeda}`;
-  return { ok: true, detail: `Saldo: ${balance}`, balance };
+
+  return { ok: true, detail: `Chave aceita -- ${saldoDetail}`, balance };
 }
 
 /**
