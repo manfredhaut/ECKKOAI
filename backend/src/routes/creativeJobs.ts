@@ -32,6 +32,7 @@ import {
   construirCorpoHiggsfield,
   estimateCreativeJob,
   submitCreativeJob,
+  cancelCreativeJob,
   pollCreativeJobHiggsfield,
   HiggsfieldNotConfiguredError,
   HiggsfieldProviderError,
@@ -710,6 +711,38 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       }
       throw err;
     }
+  });
+
+  // GALERIA-2, 02/10/2026 -- cancela um job AINDA NA FILA na Higgsfield
+  // (antes de comecar a processar -- depois disso a API recusa). Best-
+  // effort do lado do provider (cancelCreativeJob nunca lanca); aqui so
+  // gravamos 'cancelado' se o fornecedor confirmou (202).
+  app.post<{ Params: { id: string } }>("/creative-jobs/:id/cancel", async (req, reply) => {
+    const { rows } = await pool.query<CreativeJobRow>(
+      "SELECT * FROM creative_jobs WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.tenantId],
+    );
+    const job = rows[0];
+    if (!job) return reply.code(404).send({ error: "not_found" });
+    if (job.estado !== "na_fila" || !job.request_id) {
+      return reply.code(409).send({
+        error: "nao_cancelavel",
+        message: "Este job não está mais na fila — só dá para cancelar antes de a geração começar.",
+      });
+    }
+    const cancelado = await cancelCreativeJob(job.request_id);
+    if (!cancelado) {
+      return reply.code(409).send({
+        error: "cancelamento_recusado",
+        message:
+          "A Higgsfield recusou o cancelamento — a geração provavelmente já começou (e será cobrada se terminar).",
+      });
+    }
+    const { rows: updated } = await pool.query<CreativeJobRow>(
+      `UPDATE creative_jobs SET estado = 'cancelado', terminado_em = now() WHERE id = $1 RETURNING *`,
+      [job.id],
+    );
+    return updated[0];
   });
 
   app.delete<{ Params: { id: string } }>("/creative-jobs/:id", async (req, reply) => {

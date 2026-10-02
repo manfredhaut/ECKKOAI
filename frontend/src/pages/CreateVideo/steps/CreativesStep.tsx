@@ -673,7 +673,7 @@ export function CreativesStep() {
                   }}
                 >
                   {doModo.map((job) => (
-                    <JobCard key={job.id} job={job} onDeleted={reloadJobs} />
+                    <JobCard key={job.id} job={job} onDeleted={reloadJobs} onCancelled={reloadJobs} onUsedAsReference={reloadRefs} />
                   ))}
                 </div>
               </div>
@@ -810,14 +810,46 @@ function ReferenceCard({
   );
 }
 
-function JobCard({ job, onDeleted }: { job: CreativeJob; onDeleted: () => void }) {
+function JobCard({ job, onDeleted, onCancelled, onUsedAsReference }: { job: CreativeJob; onDeleted: () => void; onCancelled: () => void; onUsedAsReference: () => void }) {
   const { t } = useTranslation();
   const ehAudio = job.modo === "narracao" || job.modo === "musica";
   const ehVideo = !ehAudio && job.arquivo_url && ehArquivoDeVideo(job.arquivo_url);
+  const [cancelando, setCancelando] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [showTipoPicker, setShowTipoPicker] = useState(false);
+  const [savingRef, setSavingRef] = useState(false);
+  const [refError, setRefError] = useState<string | null>(null);
 
   async function handleDelete() {
     await api.delete(`/creative-jobs/${job.id}`).catch(() => {});
     onDeleted();
+  }
+
+  async function handleCancel() {
+    setCancelando(true);
+    setCancelError(null);
+    try {
+      await api.post(`/creative-jobs/${job.id}/cancel`, {});
+      onCancelled();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setCancelando(false);
+    }
+  }
+
+  async function handleUseAsReference(tipo: TipoReferencia) {
+    setSavingRef(true);
+    setRefError(null);
+    try {
+      await api.post("/creative-refs/from-job", { job_id: job.id, tipo });
+      setShowTipoPicker(false);
+      onUsedAsReference();
+    } catch (err) {
+      setRefError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setSavingRef(false);
+    }
   }
 
   return (
@@ -880,6 +912,54 @@ function JobCard({ job, onDeleted }: { job: CreativeJob; onDeleted: () => void }
           >
             {t("createVideo.creatives.downloadJob")}
           </a>
+        )}
+        {job.estado === "na_fila" && (
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={handleCancel}
+            disabled={cancelando}
+            style={{ fontSize: 12, justifySelf: "start" }}
+          >
+            {cancelando ? t("createVideo.creatives.cancelling") : t("createVideo.creatives.cancelJob")}
+          </button>
+        )}
+        {cancelError && (
+          <p className="alert-error" style={{ fontSize: 12, margin: 0 }}>
+            {cancelError}
+          </p>
+        )}
+        {!ehAudio && !ehVideo && job.arquivo_url && job.estado === "pronto" && (
+          <div style={{ display: "grid", gap: 4 }}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => setShowTipoPicker((v) => !v)}
+              style={{ fontSize: 12, justifySelf: "start" }}
+            >
+              {t("createVideo.creatives.useAsReference")}
+            </button>
+            {showTipoPicker && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {REFERENCIAS.map((tipo) => (
+                  <button
+                    key={tipo}
+                    type="button"
+                    className="chip"
+                    disabled={savingRef}
+                    onClick={() => handleUseAsReference(tipo)}
+                  >
+                    {t(`createVideo.creatives.card.${tipo}`)}
+                  </button>
+                ))}
+              </div>
+            )}
+            {refError && (
+              <p className="alert-error" style={{ fontSize: 12, margin: 0 }}>
+                {refError}
+              </p>
+            )}
+          </div>
         )}
         <button
           type="button"

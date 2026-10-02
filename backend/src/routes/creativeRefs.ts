@@ -17,6 +17,13 @@ const TIPOS = ["produto", "cenario", "personagem", "marca"] as const;
 type Tipo = (typeof TIPOS)[number];
 const MAX_POR_TIPO = 8;
 
+const EXT_DE_VIDEO_REF = [".mp4", ".webm", ".mov", ".m4v"];
+function ehArquivoDeVideoRef(url: string): boolean {
+  const semQuery = url.split("?")[0].toLowerCase();
+  return EXT_DE_VIDEO_REF.some((ext) => semQuery.endsWith(ext));
+}
+const MODOS_DE_AUDIO_REF = new Set(["narracao", "musica"]);
+
 function tipoValido(v: unknown): v is Tipo {
   return typeof v === "string" && (TIPOS as readonly string[]).includes(v);
 }
@@ -72,6 +79,68 @@ export async function creativeRefRoutes(app: FastifyInstance): Promise<void> {
     );
     return reply.code(201).send(rows[0]);
   });
+
+  // GALERIA-2, 02/10/2026 -- "Usar como referencia": copia o arquivo de
+  // um job JA PRONTO (aba 5) para um cartao de Referencia, sem passar
+  // por upload de novo. origem='gerada' + job_id, exatamente como
+  // previsto no plano (28-29/09) e no comentario que ja existia aqui.
+  // So aceita resultado de IMAGEM -- video/audio sao recusados.
+  app.post<{ Body: { job_id?: string; tipo?: string; rotulo?: string | null } }>(
+    "/creative-refs/from-job",
+    async (req, reply) => {
+      const { job_id: jobId, tipo: tipoRaw, rotulo: rotuloRaw } = req.body ?? {};
+      if (!tipoValido(tipoRaw)) {
+        return reply.code(400).send({
+          error: "invalid_tipo",
+          message: `Campo "tipo" precisa ser um de: ${TIPOS.join(", ")}.`,
+        });
+      }
+      const tipo = tipoRaw;
+      if (typeof jobId !== "string" || !jobId.trim()) {
+        return reply.code(400).send({ error: "invalid_job_id", message: "job_id é obrigatório." });
+      }
+  
+      const { rows } = await pool.query<{ id: string; modo: string; estado: string; arquivo_url: string | null }>(
+        "SELECT id, modo, estado, arquivo_url FROM creative_jobs WHERE id = $1 AND tenant_id = $2",
+        [jobId, req.tenantId],
+      );
+      const job = rows[0];
+      if (!job) return reply.code(404).send({ error: "job_not_found" });
+      if (job.estado !== "pronto" || !job.arquivo_url) {
+        return reply.code(409).send({
+          error: "job_nao_pronto",
+          message: "Este material ainda não está pronto.",
+        });
+      }
+      if (MODOS_DE_AUDIO_REF.has(job.modo) || ehArquivoDeVideoRef(job.arquivo_url)) {
+        return reply.code(400).send({
+          error: "job_nao_e_imagem",
+          message: "Só é possível usar como referência um resultado que seja imagem.",
+        });
+      }
+  
+      const rotulo =
+        typeof rotuloRaw === "string" && rotuloRaw.trim() ? rotuloRaw.trim().slice(0, 80) : null;
+  
+      const { rows: countRows } = await pool.query<{ count: string }>(
+        "SELECT count(*) FROM creative_refs WHERE tenant_id = $1 AND tipo = $2",
+        [req.tenantId, tipo],
+      );
+      if (Number(countRows[0].count) >= MAX_POR_TIPO) {
+        return reply.code(400).send({
+          error: "limite_de_referencias",
+          message: `Este cartão já tem ${MAX_POR_TIPO} imagens, o máximo. Exclua uma antes de enviar outra.`,
+        });
+      }
+  
+      const { rows: inserted } = await pool.query<CreativeRef>(
+        `INSERT INTO creative_refs (tenant_id, tipo, rotulo, arquivo_url, origem, job_id)
+         VALUES ($1, $2, $3, $4, 'gerada', $5) RETURNING *`,
+        [req.tenantId, tipo, rotulo, job.arquivo_url, job.id],
+      );
+      return reply.code(201).send(inserted[0]);
+    },
+  );
 
   app.delete<{ Params: { id: string } }>("/creative-refs/:id", async (req, reply) => {
     const { rows } = await pool.query<CreativeRef>(
