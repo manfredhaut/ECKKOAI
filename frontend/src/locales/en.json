@@ -354,7 +354,16 @@
       "balanceUnavailable": "Balance not read: {{reason}}",
       "lastValidationOk": "Validated on {{date}}",
       "lastValidationFailed": "Validation failed on {{date}}"
-    }
+    },
+    "platformSettings": {
+      "title": "Numeric settings",
+      "subtitle": "Numbers the admin adjusts right from the screen, with no .env edit or container restart.",
+      "sourcePanel": "Source: saved from this panel",
+      "sourceEnv": "Source: environment variable (.env) — never saved from the panel yet",
+      "invalidValue": "Enter an integer of zero or more."
+    },
+    "save": "Save",
+    "saving": "Saving…"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -708,6 +717,7 @@
       "promptHint": "B-roll: audio off, current video's aspect ratio. Describe only the movement, one scene per clip.",
       "modelLabel": "Model",
       "durationLabel": "Duration",
+      "resolutionLabel": "Resolution",
       "costLabel": "Estimated cost",
       "costSimulatedNote": "Available once the job engine is wired",
       "generateButton": "Generate",

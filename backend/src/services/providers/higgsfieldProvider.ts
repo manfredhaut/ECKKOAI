@@ -41,6 +41,14 @@
  * ainda nao tem de onde tirar esse campo para o Seedance -- decisao do
  * operador pendente: trocar para text-to-video (so prompt, mais simples)
  * ou somar upload de imagem de referencia a tela.
+ *
+ * PAINEL-SEEDANCE-1, 01/10/2026 — duration/resolution confirmados contra
+ * a doc oficial da Higgsfield (open.higgsfield.ai/models/bytedance/
+ * seedance-2.5/image-to-video e .../text-to-video): ambos agora vao no
+ * corpo, com default (5s/720p) quando a tela nao manda valor, e editaveis
+ * pela tela (slider de duracao + chips de resolucao) quando manda.
+ * GERACAO REAL ainda NAO exercitada contra a API autenticada — só a
+ * montagem do corpo foi provada, por execucao local.
  */
 import { resolvePlatformKey } from "../platformCredentialStore.js";
 import { describeNetworkError, logProviderNetworkError } from "./networkError.js";
@@ -263,7 +271,18 @@ export interface CorpoHiggsfield {
  */
 export function construirCorpoHiggsfield(
   modeloId: string,
-  entrada: { prompt: string; aspectRatio: string | null; imagemReferenciaUrl: string | null },
+  entrada: {
+    prompt: string;
+    aspectRatio: string | null;
+    imagemReferenciaUrl: string | null;
+    // PAINEL-SEEDANCE-1, 01/10/2026 — confirmados contra a doc oficial da
+    // Higgsfield (open.higgsfield.ai/models/bytedance/seedance-2.5/*):
+    // duration inteiro 4-30s, resolution 480p/720p/1080p. Opcionais porque
+    // só se aplicam ao Seedance — Soul 2 e Marketing Studio Image (imagem)
+    // continuam com resolution própria, fixa, mais abaixo.
+    videoDuracaoSegundos?: number | null;
+    videoResolution?: "480p" | "720p" | "1080p" | null;
+  },
 ): CorpoHiggsfield {
   if (modeloId === "higgsfield-ai/soul/v2/standard") {
     return {
@@ -286,15 +305,17 @@ export function construirCorpoHiggsfield(
     };
   }
   if (modeloId === "bytedance/seedance-2.5/image-to-video") {
+    const duration = entrada.videoDuracaoSegundos ?? 5;
+    const resolution = entrada.videoResolution ?? "720p";
     if (entrada.imagemReferenciaUrl) {
       return {
         modelIdReal: "bytedance/seedance-2.5/image-to-video",
-        body: { image_url: entrada.imagemReferenciaUrl, prompt: entrada.prompt },
+        body: { image_url: entrada.imagemReferenciaUrl, prompt: entrada.prompt, duration, resolution },
       };
     }
     return {
       modelIdReal: "bytedance/seedance-2.5/text-to-video",
-      body: { prompt: entrada.prompt, aspect_ratio: entrada.aspectRatio ?? "16:9" },
+      body: { prompt: entrada.prompt, aspect_ratio: entrada.aspectRatio ?? "16:9", duration, resolution },
     };
   }
   throw new HiggsfieldProviderError(

@@ -76,6 +76,12 @@ services:
       # acima ja documenta: sem declarar aqui, preencher no .env nao
       # tem efeito nenhum (achado pelo gate, checkEnvironmentPolicy.ts).
       # Ver services/providers/higgsfieldLimits.ts.
+      #
+      # PAINEL-HIGGSFIELD-1, 01/10/2026 — estes dois valores agora sao só
+      # RETAGUARDA: o admin ajusta pela tela (platform_settings no banco),
+      # e o banco VENCE estas variaveis quando gravado. Editar aqui só
+      # importa enquanto ninguem configurou pelo painel ainda. Ver
+      # services/platformSettingsStore.ts e checkPlatformSettingsPolicy.ts.
       HIGGSFIELD_CONCURRENCY_LIMIT: ${HIGGSFIELD_CONCURRENCY_LIMIT:-4}
       HIGGSFIELD_TENANT_DAILY_LIMIT: ${HIGGSFIELD_TENANT_DAILY_LIMIT:-20}
       # Limiar de ALERTA (nunca freio) do livro-caixa interno de gasto

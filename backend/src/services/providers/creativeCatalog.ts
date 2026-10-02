@@ -23,6 +23,15 @@ export interface CreativeModelDef {
   /** Nome do modelo, mostrado na tela — nunca cita o agregador. */
   label: string;
   modos: readonly CreativeModo[];
+  /**
+   * PAINEL-MODELO-1, 01/10/2026 — escolha CURADA, não calculada: sem
+   * /estimate real (ver nota no topo do arquivo), "melhor custo-benefício"
+   * não pode ser medido ainda. Até lá, default é uma decisão explícita e
+   * auditável aqui, nunca implícita pela ordem do array. Exatamente um
+   * modelo por modo deve ter default=true — ausência de marca não conta
+   * como default por omissão.
+   */
+  default?: boolean;
 }
 
 export const CREATIVE_MODELS: readonly CreativeModelDef[] = [
@@ -31,7 +40,7 @@ export const CREATIVE_MODELS: readonly CreativeModelDef[] = [
   // os antigos ("soul-2", "marketing-studio-image") nunca bateram com o
   // endpoint_id real do fornecedor -- eram só o nome do levantamento
   // inicial, nunca confirmados (ver nota no topo deste arquivo).
-  { id: "higgsfield-ai/soul/v2/standard", label: "Soul 2", modos: ["imagem"] },
+  { id: "higgsfield-ai/soul/v2/standard", label: "Soul 2", modos: ["imagem"], default: true },
   { id: "marketing-studio/image", label: "Marketing Studio Image", modos: ["imagem"] },
   // ABAS-22, 30/09/2026 — broll e propaganda (vídeo). `id` confirmado
   // contra a documentação oficial da Higgsfield em 30/09/2026
@@ -44,13 +53,14 @@ export const CREATIVE_MODELS: readonly CreativeModelDef[] = [
     id: "bytedance/seedance-2.5/image-to-video",
     label: "Seedance 2.5",
     modos: ["broll", "propaganda"],
+    default: true,
   },
   // ABAS-10, 30/09/2026 — narração e música, ambas pelo fornecedor já
   // integrado ao projeto (voiceProvider.ts). O rótulo NUNCA cita o
   // fornecedor — mesma regra da Higgsfield: nome do agregador só na tela de
   // credencial do admin, nunca em texto de tenant.
-  { id: "voz-narracao", label: "Narração", modos: ["narracao"] },
-  { id: "musica-jingle", label: "Música / jingle", modos: ["musica"] },
+  { id: "voz-narracao", label: "Narração", modos: ["narracao"], default: true },
+  { id: "musica-jingle", label: "Música / jingle", modos: ["musica"], default: true },
 ];
 
 export function creativeModelById(id: string): CreativeModelDef | null {

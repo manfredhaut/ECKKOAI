@@ -31,7 +31,8 @@ export type PlatformValidationKind =
   | "gemini_list_models"
   | "anthropic_list_models"
   | "heygen_quota"
-  | "elevenlabs_voices";
+  | "elevenlabs_voices"
+  | "fal_billing";
 
 export interface PlatformCredentialDef {
   id: PlatformCredentialId;
@@ -159,14 +160,17 @@ export const PLATFORM_CREDENTIALS: Record<PlatformCredentialId, PlatformCredenti
     // primeiro, BYOK do tenant (`api_credentials`) como retaguarda — o
     // mesmo desenho de `resolveTenantAiKey`, para o copiloto do tenant.
     servedBy: "geração de vídeo pelo caminho fal (criação, aprovação e recuperação no boot)",
-    // Sem forma de validação: a fal.ai não expõe endpoint de saldo/cota por
-    // chave (ver PRECOS_FAL em providerCost.ts — "a fal não expõe endpoint
-    // de saldo"), e o mesmo vale no nível do tenant (`hasConnectionProbe:
-    // false` em providerVendors.ts). Inventar uma chamada só para validar
-    // seria medir sem ter medido — o oposto do que este projeto faz.
-    validation: null,
-    readsBalance: false,
-    balanceUnavailable: "a fal.ai não expõe endpoint de saldo/cota por chave.",
+    // PAINEL-FAL-SALDO-1, 01/10/2026 — ATUALIZADO contra a doc oficial
+    // (fal.ai/docs/platform-apis/v1/account/billing, OpenAPI confirmado):
+    // a fal.ai AGORA tem GET /v1/account/billing?expand=credits. MEDIDO
+    // contra a chave de produção em uso: 403 "This API key is not
+    // permitted to perform this action" — confirma a ressalva da doc
+    // (escopo "adminApiKey", diferente da chave de geração). A sonda
+    // existe e está correta; só falta uma chave fal.ai com esse escopo
+    // para o saldo aparecer de verdade na tela — decisão de gerar essa
+    // chave nova (se quiser) é do operador, no painel da fal.ai.
+    validation: "fal_billing",
+    readsBalance: true,
     readEnv: () => config.platformFalApiKey,
   },
   higgsfield: {

@@ -23,6 +23,7 @@
  */
 import { pool } from "../../db/pool.js";
 import { logEvent } from "../log/safeLog.js";
+import { readPlatformSettingInt } from "../platformSettingsStore.js";
 
 export const MODOS_HIGGSFIELD = new Set(["imagem", "propaganda", "broll", "sobreposicao"]);
 
@@ -42,7 +43,7 @@ export const HIGGSFIELD_TENANT_DAILY_LIMIT_ENV = "HIGGSFIELD_TENANT_DAILY_LIMIT"
  */
 export const DEFAULT_HIGGSFIELD_TENANT_DAILY_LIMIT = 20;
 
-function readIntEnv(name: string, def: number): number {
+export function readIntEnv(name: string, def: number): number {
   const bruto = process.env[name];
   if (bruto === undefined || bruto.trim() === "") return def;
   const n = Number(bruto);
@@ -58,11 +59,21 @@ function readIntEnv(name: string, def: number): number {
   return n;
 }
 
-export function higgsfieldConcurrencyLimit(): number {
+/**
+ * PAINEL-HIGGSFIELD-1, 01/10/2026 — o banco (platform_settings) vence o
+ * .env, mesma precedência de platformCredentialStore.ts: gravar pelo
+ * painel passa a valer sem reiniciar o backend. O .env continua como
+ * retaguarda para quem nunca configurou pela tela.
+ */
+export async function higgsfieldConcurrencyLimit(): Promise<number> {
+  const fromDb = await readPlatformSettingInt(HIGGSFIELD_CONCURRENCY_LIMIT_ENV);
+  if (fromDb !== null) return fromDb;
   return readIntEnv(HIGGSFIELD_CONCURRENCY_LIMIT_ENV, DEFAULT_HIGGSFIELD_CONCURRENCY_LIMIT);
 }
 
-export function higgsfieldTenantDailyLimit(): number {
+export async function higgsfieldTenantDailyLimit(): Promise<number> {
+  const fromDb = await readPlatformSettingInt(HIGGSFIELD_TENANT_DAILY_LIMIT_ENV);
+  if (fromDb !== null) return fromDb;
   return readIntEnv(HIGGSFIELD_TENANT_DAILY_LIMIT_ENV, DEFAULT_HIGGSFIELD_TENANT_DAILY_LIMIT);
 }
 
@@ -124,7 +135,7 @@ async function countJobsHojeDoTenant(tenantId: string): Promise<number> {
 export async function assertHiggsfieldGuards(tenantId: string, modo: string): Promise<void> {
   if (!MODOS_HIGGSFIELD.has(modo)) return;
 
-  const maxConcorrencia = higgsfieldConcurrencyLimit();
+  const maxConcorrencia = await higgsfieldConcurrencyLimit();
   const emAndamento = await countJobsEmAndamento();
   if (emAndamento >= maxConcorrencia) {
     logEvent("error", "higgsfield_concurrency_reached", {
@@ -135,7 +146,7 @@ export async function assertHiggsfieldGuards(tenantId: string, modo: string): Pr
     throw new HiggsfieldConcurrencyError(emAndamento, maxConcorrencia);
   }
 
-  const maxDiarioTenant = higgsfieldTenantDailyLimit();
+  const maxDiarioTenant = await higgsfieldTenantDailyLimit();
   const hojeDoTenant = await countJobsHojeDoTenant(tenantId);
   if (hojeDoTenant >= maxDiarioTenant) {
     logEvent("error", "higgsfield_tenant_daily_limit_reached", {

@@ -354,7 +354,16 @@
       "balanceUnavailable": "Saldo não lido: {{reason}}",
       "lastValidationOk": "Validada em {{date}}",
       "lastValidationFailed": "Validação falhou em {{date}}"
-    }
+    },
+    "platformSettings": {
+      "title": "Configurações numéricas",
+      "subtitle": "Números que o admin ajusta direto pela tela, sem editar .env nem recriar o container.",
+      "sourcePanel": "Origem: gravado por este painel",
+      "sourceEnv": "Origem: variável de ambiente (.env) — nunca gravado pelo painel ainda",
+      "invalidValue": "Informe um número inteiro maior ou igual a zero."
+    },
+    "save": "Salvar",
+    "saving": "Salvando…"
   },
   "dashboard": {
     "title": "Painel",
@@ -715,6 +724,7 @@
       "promptHint": "B-roll: áudio desligado e proporção do vídeo atual. Descreva só o movimento, uma cena por clipe.",
       "modelLabel": "Modelo",
       "durationLabel": "Duração",
+      "resolutionLabel": "Resolução",
       "costLabel": "Custo estimado",
       "costSimulatedNote": "Disponível quando o motor de jobs estiver ligado",
       "generateButton": "Gerar",

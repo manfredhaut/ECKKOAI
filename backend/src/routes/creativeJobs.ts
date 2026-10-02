@@ -21,7 +21,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/pool.js";
 import { isFixtureMode } from "../services/providers/providerMode.js";
-import { creativeModelById } from "../services/providers/creativeCatalog.js";
+import { creativeModelById, CREATIVE_MODELS } from "../services/providers/creativeCatalog.js";
 import { createCreativeJobFixture, pollCreativeJobFixture } from "../services/providers/creativeFixture.js";
 import {
   assertHiggsfieldGuards,
@@ -41,6 +41,8 @@ import type { CreativeModo } from "../services/providers/creativeCatalog.js";
 import { probeSampleDurationSeconds } from "../services/voice/voiceSampleAudio.js";
 import { probeVideo } from "../services/video/ffmpeg.js";
 import { saveUpload } from "../services/storage.js";
+import { getCredential } from "../services/credentialLookup.js";
+import { synthesizeSpeech, logSynthesisBody, listVoiceDetails } from "../services/providers/voiceProvider.js";
 import {
   takeUpload,
   creativeAudioUploadCeilingBytes,
@@ -150,6 +152,17 @@ async function sincronizarComProvedor(job: CreativeJobRow): Promise<CreativeJobR
 }
 
 export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
+  // PAINEL-MODELO-1, 01/10/2026 — catálogo filtrado por modo, para o
+  // <select> de modelo deixar de ser cosmético (CreativesStep.tsx): a
+  // tela passa a listar os modelos REAIS deste modo, com o default
+  // curado (ver creativeCatalog.ts) vindo marcado, em vez de um
+  // mapeamento hardcoded no frontend.
+  app.get<{ Querystring: { modo?: string } }>("/creative-models", async (req, reply) => {
+    const { modo } = req.query;
+    if (!modo) return reply.code(400).send({ error: "modo_required" });
+    return CREATIVE_MODELS.filter((m) => m.modos.includes(modo as never));
+  });
+
   app.get("/creative-jobs", async (req) => {
     const { rows } = await pool.query<CreativeJobRow>(
       "SELECT * FROM creative_jobs WHERE tenant_id = $1 ORDER BY created_at DESC",
@@ -179,6 +192,8 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       voice_id?: string | null;
       duracao_segundos?: number | null;
       imagem_referencia_url?: string | null;
+      video_duracao_segundos?: number | null;
+      video_resolution?: string | null;
     };
   }>("/creative-jobs", async (req, reply) => {
     const {
@@ -191,17 +206,24 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
       voice_id: voiceId,
       duracao_segundos: duracaoSegundos,
       imagem_referencia_url: imagemReferenciaUrl,
+      video_duracao_segundos: videoDuracaoSegundos,
+      video_resolution: videoResolution,
     } = req.body ?? {};
 
     // ABAS-29 -- checkCreativeJobsPolicy.ts (invariante 1) exige o
     // padrão textual exato "if (!isFixtureMode())" ANTES de
     // MODOS_SUPORTADOS -- por isso dois `if` em vez de um `&&`.
+    // PAINEL-NARRACAO-1, 01/10/2026 — narração/música saíram daqui: têm
+    // fornecedor PRÓPRIO (ElevenLabs, já integrado — ver o ramo síncrono
+    // mais abaixo), e não dependem de MODOS_HIGGSFIELD, que é só o
+    // catálogo da Higgsfield.
+    const MODOS_DE_AUDIO_LIVE = new Set(["narracao", "musica"]);
     if (!isFixtureMode()) {
-      if (!MODOS_HIGGSFIELD.has(modo as CreativeModo)) {
+      if (!MODOS_HIGGSFIELD.has(modo as CreativeModo) && !MODOS_DE_AUDIO_LIVE.has(modo as string)) {
         return reply.code(501).send({
           error: "not_implemented",
           message:
-            "Geração real ainda só está disponível para imagem, b-roll e propaganda — narração e música continuam só em simulação.",
+            "Geração real ainda só está disponível para imagem, b-roll, propaganda, narração e música.",
         });
       }
     }
@@ -272,6 +294,17 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
         imagemReferenciaUrl.trim()
           ? imagemReferenciaUrl.trim()
           : null,
+      // PAINEL-SEEDANCE-1, 01/10/2026 — só broll/propaganda (Seedance);
+      // demais modos ignoram.
+      video_duracao_segundos:
+        (modo === "broll" || modo === "propaganda") && typeof videoDuracaoSegundos === "number"
+          ? videoDuracaoSegundos
+          : null,
+      video_resolution:
+        (modo === "broll" || modo === "propaganda") &&
+        (videoResolution === "480p" || videoResolution === "720p" || videoResolution === "1080p")
+          ? videoResolution
+          : null,
     };
 
     // ABAS-29 -- em LIVE, estima ANTES de gravar a linha (nunca cobra --
@@ -284,6 +317,8 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
         prompt: entrada.prompt,
         aspectRatio: entrada.aspect_ratio,
         imagemReferenciaUrl: entrada.imagem_referencia_url,
+        videoDuracaoSegundos: entrada.video_duracao_segundos,
+        videoResolution: entrada.video_resolution as "480p" | "720p" | "1080p" | null,
       });
       try {
         const est = await estimateCreativeJob(corpoReal.modelIdReal, corpoReal.body);
@@ -326,6 +361,58 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const job = rows[0];
+
+    // PAINEL-NARRACAO-1, 01/10/2026 — narração/música em modo REAL: fora
+    // do fluxo Higgsfield (fila, polling, request_id). ElevenLabs
+    // responde na mesma chamada — síncrono, sem passar por 'na_fila'.
+    // Erro aqui marca 'falhou' e devolve 201 (mesmo padrão do Higgsfield
+    // logo abaixo: o job sempre existe, o estado é que conta a história).
+    if (!isFixtureMode() && MODOS_DE_AUDIO_LIVE.has(modo as string)) {
+      const cred = await getCredential(req.tenantId, "voice");
+      if (!cred) {
+        const updated = await pool.query<CreativeJobRow>(
+          `UPDATE creative_jobs SET estado = 'falhou', erro_fornecedor = $2, terminado_em = now()
+           WHERE id = $1 RETURNING *`,
+          [job.id, "Conecte o ElevenLabs em Configurações antes de gerar narração ou música."],
+        );
+        return reply.code(201).send(updated.rows[0]);
+      }
+
+      try {
+        // voice_id escolhido na tela (narração) ou a primeira voz da
+        // conta (música, sem seletor próprio — mesmo padrão de
+        // platformKeyNarrationTest.ts).
+        let voiceIdEscolhido = entrada.voice_id;
+        if (!voiceIdEscolhido) {
+          const inventario = await listVoiceDetails(cred.apiKey);
+          voiceIdEscolhido = inventario[0]?.voiceId ?? null;
+        }
+        if (!voiceIdEscolhido) {
+          throw new Error("Nenhuma voz disponível nesta conta ElevenLabs para sintetizar.");
+        }
+
+        logSynthesisBody("creativeJobs.synthesize", { text: entrada.prompt });
+        const sintetizado = await synthesizeSpeech(cred.apiKey, voiceIdEscolhido, entrada.prompt);
+        const outputUrl = await saveUpload(req.tenantId, sintetizado.audio, "criativo-narracao.mp3");
+
+        const updated = await pool.query<CreativeJobRow>(
+          `UPDATE creative_jobs
+           SET estado = 'pronto', arquivo_url = $2, enviado_em = now(), terminado_em = now(),
+               credencial_origem = $3
+           WHERE id = $1 RETURNING *`,
+          [job.id, outputUrl, cred.source],
+        );
+        return reply.code(201).send(updated.rows[0]);
+      } catch (err) {
+        const mensagem = err instanceof Error ? err.message : String(err);
+        const updated = await pool.query<CreativeJobRow>(
+          `UPDATE creative_jobs SET estado = 'falhou', erro_fornecedor = $2, terminado_em = now()
+           WHERE id = $1 RETURNING *`,
+          [job.id, mensagem],
+        );
+        return reply.code(201).send(updated.rows[0]);
+      }
+    }
 
     if (isFixtureMode()) {
       const { jobId } = await createCreativeJobFixture({

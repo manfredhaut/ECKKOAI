@@ -1792,7 +1792,14 @@ function TrackRow({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "112px 1fr", gap: 8, alignItems: "center", marginBottom: 8 }}>
+    // PAINEL-ZOOM-1, 01/10/2026 — isolation/contain: tentativa preventiva
+    // contra rótulos sobrepostos em zoom alto (achado do handoff, nunca
+    // visto ao vivo nesta sessão). isolation:isolate dá a cada linha seu
+    // próprio contexto de empilhamento (z-index não vaza entre trilhas);
+    // contain:layout impede que o cálculo de posição de uma trilha
+    // dependa do layout de outra. NÃO CONFIRMADO contra o bug real — só
+    // contra o código, por leitura.
+    <div style={{ display: "grid", gridTemplateColumns: "112px 1fr", gap: 8, alignItems: "center", marginBottom: 8, isolation: "isolate", contain: "layout" }}>
       <div style={{ textAlign: "right", paddingRight: 4, position: "sticky", left: 0, zIndex: 6, background: "#1C1F1A" }}>
         <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#DDE6D2" }}>{label}</div>
         <div style={{ fontSize: 9.5, color: "#767F6C" }}>{sub}</div>

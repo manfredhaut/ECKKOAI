@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import type { ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
-import type { PlatformCredentialValidation, PlatformCredentialView } from "../../types";
+import type { PlatformCredentialValidation, PlatformCredentialView, PlatformSettingView } from "../../types";
 import { Field } from "../../components/ui/Field";
 import { platformKeyState } from "./platformKeyState";
 import { StatusPill } from "../../components/ui/StatusPill";
@@ -249,20 +250,100 @@ function PlatformKeyRow({
   );
 }
 
+/**
+ * PAINEL-HIGGSFIELD-1, 01/10/2026 — ao contrário de PlatformKeyRow (write-
+ * only, por ser segredo), aqui o valor é lido de volta e mostrado antes de
+ * editar: o próprio ponto desta seção é acabar com "editar .env e recriar
+ * container" para ajustar um número.
+ */
+function PlatformSettingRow({
+  setting,
+  onChanged,
+}: {
+  setting: PlatformSettingView;
+  onChanged: (updated: PlatformSettingView) => void;
+}) {
+  const { t } = useTranslation();
+  const [value, setValue] = useState(String(setting.value));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+      setError(t("adminPanel.platformSettings.invalidValue"));
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.put<PlatformSettingView>(`/admin/platform-settings/${setting.key}`, {
+        value: parsed,
+      });
+      onChanged(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("adminPanel.saveError"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <p style={{ fontWeight: 600, marginBottom: 4 }}>{setting.label}</p>
+      <p className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        {setting.source === "panel"
+          ? t("adminPanel.platformSettings.sourcePanel")
+          : t("adminPanel.platformSettings.sourceEnv")}
+      </p>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={value}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => setValue(e.target.value)}
+          style={{ width: 100 }}
+        />
+        <button className="btn btn-outline" onClick={handleSave} disabled={saving}>
+          {saving ? t("adminPanel.saving") : t("adminPanel.save")}
+        </button>
+      </div>
+      {error ? (
+        <p className="alert-error" style={{ fontSize: 12, marginTop: 8 }}>
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function AdminPlatformKeysSection() {
   const { t } = useTranslation();
   const [credentials, setCredentials] = useState<PlatformCredentialView[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<PlatformSettingView[] | null>(null);
 
   useEffect(() => {
     api
       .get<PlatformCredentialView[]>("/admin/platform-credentials")
       .then(setCredentials)
       .catch((err) => setLoadError(err instanceof Error ? err.message : t("adminPanel.loadError")));
+    api
+      .get<PlatformSettingView[]>("/admin/platform-settings")
+      .then(setSettings)
+      .catch(() => {
+        // Seção opcional: uma falha aqui não deve impedir a tela de chaves
+        // de carregar. O usuário só não vê os números editáveis.
+      });
   }, [t]);
 
   function replaceRow(updated: PlatformCredentialView) {
     setCredentials((prev) => prev?.map((c) => (c.id === updated.id ? updated : c)) ?? prev);
+  }
+
+  function replaceSetting(updated: PlatformSettingView) {
+    setSettings((prev) => prev?.map((s) => (s.key === updated.key ? updated : s)) ?? prev);
   }
 
   return (
@@ -285,6 +366,22 @@ export function AdminPlatformKeysSection() {
           ))}
         </div>
       )}
+
+      {settings ? (
+        <div style={{ marginTop: 24 }}>
+          <div className="section-heading">
+            <h3>{t("adminPanel.platformSettings.title")}</h3>
+            <p className="text-muted" style={{ fontSize: 13 }}>
+              {t("adminPanel.platformSettings.subtitle")}
+            </p>
+          </div>
+          <div className="grid grid-cols-3">
+            {settings.map((setting) => (
+              <PlatformSettingRow key={setting.key} setting={setting} onChanged={replaceSetting} />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

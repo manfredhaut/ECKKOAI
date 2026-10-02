@@ -268,6 +268,11 @@ export async function checkNetworkEgressPolicy(repoRoot: string): Promise<Egress
     // atrás de `checkFalClientPolicy`, que mede a URL realmente usada.
     "https://rest.fal.ai": "fal",
     "https://queue.fal.run": "fal",
+    // PAINEL-FAL-SALDO-1, 01/10/2026 — terceiro host da fal.ai, novo nesta
+    // rodada: GET /v1/account/billing (sonda de saldo), só leitura, nunca
+    // trabalho. Host distinto de rest/queue acima — confirmado contra a
+    // doc oficial (fal.ai/docs/platform-apis/v1/account/billing).
+    "https://api.fal.ai": "fal",
     "https://api.resend.com": "resend",
     "https://platform.higgsfield.ai": "higgsfield",
   };

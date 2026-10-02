@@ -100,7 +100,6 @@ export const LEGACY_V2_ENDPOINTS: LegacyEndpoint[] = [
       "backend/src/services/providers/creativeCatalog.ts",
       "backend/src/services/providers/higgsfieldProvider.ts",
       "backend/src/services/providers/endpointCatalog.ts",
-      "frontend/src/pages/CreateVideo/steps/CreativesStep.tsx",
     ],
     reason:
       "NÃO é HeyGen -- é o model_id da Higgsfield (Soul 2), confirmado contra a API real em " +

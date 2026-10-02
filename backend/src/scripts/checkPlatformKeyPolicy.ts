@@ -380,11 +380,15 @@ function checkProbeIsReadOnly(failures: string[], notes: string[]): void {
     anthropic_list_models: PROBE_ENDPOINTS.anthropic,
     heygen_quota: PROBE_ENDPOINTS.heygen,
     elevenlabs_voices: PROBE_ENDPOINTS.elevenlabs,
+    // PAINEL-FAL-SALDO-1, 01/10/2026 — a fal.ai passou a ter sonda própria
+    // (GET /v1/account/billing); nenhuma credencial continua sem sonda.
+    fal_billing: PROBE_ENDPOINTS.fal,
   };
   for (const kind of kinds) {
-    // `null` é uma credencial DECLARADAMENTE sem sonda (hoje só a fal.ai —
-    // ver o comentário de `validation` em platformCredentials.ts), não uma
-    // forma de validação esquecida da allowlist.
+    // `null` é uma credencial DECLARADAMENTE sem sonda. Nenhuma credencial
+    // está nesse estado hoje (a última, fal.ai, ganhou sonda em 01/10) —
+    // este `continue` fica como retaguarda para o próximo fornecedor que
+    // não tiver endpoint de leitura nenhum.
     if (kind === null) continue;
     if (!expected[kind]) {
       failures.push(

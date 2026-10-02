@@ -387,6 +387,22 @@ export interface PlatformCredentialValidation {
   validatedAt: string;
 }
 
+/** PAINEL-HIGGSFIELD-1, 01/10/2026 — números editáveis pelo admin, sem segredo. */
+export interface PlatformSettingView {
+  key: string;
+  label: string;
+  value: number;
+  source: "panel" | "env";
+}
+
+/** PAINEL-MODELO-1, 01/10/2026 — espelho de backend/.../creativeCatalog.ts. */
+export interface CreativeModelDef {
+  id: string;
+  label: string;
+  modos: readonly string[];
+  default?: boolean;
+}
+
 /**
  * Espelho de `backend/src/services/generationReadiness.ts`.
  *

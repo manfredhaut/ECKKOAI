@@ -88,6 +88,7 @@ import { checkVideoDetailsPolicy } from "./checkVideoDetailsPolicy.js";
 import { checkVideoAdjustPolicy } from "./checkVideoAdjustPolicy.js";
 import { checkVideoTitlePolicy } from "./checkVideoTitlePolicy.js";
 import { checkCreativeJobsPolicy } from "./checkCreativeJobsPolicy.js";
+import { checkPlatformSettingsPolicy } from "./checkPlatformSettingsPolicy.js";
 import { checkDirectionLimitPolicy } from "./checkDirectionLimitPolicy.js";
 import { checkExpressivenessDefaultPolicy } from "./checkExpressivenessDefaultPolicy.js";
 import { checkAvatarCardSelectablePolicy } from "./checkAvatarCardSelectablePolicy.js";
@@ -831,6 +832,12 @@ async function main(): Promise<void> {
   const creativeJobs = checkCreativeJobsPolicy(process.env.REPO_ROOT ?? "/repo");
   creativeJobs.failures.forEach((f) => failures.push(f));
   creativeJobs.notes.forEach((n) => note(n));
+
+  // PAINEL-HIGGSFIELD-1 — platform_settings (banco) vence .env, mesma
+  // precedência de platform_credentials. Execução real contra o Postgres.
+  const platformSettings = await checkPlatformSettingsPolicy();
+  platformSettings.failures.forEach((f) => failures.push(f));
+  platformSettings.notes.forEach((n) => note(n));
 
   // --- 25j. teto de interpretação, aviso de legenda e velocidade da voz ----
   const directionLimit = checkDirectionLimitPolicy(process.env.REPO_ROOT ?? "/repo");

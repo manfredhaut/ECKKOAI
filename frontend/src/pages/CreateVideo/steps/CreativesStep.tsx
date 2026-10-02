@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../api/client";
 import { Field } from "../../../components/ui/Field";
-import type { CreativeJob, CreativeRef } from "../../../types";
+import type { CreativeJob, CreativeModelDef, CreativeRef } from "../../../types";
 
 interface VoiceOption {
   voice_id: string;
@@ -76,6 +76,20 @@ export function CreativesStep() {
   const [refs, setRefs] = useState<CreativeRef[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
 
+  // PAINEL-MODELO-1, 01/10/2026 — modelos reais do modo atual, vindos do
+  // catálogo (creativeCatalog.ts), substituindo o antigo mapeamento
+  // hardcoded modeloPorModo. modeloId começa vazio; o efeito abaixo
+  // escolhe o default assim que a lista chega.
+  const [modelos, setModelos] = useState<CreativeModelDef[] | null>(null);
+  const [modeloId, setModeloId] = useState<string>("");
+
+  // PAINEL-SEEDANCE-1, 01/10/2026 — duration/resolution confirmados contra
+  // a doc oficial da Higgsfield (bytedance/seedance-2.5/image-to-video e
+  // text-to-video): duration inteiro 4-30s, resolution 480p/720p/1080p.
+  // Só usados em broll/propaganda (Seedance 2.5); imagem não tem vídeo.
+  const [videoDuration, setVideoDuration] = useState(5);
+  const [videoResolution, setVideoResolution] = useState<"480p" | "720p" | "1080p">("720p");
+
   function reloadRefs() {
     api
       .get<CreativeRef[]>("/creative-refs")
@@ -126,12 +140,39 @@ export function CreativesStep() {
   }, []);
 
   useEffect(() => {
-    if (modo !== "narracao" || voices !== null) return;
+    if ((modo !== "narracao" && modo !== "musica") || voices !== null) return;
     api
       .get<{ voices: VoiceOption[] }>("/voice/voices")
       .then((r) => setVoices(r.voices))
       .catch(() => setVoices([]));
   }, [modo, voices]);
+
+  // PAINEL-MODELO-1 — recarrega ao trocar de modo; escolhe o default
+  // (default: true no catálogo) assim que a lista chega. Se não houver
+  // default marcado (não deveria acontecer — ver nota em
+  // creativeCatalog.ts), cai no primeiro da lista para nunca deixar o
+  // select vazio.
+  useEffect(() => {
+    let cancelado = false;
+    setModelos(null);
+    api
+      .get<CreativeModelDef[]>(`/creative-models?modo=${modo}`)
+      .then((lista) => {
+        if (cancelado) return;
+        setModelos(lista);
+        const padrao = lista.find((m) => m.default) ?? lista[0];
+        setModeloId(padrao?.id ?? "");
+      })
+      .catch(() => {
+        if (!cancelado) {
+          setModelos([]);
+          setModeloId("");
+        }
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [modo]);
 
   function upsertJob(job: CreativeJob) {
     setJobs((prev) => {
@@ -153,26 +194,21 @@ export function CreativesStep() {
     setSubmitting(true);
     setError(null);
     try {
-      const modeloPorModo: Record<string, string> = {
-        // ABAS-29, 30/09/2026 -- corrigido contra a API real da
-        // Higgsfield (o antigo "soul-2" nunca bateu com o endpoint_id
-        // verdadeiro, confirmado 400 de verdade antes da correção).
-        imagem: "higgsfield-ai/soul/v2/standard",
-        narracao: "voz-narracao",
-        musica: "musica-jingle",
-        // ABAS-23 — mesmo id do catálogo (creativeCatalog.ts): o endpoint
-        // image-to-video do Seedance 2.5 serve os dois modos.
-        broll: "bytedance/seedance-2.5/image-to-video",
-        propaganda: "bytedance/seedance-2.5/image-to-video",
-      };
+      // PAINEL-MODELO-1, 01/10/2026 — modeloId vem do catálogo real
+      // (/creative-models), escolhido automaticamente pelo default
+      // curado ou trocado manualmente pela pessoa; substitui o antigo
+      // mapeamento hardcoded modeloPorModo.
       const created = await api.post<CreativeJob>("/creative-jobs", {
         modo,
-        modelo_id: modeloPorModo[modo],
+        modelo_id: modeloId,
         titulo: titulo.trim(),
         prompt: prompt.trim(),
         chave_cliente: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
         ...(MODOS_DE_AUDIO.has(modo) ? { duracao_segundos: audioDuration } : {}),
-        ...(modo === "narracao" && voiceId ? { voice_id: voiceId } : {}),
+        ...((modo === "broll" || modo === "propaganda")
+          ? { video_duracao_segundos: videoDuration, video_resolution: videoResolution }
+          : {}),
+        ...((modo === "narracao" || modo === "musica") && voiceId ? { voice_id: voiceId } : {}),
         ...((modo === "broll" || modo === "propaganda") && refEscolhida
           ? { imagem_referencia_url: refEscolhida.arquivo_url }
           : {}),
@@ -351,22 +387,52 @@ export function CreativesStep() {
             ) : (
               <>
                 <Field label={t("createVideo.creatives.modelLabel")}>
-                  <select disabled>
-                    <option>Soul 2</option>
+                  <select
+                    value={modeloId}
+                    onChange={(e) => setModeloId(e.target.value)}
+                    disabled={!modelos || modelos.length <= 1}
+                  >
+                    {(modelos ?? []).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
                   </select>
                 </Field>
-                <Field label={t("createVideo.creatives.durationLabel")}>
-                  <input type="range" min={4} max={30} defaultValue={5} disabled />
-                </Field>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <span className="chip selected">16:9</span>
-                  <span className="chip">9:16</span>
-                  <span className="chip">4:5</span>
-                  <span className="chip">1:1</span>
-                </div>
+                {(modo === "broll" || modo === "propaganda") ? (
+                  <>
+                    <Field label={`${t("createVideo.creatives.durationLabel")} (${videoDuration}s)`}>
+                      <input
+                        type="range"
+                        min={4}
+                        max={30}
+                        value={videoDuration}
+                        onChange={(e) => setVideoDuration(Number(e.target.value))}
+                      />
+                    </Field>
+                    <Field label={t("createVideo.creatives.resolutionLabel")}>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        {(["480p", "720p", "1080p"] as const).map((r) => (
+                          <span
+                            key={r}
+                            className={`chip${videoResolution === r ? " selected" : ""}`}
+                            style={{ cursor: "pointer" }}
+                            onClick={() => setVideoResolution(r)}
+                          >
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                    </Field>
+                  </>
+                ) : (
+                  <Field label={t("createVideo.creatives.durationLabel")}>
+                    <input type="range" min={4} max={30} defaultValue={5} disabled />
+                  </Field>
+                )}
               </>
             )}
-            {modo === "narracao" && voices && voices.length > 0 && (
+            {(modo === "narracao" || modo === "musica") && voices && voices.length > 0 && (
               <Field label={t("createVideo.creatives.voiceLabel")} help={t("createVideo.creatives.voiceHelp")}>
                 <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)}>
                   <option value="">{t("createVideo.creatives.voiceDefault")}</option>
