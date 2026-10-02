@@ -209,7 +209,7 @@ export function CreativesStep() {
           ? { video_duracao_segundos: videoDuration, video_resolution: videoResolution }
           : {}),
         ...((modo === "narracao" || modo === "musica") && voiceId ? { voice_id: voiceId } : {}),
-        ...((modo === "broll" || modo === "propaganda") && refEscolhida
+        ...((modo === "broll" || modo === "propaganda" || modo === "imagem") && refEscolhida
           ? { imagem_referencia_url: refEscolhida.arquivo_url }
           : {}),
       });
@@ -334,11 +334,28 @@ export function CreativesStep() {
                 </button>
               ))}
             </div>
-            {(modo === "broll" || modo === "propaganda") && (
+            {(modo === "broll" || modo === "propaganda" || modo === "imagem") && (
               <Field
                 label={t("createVideo.creatives.referenceImageLabel")}
                 help={t("createVideo.creatives.referenceImageHelp")}
               >
+                {modo === "imagem" && (
+                  <p
+                    className="text-muted"
+                    style={{
+                      fontSize: 12,
+                      marginBottom: 6,
+                      padding: "6px 8px",
+                      background: "var(--color-surface)",
+                      borderRadius: 6,
+                      border: "1px solid var(--color-border)",
+                    }}
+                  >
+                    {modeloId === "marketing-studio/image"
+                      ? t("createVideo.creatives.referenceImageHintMarketingStudio")
+                      : t("createVideo.creatives.referenceImageHintSoul2")}
+                  </p>
+                )}
                 <select value={refImagemId} onChange={(e) => setRefImagemId(e.target.value)}>
                   <option value="">{t("createVideo.creatives.referenceImageNone")}</option>
                   {refs.map((r) => (

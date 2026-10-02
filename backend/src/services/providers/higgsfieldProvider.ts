@@ -295,12 +295,21 @@ export function construirCorpoHiggsfield(
     };
   }
   if (modeloId === "marketing-studio/image") {
+    // PAINEL-REF-IMAGEM-1, 01/10/2026 — confirmado contra a doc oficial
+    // (docs.higgsfield.ai/docs/models/marketing-studio-image/generate-and-
+    // edit): `image_urls` aceita até 16 URLs; omitir o campo é geração por
+    // texto puro (comportamento de antes desta mudança, preservado).
+    // Soul 2 (ramo acima) NÃO tem este campo no schema — se uma
+    // referência for escolhida com Soul 2 selecionado, ela é
+    // silenciosamente ignorada aqui, e a tela já avisa disso antes do
+    // clique (referenceImageHintSoul2).
     return {
       modelIdReal: modeloId,
       body: {
         prompt: entrada.prompt,
         aspect_ratio: entrada.aspectRatio ?? "1:1",
         resolution: "2k",
+        ...(entrada.imagemReferenciaUrl ? { image_urls: [entrada.imagemReferenciaUrl] } : {}),
       },
     };
   }
