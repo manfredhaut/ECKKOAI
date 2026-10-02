@@ -32,7 +32,8 @@ export type PlatformValidationKind =
   | "anthropic_list_models"
   | "heygen_quota"
   | "elevenlabs_voices"
-  | "fal_billing";
+  | "fal_billing"
+  | "higgsfield_estimate";
 
 export interface PlatformCredentialDef {
   id: PlatformCredentialId;
@@ -183,18 +184,14 @@ export const PLATFORM_CREDENTIALS: Record<PlatformCredentialId, PlatformCredenti
     // esta entrada segue o MESMO molde de qualquer chave de string única
     // acima — nenhum tratamento especial de armazenamento.
     //
-    // `validation: null` aqui é TEMPORÁRIO, ao contrário do da fal (que é
-    // permanente — o fornecedor não tem endpoint de saldo). Aqui a razão é
-    // que ninguém verificou ainda a URL real de POST /estimate/<slug> nem
-    // tem uma conta de desenvolvimento Higgsfield para testar contra —
-    // pré-requisito da etapa 1 do plano ("abrir conta em open.higgsfield.ai,
-    // creditar US$ 10"). Escrever a sonda antes disso seria uma URL de
-    // fornecedor fabricada de memória, entrando numa allowlist
-    // (`PROBE_ENDPOINTS`) que `npm run check` trata como contrato. Assim que
-    // a etapa 1 acontecer, esta entrada ganha `validation: "higgsfield_estimate"`,
-    // um novo `PlatformValidationKind` e a função de sonda em platformKeyProbe.ts.
+    // PAINEL-HIGGSFIELD-VALIDAR-1, 02/10/2026 — implementado. A conta de
+    // desenvolvimento foi aberta e creditada (pré-requisito da etapa 1 do
+    // plano cumprido); a sonda por /estimate está em platformKeyProbe.ts
+    // (probeHiggsfield), uma chamada por modelo curado (creativeCatalog.ts),
+    // nunca gera nem cobra (contrato do próprio fornecedor, ver
+    // VENDOR_ENDPOINTS em endpointCatalog.ts).
     servedBy: "imagens de referência, propagandas e b-rolls da aba Gerar Vídeos & Imagens, quando o tenant não tem chave própria",
-    validation: null,
+    validation: "higgsfield_estimate",
     readsBalance: false,
     balanceUnavailable:
       "a API da Higgsfield não documenta endpoint de saldo; conferir em console.higgsfield.ai.",

@@ -383,6 +383,9 @@ function checkProbeIsReadOnly(failures: string[], notes: string[]): void {
     // PAINEL-FAL-SALDO-1, 01/10/2026 — a fal.ai passou a ter sonda própria
     // (GET /v1/account/billing); nenhuma credencial continua sem sonda.
     fal_billing: PROBE_ENDPOINTS.fal,
+    // PAINEL-HIGGSFIELD-VALIDAR-1, 02/10/2026 -- sonda por /estimate,
+    // nunca gera (ver probeHiggsfield em platformKeyProbe.ts).
+    higgsfield_estimate: PROBE_ENDPOINTS.higgsfield,
   };
   for (const kind of kinds) {
     // `null` é uma credencial DECLARADAMENTE sem sonda. Nenhuma credencial

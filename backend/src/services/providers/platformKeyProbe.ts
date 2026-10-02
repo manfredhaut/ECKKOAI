@@ -17,6 +17,8 @@ import { describeNetworkError, logProviderNetworkError } from "./networkError.js
 import { vendorSignal } from "./vendorTimeout.js";
 import type { PlatformValidationKind } from "../platformCredentials.js";
 import { logEvent } from "../log/safeLog.js";
+import { CREATIVE_MODELS } from "./creativeCatalog.js";
+import { construirCorpoHiggsfield } from "./higgsfieldProvider.js";
 
 /**
  * Todo endpoint que este módulo pode alcançar. Verificada por `npm run check`:
@@ -32,6 +34,9 @@ export const PROBE_ENDPOINTS = {
   // (fal.ai/docs/platform-apis/v1/account/billing). Exige escopo
   // "adminApiKey" (ver probeFal abaixo).
   fal: "https://api.fal.ai/v1/account/billing",
+  // PAINEL-HIGGSFIELD-VALIDAR-1, 02/10/2026 — precisa bater com
+  // HIGGSFIELD_BASE_URL em higgsfieldProvider.ts.
+  higgsfield: "https://platform.higgsfield.ai/estimate",
 } as const;
 
 export interface ProbeResult {
@@ -54,6 +59,8 @@ export async function probePlatformKey(kind: PlatformValidationKind, apiKey: str
       return probeElevenLabs(apiKey);
     case "fal_billing":
       return probeFal(apiKey);
+    case "higgsfield_estimate":
+      return probeHiggsfield(apiKey);
   }
 }
 
@@ -196,4 +203,80 @@ async function probeFal(apiKey: string): Promise<ProbeResult> {
   }
   const balance = `${saldo} ${moeda}`;
   return { ok: true, detail: `Saldo: ${balance}`, balance };
+}
+
+/**
+ * PAINEL-HIGGSFIELD-VALIDAR-1, 02/10/2026 -- sonda por /estimate para cada
+ * modelo do catalogo curado (creativeCatalog.ts), nunca por geracao (ver
+ * VENDOR_ENDPOINTS em endpointCatalog.ts: /estimate NUNCA cobra, contrato
+ * do fornecedor). O corpo de cada modelo vem de construirCorpoHiggsfield,
+ * a MESMA funcao que a geracao real usa, para o corpo bater com o que a
+ * geracao enviaria.
+ */
+async function probeHiggsfield(apiKey: string): Promise<ProbeResult> {
+  const modelosCurados = CREATIVE_MODELS.filter(
+    (m) => m.id !== "voz-narracao" && m.id !== "musica-jingle",
+  );
+  const detalhes: string[] = [];
+  let todasOk = true;
+
+  for (const modelo of modelosCurados) {
+    const { modelIdReal, body } = construirCorpoHiggsfield(modelo.id, {
+      prompt: "validacao de credencial -- nunca enviado ao fornecedor como geracao real",
+      aspectRatio: null,
+      imagemReferenciaUrl: null,
+    });
+    let res: Response;
+    try {
+      res = await fetch(`${PROBE_ENDPOINTS.higgsfield}/${modelIdReal}`, {
+        method: "POST",
+        headers: { Authorization: `Key ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: vendorSignal(),
+      });
+    } catch (err) {
+      todasOk = false;
+      detalhes.push(`${modelo.label}: nao alcancado (${describeNetworkError(err)})`);
+      logProviderNetworkError("platformKeyProbe.higgsfield", err);
+      continue;
+    }
+
+    if (res.status === 401) {
+      logEvent("error", "platform_key_rejected", { vendor: "higgsfield", status: res.status });
+      return {
+        ok: false,
+        detail: "A chave foi recusada pelo fornecedor (401) -- confira o par Key ID:Secret.",
+        balance: null,
+      };
+    }
+    if (res.status === 403) {
+      todasOk = false;
+      detalhes.push(`${modelo.label}: sem credito (403)`);
+      continue;
+    }
+    if (res.status === 404 || res.status === 423 || res.status === 503) {
+      todasOk = false;
+      detalhes.push(`${modelo.label}: sem acesso (${res.status})`);
+      continue;
+    }
+    if (!res.ok) {
+      todasOk = false;
+      detalhes.push(`${modelo.label}: erro ${res.status}`);
+      continue;
+    }
+
+    const data = (await res.json()) as {
+      type?: string;
+      credits?: string;
+      usd?: string;
+      pricing_description?: string;
+    };
+    if (data.type === "description" && data.pricing_description) {
+      detalhes.push(`${modelo.label}: acessivel -- ${data.pricing_description}`);
+    } else {
+      detalhes.push(`${modelo.label}: acessivel -- US$ ${data.usd ?? "?"} por chamada`);
+    }
+  }
+
+  return { ok: todasOk, detail: detalhes.join(" ; "), balance: null };
 }
