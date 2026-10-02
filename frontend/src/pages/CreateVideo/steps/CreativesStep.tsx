@@ -73,6 +73,7 @@ export function CreativesStep() {
   const [jobs, setJobs] = useState<CreativeJob[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const pollRef = useRef<number | null>(null);
+  const createSectionRef = useRef<HTMLDivElement | null>(null);
 
   const [refs, setRefs] = useState<CreativeRef[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
@@ -83,6 +84,15 @@ export function CreativesStep() {
   // escolhe o default assim que a lista chega.
   const [modelos, setModelos] = useState<CreativeModelDef[] | null>(null);
   const [modeloId, setModeloId] = useState<string>("");
+  // PAINEL-REFAZER-1, 02/10/2026 -- "Refazer com variação": guarda o
+  // modelo do job original até a lista de modelos do modo carregar, pra
+  // não ser sobrescrito pelo default do catálogo (ver efeito abaixo).
+  // Ponte de 1 render entre handleRefazer e esse efeito -- nunca fica em
+  // estado.
+  const pendingRefazerModeloRef = useRef<string | null>(null);
+  // Aviso não-bloqueante: aparece quando "Refazer com variação" não
+  // conseguiu reencontrar alguma referência original na Galeria atual.
+  const [refazerAviso, setRefazerAviso] = useState<string | null>(null);
 
   // PAINEL-SEEDANCE-1, 01/10/2026 — duration/resolution confirmados contra
   // a doc oficial da Higgsfield (bytedance/seedance-2.5/image-to-video e
@@ -169,8 +179,11 @@ export function CreativesStep() {
       .then((lista) => {
         if (cancelado) return;
         setModelos(lista);
-        const padrao = lista.find((m) => m.default) ?? lista[0];
-        setModeloId(padrao?.id ?? "");
+        const pendente = pendingRefazerModeloRef.current;
+        pendingRefazerModeloRef.current = null;
+        const escolhido =
+          (pendente && lista.find((m) => m.id === pendente)) || lista.find((m) => m.default) || lista[0];
+        setModeloId(escolhido?.id ?? "");
       })
       .catch(() => {
         if (!cancelado) {
@@ -203,6 +216,7 @@ export function CreativesStep() {
 
     setSubmitting(true);
     setError(null);
+    setRefazerAviso(null);
     try {
       // PAINEL-MODELO-1, 01/10/2026 — modeloId vem do catálogo real
       // (/creative-models), escolhido automaticamente pelo default
@@ -248,6 +262,62 @@ export function CreativesStep() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // PAINEL-REFAZER-1, 02/10/2026 -- "Refazer com variação": preenche o
+  // formulário a partir de um job pronto, pra gerar de novo ajustando o
+  // que quiser. Nunca edita o job original -- sempre cria um job novo
+  // (mesmo caminho do handleGenerate).
+  function handleRefazer(job: CreativeJob) {
+    setError(null);
+    setRefazerAviso(null);
+    const avisos: string[] = [];
+
+    if (job.modo !== modo) {
+      pendingRefazerModeloRef.current = job.modelo;
+      setModo(job.modo);
+    } else {
+      setModeloId(job.modelo);
+    }
+
+    setTitulo(job.titulo);
+    setPrompt(job.entrada.prompt ?? "");
+
+    if (job.modo === "narracao" || job.modo === "musica") {
+      setAudioDuration(job.entrada.duracao_segundos ?? AUDIO_DURATION_DEFAULT);
+      setVoiceId(job.entrada.voice_id ?? "");
+    }
+
+    if (job.modo === "broll" || job.modo === "propaganda") {
+      setVideoDuration(job.entrada.video_duracao_segundos ?? 5);
+      setVideoResolution(job.entrada.video_resolution ?? "720p");
+    }
+
+    if (job.modo === "broll" || job.modo === "propaganda" || job.modo === "imagem") {
+      const url = job.entrada.imagem_referencia_url ?? null;
+      const encontrada = url ? refs.find((r) => r.arquivo_url === url) : undefined;
+      setRefImagemId(encontrada?.id ?? "");
+      if (url && !encontrada) {
+        avisos.push(t("createVideo.creatives.refazerReferenciaIndisponivel"));
+      }
+    }
+
+    if (job.modo === "trocarproduto") {
+      setVideoResolution(job.entrada.video_resolution ?? "720p");
+      setGenjutsuVideoUrl(job.entrada.video_url_fonte ?? null);
+      const urlsOriginais = job.entrada.imagens_referencia_urls ?? [];
+      const urlsDisponiveis = urlsOriginais.filter((u) => refs.some((r) => r.arquivo_url === u && r.tipo === "produto"));
+      setGenjutsuImagens(urlsDisponiveis);
+      if (urlsDisponiveis.length < urlsOriginais.length) {
+        avisos.push(t("createVideo.creatives.refazerReferenciaIndisponivel"));
+      }
+      if (!job.entrada.video_url_fonte) {
+        avisos.push(t("createVideo.creatives.refazerVideoFonteIndisponivel"));
+      }
+    }
+
+    if (avisos.length > 0) setRefazerAviso(avisos.join(" "));
+    createSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // ABAS-12/13 — alternativa ao "Gerar" em TODO modo: subir um arquivo
@@ -335,7 +405,7 @@ export function CreativesStep() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card" ref={createSectionRef}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <div className="card-title" style={{ margin: 0 }}>
             {t("createVideo.creatives.createTitle")}
@@ -634,6 +704,11 @@ export function CreativesStep() {
             {submitting ? t("createVideo.creatives.generating") : t("createVideo.creatives.generateButton")}
           </button>
         </div>
+        {refazerAviso && (
+          <p className="text-muted" style={{ fontSize: 12, marginTop: 12 }}>
+            {refazerAviso}
+          </p>
+        )}
         {error && (
           <p className="alert-error" style={{ fontSize: 13, marginTop: 12 }}>
             {error}
@@ -673,7 +748,7 @@ export function CreativesStep() {
                   }}
                 >
                   {doModo.map((job) => (
-                    <JobCard key={job.id} job={job} onDeleted={reloadJobs} onCancelled={reloadJobs} onUsedAsReference={reloadRefs} />
+                    <JobCard key={job.id} job={job} onDeleted={reloadJobs} onCancelled={reloadJobs} onUsedAsReference={reloadRefs} onRefazer={handleRefazer} />
                   ))}
                 </div>
               </div>
@@ -810,7 +885,7 @@ function ReferenceCard({
   );
 }
 
-function JobCard({ job, onDeleted, onCancelled, onUsedAsReference }: { job: CreativeJob; onDeleted: () => void; onCancelled: () => void; onUsedAsReference: () => void }) {
+function JobCard({ job, onDeleted, onCancelled, onUsedAsReference, onRefazer }: { job: CreativeJob; onDeleted: () => void; onCancelled: () => void; onUsedAsReference: () => void; onRefazer: (job: CreativeJob) => void }) {
   const { t } = useTranslation();
   const ehAudio = job.modo === "narracao" || job.modo === "musica";
   const ehVideo = !ehAudio && job.arquivo_url && ehArquivoDeVideo(job.arquivo_url);
@@ -912,6 +987,16 @@ function JobCard({ job, onDeleted, onCancelled, onUsedAsReference }: { job: Crea
           >
             {t("createVideo.creatives.downloadJob")}
           </a>
+        )}
+        {job.estado === "pronto" && (
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => onRefazer(job)}
+            style={{ fontSize: 12, justifySelf: "start" }}
+          >
+            {t("createVideo.creatives.refazerComVariacao")}
+          </button>
         )}
         {job.estado === "na_fila" && (
           <button

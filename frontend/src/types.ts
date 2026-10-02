@@ -489,6 +489,15 @@ export interface CreativeJob {
     // ABAS-13 — só presente em upload direto de vídeo fora de 4-30s: nunca
     // bloqueia, só avisa. Ausente/false nos demais casos.
     duracao_fora_do_esperado?: boolean;
+    // PAINEL-REFAZER-1, 02/10/2026 -- campos que o backend já grava em
+    // creativeJobs.ts (POST /creative-jobs) mas que este tipo não refletia:
+    // referência única (broll/propaganda/imagem), vídeo+imagens de
+    // referência do Genjutsu, e duração/resolução do Seedance 2.5.
+    imagem_referencia_url?: string | null;
+    video_duracao_segundos?: number | null;
+    video_resolution?: "480p" | "720p" | "1080p" | null;
+    video_url_fonte?: string | null;
+    imagens_referencia_urls?: string[] | null;
   };
   estimativa_usd: string | null;
   estado:

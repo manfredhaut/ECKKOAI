@@ -766,6 +766,9 @@
       "genjutsuImagesEmpty": "Nenhuma imagem de produto em Referências ainda — envie ao menos 1 no cartão \"Produto\" acima.",
       "genjutsuResolutionHelp": "Resolução de saída do vídeo com o produto trocado.",
       "downloadJob": "Baixar",
+      "refazerComVariacao": "Refazer com variação",
+      "refazerReferenciaIndisponivel": "A referência original não está mais disponível na sua galeria — escolha outra.",
+      "refazerVideoFonteIndisponivel": "O vídeo de origem original não está mais disponível — envie de novo.",
       "cancelJob": "Cancelar",
       "cancelling": "Cancelando...",
       "useAsReference": "Usar como referência"
