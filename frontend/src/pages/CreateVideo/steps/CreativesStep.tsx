@@ -653,14 +653,32 @@ export function CreativesStep() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
             gap: 14,
             marginTop: 12,
           }}
         >
-          {jobs.map((job) => (
-            <JobCard key={job.id} job={job} onDeleted={reloadJobs} />
-          ))}
+          {(["imagem", "propaganda", "broll", "trocarproduto", "sobreposicao", "narracao", "musica"] as const).map((m) => {
+            const doModo = jobs.filter((job) => job.modo === m);
+            if (doModo.length === 0) return null;
+            return (
+              <div key={m} style={{ marginTop: 16 }}>
+                <div className="text-muted" style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+                  {t(`createVideo.creatives.mode.${m}`)}
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                    gap: 14,
+                  }}
+                >
+                  {doModo.map((job) => (
+                    <JobCard key={job.id} job={job} onDeleted={reloadJobs} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -852,6 +870,16 @@ function JobCard({ job, onDeleted }: { job: CreativeJob; onDeleted: () => void }
           <p className="alert-error" style={{ fontSize: 12, margin: 0 }}>
             {job.erro_fornecedor}
           </p>
+        )}
+        {job.arquivo_url && (
+          <a
+            className="btn btn-outline"
+            href={job.arquivo_url}
+            download
+            style={{ fontSize: 12, justifySelf: "start" }}
+          >
+            {t("createVideo.creatives.downloadJob")}
+          </a>
         )}
         <button
           type="button"

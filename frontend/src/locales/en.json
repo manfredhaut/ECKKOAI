@@ -757,7 +757,8 @@
       "genjutsuImagesLabel": "New product images",
       "genjutsuImagesHelp": "Choose 1 or more images from the \"Product\" card, in References, above.",
       "genjutsuImagesEmpty": "No product images in References yet — upload at least 1 to the \"Product\" card above.",
-      "genjutsuResolutionHelp": "Output resolution of the video with the product swapped."
+      "genjutsuResolutionHelp": "Output resolution of the video with the product swapped.",
+      "downloadJob": "Download"
     },
     "script": {
       "titleLabel": "Video title",

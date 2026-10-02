@@ -76,6 +76,7 @@ function ehArquivoDeVideoUrl(url: string): boolean {
 // baixar).
 function kindParaGaleria(job: CreativeJob): EditAssetKind | null {
   if (job.modo === "broll") return "broll";
+  if (job.modo === "trocarproduto") return "broll";
   if (job.modo === "sobreposicao" || job.modo === "imagem") return "sobreposicao";
   if (job.modo === "musica") return "fundo";
   if (job.modo === "propaganda") {
@@ -93,6 +94,7 @@ type ColunaGaleria = "broll" | "imagem" | "sobreposicao" | "fundo";
 
 function colunasDaGaleria(job: CreativeJob): ColunaGaleria[] {
   if (job.modo === "broll") return ["broll"];
+  if (job.modo === "trocarproduto") return ["broll"];
   if (job.modo === "imagem") return ["imagem"];
   if (job.modo === "sobreposicao") return ["sobreposicao"];
   if (job.modo === "musica") return ["fundo"];

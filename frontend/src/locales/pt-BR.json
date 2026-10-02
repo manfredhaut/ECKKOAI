@@ -764,7 +764,8 @@
       "genjutsuImagesLabel": "Imagens do novo produto",
       "genjutsuImagesHelp": "Escolha 1 ou mais imagens do cartão \"Produto\", em Referências, acima.",
       "genjutsuImagesEmpty": "Nenhuma imagem de produto em Referências ainda — envie ao menos 1 no cartão \"Produto\" acima.",
-      "genjutsuResolutionHelp": "Resolução de saída do vídeo com o produto trocado."
+      "genjutsuResolutionHelp": "Resolução de saída do vídeo com o produto trocado.",
+      "downloadJob": "Baixar"
     },
     "script": {
       "titleLabel": "Título do vídeo",
