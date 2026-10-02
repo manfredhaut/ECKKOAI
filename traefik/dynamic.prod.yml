@@ -39,8 +39,6 @@ http:
         certResolver: letsencrypt
         domains:
           - main: eckkoai.com
-            sans:
-              - dev-c77a5b.eckkoai.com
 
     uploads:
       rule: '(Host(`{{env "BASE_DOMAIN"}}`) || HostRegexp(`^[a-z0-9-]+\.{{env "BASE_DOMAIN"}}$`)) && PathPrefix(`/uploads`)'
