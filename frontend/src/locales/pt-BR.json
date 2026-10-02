@@ -686,7 +686,7 @@
     },
     "creatives": {
       "referencesTitle": "Referências",
-      "referencesHint": "Até 8 imagens por cartão. Fotos e prompts ficam aqui para uso nesta rodada e nas próximas — sem envio real ainda.",
+      "referencesHint": "Até 8 imagens por cartão. O envio é real e imediato — as fotos ficam salvas para uso nesta rodada e nas próximas.",
       "card": {
         "produto": "Produto",
         "cenario": "Cenário",

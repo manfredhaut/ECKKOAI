@@ -679,7 +679,7 @@
     },
     "creatives": {
       "referencesTitle": "References",
-      "referencesHint": "Up to 8 images per card. Photos and prompts stay here for this round and the next — no real upload yet.",
+      "referencesHint": "Up to 8 images per card. Upload is real and immediate — photos stay saved for use in this round and the next.",
       "card": {
         "produto": "Product",
         "cenario": "Scenario",
