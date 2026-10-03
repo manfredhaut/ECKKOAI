@@ -336,9 +336,10 @@ export async function creativeJobRoutes(app: FastifyInstance): Promise<void> {
           ? videoUrlFonte.trim()
           : null,
       imagens_referencia_urls:
-        modo === "trocarproduto" && Array.isArray(imagensReferenciaUrls)
-          ? imagensReferenciaUrls.filter((u): u is string => typeof u === "string" && u.trim().length > 0).slice(0, 8)
-          : null,
+        (modo === "trocarproduto" || modo === "broll" || modo === "propaganda") &&
+          Array.isArray(imagensReferenciaUrls)
+        ? imagensReferenciaUrls.filter((u): u is string => typeof u === "string" && u.trim().length > 0).slice(0, 8)
+        : null,
     };
 
     // ABAS-29 -- em LIVE, estima ANTES de gravar a linha (nunca cobra --

@@ -321,6 +321,25 @@ export function construirCorpoHiggsfield(
   if (modeloId === "bytedance/seedance-2.5/image-to-video") {
     const duration = entrada.videoDuracaoSegundos ?? 5;
     const resolution = entrada.videoResolution ?? "720p";
+    // PAINEL-SEEDANCE-REF-MULTI-1, 02/10/2026 -- 2+ referências usa o
+    // modelo-irmão reference-to-video, com array image_urls (teto de 8,
+    // mesmo limite de UI do Genjutsu). NÃO VERIFICADO contra a API
+    // autenticada da própria Higgsfield -- só contra a doc da fal.ai
+    // (espelha o mesmo modelo da ByteDance) e o playground da própria
+    // Higgsfield nesse slug. Por isso: confirmar via /estimate antes de
+    // qualquer geração real cobrada. Os caminhos de 0 e 1 referência
+    // abaixo continuam BYTE A BYTE como antes desta mudança.
+    if (entrada.imagensReferenciaUrls && entrada.imagensReferenciaUrls.length >= 2) {
+      return {
+        modelIdReal: "bytedance/seedance-2.5/reference-to-video",
+        body: {
+          image_urls: entrada.imagensReferenciaUrls,
+          prompt: entrada.prompt,
+          duration,
+          resolution,
+        },
+      };
+    }
     if (entrada.imagemReferenciaUrl) {
       return {
         modelIdReal: "bytedance/seedance-2.5/image-to-video",
@@ -328,8 +347,8 @@ export function construirCorpoHiggsfield(
       };
     }
     return {
-      modelIdReal: "bytedance/seedance-2.5/text-to-video",
-      body: { prompt: entrada.prompt, aspect_ratio: entrada.aspectRatio ?? "16:9", duration, resolution },
+        modelIdReal: "bytedance/seedance-2.5/text-to-video",
+        body: { prompt: entrada.prompt, aspect_ratio: entrada.aspectRatio ?? "16:9", duration, resolution },
     };
   }
   if (modeloId === "higgsfield/genjutsu/object-swap/v1.0") {
