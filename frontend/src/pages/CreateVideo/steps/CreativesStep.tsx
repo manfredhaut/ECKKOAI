@@ -57,9 +57,53 @@ function ehArquivoDeVideo(url: string): boolean {
   return EXT_DE_VIDEO.some((ext) => semQuery.endsWith(ext));
 }
 
+// PAINEL-REFDESIGN-2, 03/10/2026 -- texto contextual do card "Referencias
+// para X" no Criar: muda conforme modo + modelo escolhidos. So informativo
+// por enquanto -- a selecao de referencia em si continua pelo select/chips
+// existentes (patch 3 trata a grade de 8 + "Escolher da Galeria").
+function referenciaResumo(modo: string, modeloId: string): { titulo: string; linhas: string[] } {
+  if (modo === "imagem") {
+    if (modeloId === "marketing-studio/image") {
+      return {
+        titulo: 'Referências para "Imagem"',
+        linhas: ["Com Marketing Studio Image: aceita 1 referência (qualquer tipo salvo em REFERÊNCIAS)."],
+      };
+    }
+    return {
+      titulo: 'Referências para "Imagem"',
+      linhas: [
+        "Com Soul 2: nenhuma referência é usada — a imagem sai só do texto do prompt.",
+        "Trocando o modelo para Marketing Studio Image: aceita 1 referência (qualquer tipo).",
+      ],
+    };
+  }
+  if (modo === "propaganda" || modo === "broll") {
+    return {
+      titulo: `Referências para "${modo === "propaganda" ? "Propaganda" : "B-roll"}"`,
+      linhas: ["1 a 8 referências, qualquer tipo (Produto, Cenário, Personagem, Marca)."],
+    };
+  }
+  if (modo === "trocarproduto") {
+    return {
+      titulo: 'Referências para "Trocar Produto"',
+      linhas: ["1 vídeo de origem (obrigatório) + 1 a 8 imagens do tipo Produto."],
+    };
+  }
+  if (modo === "sobreposicao") {
+    return {
+      titulo: 'Referências para "Sobreposição"',
+      linhas: ["Modo ainda em desenvolvimento — sem seletor de referência por enquanto."],
+    };
+  }
+  return {
+    titulo: `Referências para "${modo === "narracao" ? "Narração" : "Música"}"`,
+    linhas: ["Não usa referência de imagem — só duração e voz."],
+  };
+}
+
 export function CreativesStep() {
   const { t } = useTranslation();
-  const [modo, setModo] = useState<Modo>("broll");
+  const [modo, setModo] = useState<Modo>("imagem");
   const [titulo, setTitulo] = useState("");
   const [prompt, setPrompt] = useState("");
   const [audioDuration, setAudioDuration] = useState(AUDIO_DURATION_DEFAULT);
@@ -237,8 +281,13 @@ export function CreativesStep() {
           ? { video_url_fonte: genjutsuVideoUrl, imagens_referencia_urls: genjutsuImagens }
           : {}),
         ...((modo === "narracao" || modo === "musica") && voiceId ? { voice_id: voiceId } : {}),
-        ...((modo === "broll" || modo === "propaganda" || modo === "imagem") && refEscolhida
-          ? { imagem_referencia_url: refEscolhida.arquivo_url }
+        ...(modo === "imagem" && refEscolhida ? { imagem_referencia_url: refEscolhida.arquivo_url } : {}),
+        ...((modo === "broll" || modo === "propaganda")
+          ? (videoReferenciaUrls.length === 1
+              ? { imagem_referencia_url: videoReferenciaUrls[0] }
+              : videoReferenciaUrls.length >= 2
+                ? { imagens_referencia_urls: videoReferenciaUrls }
+                : {})
           : {}),
       });
       upsertJob(created);
@@ -255,6 +304,7 @@ export function CreativesStep() {
       setTitulo("");
       setPrompt("");
       setRefImagemId("");
+      setVideoReferenciaUrls([]);
       setGenjutsuVideoUrl(null);
       setGenjutsuImagens([]);
     } catch (err) {
@@ -293,11 +343,21 @@ export function CreativesStep() {
       setVideoResolution(job.entrada.video_resolution ?? "720p");
     }
 
-    if (job.modo === "broll" || job.modo === "propaganda" || job.modo === "imagem") {
+    if (job.modo === "imagem") {
       const url = job.entrada.imagem_referencia_url ?? null;
       const encontrada = url ? refs.find((r) => r.arquivo_url === url) : undefined;
       setRefImagemId(encontrada?.id ?? "");
       if (url && !encontrada) {
+        avisos.push(t("createVideo.creatives.refazerReferenciaIndisponivel"));
+      }
+    }
+
+    if (job.modo === "broll" || job.modo === "propaganda") {
+      const urlsOriginais =
+        job.entrada.imagens_referencia_urls ?? (job.entrada.imagem_referencia_url ? [job.entrada.imagem_referencia_url] : []);
+      const urlsDisponiveis = urlsOriginais.filter((u) => refs.some((r) => r.arquivo_url === u));
+      setVideoReferenciaUrls(urlsDisponiveis);
+      if (urlsDisponiveis.length < urlsOriginais.length) {
         avisos.push(t("createVideo.creatives.refazerReferenciaIndisponivel"));
       }
     }
@@ -368,6 +428,17 @@ export function CreativesStep() {
     );
   }
 
+  function toggleVideoReferencia(url: string) {
+    setVideoReferenciaUrls((prev) =>
+      prev.includes(url) ? prev.filter((u) => u !== url) : prev.length >= 8 ? prev : [...prev, url],
+    );
+  }
+
+  // PAINEL-SEEDANCE-REF-MULTI-1, 02/10/2026 -- broll/propaganda: 0 ou 1
+  // referência usa o caminho de sempre (image-to-video); 2+ usa
+  // reference-to-video com array -- ver construirCorpoHiggsfield.
+  const [videoReferenciaUrls, setVideoReferenciaUrls] = useState<string[]>([]);
+
   const [refImagemId, setRefImagemId] = useState<string>("");
 
   const podeGerar =
@@ -380,74 +451,36 @@ export function CreativesStep() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div className="card">
-        <div className="card-title">{t("createVideo.creatives.referencesTitle")}</div>
-        <p className="text-muted" style={{ marginTop: 4, fontSize: 13 }}>
-          {t("createVideo.creatives.referencesHint")}
-        </p>
-        {loadingRefs && <p className="text-muted">{t("createVideo.creatives.loadingJobs")}</p>}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-            marginTop: 12,
-          }}
-        >
-          {REFERENCIAS.map((tipo) => (
-            <ReferenceCard
-              key={tipo}
-              tipo={tipo}
-              refs={refs.filter((r) => r.tipo === tipo)}
-              onChanged={reloadRefs}
-            />
+      <div className="card criar-mockup" ref={createSectionRef}>
+        <div style={{ display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
+          {(["imagem", "propaganda", "broll", "trocarproduto", "sobreposicao", "narracao", "musica"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={`chip${modo === m ? " selected" : ""}`}
+              style={{ padding: "7px 18px", fontSize: 14 }}
+              onClick={() => setModo(m)}
+            >
+              {t(`createVideo.creatives.mode.${m}`)}
+            </button>
           ))}
         </div>
-      </div>
 
-      <div className="card" ref={createSectionRef}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-          <div className="card-title" style={{ margin: 0 }}>
-            {t("createVideo.creatives.createTitle")}
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {(["imagem", "propaganda", "broll", "trocarproduto", "sobreposicao", "narracao", "musica"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={`chip${modo === m ? " selected" : ""}`}
-                onClick={() => setModo(m)}
-              >
-                {t(`createVideo.creatives.mode.${m}`)}
-              </button>
-            ))}
-          </div>
+        <div className="card-title" style={{ margin: "22px 0 0" }}>
+          {t("createVideo.creatives.createTitle")}
         </div>
 
-        <div style={{ marginTop: 14 }}>
-          <Field label={t("createVideo.creatives.materialTitleLabel")} help={t("createVideo.creatives.materialTitleHelp")}>
-            <input
-              type="text"
-              value={titulo}
-              onChange={(e) => setTitulo(e.target.value)}
-              maxLength={80}
-              placeholder={t("createVideo.creatives.materialTitlePlaceholder")}
-            />
-          </Field>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 2fr)", gap: 20, marginTop: 6 }}>
-          <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              <span className="text-muted" style={{ fontSize: 12 }}>
-                {t("createVideo.creatives.insertReferenceLabel")}
-              </span>
-              {REFERENCIAS.map((tipo) => (
-                <button key={tipo} type="button" className="chip" disabled>
-                  {t(`createVideo.creatives.card.${tipo}`)}
-                </button>
-              ))}
-            </div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 2fr)", gap: 36, marginTop: 18, alignItems: "start" }}>
+          <div style={{ display: "grid", gap: 16, minWidth: 0, alignContent: "start" }}>
+            <Field label={t("createVideo.creatives.materialTitleLabel")} help={t("createVideo.creatives.materialTitleHelp")}>
+              <input
+                type="text"
+                value={titulo}
+                onChange={(e) => setTitulo(e.target.value)}
+                maxLength={80}
+                placeholder={t("createVideo.creatives.materialTitlePlaceholder")}
+              />
+            </Field>
             {modo === "trocarproduto" && (
               <>
                 <Field
@@ -505,58 +538,33 @@ export function CreativesStep() {
                 </Field>
               </>
             )}
-            {(modo === "broll" || modo === "propaganda" || modo === "imagem") && (
+
+            {(modo === "broll" || modo === "propaganda") && (
               <Field
-                label={t("createVideo.creatives.referenceImageLabel")}
-                help={t("createVideo.creatives.referenceImageHelp")}
+                label={t("createVideo.creatives.referenceImagesMultiLabel")}
+                help={t("createVideo.creatives.referenceImagesMultiHelp")}
               >
-                {modo === "imagem" && (
-                  <p
-                    className="text-muted"
-                    style={{
-                      fontSize: 12,
-                      marginBottom: 6,
-                      padding: "6px 8px",
-                      background: "var(--color-surface)",
-                      borderRadius: 6,
-                      border: "1px solid var(--color-border)",
-                    }}
-                  >
-                    {modeloId === "marketing-studio/image"
-                      ? t("createVideo.creatives.referenceImageHintMarketingStudio")
-                      : t("createVideo.creatives.referenceImageHintSoul2")}
+                {refs.length === 0 ? (
+                  <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
+                    {t("createVideo.creatives.referenceImagesMultiEmpty")}
                   </p>
+                ) : (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {refs.map((r) => (
+                      <span
+                        key={r.id}
+                        className={`chip${videoReferenciaUrls.includes(r.arquivo_url) ? " selected" : ""}`}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => toggleVideoReferencia(r.arquivo_url)}
+                      >
+                        {t(`createVideo.creatives.card.${r.tipo}`)}
+                        {r.rotulo ? ` — ${r.rotulo}` : ""}
+                      </span>
+                    ))}
+                  </div>
                 )}
-                <select value={refImagemId} onChange={(e) => setRefImagemId(e.target.value)}>
-                  <option value="">{t("createVideo.creatives.referenceImageNone")}</option>
-                  {refs.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {t(`createVideo.creatives.card.${r.tipo}`)}
-                      {r.rotulo ? ` — ${r.rotulo}` : ""}
-                    </option>
-                  ))}
-                </select>
               </Field>
             )}
-            <Field label={t("createVideo.creatives.promptLabel")}>
-              <textarea
-                rows={5}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={t("createVideo.creatives.promptPlaceholder")}
-              />
-            </Field>
-            <p className="text-muted" style={{ fontSize: 12 }}>
-              {t("createVideo.creatives.promptHint")}
-            </p>
-            {!MODOS_COM_MOTOR.has(modo) && (
-              <p className="text-muted" style={{ fontSize: 12 }}>
-                {t("createVideo.creatives.modeNotReadyYet")}
-              </p>
-            )}
-          </div>
-
-          <div style={{ display: "grid", gap: 12, alignContent: "start", minWidth: 0 }}>
             {MODOS_DE_AUDIO.has(modo) ? (
               <Field label={t("createVideo.creatives.audioDurationLabel")} help={t("createVideo.creatives.audioDurationHelp")}>
                 <input
@@ -574,23 +582,46 @@ export function CreativesStep() {
               </Field>
             ) : (
               <>
-                <Field label={t("createVideo.creatives.modelLabel")}>
-                  <select
-                    value={modeloId}
-                    onChange={(e) => setModeloId(e.target.value)}
-                    disabled={!modelos || modelos.length <= 1}
-                  >
-                    {(modelos ?? []).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                {modo === "trocarproduto" && (
+                <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Field label={t("createVideo.creatives.modelLabel")}>
+                      <select
+                        value={modeloId}
+                        onChange={(e) => setModeloId(e.target.value)}
+                        disabled={!modelos || modelos.length <= 1}
+                      >
+                        {(modelos ?? []).map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  {modo !== "trocarproduto" && (
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {modo === "broll" || modo === "propaganda" ? (
+                        <Field label={`${t("createVideo.creatives.durationLabel")} (${videoDuration}s)`}>
+                          <input
+                            type="range"
+                            min={4}
+                            max={30}
+                            value={videoDuration}
+                            onChange={(e) => setVideoDuration(Number(e.target.value))}
+                          />
+                        </Field>
+                      ) : (
+                        <Field label={t("createVideo.creatives.durationLabel")}>
+                          <input type="range" min={4} max={30} defaultValue={5} disabled />
+                        </Field>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {(modo === "trocarproduto" || modo === "broll" || modo === "propaganda") && (
                   <Field
                     label={t("createVideo.creatives.resolutionLabel")}
-                    help={t("createVideo.creatives.genjutsuResolutionHelp")}
+                    help={modo === "trocarproduto" ? t("createVideo.creatives.genjutsuResolutionHelp") : undefined}
                   >
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       {(["480p", "720p", "1080p"] as const).map((r) => (
@@ -604,37 +635,6 @@ export function CreativesStep() {
                         </span>
                       ))}
                     </div>
-                  </Field>
-                )}
-                {(modo === "broll" || modo === "propaganda") ? (
-                  <>
-                    <Field label={`${t("createVideo.creatives.durationLabel")} (${videoDuration}s)`}>
-                      <input
-                        type="range"
-                        min={4}
-                        max={30}
-                        value={videoDuration}
-                        onChange={(e) => setVideoDuration(Number(e.target.value))}
-                      />
-                    </Field>
-                    <Field label={t("createVideo.creatives.resolutionLabel")}>
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        {(["480p", "720p", "1080p"] as const).map((r) => (
-                          <span
-                            key={r}
-                            className={`chip${videoResolution === r ? " selected" : ""}`}
-                            style={{ cursor: "pointer" }}
-                            onClick={() => setVideoResolution(r)}
-                          >
-                            {r}
-                          </span>
-                        ))}
-                      </div>
-                    </Field>
-                  </>
-                ) : modo === "trocarproduto" ? null : (
-                  <Field label={t("createVideo.creatives.durationLabel")}>
-                    <input type="range" min={4} max={30} defaultValue={5} disabled />
                   </Field>
                 )}
               </>
@@ -651,22 +651,103 @@ export function CreativesStep() {
                 </select>
               </Field>
             )}
-            {/* ABAS-12/13 — disponível em TODO modo. Nasce em estado="pronto"
-                direto no backend, sem passar por fixture nenhuma. */}
-            <label className="btn btn-file" style={{ opacity: podeUpload ? 1 : 0.6 }}>
-              {uploading ? t("createVideo.creatives.uploading") : t("createVideo.creatives.orUploadFile")}
-              <input
-                type="file"
-                accept={ACCEPT_POR_MODO[modo]}
-                hidden
-                disabled={!podeUpload}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) handleUpload(f);
-                }}
+            <Field label={t("createVideo.creatives.promptLabel")}>
+              <textarea
+                rows={12}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder={t("createVideo.creatives.promptPlaceholder")}
               />
-            </label>
+            </Field>
+            {!MODOS_COM_MOTOR.has(modo) && (
+              <p className="text-muted" style={{ fontSize: 12 }}>
+                {t("createVideo.creatives.modeNotReadyYet")}
+              </p>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gap: 12, alignContent: "start", minWidth: 0 }}>
+            {(() => {
+              const info = referenciaResumo(modo, modeloId);
+              const selecionadas: string[] =
+                modo === "imagem"
+                  ? refImagemId
+                    ? [refImagemId]
+                    : []
+                  : modo === "broll" || modo === "propaganda"
+                  ? videoReferenciaUrls
+                  : modo === "trocarproduto"
+                  ? [...(genjutsuVideoUrl ? [genjutsuVideoUrl] : []), ...genjutsuImagens]
+                  : [];
+              return (
+                <div
+                  style={{
+                    border: "1px solid #d1d5db",
+                    borderRadius: 10,
+                    padding: "14px 16px",
+                    background: "#fafafa",
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: "#374151" }}>
+                    {info.titulo}
+                  </div>
+                  {info.linhas.map((linha, i) => (
+                    <div key={i} style={{ fontSize: 13, color: "#4b5563", lineHeight: 1.5 }}>
+                      {linha}
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                    <label className="btn btn-file" style={{ opacity: podeUpload ? 1 : 0.6, flex: 1, textAlign: "center" }}>
+                      {uploading ? t("createVideo.creatives.uploading") : "Escolher arquivos"}
+                      <input
+                        type="file"
+                        accept={ACCEPT_POR_MODO[modo]}
+                        hidden
+                        disabled={!podeUpload}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (f) handleUpload(f);
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="btn"
+                      title="Em breve"
+                      onClick={(e) => e.preventDefault()}
+                      style={{
+                        flex: 1,
+                        borderColor: "#7CC934",
+                        background: "#f0fdf4",
+                        color: "#3f6212",
+                        cursor: "default",
+                      }}
+                    >
+                      🖼 Escolher da Galeria
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>
+                    "Escolher da Galeria" abre o seletor ao lado — dá pra marcar direto uma ou mais imagens já geradas antes, sem precisar passar primeiro por "Usar como referência" no card de cada job.
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 104px))", justifyContent: "start", gap: 6, marginTop: 6 }}>
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          aspectRatio: "1 / 1",
+                          borderRadius: 8,
+                          border: selecionadas[i] ? "1px solid #7CC934" : "1px dashed #d1d5db",
+                          background: selecionadas[i] ? "#f0fdf4" : "transparent",
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             {!podeUpload && !uploading && (
               <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
                 {t("createVideo.creatives.uploadNeedsTitle")}

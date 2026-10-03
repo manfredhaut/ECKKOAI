@@ -1745,3 +1745,19 @@ th {
   --color-border: #3A4034;
   --color-surface: #1C1F1A;
 }
+
+/* PAINEL-REFDESIGN-8, 03/10/2026 -- escopo do card CRIAR da aba 5
+   (proposta-criar-mockup.html). Nada aqui afeta outras telas. */
+.criar-mockup .field { margin-bottom: 0; gap: 5px; }
+.criar-mockup .field label { font-size: 13px; font-weight: 400; color: #111827; }
+.criar-mockup .field input:not([type="range"]),
+.criar-mockup .field textarea,
+.criar-mockup .field select {
+  padding: 11px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 15px;
+  color: #111827;
+}
+.criar-mockup .field-help { font-size: 11px; color: #9ca3af; opacity: 1; }
+.criar-mockup .chip:not(.selected) { font-weight: 400; color: #374151; border-color: #e5e7eb; }
