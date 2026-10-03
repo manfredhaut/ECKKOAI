@@ -732,11 +732,11 @@
       "generateButton": "Generate",
       "generateDisabledHint": "Waiting on the next block of the plan (credential and job engine)",
       "galleryTitle": "Gallery",
-      "galleryHint": "Examples of how ready material looks — none of these is a real job.",
+      "galleryHint": "Everything you generate or upload shows up here, grouped by type.",
       "jobReady": "Ready (example)",
       "generating": "Generating…",
       "loadingJobs": "Loading…",
-      "noJobs": "Nothing generated yet this session.",
+      "noJobs": "Nothing generated yet.",
       "modeNotReadyYet": "This mode has no generation engine yet — only \"Image\" is available this round.",
       "simulated": "SIMULATED",
       "state": {

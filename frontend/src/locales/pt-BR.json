@@ -739,11 +739,11 @@
       "generateButton": "Gerar",
       "generateDisabledHint": "Aguardando o bloco seguinte do plano (credencial e motor de jobs)",
       "galleryTitle": "Galeria",
-      "galleryHint": "Exemplos de como o material aparece quando pronto — nenhum destes é um job real.",
+      "galleryHint": "Tudo o que você gera ou envia aparece aqui, agrupado por tipo.",
       "jobReady": "Pronto (exemplo)",
       "generating": "Gerando…",
       "loadingJobs": "Carregando…",
-      "noJobs": "Nada gerado ainda nesta sessão.",
+      "noJobs": "Nada gerado ainda.",
       "modeNotReadyYet": "Este modo ainda não tem motor de geração — só \"Imagem\" está disponível nesta rodada.",
       "simulated": "SIMULADO",
       "state": {
